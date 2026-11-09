@@ -1,0 +1,4 @@
+# Optional source-quality tools; no runtime credentials or company data needed.
+ruff==0.17.4
+pycodestyle==2.15.0
+sqlfluff==4.5.0

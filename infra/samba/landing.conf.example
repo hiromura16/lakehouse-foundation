@@ -1,0 +1,14 @@
+# managed-by=lakehouse-foundation-samba
+# Render this template with scripts/setup-samba.py; do not install placeholders.
+[Lakehouse-Landing]
+    path = /srv/lakehouse/landing
+    comment = CSV JSON image landing
+    read only = no
+    browseable = yes
+    guest ok = no
+    valid users = <existing-unix-and-samba-user>
+    force user = <existing-unix-and-samba-user>
+    create mask = 0660
+    directory mask = 0770
+    hosts allow = <explicit-IP-or-CIDR-allowlist>
+    hosts deny = ALL

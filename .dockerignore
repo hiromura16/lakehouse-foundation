@@ -1,0 +1,17 @@
+.git
+.env
+.env.*
+*.env
+**/.env
+**/.env.*
+**/*.env
+.credentials
+.secrets
+.venv
+__pycache__
+**/__pycache__
+data
+landing
+backups
+runtime
+tests

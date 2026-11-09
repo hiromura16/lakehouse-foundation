@@ -1,0 +1,58 @@
+{
+  "name": "Lakehouse medallion",
+  "active": false,
+  "nodes": [
+    {
+      "id": "manual",
+      "name": "Manual run",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "run",
+      "name": "Run medallion",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://worker:8000/run",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"action\": \"medallion\"}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "notesInFlow": true,
+      "notes": "Select an HTTP Header Auth credential: Authorization = Bearer <WORKER_TOKEN from your private site settings>. Never put the token into the workflow JSON."
+    }
+  ],
+  "connections": {
+    "Manual run": {
+      "main": [
+        [
+          {
+            "node": "Run medallion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

@@ -1,0 +1,18 @@
+{
+  "dokploy/dokploy:v0.31.0": {
+    "pinned": "dokploy/dokploy:v0.31.0@sha256:971c5879c059f60390e1c4efeaf63a39d75cbc2157e48e81bd738587afe339f9",
+    "platform": "linux/amd64"
+  },
+  "postgres:16": {
+    "pinned": "postgres:16@sha256:43f9275df91e012c3da3d86bea5d7bb5e67a473296cc906c5f9e80b8176b1a37",
+    "platform": "linux/amd64"
+  },
+  "traefik:v3.6.25": {
+    "pinned": "traefik:v3.6.25@sha256:996b026a32b1bb6c85c200e5cf25276c1caa84ddea6b1e3a33e78cdc5cbe8d0c",
+    "platform": "linux/amd64"
+  },
+  "nginx:stable-alpine": {
+    "pinned": "nginx:stable-alpine@sha256:bb8f722b4be005fcd7827816a136ab779fd40185d85b5171be915cc7fc0575c7",
+    "platform": "linux/amd64"
+  }
+}

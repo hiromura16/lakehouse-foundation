@@ -1,0 +1,17 @@
+{
+  "airflow": {
+    "pinned": "apache/airflow:3.4.0-python3.12@sha256:818f94affc5bd7ce0be0cc04f2ace09aa8382e65190a73a08881229ff32700cb"
+  },
+  "postgres": {
+    "pinned": "postgres:18.6-alpine@sha256:123b17998ccaf47e53b502e8c6a1e79afd8f579c6f3eec83c563da026f957395"
+  },
+  "constraints": {
+    "url": "https://raw.githubusercontent.com/apache/airflow/constraints-3.4.0/constraints-3.12.txt",
+    "sha256": "3cecb4fe4a11d69bd772aef18434825bbed9b344703302ca0a55d50e30a33eda"
+  },
+  "providers": {
+    "apache-airflow-providers-standard": "1.21.0",
+    "apache-airflow-providers-http": "6.3.0",
+    "apache-airflow-providers-common-compat": "1.23.0"
+  }
+}

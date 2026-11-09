@@ -1,0 +1,2 @@
+# Optional SQL Server destination only. Landing generation uses the standard library.
+pymssql==2.4.6

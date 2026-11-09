@@ -1,0 +1,389 @@
+# Portable single-node foundation. No source database is deployed.
+# Site addresses and secrets are read from an external private env file.
+# Core ports bind to loopback unless BIND_IP is explicitly configured.
+name: ${COMPOSE_PROJECT_NAME:-lakehouse}
+# Shared log rotation for every service. These extension blocks deploy nothing.
+
+x-logging: &service_logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+# Migration and catalog server must use the same database settings.
+
+x-catalog-environment: &catalog_environment
+  LAKEKEEPER__PG_ENCRYPTION_KEY: ${CATALOG_ENCRYPTION_KEY:?Generate private site settings}
+  LAKEKEEPER__PG_DATABASE_URL_READ: postgresql://lakekeeper:${CATALOG_DB_PASSWORD}@catalog-db:5432/lakekeeper
+  LAKEKEEPER__PG_DATABASE_URL_WRITE: postgresql://lakekeeper:${CATALOG_DB_PASSWORD}@catalog-db:5432/lakekeeper
+  LAKEKEEPER__BASE_URI: http://catalog:8181
+  LAKEKEEPER__AUTHZ_BACKEND: allowall
+  RUST_LOG: info
+
+services:
+
+  # Durable catalog metadata; this database is internal only.
+  catalog-db:
+    restart: unless-stopped
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    logging: *service_logging
+    image: docker.io/library/postgres:18.6-alpine@sha256:300ebd02c6d4de9ee27ad7f6855d5d21b4d3a4a5117767c1197d284c635d9736
+    mem_limit: 512m
+    environment:
+      POSTGRES_DB: lakekeeper
+      POSTGRES_USER: lakekeeper
+      POSTGRES_PASSWORD: ${CATALOG_DB_PASSWORD:?Generate private site settings}
+    volumes:
+      - catalog-db:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U lakekeeper -d lakekeeper
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # S3-compatible raw and Iceberg data. Anonymous identities are absent.
+  storage:
+    restart: unless-stopped
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    logging: *service_logging
+    image: docker.io/chrislusf/seaweedfs:4.53@sha256:972ba30c529dfc72a6a12ed427e94d99c7b6a6e59d97bfa52be0a849f43e2cc9
+    mem_limit: 768m
+    command:
+      - server
+      - -dir=/data
+      - -ip=storage
+      - -ip.bind=0.0.0.0
+      - -volume.max=16
+      - -master.volumeSizeLimitMB=1024
+      - -filer
+      - -s3
+      - -s3.config=/etc/seaweedfs/s3.json
+    volumes:
+      - storage:/data
+    configs:
+      - source: s3-credentials
+        target: /etc/seaweedfs/s3.json
+      - source: filer-config
+        target: /etc/seaweedfs/filer.toml
+    ports:
+      - ${BIND_IP:-127.0.0.1}:${S3_PORT:-8333}:8333
+
+  # Run schema migrations before the catalog service starts.
+  catalog-migrate:
+    restart: 'no'
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    logging: *service_logging
+    image: quay.io/lakekeeper/catalog:v0.14.3@sha256:0009e7ccb26db811b8fc485974b624a999fd096f4da549a8704d3121dc20e98a
+    mem_limit: 256m
+    environment: *catalog_environment
+    command:
+      - migrate
+    depends_on:
+      catalog-db:
+        condition: service_healthy
+
+  # Single-company bootstrap mode; add OIDC before broader access.
+  catalog:
+    restart: unless-stopped
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    logging: *service_logging
+    image: quay.io/lakekeeper/catalog:v0.14.3@sha256:0009e7ccb26db811b8fc485974b624a999fd096f4da549a8704d3121dc20e98a
+    mem_limit: 384m
+    environment: *catalog_environment
+    command:
+      - serve
+    ports:
+      - ${BIND_IP:-127.0.0.1}:${CATALOG_PORT:-8181}:8181
+    depends_on:
+      catalog-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - /home/nonroot/lakekeeper
+        - healthcheck
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # SQL reads and atomic per-table Silver/Gold replacements.
+  trino:
+    restart: unless-stopped
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    logging: *service_logging
+    image: docker.io/trinodb/trino:484@sha256:2704eb53935af5e582d63d6033e9bf99d20c325e9b0e30b1016ef59a4773979f
+    mem_limit: 1536m
+    cpus: 2
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      WAREHOUSE_NAME: ${WAREHOUSE_NAME}
+    configs:
+      - source: trino-config
+        target: /etc/trino/config.properties
+      - source: trino-jvm
+        target: /etc/trino/jvm.config
+      - source: trino-node
+        target: /etc/trino/node.properties
+      - source: trino-iceberg
+        target: /etc/trino/catalog/iceberg.properties
+    volumes:
+      - trino:/data/trino
+    ports:
+      - ${BIND_IP:-127.0.0.1}:${TRINO_PORT:-8080}:8080
+    depends_on:
+      catalog:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - /usr/lib/trino/bin/health-check
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # Ingest completed files and run versioned medallion SQL.
+  worker:
+    # Match the landing directory owner without changing its permissions.
+    user: "${WORKER_UID:?Set the landing reader UID}:${WORKER_GID:?Set the landing reader GID}"
+    restart: unless-stopped
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    logging: *service_logging
+    # Separate environments keep separate local image tags.
+    image: ${COMPOSE_PROJECT_NAME:-lakehouse}-worker:local
+    build:
+      context: ../..
+      dockerfile: infra/lakehouse/Dockerfile
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+        http_proxy: ${http_proxy:-}
+        https_proxy: ${https_proxy:-}
+        no_proxy: ${no_proxy:-}
+    mem_limit: 1024m
+    cpus: 2
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET_RAW: ${S3_BUCKET_RAW}
+      S3_BUCKET_WAREHOUSE: ${S3_BUCKET_WAREHOUSE}
+      WAREHOUSE_NAME: ${WAREHOUSE_NAME}
+      WORKER_TOKEN: ${WORKER_TOKEN}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-}
+      http_proxy: ${http_proxy:-}
+      https_proxy: ${https_proxy:-}
+      no_proxy: ${no_proxy:-}
+    volumes:
+      - type: bind
+        source: ${LANDING_DIR:?Set the external landing directory}
+        target: /landing
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      catalog:
+        condition: service_healthy
+      storage:
+        condition: service_started
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health",timeout=3)
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # Optional automation database, isolated from catalog metadata.
+  n8n-db:
+    restart: unless-stopped
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    logging: *service_logging
+    image: docker.io/library/postgres:18.6-alpine@sha256:300ebd02c6d4de9ee27ad7f6855d5d21b4d3a4a5117767c1197d284c635d9736
+    profiles: [automation]
+    mem_limit: 384m
+    environment:
+      POSTGRES_DB: n8n
+      POSTGRES_USER: n8n
+      POSTGRES_PASSWORD: ${N8N_DB_PASSWORD}
+    volumes:
+      - n8n-db:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U n8n -d n8n
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # Optional visual workflow operations; credentials stay in its database.
+  n8n:
+    restart: unless-stopped
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    logging: *service_logging
+    image: docker.n8n.io/n8nio/n8n:2.46.7@sha256:6102ca27d9392c7f4778c0a35a80834d6620a365ab4d546a9fdf855a2b52fe4e
+    profiles: [automation]
+    mem_limit: 1024m
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: n8n-db
+      DB_POSTGRESDB_PORT: '5432'
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: n8n
+      DB_POSTGRESDB_PASSWORD: ${N8N_DB_PASSWORD}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_HOST: ${N8N_HOST:-localhost}
+      N8N_PORT: '5678'
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
+      N8N_SECURE_COOKIE: ${N8N_SECURE_COOKIE:-true}
+      N8N_DIAGNOSTICS_ENABLED: 'false'
+      N8N_PERSONALIZATION_ENABLED: 'false'
+      N8N_VERSION_NOTIFICATIONS_ENABLED: 'false'
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: 'true'
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: 'true'
+      GENERIC_TIMEZONE: Asia/Tokyo
+      EXECUTIONS_DATA_PRUNE: 'true'
+      EXECUTIONS_DATA_MAX_AGE: '168'
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-}
+      http_proxy: ${http_proxy:-}
+      https_proxy: ${https_proxy:-}
+      no_proxy: ${no_proxy:-}
+    volumes:
+      - n8n:/home/node/.n8n
+    ports:
+      - ${BIND_IP:-127.0.0.1}:${N8N_PORT:-5678}:5678
+    depends_on:
+      n8n-db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch("http://127.0.0.1:5678/healthz").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
+      interval: 15s
+      timeout: 5s
+      retries: 30
+
+  # Optional pipeline metrics with bounded retention.
+  prometheus:
+    restart: unless-stopped
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    logging: *service_logging
+    image: prom/prometheus:v3.16.0@sha256:89c1a644817e9ad70fa2af76c84898e327c1de7063735f962e8313b1e28672c3
+    profiles: [monitoring]
+    mem_limit: 384m
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=2GB
+    configs:
+      - source: prometheus-config
+        target: /etc/prometheus/prometheus.yml
+    volumes:
+      - prometheus:/prometheus
+    ports:
+      - ${BIND_IP:-127.0.0.1}:${PROMETHEUS_PORT:-9090}:9090
+
+  # Optional Grafana service; dashboards are saved in its database via GUI.
+  grafana:
+    restart: unless-stopped
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    logging: *service_logging
+    image: grafana/grafana:13.3.0@sha256:6e5d306338670f381a942f1c50d3c266bf71531e5ddd9ee4fc1a133dac5ce63d
+    profiles: [monitoring]
+    mem_limit: 384m
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+    configs:
+      - source: grafana-datasource
+        target: /etc/grafana/provisioning/datasources/prometheus.yml
+    volumes:
+      - grafana:/var/lib/grafana
+    ports:
+      - ${BIND_IP:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000
+
+configs:
+  s3-credentials:
+    content: |-
+      {
+        "identities": [
+          {
+            "name": "lakehouse",
+            "credentials": [
+              {
+                "accessKey": "${S3_ACCESS_KEY}",
+                "secretKey": "${S3_SECRET_KEY}"
+              }
+            ],
+            "actions": [
+              "Admin",
+              "Read",
+              "Write",
+              "List",
+              "Tagging"
+            ]
+          }
+        ]
+      }
+  filer-config:
+    content: |
+      [leveldb2]
+      enabled = true
+      dir = "/data/filer"
+  trino-config:
+    file: ./config.properties
+  trino-jvm:
+    file: ./jvm.config
+  trino-node:
+    file: ./node.properties
+  trino-iceberg:
+    file: ./iceberg.properties
+  prometheus-config:
+    file: ../monitoring/prometheus.yml
+  grafana-datasource:
+    file: ../monitoring/grafana-datasource.yml
+
+volumes:
+  catalog-db: {}
+  storage: {}
+  trino: {}
+  n8n-db: {}
+  n8n: {}
+  prometheus: {}
+  grafana: {}

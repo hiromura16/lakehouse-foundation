@@ -1,0 +1,46 @@
+# Merge after the core Compose file. No host filesystem or Docker socket mount.
+services:
+  spark-check:
+    profiles: [compute]
+    image: ${COMPOSE_PROJECT_NAME:-lakehouse}-spark-check:local
+    build:
+      context: ../..
+      dockerfile: infra/compute/Dockerfile
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+        http_proxy: ${http_proxy:-}
+        https_proxy: ${https_proxy:-}
+        no_proxy: ${no_proxy:-}
+    # An explicit `compose run` launches this job. Ordinary `up` stays idle.
+    deploy:
+      replicas: 0
+    restart: 'no'
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    mem_limit: 2g
+    cpus: 2
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      WAREHOUSE_NAME: ${WAREHOUSE_NAME}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-}
+      http_proxy: ${http_proxy:-}
+      https_proxy: ${https_proxy:-}
+      no_proxy: ${no_proxy:-}
+    command:
+      - /opt/spark/bin/spark-submit
+      - --master
+      - local[2]
+      - --driver-memory
+      - 768m
+      - /opt/lakehouse/spark_smoke.py
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'

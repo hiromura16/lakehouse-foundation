@@ -1,0 +1,26 @@
+{
+  "postgres": {
+    "pinned": "docker.io/library/postgres:18.6-alpine@sha256:300ebd02c6d4de9ee27ad7f6855d5d21b4d3a4a5117767c1197d284c635d9736"
+  },
+  "seaweedfs": {
+    "pinned": "docker.io/chrislusf/seaweedfs:4.53@sha256:972ba30c529dfc72a6a12ed427e94d99c7b6a6e59d97bfa52be0a849f43e2cc9"
+  },
+  "lakekeeper": {
+    "pinned": "quay.io/lakekeeper/catalog:v0.14.3@sha256:0009e7ccb26db811b8fc485974b624a999fd096f4da549a8704d3121dc20e98a"
+  },
+  "trino": {
+    "pinned": "docker.io/trinodb/trino:484@sha256:2704eb53935af5e582d63d6033e9bf99d20c325e9b0e30b1016ef59a4773979f"
+  },
+  "python": {
+    "pinned": "docker.io/library/python:3.14-slim@sha256:ac25e5afbfdb4a94ff99cc24b0345719210133144481480bcba6085efa36a341"
+  },
+  "n8n": {
+    "pinned": "docker.n8n.io/n8nio/n8n:2.46.7@sha256:6102ca27d9392c7f4778c0a35a80834d6620a365ab4d546a9fdf855a2b52fe4e"
+  },
+  "prometheus": {
+    "pinned": "prom/prometheus:v3.16.0@sha256:89c1a644817e9ad70fa2af76c84898e327c1de7063735f962e8313b1e28672c3"
+  },
+  "grafana": {
+    "pinned": "grafana/grafana:13.3.0@sha256:6e5d306338670f381a942f1c50d3c266bf71531e5ddd9ee4fc1a133dac5ce63d"
+  }
+}

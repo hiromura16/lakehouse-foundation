@@ -1,0 +1,22 @@
+# Copy these fields into each service that makes outbound HTTP requests.
+# An extension alone does not configure any service.
+x-outbound-proxy: &outbound-proxy
+  HTTP_PROXY: ${HTTP_PROXY:-}
+  HTTPS_PROXY: ${HTTPS_PROXY:-}
+  NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1}
+  http_proxy: ${http_proxy:-}
+  https_proxy: ${https_proxy:-}
+  no_proxy: ${no_proxy:-localhost,127.0.0.1,::1}
+# services:
+#   worker:
+#     environment:
+#       <<: *outbound-proxy
+#     build:
+#       context: .
+#       args:
+#         HTTP_PROXY: ${HTTP_PROXY:-}
+#         HTTPS_PROXY: ${HTTPS_PROXY:-}
+#         NO_PROXY: ${NO_PROXY:-}
+#         http_proxy: ${http_proxy:-}
+#         https_proxy: ${https_proxy:-}
+#         no_proxy: ${no_proxy:-}

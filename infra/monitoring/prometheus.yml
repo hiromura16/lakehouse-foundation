@@ -1,0 +1,11 @@
+# Scrape application metrics over the private Compose network.
+# Host/GPU exporters can be added when their operating requirements are known.
+global:
+  scrape_interval: 15s
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["prometheus:9090"]
+  - job_name: lakehouse
+    static_configs:
+      - targets: ["worker:8000"]

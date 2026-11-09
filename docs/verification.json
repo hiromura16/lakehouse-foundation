@@ -1,0 +1,88 @@
+{
+  "checked_on": "2026-11-09",
+  "platform": "Linux x86_64, single host",
+  "results": {
+    "core": {
+      "checks": [
+        "image original bytes and hash preserved",
+        "bronze row counts",
+        "silver row counts",
+        "quarantine row counts",
+        "factory daily measures avoid join multiplication",
+        "sales partial and late deliveries",
+        "latest revision wins once",
+        "late arrival belongs to original event date",
+        "invalid original value remains inspectable",
+        "production totals",
+        "sales totals"
+      ],
+      "first_import": {
+        "imported": 7,
+        "skipped": 0
+      },
+      "replay_import": {
+        "imported": 0,
+        "skipped": 7
+      },
+      "isolated_namespaces": true,
+      "ok": true
+    },
+    "sql-source": {
+      "ok": true,
+      "checks": [
+        "six MES/ERP source tables inserted into a new schema",
+        "SQL row counts match landing manifest",
+        "landing destination contains matching hashes",
+        "no lakehouse or medallion job was invoked"
+      ],
+      "rows": {
+        "erp_products": 4,
+        "erp_work_orders": 21,
+        "erp_sales_orders": 21,
+        "erp_shipments": 42,
+        "mes_events": 46,
+        "mes_downtime": 21
+      }
+    },
+    "n8n": {
+      "ok": true,
+      "status": "success",
+      "workflow": "imported manual medallion workflow",
+      "source": "six synthetic SQL-export source datasets"
+    },
+    "airflow": {
+      "ok": true,
+      "dag_id": "lakehouse_medallion",
+      "state": "success",
+      "authentication": "private HTTP connection resolved at task runtime"
+    },
+    "monitoring": {
+      "prometheus_targets": {
+        "lakehouse": "up",
+        "prometheus": "up"
+      },
+      "grafana_database": "ok",
+      "ok": true
+    },
+    "spark": {
+      "ok": true,
+      "spark": "4.1.4",
+      "iceberg": "1.12.0",
+      "spark_rows": 3,
+      "trino_rows": 3,
+      "container_exit_code": 0
+    },
+    "grafana": {
+      "ok": true,
+      "dashboard_uid": "lakehouse-operations",
+      "editable": true,
+      "edit_preserved_after_restart_and_init": true,
+      "file_provisioning_removed": true
+    }
+  },
+  "limits": [
+    "Company SQL Server and corporate proxy/CA require on-site validation.",
+    "CDC, AI inference, HA and backup restore are planned separately.",
+    "Authenticated SMB file transfer was not tested with the existing account."
+  ]
+}

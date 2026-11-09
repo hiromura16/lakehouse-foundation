@@ -1,0 +1,83 @@
+{
+  "tables": [
+    {
+      "target_table": "erp_products",
+      "source_schema": "YOUR_DEMO_SCHEMA",
+      "source_table": "erp_products",
+      "columns": {
+        "product_id": "product_id",
+        "product_name": "product_name",
+        "product_family": "product_family",
+        "unit": "unit",
+        "standard_cycle_seconds": "standard_cycle_seconds",
+        "updated_at": "updated_at"
+      }
+    },
+    {
+      "target_table": "erp_work_orders",
+      "source_schema": "YOUR_DEMO_SCHEMA",
+      "source_table": "erp_work_orders",
+      "columns": {
+        "work_order_id": "work_order_id",
+        "factory_id": "factory_id",
+        "product_id": "product_id",
+        "planned_date": "planned_date",
+        "planned_qty": "planned_qty",
+        "updated_at": "updated_at"
+      }
+    },
+    {
+      "target_table": "erp_sales_orders",
+      "source_schema": "YOUR_DEMO_SCHEMA",
+      "source_table": "erp_sales_orders",
+      "columns": {
+        "sales_order_id": "sales_order_id",
+        "factory_id": "factory_id",
+        "product_id": "product_id",
+        "order_date": "order_date",
+        "promised_date": "promised_date",
+        "ordered_qty": "ordered_qty",
+        "unit_price": "unit_price",
+        "updated_at": "updated_at"
+      }
+    },
+    {
+      "target_table": "erp_shipments",
+      "source_schema": "YOUR_DEMO_SCHEMA",
+      "source_table": "erp_shipments",
+      "columns": {
+        "shipment_id": "shipment_id",
+        "sales_order_id": "sales_order_id",
+        "shipped_at": "shipped_at",
+        "shipped_qty": "shipped_qty",
+        "updated_at": "updated_at"
+      }
+    },
+    {
+      "target_table": "mes_events",
+      "source_schema": "YOUR_DEMO_SCHEMA",
+      "source_table": "mes_events",
+      "columns": {
+        "event_id": "event_id",
+        "work_order_id": "work_order_id",
+        "event_time": "event_time",
+        "good_qty": "good_qty",
+        "reject_qty": "reject_qty",
+        "updated_at": "updated_at"
+      }
+    },
+    {
+      "target_table": "mes_downtime",
+      "source_schema": "YOUR_DEMO_SCHEMA",
+      "source_table": "mes_downtime",
+      "columns": {
+        "downtime_id": "downtime_id",
+        "work_order_id": "work_order_id",
+        "start_time": "start_time",
+        "end_time": "end_time",
+        "reason_code": "reason_code",
+        "updated_at": "updated_at"
+      }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "spark": {
+    "version": "4.1.4",
+    "pinned": "apache/spark:4.1.4-scala2.13-java21-python3-ubuntu@sha256:847f91f8bb2f28d632064dfe632d423020f8fd60b27c7704c0e5bf5b0c6432c7"
+  },
+  "iceberg-spark-runtime": {
+    "coordinate": "org.apache.iceberg:iceberg-spark-runtime-4.1_2.13:1.12.0",
+    "sha512": "ac1e2cb00970309f0c6bf241fabf334aef373c1f3e3b443181d429d5f2c0903ace47df9cfc1d55c95807a096cf405ae0a8868831b9e9eb5696dfdb6380587f38"
+  },
+  "iceberg-aws-bundle": {
+    "coordinate": "org.apache.iceberg:iceberg-aws-bundle:1.12.0",
+    "sha512": "b01456f80142c8837004e31329a0f40db8a9d44917a4a694cb7d8d6d3a68cb20c61e6f7788fa1bdcb95c0edf724322b49667d6f9ef60fc9cc46da5c24ce5c7de"
+  }
+}

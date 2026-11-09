@@ -1,0 +1,3 @@
+# managed-by=lakehouse-foundation-proxy
+[Service]
+EnvironmentFile=/etc/lakehouse-foundation/proxy.env

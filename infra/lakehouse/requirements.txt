@@ -1,0 +1,7 @@
+pyiceberg[pyarrow,s3fs]==0.12.0
+pyarrow==26.0.1
+s3fs==2026.9.0
+aiobotocore==3.10.0
+boto3==1.43.117
+Pillow==13.0.0
+requests==2.34.2
