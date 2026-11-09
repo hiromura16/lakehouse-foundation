@@ -107,7 +107,7 @@
       "original_dockerfile_hash_locked_build": true
     },
     "source_quality": {
-      "unit_tests": 236,
+      "unit_tests": 238,
       "ruff": true,
       "pycodestyle_max_length": 79,
       "sqlfluff_trino": true,
@@ -301,7 +301,8 @@
       "rpc_published_to_host": false,
       "master_worker_history_always_on_with_compute": true,
       "local_mode_explicit_and_executed": true,
-      "local_events_visible_to_history": true
+      "local_events_visible_to_history": true,
+      "single_shared_image_builder": true
     },
     "n8n_ssrf": {
       "ok": true,

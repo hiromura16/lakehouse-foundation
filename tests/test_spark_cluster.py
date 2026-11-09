@@ -8,12 +8,61 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
     "spark_cluster_subject", ROOT / "infra/compute/spark_cluster.py"
 )
 CLUSTER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CLUSTER)
+
+
+class SparkBuildConfigurationTests(unittest.TestCase):
+    """Resolve actual YAML merges to prevent concurrent shared-tag builds."""
+
+    def setUp(self):
+        """Load the source Compose with its aliases and merge keys resolved."""
+        document = yaml.safe_load(
+            (ROOT / "infra/compute/compose.yaml").read_text()
+        )
+        self.services = document["services"]
+
+    def test_shared_image_has_exactly_one_builder(self):
+        """One build produces the tag consumed by all four Spark services."""
+        builders = {
+            name: service
+            for name, service in self.services.items()
+            if "build" in service
+        }
+        self.assertEqual(set(builders), {"spark-volumes-init"})
+        owner = builders["spark-volumes-init"]
+        self.assertEqual(
+            owner["build"]["dockerfile"], "infra/compute/Dockerfile"
+        )
+        self.assertEqual(owner["build"]["secrets"], ["corporate_ca"])
+        consumers = {
+            "spark-master",
+            "spark-worker",
+            "spark-history",
+            "spark-check",
+        }
+        self.assertEqual(set(self.services), consumers | set(builders))
+        for name in consumers:
+            with self.subTest(service=name):
+                self.assertEqual(self.services[name]["image"], owner["image"])
+                self.assertNotIn("build", self.services[name])
+
+    def test_builder_covers_cluster_and_notebook_profiles(self):
+        """The sole builder stays selectable for each shared-image profile."""
+        owner = self.services["spark-volumes-init"]
+        self.assertEqual(set(owner["profiles"]), {"compute", "notebooks"})
+        for name, service in self.services.items():
+            if name != "spark-volumes-init":
+                with self.subTest(service=name):
+                    self.assertLessEqual(
+                        set(service["profiles"]), set(owner["profiles"])
+                    )
 
 
 class SparkVolumeTests(unittest.TestCase):

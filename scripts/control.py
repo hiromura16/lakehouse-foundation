@@ -111,6 +111,8 @@ elif args.action == "grafana-init":
     result = setup(values)
     print("Grafana dashboard: " + result["status"])
 elif args.action == "spark-check":
+    # One service owns the common image build, avoiding concurrent retagging.
+    run(["--profile", "compute", "build", "spark-volumes-init"])
     # Core bootstrap must finish before this isolated Iceberg smoke job runs.
     run(
         [
@@ -118,7 +120,6 @@ elif args.action == "spark-check":
             "compute",
             "run",
             "--rm",
-            "--build",
             "--no-deps",
             "spark-check",
         ]

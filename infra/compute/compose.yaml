@@ -1,19 +1,6 @@
 # Merge after the core. All services reuse one pinned Spark/Iceberg image.
 x-spark-image: &spark_image
   image: ${COMPOSE_PROJECT_NAME:-lakehouse}-spark-check:local
-  build:
-    secrets: [corporate_ca]
-    context: ../..
-    dockerfile: infra/compute/Dockerfile
-    args:
-      SPARK_UID: ${WORKER_UID:-10001}
-      SPARK_GID: ${WORKER_GID:-10001}
-      HTTP_PROXY: ${HTTP_PROXY:-}
-      HTTPS_PROXY: ${HTTPS_PROXY:-}
-      NO_PROXY: ${NO_PROXY:-}
-      http_proxy: ${http_proxy:-}
-      https_proxy: ${https_proxy:-}
-      no_proxy: ${no_proxy:-}
 x-spark-labels: &spark_labels
   app.owner: lakehouse-foundation
   traefik.enable: 'false'
@@ -53,6 +40,20 @@ services:
   # notebooks can record local events even when the cluster profile is off.
   spark-volumes-init:
     <<: *spark_image
+    # Build once; all daemon and smoke services consume this same tag.
+    build:
+      secrets: [corporate_ca]
+      context: ../..
+      dockerfile: infra/compute/Dockerfile
+      args:
+        SPARK_UID: ${WORKER_UID:-10001}
+        SPARK_GID: ${WORKER_GID:-10001}
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+        http_proxy: ${http_proxy:-}
+        https_proxy: ${https_proxy:-}
+        no_proxy: ${no_proxy:-}
     profiles: [compute, notebooks]
     user: '0:0'
     restart: 'no'

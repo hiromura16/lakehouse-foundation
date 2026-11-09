@@ -184,3 +184,6 @@ PostgreSQL 18のデータボリュームはイメージの規約に合わせて 
 PyIcebergは `header.X-Iceberg-Access-Delegation=client-managed` を指定し、private設定のS3資格情報を使います。Lakekeeperが自動選択するremote signingへ切り替わらないようにするためです。Sparkが作った表をこのFileIOでも読み取れることを確認しました。これは共有資格情報を使う単一チーム向け基盤であり、利用者ごとのテーブル認可を保証する設定ではありません。OIDC・STSの短命資格情報を導入するときは、権限外アクセスの拒否を含めて別途検証します。
 
 [PyIcebergのREST設定](https://py.iceberg.apache.org/configuration/) / [Lakekeeperのアクセス方式実装](https://github.com/lakekeeper/lakekeeper/blob/v0.14.3/crates/lakekeeper/src/api/iceberg/v1/tables.rs)
+
+
+Sparkの共通imageは `spark-volumes-init` だけがbuildし、Master/Worker/Historyと明示smokeは同じimageを参照します。`spark-check` CLIも先に共通imageをbuildします。`up --build` を含む配置更新ではdaemonが再作成される場合があるため、実行中ジョブの完了を確認してから更新します。履歴volumeの保持は無停止の保証とは別です。

@@ -2,7 +2,7 @@
 
 検証日: 2026-11-10（JST）。Linux x86-64の単一ホスト上に、既存アプリと別のネットワーク・DB・S3・資格情報・ランディング先を持つ環境を作成しました。公開用の機械可読結果は [verification.json](verification.json) に保存しています。接続先、管理APIの記録、認証情報、生ログは公開しません。
 
-公開HTTPS URLからの認証不要clone、原本Compose、原本Dockerfileの `uv pip sync --require-hashes` ビルドが成功しました。この別環境でも画像保存・メダリオンの全期待値・再投入を検証済みです。[公開CI](https://github.com/hiromura16/lakehouse-foundation/actions) にもPython書式、SQL、全profileのCompose検査を定義しています。現在のローカル同等検査では236テストが成功しています。
+公開HTTPS URLからの認証不要clone、原本Compose、原本Dockerfileの `uv pip sync --require-hashes` ビルドが成功しました。この別環境でも画像保存・メダリオンの全期待値・再投入を検証済みです。[公開CI](https://github.com/hiromura16/lakehouse-foundation/actions) にもPython書式、SQL、全profileのCompose検査を定義しています。現在のローカル同等検査では238テストが成功しています。
 
 ## 実機で成功した経路
 
@@ -75,3 +75,6 @@ GUIとAPIを含む公開Git原本を主基盤へ配置しました。SQL/landing
 `compute` でSpark Master/Worker/Historyを常駐させました。Jupyterの実kernelからstandalone masterへ接続し、Python RDDが別hostのworker上で動くこと、Python minorとPandas/Arrow/NumPyの固定版一致を確認しました。remote mapInPandasで6行、専用Iceberg表へ3行を書き、Trinoから同じ3行を照合しています。Masterの実アプリreverseProxy UI、完了したHistoryと9jobsを確認し、Historyだけを再起動しても同じ履歴が残り、Master/Workerの起動時刻が変わらないことを確認しました。別kernel内だけcomputeを無効にしたlocal[2]分岐も、明示表示・2行処理・共有Historyへの記録を実動確認しました。
 
 n8nのSSRF保護を有効化し、同梱workflow用のhostname例外を `worker` に限定しました。実HTTP Requestノードから未許可の内部監視healthを参照すると、SSRFのrestrictedエラーで拒否されました。秘密値を付けない専用試験workflowは検証後にarchive→deleteしました。許可されたworkerへの同梱メダリオンworkflowは同じ設定で成功しています。実会社proxy経由・独自nodeの保護をこの結果から保証しません。設定と受入は [SSRF.md](SSRF.md) を参照してください。
+
+
+共通Spark imageのbuildは一つのserviceへ集約し、複数serviceが同じtagへ並行exportしないことを実YAMLのmerge後に検査しています。通常の再配置ではdaemonが再作成される場合があり、保存履歴と無停止性を同じ保証として扱いません。
