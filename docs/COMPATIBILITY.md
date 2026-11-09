@@ -107,7 +107,7 @@ coreが正常に起動し、バケットとWarehouseが初期化済みの状態�
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env spark-check
 ```
 
-この操作は `compute` プロファイルの `spark-check` を一時コンテナとして起動し、local[2]で既存の相互参照を確認します。通常の `up` ではこの一時serviceだけをreplicas 0にし、上記Master・Worker・Historyを常駐させます。Docker Composeを直接使う場合は同じ追加Composeを全て指定し、`--profile compute run --rm --build --no-deps spark-check` を実行します。
+この操作は `compute` プロファイルの `spark-check` を一時コンテナとして起動し、local[2]で既存の相互参照を確認します。通常の `up` ではこの一時serviceだけをreplicas 0にし、上記Master・Worker・Historyを常駐させます。Docker Composeを直接使う場合は同じ追加Composeを全て指定し、`--profile compute build spark-volumes-init` を実行した後、`--profile compute run --rm --no-deps spark-check` を実行します。
 
 `infra/compute/smoke.sql` は専用の `compatibility.spark_roundtrip` 表を作成・置換します。固定の3行に日本語・decimalを含め、Sparkで書いた表をSparkで読み、その後Trinoの `iceberg.compatibility.spark_roundtrip` から同じ行を読みます。再実行でも追記による二重化をせず、業務表は対象にしません。成功時は版と行数だけを出力し、鍵や接続文字列を表示しません。
 
