@@ -156,9 +156,11 @@ def bootstrap():
 
 
 def schema(prefix, layer):
-    """Keep verification namespaces distinct from operational namespaces."""
-    if prefix and not re.fullmatch(r"verify_[0-9a-f]+_", prefix):
-        raise ValueError("Invalid isolated verification namespace.")
+    """Separate batch, persistent CDC, and temporary verification layers."""
+    if prefix not in {"", "cdc_"} and not re.fullmatch(
+        r"verify_[0-9a-f]+_", prefix
+    ):
+        raise ValueError("Invalid data namespace prefix.")
     return prefix + layer
 
 
@@ -216,12 +218,28 @@ def completion_hash(marker):
     return content[:64].decode("ascii")
 
 
+def resolve_source(relative):
+    """Match declared files and bounded GUI microbatch names explicitly."""
+    for source in CONTRACT:
+        canonical = source["path"]
+        if relative == canonical:
+            return source
+        stem, extension = canonical.rsplit(".", 1)
+        pattern = (
+            re.escape(stem)
+            + r"__[a-f0-9]{12}_(?!0000)[0-9]{4}\."
+            + re.escape(extension)
+        )
+        if re.fullmatch(pattern, relative):
+            return source
+    return None
+
+
 def ingest(directory=Path("/landing"), prefix=""):
     """Import hash-marked files while preserving raw objects and provenance."""
     ensure_tables(prefix)
     cat = catalog()
     files = cat.load_table(schema(prefix, "bronze") + ".files")
-    sources = {source["path"]: source for source in CONTRACT}
     imported = skipped = 0
     for marker in sorted(directory.rglob("*.ready")):
         path = marker.with_name(marker.name[:-6])
@@ -252,7 +270,7 @@ def ingest(directory=Path("/landing"), prefix=""):
         if previous and previous[0]["sha256"] == digest:
             skipped += 1
             continue
-        source = sources.get(relative)
+        source = resolve_source(relative)
         rows = []
         if source:
             if path.suffix == ".csv":
@@ -537,6 +555,8 @@ def verify():
 
 def cleanup_verification(cat, prefix):
     """Remove only one completed verification run's tables and raw files."""
+    if not re.fullmatch(r"verify_[0-9a-f]+_", prefix):
+        raise ValueError("Cleanup requires a temporary verification prefix.")
     for layer in ["gold", "silver", "quarantine", "bronze"]:
         namespace = schema(prefix, layer)
         if cat.namespace_exists(namespace):
@@ -611,6 +631,7 @@ class Handler(BaseHTTPRequestHandler):
                 {
                     "ready": STATE["ready"] and not STATE["blocked"],
                     "blocked": STATE["blocked"],
+                    "busy": LOCK.locked(),
                 },
             )
         elif self.path == "/metrics":

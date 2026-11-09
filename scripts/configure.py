@@ -24,6 +24,7 @@ if target.parent.stat().st_mode & 0o077:
     raise SystemExit("The parent directory must have mode 0700.")
 values = {
     "COMPOSE_PROJECT_NAME": "lakehouse",
+    "DATA_VOLUME_PREFIX": "",
     "BIND_IP": "127.0.0.1",
     "LANDING_DIR": "/srv/lakehouse/landing",
     "WORKER_UID": str(os.getuid()),
@@ -35,6 +36,10 @@ values = {
     "PROMETHEUS_PORT": "9090",
     "N8N_PORT": "5678",
     "AIRFLOW_PORT": "8081",
+    "DEMO_GUI_PORT": "8501",
+    "DEMO_API_PORT": "8502",
+    "CDC_CONNECT_PORT": "8083",
+    "CDC_UI_PORT": "8084",
     "COMPOSE_PROFILES": "",
     "WAREHOUSE_NAME": "lakehouse",
     "S3_BUCKET_RAW": "lakehouse-raw",
@@ -44,6 +49,9 @@ values = {
     "CATALOG_DB_PASSWORD": secrets.token_hex(32),
     "CATALOG_ENCRYPTION_KEY": secrets.token_hex(32),
     "WORKER_TOKEN": secrets.token_hex(32),
+    "CONTROL_API_TOKEN": secrets.token_hex(32),
+    "CONTROL_SETTINGS_DIR": str(target.parent),
+    "CONTROL_SETTINGS_NAME": target.name,
     "N8N_DB_PASSWORD": secrets.token_hex(32),
     "N8N_ENCRYPTION_KEY": secrets.token_hex(32),
     "GRAFANA_ADMIN_PASSWORD": secrets.token_hex(24),
@@ -68,6 +76,27 @@ values = {
     "DEMO_SQLSERVER_USER": "",
     "DEMO_SQLSERVER_PASSWORD": "",
     "DEMO_SQLSERVER_CA_FILE": "",
+    "DEMO_SQLSERVER_HOSTNAME_IN_CERTIFICATE": "",
+    "CDC_CONFIG_DIR": str(target.parent / "cdc"),
+    "CDC_SQLSERVER_HOST": "",
+    "CDC_SQLSERVER_PORT": "1433",
+    "CDC_SQLSERVER_DATABASE": "",
+    "CDC_SQLSERVER_USER": "",
+    "CDC_SQLSERVER_PASSWORD": "",
+    "CDC_SQLSERVER_TRUSTSTORE": "",
+    "CDC_SQLSERVER_TRUSTSTORE_FILE": "",
+    "CDC_SQLSERVER_TRUSTSTORE_PASSWORD": "",
+    "CDC_SQLSERVER_HOSTNAME_IN_CERTIFICATE": "",
+    "CDC_SQLSERVER_AGENT_STATUS_QUERY": "",
+    "CDC_TOPIC_PREFIX": "factory",
+    "CDC_CONNECTOR_NAME": "factory-source",
+    "CDC_KAFKA_CLUSTER_ID": base64.urlsafe_b64encode(secrets.token_bytes(16))
+    .decode()
+    .rstrip("="),
+    "CDC_GROUP_ID": "lakehouse-cdc",
+    "CDC_BATCH_SIZE": "100",
+    "CDC_POLL_SECONDS": "5",
+    "CDC_DEMO_OWNERSHIP_TOKEN": "",
     "DOKPLOY_BIND_IP": "",
     "DOKPLOY_ALLOWED_CIDRS": "",
     "DOKPLOY_ADMIN_PORT": "3100",
@@ -79,7 +108,8 @@ values = {
     "HTTPS_PROXY": "",
     "NO_PROXY": (
         "localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,"
-        "n8n,n8n-db,prometheus,grafana,airflow,airflow-db,"
+        "n8n,n8n-db,prometheus,grafana,airflow,airflow-db,demo,demo-api,"
+        "cdc-kafka,cdc-connect,cdc-consumer,cdc-ui,"
         "dokploy,dokploy-postgres"
     ),
 }

@@ -23,7 +23,7 @@ DokployのProject／Environmentは、画面上の所属・設定・権限の整�
 | Dokploy `appName` | developmentとproductionで独立した固定名にする |
 | `COMPOSE_PROJECT_NAME` | そのEnvironmentの `appName` と一致させる |
 | Dockerネットワーク | Composeプロジェクトごとに生成。共有external networkは意図した場合だけ利用 |
-| 名前付きvolume | プロジェクトごとのvolumeを使用。固定 `name` や `external` での共有を避ける |
+| 名前付きvolume | 通常はプロジェクト名から生成。`DATA_VOLUME_PREFIX` は空欄にし、他環境と共有しない |
 | `LANDING_DIR` | 環境ごとに別の専用ディレクトリを指定 |
 | ホストポート | 同じホスト・bind先で重ならない値にする |
 | パスワード・暗号鍵・workerトークン | 環境ごとに生成し、その環境のprivate設定で保持 |
@@ -96,14 +96,14 @@ GitHubのclone成功は、会社proxy経由のimage取得や依存ダウンロ�
 
 ## 任意Composeを重ねる
 
-`infra/lakehouse/compose.yaml` だけを指定する既定配置では、coreとその中にある `automation`／`monitoring` を扱います。`compute` と `orchestration` は追加ファイルにも定義があるため、複数の `-f` を指定します。
+`infra/lakehouse/compose.yaml` だけを指定する既定配置では、coreとその中にある `automation`／`monitoring` を扱います。`compute`、`orchestration`、`demo`、`cdc` は追加ファイルに定義があるため、複数の `-f` を指定します。
 
-CLIでは `scripts/lakehouse.sh` が3つのファイルをまとめて扱います。DokployではAdvancedのCustom Commandへ同じ組み合わせを指定できます。Custom Commandは既定コマンド全体を置き換え、Dokploy側が先頭へ `docker` を付けます。
+CLIでは `scripts/lakehouse.sh` が5つのファイルをまとめて扱います。DokployではAdvancedのCustom Commandへ同じ組み合わせを指定できます。Custom Commandは既定コマンド全体を置き換え、Dokploy側が先頭へ `docker` を付けます。
 
 次は `appName` が説明用の `lakehouse-development` と一致する場合の入力例です。実際のEnvironmentの `appName` に合わせ、UIの欄へ一つのコマンドとして設定します。
 
 ```text
-compose -p lakehouse-development --env-file infra/lakehouse/.env -f infra/lakehouse/compose.yaml -f infra/compute/compose.yaml -f infra/orchestration/compose.yaml up -d --build --remove-orphans --wait --wait-timeout 240
+compose -p lakehouse-development --env-file infra/lakehouse/.env -f infra/lakehouse/compose.yaml -f infra/compute/compose.yaml -f infra/orchestration/compose.yaml -f infra/demo/compose.yaml -f infra/cdc/compose.yaml up -d --build --remove-orphans --wait --wait-timeout 240
 ```
 
 `COMPOSE_PROFILES` には必要なものだけを指定します。`compute` のSparkスモークは通常の `up` では常駐せず、CLIの `spark-check` で一時実行します。Airflowの接続トークンはAirflowのConnection画面へ登録します。[COMPATIBILITY.md](COMPATIBILITY.md) に追加要件と実行方法があります。
@@ -122,6 +122,16 @@ Dokployの再cloneやAutoDeployで作業コピーが更新されても、永続�
 
 UIで生成した `.env` に対し、サイト設定の外部保存を前提とするCLIへ直接パスを渡しません。CLIから単発処理を行う場合は、同じ設定を保持するリポジトリ外のprivate env、同じ `appName`／プロジェクト名、同じソース版を使います。
 
+### 既存volume名を引き継ぐ場合
+
+`DATA_VOLUME_PREFIX` は通常空欄です。空欄または未設定なら、名前付きvolumeは従来どおり `<Composeプロジェクト名>_<volumeキー>` になります。core側のComposeに7個、Airflowに2個の計9個を定義し、CDCの `cdc-kafka`／`cdc-state` を含めると計11個です。bind mountはこの数に含めません。Dokployの `-p <appName>` もこの既定名に反映されます。
+
+既存構成でvolumeの接頭辞だけが現在の `appName` と異なる場合は、移行先の非公開Environment設定へ既存の接頭辞を指定できます。`appName` と `COMPOSE_PROJECT_NAME` は実行するコンテナ・ネットワークの識別子として一致させ、`DATA_VOLUME_PREFIX` は既存データの物理名を選ぶために使います。公開Composeへ導入先の値を埋め込みません。
+
+この設定はvolumeを自動rename・コピー・復元しません。接頭辞を誤ると別の空volumeが作られるため、配置前に使用する全volumeの解決名を既存volume名と照合し、CDCの追加2個も対象にします。DB・S3等の旧コンテナを全て停止し、バックアップと既存の暗号鍵・資格情報を保持してから、同じvolumeを使う新配置を一つだけ起動します。移行後も同じ接頭辞を保持します。
+
+`development` と `production`、Preview、移行試験等で同じ接頭辞を共有しません。同じvolumeへ二つのDBやS3プロセスを書き込ませないことが条件です。通常の停止・移行では `down --volumes`、volume削除、pruneを実行しません。[Composeのvolume名と既存volumeの扱い](https://docs.docker.com/reference/compose-file/volumes/)
+
 ## 旧構成から移行する間の扱い
 
 既存データソースの検証環境や旧自動化は、移行中だけ用途別のEnvironmentに残せます。画面上の所属変更と、実際のコンテナ・ネットワーク・volumeの移動は別作業として記録します。
@@ -132,7 +142,7 @@ UIで生成した `.env` に対し、サイト設定の外部保存を前提と�
 
 ## 配置後と更新時の確認
 
-1. Environment、`appName`、CLIのプロジェクト名、volumeの所属が一致していることを確認します。
+1. Environment、`appName`、CLIのプロジェクト名を確認し、volumeが意図した環境専用の実体へ解決されることを確認します。
 2. サービスの正常性と、原本・メダリオンの検証結果を確認します。
 3. 再配置してもデータが保持されることを確かめます。
 4. コード版とイメージのlock、private設定の管理先、バックアップ対象を記録します。

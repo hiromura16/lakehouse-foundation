@@ -1,0 +1,11 @@
+{
+  "kafka": {
+    "pinned": "apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f"
+  },
+  "debezium": {
+    "pinned": "quay.io/debezium/connect:3.7.1.Final@sha256:53c6d0424d09f7ccef813c895fb9b1056a726bc14ff2e6a592856cd627ebd491"
+  },
+  "kafbat": {
+    "pinned": "ghcr.io/kafbat/kafka-ui:v1.5.0@sha256:7cda86a33344160309fdb65146332e4da65db81a945614f2fe32e210803f6fd1"
+  }
+}

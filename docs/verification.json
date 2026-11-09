@@ -78,11 +78,79 @@
       "editable": true,
       "edit_preserved_after_restart_and_init": true,
       "file_provisioning_removed": true
+    },
+    "public_git_clone": {
+      "checks": [
+        "image original bytes and hash preserved",
+        "bronze row counts",
+        "silver row counts",
+        "quarantine row counts",
+        "factory daily measures avoid join multiplication",
+        "sales partial and late deliveries",
+        "latest revision wins once",
+        "late arrival belongs to original event date",
+        "invalid original value remains inspectable",
+        "production totals",
+        "sales totals"
+      ],
+      "first_import": {
+        "imported": 7,
+        "skipped": 0
+      },
+      "replay_import": {
+        "imported": 0,
+        "skipped": 7
+      },
+      "isolated_namespaces": true,
+      "ok": true,
+      "public_https_clone": true,
+      "original_dockerfile_hash_locked_build": true
+    },
+    "source_quality": {
+      "unit_tests": 140,
+      "ruff": true,
+      "pycodestyle_max_length": 79,
+      "sqlfluff_trino": true,
+      "all_profiles_compose_config": true,
+      "github_actions_success": true
+    },
+    "ai_ready": {
+      "ok": true,
+      "model_inference_executed": false,
+      "langchain_document_count": 34,
+      "snapshots_pinned_to_main": true,
+      "reference_sql_hash_is_exporter_reference_only": true,
+      "exporter_code_sha256_recorded": true
+    },
+    "cdc": {
+      "ok": true,
+      "sql_tls_and_hostname_verified": true,
+      "initial_rows": 144,
+      "operations": {
+        "read": 144,
+        "insert": 6,
+        "update": 6,
+        "delete": 6,
+        "tombstone": 6
+      },
+      "raw_records": 168,
+      "distinct_raw_after_restart": 168,
+      "silver_final_rows": [
+        4,
+        20,
+        20,
+        40,
+        40,
+        20
+      ],
+      "gold_insert_update_delete_checked": true,
+      "kafka_consumer_lag": 0,
+      "original_source_rows_preserved": 12
     }
   },
   "limits": [
-    "Company SQL Server and corporate proxy/CA require on-site validation.",
-    "CDC, AI inference, HA and backup restore are planned separately.",
+    "Company SQL Server, corporate proxy/CA and IdP require on-site validation.",
+    "Model inference, HA and backup restore were not executed.",
     "Authenticated SMB file transfer was not tested with the existing account."
   ]
 }

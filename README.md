@@ -4,6 +4,10 @@
 
 SQL Serverは会社にある既存DBへ接続します。この構成にSQL Serverコンテナは含みません。
 
+まず [はじめに読むガイド](docs/START-HERE.md) と [会社への導入手順](docs/COMPANY-ROLLOUT.md) を参照してください。設定、GUI、業務ルール、運用を目的別に読めるようにしています。
+
+![全体構成図](docs/assets/architecture.svg)
+
 ## 用意しているもの
 
 | 目的 | 実装 |
@@ -11,7 +15,7 @@ SQL Serverは会社にある既存DBへ接続します。この構成にSQL Serv
 | 永続保存・カタログ・SQL | SeaweedFS S3、Lakekeeper、PostgreSQL、Trino、Iceberg v2 / Parquet |
 | メダリオン | Bronze原本・履歴、Silver型整備・重複排除、Quarantine不正行、Gold工場・受注集計 |
 | ダミー投入 | MES生産実績・停止履歴、ERP製品・製造指図・受注・出荷をファイルまたはテスト用SQLスキーマへ投入 |
-| GUI操作 | n8nのインポート用ワークフロー。変換自体のGUI候補はApache Hop・NiFiの比較資料 |
+| GUI・API | Streamlitの素材/処理/設定/状態/AI画面、FastAPIとSwagger UI、n8nワークフロー |
 | 運用 | Grafana・Prometheus、Samba共有設定、Dokploy導入、企業proxy/CA手順 |
 | 任意の計算・定期実行 | 対応JARを固定したSpark、Airflowと対応Provider、相互接続の確認コード |
 
@@ -87,6 +91,8 @@ private設定の `COMPOSE_PROFILES` へ必要な機能を追加し、`up` を再
 
 | profile | 用途 |
 | --- | --- |
+| `demo` | Streamlitの操作画面と認証付きFastAPI / Swagger UI |
+| `cdc` | SQL Server CDC、Kafka、Debezium、consumer、Kafka管理GUI |
 | `automation` | n8n。`infra/automation/workflow-medallion.json` 等をインポートし、GUIで実行 |
 | `monitoring` | PrometheusとGrafana。初回だけ登録し、その後はGUIで編集・保存 |
 | `orchestration` | Airflow。明示的な手動DAG実行から開始 |
@@ -94,6 +100,10 @@ private設定の `COMPOSE_PROFILES` へ必要な機能を追加し、`up` を再
 
 例: `COMPOSE_PROFILES=automation,monitoring`。n8nにはGUIからHTTP Header Auth資格情報を登録します。APIトークンをワークフローJSONに書き込みません。
 
+- [GUIとダミー投入](docs/DEMO-GUI.md) / [APIとSwagger](docs/API.md)
+- [メダリオン詳説](docs/MEDALLION.md) / [GUI操作手順](docs/GUI-WALKTHROUGHS.md)
+- [設定項目一覧](docs/CONFIGURATION.md) / [運用](docs/OPERATIONS.md) / [障害対応](docs/TROUBLESHOOTING.md)
+- [CDC](docs/CDC.md) / [AIとLangChain](docs/AI-READINESS.md) / [Cloudflare](docs/CLOUDFLARE.md)
 - [GrafanaのGUI編集・保存・バックアップ](docs/GRAFANA.md)
 - [GUIでできること・各OSSの比較](docs/GUI-OPTIONS.md)
 - [構成とメダリオン設計](docs/ARCHITECTURE.md)
@@ -103,4 +113,4 @@ private設定の `COMPOSE_PROFILES` へ必要な機能を追加し、`up` を再
 - [Spark / Airflow / Icebergの互換性](docs/COMPATIBILITY.md)
 - [検証記録](docs/VALIDATION.md)
 
-停止は `lakehouse.sh --env-file <private-file> down` です。データボリュームは保持します。既存DBのCDC、企業IdP、バックアップからの復元、AI推論は、それぞれ後続の接続・運用検証が必要です。
+停止は `lakehouse.sh --env-file <private-file> down` です。データボリュームは保持します。会社DBへのCDC接続、企業IdP、バックアップからの復元、モデル推論は、それぞれ後続の接続・運用検証が必要です。

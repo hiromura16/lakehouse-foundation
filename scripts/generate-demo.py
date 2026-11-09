@@ -304,7 +304,18 @@ def private_demo_settings(path):
         raise ValueError(
             "Use a DNS name or IPv4 address for the demo SQL host."
         )
+    certificate_hostname(values)
     return values
+
+
+def certificate_hostname(values):
+    """Validate an optional expected certificate name, never a TLS bypass."""
+    name = values.get("DEMO_SQLSERVER_HOSTNAME_IN_CERTIFICATE", "")
+    if not isinstance(name, str) or (
+        name and not re.fullmatch(r"[A-Za-z0-9_.-]{1,253}", name)
+    ):
+        raise ValueError("Invalid expected demo SQL certificate hostname.")
+    return name
 
 
 def write_sql(data, values, allow_insecure_test=False):
@@ -326,20 +337,26 @@ def write_sql(data, values, allow_insecure_test=False):
         raise ValueError(
             "DEMO_SQLSERVER_CA_FILE must identify an existing PEM CA file."
         )
+    expected_hostname = certificate_hostname(values)
     schema = "lh_demo_" + secrets.token_hex(8)
     # This process-local config enforces encryption and, by default,
     # certificate/hostname validation.
     with tempfile.TemporaryDirectory(prefix="source-demo-tls-") as directory:
         config = Path(directory) / "freetds.conf"
+        trust = ""
+        if not allow_insecure_test:
+            trust = (
+                "    ca file = " + ca_file + "\n"
+                "    check certificate hostname = yes\n"
+            )
+            if expected_hostname:
+                # Network aliases may differ from the trusted certificate name.
+                trust += (
+                    "    certificate hostname = " + expected_hostname + "\n"
+                )
         config.write_text(
             "[global]\n    encryption = require\n    tds version = 7.4\n"
-            + (
-                ""
-                if allow_insecure_test
-                else "    ca file = "
-                + ca_file
-                + "\n    check certificate hostname = yes\n"
-            )
+            + trust
             + "[lh_demo_target]\n    host = "
             + host
             + "\n    port = "

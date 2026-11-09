@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -186,6 +187,96 @@ class SourceGeneratorTests(unittest.TestCase):
         self.assertEqual(
             driver.connect.call_args.kwargs["encryption"], "require"
         )
+
+    def test_certificate_name_preserves_required_ca_and_hostname_checks(self):
+        values = {
+            "DEMO_SQLSERVER_HOST": "demo.invalid",
+            "DEMO_SQLSERVER_PORT": "1433",
+            "DEMO_SQLSERVER_DATABASE": "ManufacturingDemo",
+            "DEMO_SQLSERVER_USER": "demo_writer",
+            "DEMO_SQLSERVER_PASSWORD": "synthetic-test-password",
+        }
+        for expected in (None, "", "certificate.example.invalid"):
+            with self.subTest(expected=expected):
+                selected = dict(values)
+                if expected is not None:
+                    selected["DEMO_SQLSERVER_HOSTNAME_IN_CERTIFICATE"] = (
+                        expected
+                    )
+                captured = []
+                driver = mock.Mock()
+
+                def connect(**_):
+                    captured.append(
+                        Path(os.environ["FREETDSCONF"]).read_text()
+                    )
+                    return RecordingConnection()
+
+                driver.connect.side_effect = connect
+                with mock.patch.dict(sys.modules, {"pymssql": driver}):
+                    GENERATOR.write_sql(GENERATOR.build_data(), selected)
+                self.assertIn("encryption = require\n", captured[0])
+                self.assertIn("ca file = system\n", captured[0])
+                self.assertIn(
+                    "check certificate hostname = yes\n", captured[0]
+                )
+                if expected:
+                    self.assertIn(
+                        "certificate hostname = " + expected + "\n",
+                        captured[0],
+                    )
+                else:
+                    self.assertNotIn(
+                        "\n    certificate hostname =", captured[0]
+                    )
+
+    def test_private_settings_validate_the_optional_certificate_name(self):
+        lines = (
+            "DEMO_SQLSERVER_HOST=demo.invalid\n"
+            "DEMO_SQLSERVER_PORT=1433\n"
+            "DEMO_SQLSERVER_DATABASE=ManufacturingDemo\n"
+            "DEMO_SQLSERVER_USER=demo_writer\n"
+            "DEMO_SQLSERVER_PASSWORD=synthetic-test-password\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "private.env"
+            for name in ("db name.invalid", "[unsafe]", "a" * 254):
+                with self.subTest(name=name):
+                    path.write_text(
+                        lines
+                        + "DEMO_SQLSERVER_HOSTNAME_IN_CERTIFICATE="
+                        + name
+                        + "\n"
+                    )
+                    path.chmod(0o600)
+                    with self.assertRaises(ValueError):
+                        GENERATOR.private_demo_settings(path)
+
+    def test_invalid_certificate_names_are_rejected_before_connection(self):
+        values = {
+            "DEMO_SQLSERVER_HOST": "demo.invalid",
+            "DEMO_SQLSERVER_PORT": "1433",
+            "DEMO_SQLSERVER_DATABASE": "ManufacturingDemo",
+            "DEMO_SQLSERVER_USER": "demo_writer",
+            "DEMO_SQLSERVER_PASSWORD": "synthetic-test-password",
+        }
+        driver = mock.Mock()
+        with mock.patch.dict(sys.modules, {"pymssql": driver}):
+            for expected in (
+                "db.invalid\nca file =",
+                "[unsafe]",
+                "db name.invalid",
+                "a" * 254,
+                None,
+            ):
+                with self.subTest(expected=expected):
+                    selected = {
+                        **values,
+                        "DEMO_SQLSERVER_HOSTNAME_IN_CERTIFICATE": expected,
+                    }
+                    with self.assertRaises(ValueError):
+                        GENERATOR.write_sql(GENERATOR.build_data(), selected)
+            driver.connect.assert_not_called()
 
     def test_existing_schema_is_never_reused(self):
         connection = RecordingConnection(existing_schema=True)

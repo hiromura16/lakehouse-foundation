@@ -59,7 +59,7 @@ jobs:
             if line.startswith('LANDING_DIR='):
                 line = 'LANDING_DIR=' + str(landing)
             if line.startswith('COMPOSE_PROFILES='):
-                line = 'COMPOSE_PROFILES=automation,monitoring,compute,orchestration'
+                line = 'COMPOSE_PROFILES=automation,monitoring,compute,orchestration,demo,cdc'
             lines.append(line)
         env_file.write_text('\n'.join(lines) + '\n')
         PY
@@ -67,4 +67,6 @@ jobs:
         docker compose --env-file "$RUNNER_TEMP/lakehouse-ci-private/site.env" \
           -f infra/lakehouse/compose.yaml \
           -f infra/compute/compose.yaml \
-          -f infra/orchestration/compose.yaml config --quiet
+          -f infra/orchestration/compose.yaml \
+          -f infra/demo/compose.yaml \
+          -f infra/cdc/compose.yaml config --quiet

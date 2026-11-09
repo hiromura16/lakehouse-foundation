@@ -2,6 +2,8 @@
 
 `generate-demo.py` は工場MES・ERPに似た原データを作り、ランディングディレクトリか、専用のSQL Server検証DBへ投入するだけのツールです。取り込み、メダリオン変換、Trino、Dokployは呼び出しません。会社の実データを参照する必要はありません。
 
+1件の製造指図・改訂実績・分割出荷を追う説明は [MEDALLION.md](MEDALLION.md)、n8n等からの手動実行は [GUI-WALKTHROUGHS.md](GUI-WALKTHROUGHS.md) を参照してください。
+
 ## ランディングへ生成する
 
 Python 3.10以降の標準ライブラリだけで動きます。出力先はGitリポジトリの外に置きます。既存の空ディレクトリも使えます。
@@ -60,6 +62,7 @@ DEMO_SQLSERVER_DATABASE=ManufacturingDemo
 DEMO_SQLSERVER_USER=demo_writer
 DEMO_SQLSERVER_PASSWORD=REPLACE_LOCALLY
 DEMO_SQLSERVER_CA_FILE=system
+DEMO_SQLSERVER_HOSTNAME_IN_CERTIFICATE=
 SOURCE_SQLSERVER_DATABASE=CompanyProduction
 ```
 
@@ -77,7 +80,9 @@ SOURCE_SQLSERVER_DATABASE=CompanyProduction
 
 各SQL表も全列 `nvarchar(max)` の生データ用ステージングです。異常な型の文字列と重複版を検証するための設計であり、本番MES・ERPの型付きスキーマ、制約、インデックス、更新負荷、CDC性能の再現ではありません。型・CDCの試験は実ソース契約に対応した別の試験で行います。
 
-接続は暗号化を必須にし、通常はCAと証明書のホスト名も検証します。`DEMO_SQLSERVER_CA_FILE` はOSの信頼ストアを使う `system`、または社内CAのPEMファイルを指定します。FreeTDSの `require` は暗号化を要求し、証明書検証には `ca file` の指定も必要なので、ツールはプロセス専用設定で両方を指定します。[FreeTDS公式設定](https://www.freetds.org/userguide/freetdsconf.htm)、[pymssqlの暗号化引数](https://github.com/pymssql/pymssql/blob/master/docs/ref/pymssql.rst)
+接続は暗号化を必須にし、通常はCAと証明書のホスト名も検証します。`DEMO_SQLSERVER_CA_FILE` はOSの信頼ストアを使う `system`、または社内CAのPEMファイルを指定します。FreeTDSの `require` は暗号化を要求し、証明書検証には `ca file` の指定も必要なので、ツールはプロセス専用設定で両方を指定します。[FreeTDS公式設定](https://www.freetds.org/userguide/freetdsconf.html)、[pymssqlの暗号化引数](https://github.com/pymssql/pymssql/blob/master/docs/ref/pymssql.rst)
+
+`DEMO_SQLSERVER_HOSTNAME_IN_CERTIFICATE` は省略可能です。接続alias/IPと証明書名が異なる場合に限り、管理者が確認した証明書の照合名を指定します。英数字・`_`・`.`・`-` の1〜253文字を許可し、改行や設定文の挿入は拒否します。FreeTDSの `certificate hostname` を使ってCA検証と明示名の照合を維持し、空欄なら接続hostを照合します。[FreeTDS公式設定](https://www.freetds.org/userguide/freetdsconf.html)
 
 自己署名証明書のローカル検証DBに限り、`--test-trust-server-certificate` で証明書検証を例外扱いできます。このフラグはloopback接続だけを許可し、暗号化自体は必須のままです。会社接続でこの例外は使いません。
 
@@ -107,3 +112,28 @@ Icebergの置換コミットは表ごとです。全6表・隔離表・Goldを�
 原本155行は、Silverの145行、Quarantineの8行、重複・旧版の2行に分かれます。
 
 工場集計の合計は計画2347、良品2154、不良62、生産2216、停止185分です。受注集計は受注1435、出荷1363、残72、納期後出荷132・4件です。fixtureはこれらの合計に加えて日別・受注別の詳細、最新改訂版、遅延到着日、不正文字列の保持も照合します。別パラメーターの生成結果にこの固定fixtureを当てないでください。
+
+## 最初の確認を小さく進める
+
+素材と処理の役割を分けて確認する例です。coreが起動済みで、例の出力先がprivate envの `LANDING_DIR` と一致することを前提にします。
+
+```bash
+export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
+python3 scripts/generate-demo.py \
+  --destination landing --output /srv/lakehouse/landing \
+  --seed 42 --orders 20 --days 7 --scenario edge
+./scripts/lakehouse.sh ingest
+./scripts/lakehouse.sh medallion
+```
+
+6つの業務原本だけなら、初回ingestは6件取り込み・0件skip、その後のmedallionでは0件取り込み・6件skipとSQL14文が目安です。すでに同じ素材がある場合や画像等を追加した場合は件数が変わります。固定の期待値確認は、通常の業務namespaceと分ける `./scripts/lakehouse.sh verify` を使います。verify側は別に画像1枚も作るため、初回7件取り込み・再投入7件skipになります。
+
+`manifest.json` だけを共有しても素材は転送されません。各CSV/JSONLと対応する `.ready` が必要です。生成した素材を別のランディングへコピーするときは、原本を先に完成させ、readyを最後に公開します。
+
+## 件数を増やすときの境界
+
+生成器の `--orders` 上限と、workerが受け付けるファイルの上限は別です。1指図あたりMES実績2行、1受注あたり出荷2行を作り、edgeでは異常・改訂等の行も追加します。`--orders 100000` を指定できることは、できた全ファイルを標準workerが一度に取り込めることを意味しません。
+
+標準workerは1原本16MiB以下、契約付きCSV/JSONは100000行以下です。ファイルを大きくする場合は、生成後のbyte数と実際の明細件数を先に確認します。`--force` は上書きの承認だけで、取り込み上限を解除しません。
+
+同じパスを更新すると、そのファイル由来の現在のBronze行を置き換えます。ファイルやreadyを削除しただけでは、既に取り込んだ行は消えません。全件ファイルの置換と、DBのINSERT/UPDATE/DELETEイベントの追跡は別の契約です。詳細は [再投入・更新・削除](MEDALLION.md#8-完了マーカー再投入更新削除) を参照してください。

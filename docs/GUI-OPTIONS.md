@@ -1,6 +1,6 @@
 # GUIで設定・操作する選択肢
 
-調査日: 2026-11-09。GUIを備えた既存製品はある。今回の第一案は **n8nで実行手順を可視化し、Bronzeの取り込みはPyIceberg、Silver/Goldの変換はTrino SQLとしてGit管理する構成**。業務ルールはSQLとJSONのデータ契約で定義し、GUIから登録済みの処理を呼び出す。
+調査日: 2026-11-09。現在の操作入口は **Streamlit + FastAPI** で、素材投入、設定保存、状態確認、登録済み処理、AI context取得を提供する。[操作GUI](DEMO-GUI.md) と [API/Swagger](API.md) に手順をまとめている。n8nは実行手順の可視化・連携に使い、CDCの管理にはKafbat UIも提供する。Bronzeの取り込みはPyIceberg、Silver/Goldの変換はTrino SQLとしてGit管理し、業務ルールはSQLとJSONのデータ契約で定義する。
 
 GUIで「実行順序やタイミングを組む」ことと、「列の型・結合・集計を画面で定義する」ことは分けて選ぶ。後者まで必要ならApache Hopが有力な追加候補となる。以下は公式資料で確認した製品機能の比較であり、この基盤との接続試験が済んだという意味ではない。
 
@@ -8,7 +8,7 @@ GUIで「実行順序やタイミングを組む」ことと、「列の型・�
 
 | 候補 | GUIで設定できる範囲 | Iceberg RESTへの接続 | 追加する運用対象・適用先 |
 | --- | --- | --- | --- |
-| **n8n：今回の第一案** | 手動/定期起動、API呼び出し、分岐、通知。列の結合・型変換・集計は登録済みSQL/JSON契約で定義 | n8nはジョブAPIまたはTrinoのHTTP APIを呼ぶ。RESTカタログとS3への接続はPyIceberg/Trino側に集約 | 予定するautomationプロファイルを利用。大量の明細をn8n内に展開せず、ジョブID・結果件数・状態を渡す |
+| **n8n：同梱の連携GUI** | 手動/定期起動、API呼び出し、分岐、通知。列の結合・型変換・集計は登録済みSQL/JSON契約で定義 | n8nはジョブAPIまたはTrinoのHTTP APIを呼ぶ。RESTカタログとS3への接続はPyIceberg/Trino側に集約 | 実装済みのautomationプロファイルを利用。大量の明細をn8n内に展開せず、結果件数・状態を渡す |
 | **Apache Hop** | パイプライン画面で入力・列選択・計算・条件・結合等を組む。SQL実行ステップもある | 最新manualのLake table input/outputはHop engineでIcebergのRESTカタログに対応。TABLEモードでカタログとS3を設定する | GUIとJavaの実行環境。ブラウザ運用ならHop Web/Serverも対象。Sparkは必要な機能だけで追加。変換定義を画面中心に作りたい場合 |
 | **Apache NiFi** | ブラウザでファイル/DB取得、Record変換、経路分岐、失敗時の処理を組む。細かいルールにはRecordPath/式/SQLを入力 | PutIcebergRecord + RESTIcebergCatalog + S3 FileIO/Parquet writer/Record readerを設定 | JVM、キュー、Content/FlowFile/Provenanceリポジトリの容量を管理。継続取り込みや多数の経路・再送を可視化したい場合 |
 | **Airbyte** | 接続元/先、表・列、同期方式、実行間隔を画面で設定。任意の業務集計を描くGUIではない | MSSQL sourceはCDC対応。S3 Data Lake destinationはS3互換保存先とRESTカタログに対応 | Kubernetes/ジョブ実行基盤。SQL Server等からの複製を製品化したコネクターに任せたい場合。今回のComposeにそのまま1コンテナ追加する構成ではない |

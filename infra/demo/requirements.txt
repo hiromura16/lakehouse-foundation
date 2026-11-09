@@ -1,0 +1,7 @@
+# Versions checked against official PyPI metadata on 2026-11-09.
+streamlit==1.67.0
+pymssql==2.4.6
+fastapi==0.162.2
+uvicorn==0.54.0
+httpx==0.28.1
+trino==0.340.0

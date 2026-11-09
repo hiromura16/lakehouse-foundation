@@ -8,7 +8,13 @@
 
 標準の core は **SeaweedFS + Lakekeeper + PostgreSQL + Trino** です。n8n は `automation`、Grafana / Prometheus は `monitoring`、Sparkの相互参照スモークは `compute`、Airflowの手動DAGは `orchestration` プロファイルで追加します。Dokploy、Samba、Docker daemon のプロキシは、それぞれ独立したホスト設定として扱います。会社の既存 SQL Server は外部データソースとして接続し、この基盤の Compose では新たなSQL Serverを構築しません。
 
-手動のファイル取り込みと、Trino SQLによるSilver・隔離・Goldのメダリオン処理を提供します。CDC、業務BI、AI等の拡張計画は後半に示します。構想に含まれることと、導入・実地検証が完了していることは区別します。
+ファイル取り込みとTrino SQLによるメダリオン、任意のSQL Server CDC、Streamlit/FastAPIの操作画面を提供します。AI向けにはsnapshot付きcontextとLangChain連携例を用意し、モデル推論や業務BI等の拡張計画は後半に示します。構想に含まれることと、導入・実地検証が完了していることは区別します。
+
+## 全体構成図
+
+![Lakehouse Foundation 全体構成](assets/architecture.svg)
+
+ロゴの公式配布元と再生成手順は [図版の出典](assets/README.md) を参照してください。
 
 ## 標準構成
 
@@ -22,7 +28,7 @@
 | 初期化・取り込み・検証 | 専用ワーカー | S3/Warehouseの準備、ファイル取り込み、SQL実行、合成データの往復試験 |
 | メダリオン変換 | PyIcebergでBronze、Trino SQLでSilver/Gold | 原本の由来を保持し、型変換・重複排除・隔離・日次集計 |
 | ファイル受け口 | ホストのSamba共有（別設定） | `LANDING_DIR` にCSV・JSON・画像等を投入 |
-| 外部業務DB | 会社のSQL Server | サイト設定で指定。基盤からの参照と将来のCDCの接続先 |
+| 外部業務DB | 会社のSQL Server | サイト設定で指定。読み取り専用抽出と任意CDCの接続先 |
 | 任意の自動化 | n8n + 専用PostgreSQL | HTTP連携、依頼・承認、ジョブの呼び出し |
 | 任意の監視 | Prometheus + Grafana | メトリクス保存と可視化 |
 | 管理基盤 | Dokploy（別導入） | コンテナの配置管理。coreの手動起動も独立して可能 |
@@ -36,7 +42,7 @@ flowchart LR
   INPUT["Samba landing<br/>CSV / JSON / 画像 + ready"] --> INGEST["取り込みワーカー<br/>手動 / n8n"]
   INGEST --> RAW["SeaweedFS S3<br/>原本"]
   INGEST --> ICE["Iceberg v2 / Parquet<br/>Bronze → Silver → Gold"]
-  SQL["会社の SQL Server"] -.-> CDC["将来の CDC / バッチ"]
+  SQL["会社の SQL Server"] -.-> CDC["Debezium / Kafka<br/>任意のCDC"]
   CDC -.-> ICE
   CAT["Lakekeeper REST<br/>PostgreSQL"] --- ICE
   ICE --> TRINO["Trino SQL"]
@@ -46,7 +52,7 @@ flowchart LR
   AI -.-> ICE
 ```
 
-実線は提供するデータ経路、点線は後続の連携計画です。n8nは任意プロファイルです。Samba投入後の取り込みは明示的な実行で行い、常駐の自動監視や会社SQL ServerのCDCを、この図だけで実装済みと扱いません。
+実線は標準のデータ経路、点線は任意profileまたは外部拡張の接続を表します。点線だけで未実装を意味するものではなく、CDCは同梱済み、OCR・埋め込みは追加計画です。n8nは任意プロファイルです。Samba投入後の取り込みは明示的な実行で行います。CDCは専用の任意profileとnamespaceを使い、会社DBでの有効化・接続はDBA手順に従って確認します。
 
 ## 起動と接続の契約
 
@@ -87,9 +93,9 @@ coreではDocker内部名を使ってLakekeeperとS3に接続します。会社S
 
 外部接続項目は `SOURCE_SQLSERVER_HOST`、`SOURCE_SQLSERVER_PORT`、`SOURCE_SQLSERVER_DATABASE`、`SOURCE_SQLSERVER_USER`、`SOURCE_SQLSERVER_PASSWORD` です。実値をリポジトリに書かず、用途に合う権限の利用者を設定します。
 
-初期段階は接続情報と参照カタログの見本を用意します。到達性チェックでは名前解決・TCP接続を区別し、TCP接続だけで認証・SQL実行・CDCが成功したとは判断しません。会社の実機で確認できるまで、外部DBの疎通・認証・証明書・権限は未検証です。
+バッチ抽出は許可した表・列のSELECTと完了マーカーの発行を提供します。CDCはDebezium/Kafkaと専用consumerでrawイベント・現在値・派生表・再開checkpointを管理します。詳細は [SQL抽出](SOURCE-SQLSERVER.md) と [CDC](CDC.md) を参照してください。到達性チェックでは名前解決・TCP接続を区別し、TCP接続だけで認証・SQL実行・CDCが成功したとは判断しません。会社の実機で確認できるまで、外部DBの疎通・認証・証明書・権限は未検証です。
 
-CDCを追加する際は Debezium + Apache Kafka（KRaft）を候補にし、DB管理者と対象DB・表のCDC設定、SQL Server Agent、参照権限を確認します。初期スナップショット、追加・更新・削除、再起動、DDL変更、重複イベントを試験します。ソースLSNとイベント順序を保持し、主キーごとの現在値を再生成できる設計にします。[Debezium公式](https://debezium.io/documentation/reference/connectors/sqlserver.html)
+`cdc` profileではDebezium + Apache Kafka（KRaft）を使い、DB管理者と対象DB・表のCDC設定、SQL Server Agent、参照権限を確認します。初期スナップショット、追加・更新・削除、再起動、DDL変更、重複イベントを試験します。ソースLSNとイベント順序を保持し、主キーごとの現在値を再生成できる設計にします。[Debezium公式](https://debezium.io/documentation/reference/connectors/sqlserver.html)
 
 ## ファイル取り込みとメダリオン
 
@@ -134,7 +140,7 @@ Goldは良品・不良・停止時間・歩留まり・計画達成率と、受�
 
 n8nテンプレートはGUIからワーカーの `/run` を呼び、`medallion` を実行する入口です。Header AuthのBearerトークンはn8nの資格情報画面で設定し、テンプレートへ埋め込みません。n8nは開始条件や接続をGUIで設定するもので、列のマッピングや型規則はSQLを編集します。
 
-初期の共通形式はIceberg v2 + Parquetです。更新表はcopy-on-writeから始め、v3機能は採用する全エンジンで互換性を試験してから有効にします。Bronzeの原本ハッシュと取り込み時刻を残し、将来のAI処理でモデル名・版・処理版・参照snapshotを追加できる由来情報を確保します。現段階でAI推論を実装したものではありません。[Iceberg仕様](https://iceberg.apache.org/spec/)
+初期の共通形式はIceberg v2 + Parquetです。更新表はcopy-on-writeから始め、v3機能は採用する全エンジンで互換性を試験してから有効にします。Bronzeの原本ハッシュと取り込み時刻を残し、将来のAI処理でモデル名・版・処理版・参照snapshotを追加できる由来情報を確保します。snapshotを固定したGold contextとLangChainの連携例は [AI連携](AI-READINESS.md) へ追加しています。モデル推論自体の実機評価は別の段階です。[Iceberg仕様](https://iceberg.apache.org/spec/)
 
 ## AI・分析・運用の拡張
 
@@ -173,3 +179,9 @@ Cloudflare TunnelにはUDPまたはTCPの7844が必要で、一般的なHTTPプ�
 SeaweedFS、Lakekeeper、Trino、Icebergを中心に、APIとオープンな保存形式を境界とします。PolarisはRESTカタログ、RustFSはS3保存先の代替候補です。MinIO本家OSSは公式リポジトリが2026-04-25にアーカイブされているため、新規導入では保守継続性を別に評価します。[Polaris](https://polaris.apache.org/downloads/) / [RustFS](https://github.com/rustfs/rustfs) / [MinIO](https://github.com/minio/minio)
 
 n8n CommunityはSustainable Use Licenseのソース公開ソフトウェアで、社内利用と外部利用者への編集機能提供では条件が異なります。GrafanaはAGPL系です。製品のライセンス、依存イメージ、モデルの利用条件をそれぞれ記録します。[n8n公式](https://support.n8n.io/article/can-i-use-your-license-for-my-use-case?trk=article-ssr-frontend-pulse_little-text-block) / [Grafanaライセンス](https://grafana.com/licensing/)
+
+## AI・外部サービスの配置図
+
+![AIとCloudflare連携の選択肢](assets/ai-cloudflare.svg)
+
+[AI連携](AI-READINESS.md) と [Cloudflareの用途](CLOUDFLARE.md) に、同梱実装と選択式の拡張を説明しています。Streamlit/FastAPIは [GUI](DEMO-GUI.md)、CDCは [CDC](CDC.md) を参照してください。

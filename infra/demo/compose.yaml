@@ -1,0 +1,103 @@
+# Optional GUI and authenticated API. Merge after the core Compose file.
+# The API alone writes synthetic sources and the dedicated private settings.
+x-demo-logging: &demo_logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+
+services:
+  demo-api:
+    profiles: [demo]
+    image: ${COMPOSE_PROJECT_NAME:-lakehouse}-demo:local
+    build:
+      context: ../..
+      dockerfile: infra/demo/Dockerfile
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+        http_proxy: ${http_proxy:-}
+        https_proxy: ${https_proxy:-}
+        no_proxy: ${no_proxy:-}
+    user: "${WORKER_UID:?Set the landing reader UID}:${WORKER_GID:?Set the landing reader GID}"
+    restart: unless-stopped
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    logging: *demo_logging
+    mem_limit: 512m
+    cpus: 1
+    environment:
+      CONTROL_API_TOKEN: ${CONTROL_API_TOKEN:-}
+      CONTROL_SETTINGS_FILE: /private/${CONTROL_SETTINGS_NAME:-site.env}
+      DEMO_LANDING_DIR: /landing
+      WORKER_URL: http://worker:8000
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-}
+      http_proxy: ${http_proxy:-}
+      https_proxy: ${https_proxy:-}
+      no_proxy: ${no_proxy:-}
+    # Mount the private directory so an atomic settings replace is possible.
+    # It must be dedicated to this environment and owned by WORKER_UID/GID.
+    volumes:
+      - type: bind
+        source: ${LANDING_DIR:?Set an external landing directory}
+        target: /landing
+      - type: bind
+        source: ${CONTROL_SETTINGS_DIR:-/srv/lakehouse/private}
+        target: /private
+    ports:
+      - ${BIND_IP:-127.0.0.1}:${DEMO_API_PORT:-8502}:8000
+    command:
+      - python
+      - -m
+      - uvicorn
+      - api:app
+      - --app-dir
+      - /opt/lakehouse/infra/demo
+      - --host
+      - 0.0.0.0
+      - --port
+      - '8000'
+      - --no-access-log
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=3)
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # The browser UI holds no host mounts; only its server calls the API.
+  demo:
+    profiles: [demo]
+    image: ${COMPOSE_PROJECT_NAME:-lakehouse}-demo:local
+    user: "${WORKER_UID:?Set the landing reader UID}:${WORKER_GID:?Set the landing reader GID}"
+    restart: unless-stopped
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    logging: *demo_logging
+    mem_limit: 768m
+    cpus: 1
+    environment:
+      DEMO_API_URL: http://demo-api:8000
+      CONTROL_API_TOKEN: ${CONTROL_API_TOKEN:-}
+    ports:
+      - ${BIND_IP:-127.0.0.1}:${DEMO_GUI_PORT:-8501}:8501
+    depends_on:
+      demo-api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://127.0.0.1:8501/_stcore/health", timeout=3)
+      interval: 10s
+      timeout: 5s
+      retries: 30

@@ -2,6 +2,8 @@
 
 検証日: 2026-11-09。Linux x86-64の単一ホスト上に、既存アプリと別のネットワーク・DB・S3・資格情報・ランディング先を持つ環境を作成しました。公開用の機械可読結果は [verification.json](verification.json) に保存しています。接続先、管理APIの記録、認証情報、生ログは公開しません。
 
+公開HTTPS URLからの認証不要clone、原本Compose、原本Dockerfileの `pip --require-hashes` ビルドが成功しました。この別環境でも画像保存・メダリオンの全期待値・再投入を検証済みです。[公開CI](https://github.com/hiromura16/lakehouse-foundation/actions) にもPython書式、SQL、全profileのCompose検査を定義しています。現在のローカル同等検査では140テストが成功しています。
+
 ## 実機で成功した経路
 
 | 経路 | 実行した確認 |
@@ -30,6 +32,18 @@ PythonはRuff、79文字のpycodestyle、unittest、SQLはSQLFluffのTrino方言
 
 ## 導入先で確認すること
 
-会社の本物のSQL Server、企業proxy・CA、会社LAN、IdP、業務データの量や例外、バックアップからの復旧、並列writer、冗長化、CDC、AI推論は今回の成功結果に含めません。既存Sambaアカウントのパスワードを変更していないため、認証付きSMBコピーは別途確認が必要です。
+会社の本物のSQL Server、企業proxy・CA、会社LAN、IdP、業務データの量や例外、バックアップからの復旧、並列writer、冗長化、会社DBへのCDC接続とモデル推論は今回の成功結果に含めません。既存Sambaアカウントのパスワードを変更していないため、認証付きSMBコピーは別途確認が必要です。
 
 Airflowのstandalone、固定S3資格情報、内部の未認証Trino/カタログは閉域の導入検証向けです。共有・本番利用前にはアクセス制御と運用要件を適用します。検証が成功したことだけで本番運用の準備が完了したとは扱いません。
+
+## GUI・API・AI・CDCの追加検証
+
+- Streamlit 1.67.0をPython 3.12/3.14で描画し、投入・設定・処理・状態・AIの操作をAppTestで確認しました。
+- FastAPIは認証、秘密値非表示、0600のatomic保存、未反映状態、有限ジョブ、非同期処理、CDC固定操作、snapshot参照をunit testで確認しました。
+- Swagger UI 5.34.1は公式npm archiveのSHA-512を照合し、JS/CSSをイメージ内から配信します。
+- Goldのmain refを取得して版を固定し、34行を実際のLangChain Documentへ変換しました。モデル推論は実行していません。export側のコード・参照SQLのhashは、既存snapshotを作った変換版の保証には使いません。
+- 別の専用試験DBでSQL Server CDCを有効化し、通常TLSと証明書名照合でDebezium 3.7.1 / Kafka 4.4.0へ接続しました。初回144行、INSERT/UPDATE/DELETE各6行を、raw・Silver・Goldで照合しました。
+- CDC consumerの再起動後もrawは168件かつdistinct168件で増えず、Silverの6表が144行の初期状態へ戻ること、Kafbatでconsumer lagが0であることを確認しました。
+- SQL投入GUI用には試験DBだけの専用ユーザーを作り、sysadmin権限がないこと、通常TLSと証明書名照合が成功することを確認しました。
+
+GUIとAPIを含む公開Git原本コンテナの受け入れ結果は、最終配置後にこの記録へ追記します。

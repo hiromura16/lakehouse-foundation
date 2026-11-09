@@ -14,6 +14,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from xml.parsers import expat
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_TEXT_BYTES = 8 * 1024 * 1024
@@ -61,6 +62,42 @@ FORBIDDEN_SUFFIXES = {
 }
 CONTAINER_USERS = {"airflow", "curl_user", "jovyan", "node", "nonroot"}
 IPV4 = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?")
+SVG_NAMESPACE = "http://www.w3.org/2000/svg"
+SVG_TAG = re.compile(rb"<(?:[^>\"']|\"[^\"]*\"|'[^']*')*>")
+SVG_ATTRIBUTE = re.compile(
+    rb"([A-Za-z_:][\w:.-]*)\s*=\s*([\"'])(.*?)\2", re.DOTALL
+)
+SVG_GEOMETRY = {
+    b"d",
+    b"points",
+    b"viewBox",
+    b"transform",
+    b"gradientTransform",
+    b"patternTransform",
+    b"x",
+    b"y",
+    b"x1",
+    b"x2",
+    b"y1",
+    b"y2",
+    b"cx",
+    b"cy",
+    b"r",
+    b"rx",
+    b"ry",
+    b"width",
+    b"height",
+    b"stroke-width",
+    b"stroke-dasharray",
+    b"stroke-dashoffset",
+}
+SVG_PATH_VALUE = re.compile(rb"[MmZzLlHhVvCcSsQqTtAaEe0-9+.,\s-]*")
+SVG_NUMERIC_VALUE = re.compile(rb"[Ee0-9+.,\s-]*")
+# Possessive repeats avoid backtracking over long malformed attributes.
+SVG_TRANSFORM_VALUE = re.compile(
+    rb"\s*+(?:(?:matrix|translate|scale|rotate|skewX|skewY)"
+    rb"\s*+\([Ee0-9+.,\s-]++\)\s*+,?\s*+)*+"
+)
 HOME_PATH = re.compile(r"/home/([A-Za-z0-9_.-]+)(?=/|[\s\"':),]|$)")
 SENSITIVE_KEY = re.compile(
     r"(?i)(password|passwd|secret|token|credential|api[_-]?key|access[_-]?key)"
@@ -235,9 +272,67 @@ def permitted_ip(value):
     return False
 
 
+def svg_ip_text(name, text):
+    """Mask valid SVG geometry only for IP scanning, retaining line breaks."""
+    if PurePosixPath(name).suffix.casefold() != ".svg":
+        return text
+    source = text.encode("utf-8")
+    parser = expat.ParserCreate(namespace_separator="}")
+    spans = []
+    root = None
+
+    def reject_doctype(*_):
+        """Leave DTD/entity-bearing input fully subject to IP scanning."""
+        raise ValueError("SVG geometry masking does not process DTDs.")
+
+    def start_element(element, _):
+        """Locate actual XML attributes, excluding comments and text."""
+        nonlocal root
+        if root is None:
+            root = element
+        if root not in {"svg", SVG_NAMESPACE + "}svg"}:
+            return
+        if "}" in element and not element.startswith(SVG_NAMESPACE + "}"):
+            return
+        tag = SVG_TAG.match(source, parser.CurrentByteIndex)
+        if tag is None:
+            return
+        for attribute in SVG_ATTRIBUTE.finditer(tag.group()):
+            key, _, value = attribute.groups()
+            if key not in SVG_GEOMETRY:
+                continue
+            if key == b"d":
+                grammar = SVG_PATH_VALUE
+            elif key.endswith(b"Transform") or key == b"transform":
+                grammar = SVG_TRANSFORM_VALUE
+            else:
+                grammar = SVG_NUMERIC_VALUE
+            if grammar.fullmatch(value):
+                spans.append(
+                    (
+                        tag.start() + attribute.start(3),
+                        tag.start() + attribute.end(3),
+                    )
+                )
+
+    parser.StartElementHandler = start_element
+    parser.StartDoctypeDeclHandler = reject_doctype
+    try:
+        parser.Parse(source, True)
+    except (expat.ExpatError, ValueError):
+        return text
+    masked = bytearray(source)
+    for start, end in spans:
+        masked[start:end] = bytes(
+            char if char in (10, 13) else 32 for char in source[start:end]
+        )
+    return masked.decode("utf-8")
+
+
 def scan_text(name, text, terms, secrets):
     """Report content policy matches without emitting lines or values."""
     findings = []
+    ip_lines = svg_ip_text(name, text).splitlines()
     for number, line in enumerate(text.splitlines(), 1):
         for rule, expression in RULES.items():
             if expression.search(line):
@@ -246,7 +341,10 @@ def scan_text(name, text, terms, secrets):
             findings.append(Finding(name, number, "private-deny-term"))
         if any(value in line for value in secrets):
             findings.append(Finding(name, number, "private-credential-value"))
-        if any(not permitted_ip(hit.group()) for hit in IPV4.finditer(line)):
+        if any(
+            not permitted_ip(hit.group())
+            for hit in IPV4.finditer(ip_lines[number - 1])
+        ):
             findings.append(Finding(name, number, "concrete-ipv4-address"))
         if any(
             hit.group(1) not in CONTAINER_USERS

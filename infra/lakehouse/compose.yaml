@@ -380,10 +380,18 @@ configs:
     file: ../monitoring/grafana-datasource.yml
 
 volumes:
-  catalog-db: {}
-  storage: {}
-  trino: {}
-  n8n-db: {}
-  n8n: {}
-  prometheus: {}
-  grafana: {}
+  # Leave DATA_VOLUME_PREFIX empty unless retaining existing volume names.
+  catalog-db:
+    name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_catalog-db
+  storage:
+    name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_storage
+  trino:
+    name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_trino
+  n8n-db:
+    name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_n8n-db
+  n8n:
+    name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_n8n
+  prometheus:
+    name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_prometheus
+  grafana:
+    name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_grafana

@@ -1,0 +1,4 @@
+# Separate from the ingestion worker and from Airflow's constrained environment.
+langchain-core==1.7.6
+langchain-ollama==1.1.0
+trino==0.340.0

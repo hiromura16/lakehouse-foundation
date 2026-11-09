@@ -293,5 +293,39 @@ class CompletionMarkerTests(unittest.TestCase):
         stream.read.assert_called_once_with(67)
 
 
+class SourceNameTests(unittest.TestCase):
+    """Keep GUI microbatches within the declared business-source contract."""
+
+    def test_canonical_and_generated_batch_names_resolve(self):
+        source = {"table": "mes_events", "path": "json/mes_events.jsonl"}
+        with mock.patch.object(WORKER, "CONTRACT", [source]):
+            for name in [
+                "json/mes_events.jsonl",
+                "json/mes_events__abcdef012345_0001.jsonl",
+                "json/mes_events__abcdef012345_9999.jsonl",
+            ]:
+                self.assertIs(WORKER.resolve_source(name), source)
+
+    def test_unknown_or_ambiguous_names_stay_unstructured(self):
+        source = {"table": "mes_events", "path": "json/mes_events.jsonl"}
+        with mock.patch.object(WORKER, "CONTRACT", [source]):
+            for name in [
+                "json/mes_events__abcdef012345_0000.jsonl",
+                "json/mes_events__ABCDEF012345_0001.jsonl",
+                "json/mes_events__abcdef012345_10000.jsonl",
+                "other/mes_events__abcdef012345_0001.jsonl",
+                "json/unknown__abcdef012345_0001.jsonl",
+                "json/mes_events.backup.jsonl",
+            ]:
+                self.assertIsNone(WORKER.resolve_source(name))
+
+    def test_cleanup_refuses_persistent_cdc_and_default_namespaces(self):
+        catalog = mock.Mock()
+        for prefix in ["", "cdc_", "cdc_bronze"]:
+            with self.assertRaises(ValueError):
+                WORKER.cleanup_verification(catalog, prefix)
+        catalog.namespace_exists.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

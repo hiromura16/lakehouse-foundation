@@ -1,0 +1,47 @@
+{
+  "checked_on": "2026-11-09",
+  "logos": [
+    {
+      "name": "spark",
+      "source_url": "https://spark.apache.org/images/spark-logo-rev.svg",
+      "sha256": "19f38764a2d20e3cc24e7b57acf1fb16bc8a3711437232ab20f452d5bca7fdac",
+      "format": "svg"
+    },
+    {
+      "name": "lakekeeper",
+      "source_url": "https://lakekeeper.io/assets/bear.svg",
+      "sha256": "e393fd18542d8ac6549670efd8bb29f7609eec2e9c2c9c5e40519121230b8f80",
+      "format": "svg"
+    },
+    {
+      "name": "trino",
+      "source_url": "https://trino.io/assets/images/trino-logo/trino-ko_tiny-alt.svg",
+      "sha256": "d1dd400467040aaa53d908d3ea743579874625d46d5223f6f1ea7568ae169caa",
+      "format": "svg"
+    },
+    {
+      "name": "prometheus",
+      "source_url": "https://prometheus.io/_next/static/media/prometheus-logo.7aa022e5.svg",
+      "sha256": "dc02224d9e9ded04bbf105770b558880e8b55c04a5209f822be4cd3d103976bc",
+      "format": "svg"
+    },
+    {
+      "name": "iceberg",
+      "source_url": "https://iceberg.apache.org/assets/images/Iceberg-logo.svg",
+      "sha256": "752dc874fb32746404f4de441958993459e8fcbe4f1805517f7d62d30db20759",
+      "format": "svg"
+    },
+    {
+      "name": "grafana",
+      "source_url": "https://raw.githubusercontent.com/grafana/grafana/main/public/img/grafana_icon.svg",
+      "sha256": "50806d5a65779e79f746398570e0fc322d5de55e19f0be87a275963f0947bb5e",
+      "format": "svg"
+    },
+    {
+      "name": "cloudflare",
+      "source_url": "https://www.cloudflare.com/img/logo-cloudflare-dark.svg",
+      "sha256": "3863e9324177796abc3fe195e77f0ede0f1197296fe49d0ef11e9633c292a9e0",
+      "format": "svg"
+    }
+  ]
+}

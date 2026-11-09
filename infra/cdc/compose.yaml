@@ -1,0 +1,204 @@
+# Merge with the foundation's core Compose. Source SQL Server remains external.
+# All optional CDC resources use a separate durable volume and namespace.
+x-cdc-environment: &cdc_environment
+  CDC_SQLSERVER_HOST: ${CDC_SQLSERVER_HOST:-}
+  CDC_SQLSERVER_PORT: ${CDC_SQLSERVER_PORT:-1433}
+  CDC_SQLSERVER_DATABASE: ${CDC_SQLSERVER_DATABASE:-}
+  CDC_SQLSERVER_USER: ${CDC_SQLSERVER_USER:-}
+  CDC_SQLSERVER_PASSWORD: ${CDC_SQLSERVER_PASSWORD:-}
+  CDC_SQLSERVER_TRUSTSTORE: ${CDC_SQLSERVER_TRUSTSTORE:-}
+  CDC_SQLSERVER_TRUSTSTORE_PASSWORD: ${CDC_SQLSERVER_TRUSTSTORE_PASSWORD:-}
+  CDC_SQLSERVER_HOSTNAME_IN_CERTIFICATE: ${CDC_SQLSERVER_HOSTNAME_IN_CERTIFICATE:-}
+  CDC_SQLSERVER_AGENT_STATUS_QUERY: ${CDC_SQLSERVER_AGENT_STATUS_QUERY:-}
+  CDC_TEST_TRUST_SERVER_CERTIFICATE: ${CDC_TEST_TRUST_SERVER_CERTIFICATE:-false}
+  CDC_TOPIC_PREFIX: ${CDC_TOPIC_PREFIX:-factory}
+  CDC_CONNECTOR_NAME: ${CDC_CONNECTOR_NAME:-factory-source}
+  CDC_GROUP_ID: ${CDC_GROUP_ID:-lakehouse-cdc}
+  CDC_BATCH_SIZE: ${CDC_BATCH_SIZE:-100}
+  CDC_POLL_SECONDS: ${CDC_POLL_SECONDS:-5}
+  CDC_CONNECT_PORT: ${CDC_CONNECT_PORT:-8083}
+
+x-cdc-labels: &cdc_labels
+  app.owner: lakehouse-foundation
+  traefik.enable: 'false'
+
+x-cdc-logging: &cdc_logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+
+services:
+  cdc-kafka:
+    profiles: [cdc]
+    image: apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f
+    restart: unless-stopped
+    labels: *cdc_labels
+    logging: *cdc_logging
+    mem_limit: 768m
+    environment:
+      CLUSTER_ID: ${CDC_KAFKA_CLUSTER_ID:-}
+      KAFKA_NODE_ID: '1'
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://cdc-kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@cdc-kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: '1'
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: '1'
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: '1'
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_NUM_PARTITIONS: '1'
+      KAFKA_LOG_RETENTION_HOURS: '168'
+      KAFKA_LOG_RETENTION_BYTES: '1073741824'
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx384m
+    volumes:
+      - cdc-kafka:/var/lib/kafka/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - KAFKA_HEAP_OPTS='-Xmx128m' /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null
+      interval: 10s
+      timeout: 8s
+      retries: 30
+
+  cdc-connect:
+    profiles: [cdc]
+    image: quay.io/debezium/connect:3.7.1.Final@sha256:53c6d0424d09f7ccef813c895fb9b1056a726bc14ff2e6a592856cd627ebd491
+    restart: unless-stopped
+    labels: *cdc_labels
+    logging: *cdc_logging
+    mem_limit: 1024m
+    environment:
+      <<: *cdc_environment
+      BOOTSTRAP_SERVERS: cdc-kafka:9092
+      GROUP_ID: ${CDC_GROUP_ID:-lakehouse-cdc}-connect
+      CONFIG_STORAGE_TOPIC: _connect_configs
+      OFFSET_STORAGE_TOPIC: _connect_offsets
+      STATUS_STORAGE_TOPIC: _connect_status
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: '1'
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: '1'
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: '1'
+      CONNECT_CONFIG_PROVIDERS: env
+      CONNECT_CONFIG_PROVIDERS_ENV_CLASS: org.apache.kafka.common.config.provider.EnvVarConfigProvider
+      HEAP_OPTS: -Xms256m -Xmx512m
+      ADVERTISED_HOST_NAME: cdc-connect
+    # A CA truststore contains public certificates. Mount only that file,
+    # without granting Connect access to the private table-map directory.
+    # With JVM standard CAs, the unused target is an empty /dev/null bind.
+    volumes:
+      - type: bind
+        source: ${CDC_SQLSERVER_TRUSTSTORE_FILE:-/dev/null}
+        target: /run/cdc/sqlserver-truststore.p12
+        read_only: true
+        bind:
+          create_host_path: false
+    ports:
+      - 127.0.0.1:${CDC_CONNECT_PORT:-8083}:8083
+    depends_on:
+      cdc-kafka:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD-SHELL, 'curl -fsS http://localhost:8083/connectors >/dev/null']
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # Administrator UI: broker/topic/lag views and Kafka Connect status/config.
+  cdc-ui:
+    profiles: [cdc]
+    image: ghcr.io/kafbat/kafka-ui:v1.5.0@sha256:7cda86a33344160309fdb65146332e4da65db81a945614f2fe32e210803f6fd1
+    restart: unless-stopped
+    labels: *cdc_labels
+    logging: *cdc_logging
+    mem_limit: 512m
+    environment:
+      JAVA_OPTS: -Xms128m -Xmx384m
+      KAFKA_CLUSTERS_0_NAME: factory-cdc
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: cdc-kafka:9092
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: sqlserver-capture
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://cdc-connect:8083
+      DYNAMIC_CONFIG_ENABLED: 'false'
+    ports:
+      - 127.0.0.1:${CDC_UI_PORT:-8084}:8080
+    depends_on:
+      cdc-connect:
+        condition: service_healthy
+
+  # Registration is a deliberate one-shot operation, never an automatic update.
+  cdc-register:
+    user: "${WORKER_UID:-10001}:${WORKER_GID:-10001}"
+    profiles: [cdc]
+    image: ${COMPOSE_PROJECT_NAME:-lakehouse}-cdc:local
+    build:
+      context: ../..
+      dockerfile: infra/cdc/Dockerfile
+      args:
+        CDC_UID: ${WORKER_UID:-10001}
+        CDC_GID: ${WORKER_GID:-10001}
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+        http_proxy: ${http_proxy:-}
+        https_proxy: ${https_proxy:-}
+        no_proxy: ${no_proxy:-}
+    restart: 'no'
+    labels: *cdc_labels
+    logging: *cdc_logging
+    mem_limit: 256m
+    environment: *cdc_environment
+    command: [python, /opt/lakehouse/cdc/connector.py]
+    volumes:
+      - type: bind
+        source: ${CDC_CONFIG_DIR:-/srv/lakehouse/cdc}
+        target: /run/cdc
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      cdc-connect:
+        condition: service_healthy
+
+  cdc-consumer:
+    user: "${WORKER_UID:-10001}:${WORKER_GID:-10001}"
+    profiles: [cdc]
+    image: ${COMPOSE_PROJECT_NAME:-lakehouse}-cdc:local
+    restart: 'no'
+    labels: *cdc_labels
+    logging: *cdc_logging
+    mem_limit: 1024m
+    cpus: 2
+    environment:
+      <<: *cdc_environment
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET_RAW: ${S3_BUCKET_RAW}
+      S3_BUCKET_WAREHOUSE: ${S3_BUCKET_WAREHOUSE}
+      WAREHOUSE_NAME: ${WAREHOUSE_NAME}
+      WORKER_TOKEN: ${WORKER_TOKEN}
+      NO_PROXY: storage,catalog,trino,cdc-kafka,cdc-connect,localhost,127.0.0.1
+      no_proxy: storage,catalog,trino,cdc-kafka,cdc-connect,localhost,127.0.0.1
+    volumes:
+      - cdc-state:/state
+      - type: bind
+        source: ${CDC_CONFIG_DIR:-/srv/lakehouse/cdc}
+        target: /run/cdc
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      worker:
+        condition: service_healthy
+      cdc-register:
+        condition: service_completed_successfully
+      catalog:
+        condition: service_healthy
+      trino:
+        condition: service_healthy
+
+volumes:
+  cdc-kafka:
+    name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_cdc-kafka
+  cdc-state:
+    name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_cdc-state

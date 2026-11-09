@@ -79,6 +79,7 @@ python3 scripts/configure.py --output /absolute/private/site.env
 | 設定 | 初期値・設定方法 |
 | --- | --- |
 | `COMPOSE_PROJECT_NAME` | `lakehouse`。同じDockerホストで複数環境を動かす場合は変更 |
+| `DATA_VOLUME_PREFIX` | 通常は空欄。既存volume名を引き継ぐ移行時だけ、非公開設定へ既存の接頭辞を指定 |
 | `BIND_IP` | `127.0.0.1`。他端末から接続する場合だけ導入先の限定アドレスへ変更 |
 | `LANDING_DIR` | リポジトリ外の専用絶対パス。Sambaの共有先と同じ値にする |
 | `TRINO_PORT` | `8080` |
@@ -88,7 +89,7 @@ python3 scripts/configure.py --output /absolute/private/site.env
 | `PROMETHEUS_PORT` | `9090`。monitoring有効時のみ使用 |
 | `N8N_PORT` | `5678`。automation有効時のみ使用 |
 | `AIRFLOW_PORT` | `8081`。orchestration有効時のみ使用 |
-| `COMPOSE_PROFILES` | 初期は空。`automation`、`monitoring`、`compute`、`orchestration` を必要に応じてカンマ区切り |
+| `COMPOSE_PROFILES` | 初期は空。`automation`、`monitoring`、`compute`、`orchestration`、`demo`、`cdc` を必要に応じてカンマ区切り |
 | `S3_BUCKET_RAW` | `lakehouse-raw` |
 | `S3_BUCKET_WAREHOUSE` | `lakehouse-warehouse` |
 | `WAREHOUSE_NAME` | `lakehouse` |
@@ -98,6 +99,10 @@ python3 scripts/configure.py --output /absolute/private/site.env
 | `DEMO_SQLSERVER_*` | 疑似データをSQLへ投入するときだけ設定。SOURCEとは別の専用DB |
 
 同じ `COMPOSE_PROJECT_NAME` と同じ設定ファイルを継続して使います。既存ボリュームを使う状態でDBパスワードや暗号鍵だけを変更すると、接続や復号に失敗します。設定ファイルはデータと合わせて安全にバックアップしてください。
+
+`DATA_VOLUME_PREFIX` が空欄または未設定なら、名前付きvolumeは `<Composeプロジェクト名>_<volumeキー>` となり、既定の動作は変わりません。core側のComposeに7個、Airflowに2個の計9個を定義し、CDCでは `cdc-kafka` と `cdc-state` の2個が加わり計11個です。使用するprofileに応じて実体を確認します。ランディングやprivate設定等のbind mountはこの数に含めません。指定するとデータの物理名だけがその接頭辞へ変わります。コンテナ・ネットワークの識別子である `COMPOSE_PROJECT_NAME` やDokployの `appName` と区別し、既存volume名を維持する移行専用として扱います。値は空欄、または先頭が小文字英字で、小文字英数字・ハイフン・アンダースコアからなる41文字以内です。
+
+volumeの自動rename・コピーは行いません。移行前に使用する全volumeの解決名と既存の実名を照合し、CDCを使う場合は追加の2個も含めます。旧writerを停止してから一つの配置へ切り替えます。別の環境と同じ接頭辞を共有せず、移行後も指定を保持します。詳細は [Dokployで既存volumeを引き継ぐ手順](DOKPLOY.md#既存volume名を引き継ぐ場合) を参照します。
 
 `BIND_IP=127.0.0.1` のままでは、画面をサーバー自身のブラウザーかSSHポート転送から利用します。別端末の `localhost` は別端末自身を指します。LAN等のアドレスへ変更する場合、ネットワーク制限と利用者認証を先に検討します。標準coreは単一ホストでの検証向けです。
 
@@ -190,7 +195,7 @@ python3 scripts/generate-demo.py \
 
 `both` はランディングとSQLへ投入します。SQLモードは `--allow-sql-write` が必要で、システムDBとSOURCEのDBを拒否します。毎回新しい `lh_demo_<random>` schemaを作り、6つのnvarchar staging表へ挿入します。既存schemaを再利用せず、DB作成・DROP・既存業務表の変更は行いません。SQL投入成功は後段のCDC・メダリオン成功を意味しません。
 
-以下の取り込み・メダリオンは **別の操作** として実行します。SQLからの後段連携は未実装のため、この段階のメダリオン確認には `landing` か `both` のファイルを使います。
+以下の取り込み・メダリオンは **別の操作** として実行します。このファイル経路の確認には `landing` か `both` を使います。SQLからは [読み取り専用extractor](SOURCE-SQLSERVER.md) と [CDC経路](CDC.md) も提供しています。extractorは表・列のmapping、CDCは専用の接続・対象表・有効化が必要で、素材生成だけでは開始しません。会社の実DBでの接続と受入は未検証です。
 
 Bronzeへの取り込みだけを実行する場合:
 
@@ -234,7 +239,7 @@ COMPOSE_PROFILES=automation,monitoring
 
 n8nの提供テンプレートをimportし、手動トリガーからワーカーの `/run` へ `medallion` を依頼できます。n8nの資格情報画面でHeader Authを作り、`Authorization` に `Bearer <WORKER_TOKEN>` を設定します。実トークンはprivate envの値を使い、テンプレートへ保存しません。列のマッピングや型変換の規則はSQLを編集し、GUIでは開始条件や接続を設定します。
 
-定期実行のスケジュール、CDC、業務アラート、AI処理は必要に応じて追加します。プロファイルを有効にしただけで、これらの業務フローが完成したことにはなりません。
+定期実行のスケジュール、業務アラート、モデル推論は必要に応じて追加します。実装済みの [CDC](CDC.md) は `cdc` profileで、[操作GUI/API](DEMO-GUI.md) と [AI向けcontext取得](AI-READINESS.md) は `demo` profileで利用します。接続先・権限・mapping等の準備と導入先での受入を行い、profileを有効にしただけで業務フローが完成したとは扱いません。
 
 Sparkは `spark-check` から一時ジョブとして実行します。Airflowは `orchestration` を有効化すると手動DAGを追加します。正確な版・JAR・Provider、追加のprivate鍵、GUIでのworker接続、実行手順は [COMPATIBILITY.md](COMPATIBILITY.md) を参照します。
 
@@ -258,7 +263,7 @@ SOURCE_SQLSERVER_PASSWORD=
 
 `source-check` は外部DBへの読み取り専用の到達性確認です。TCP接続を確認するもので、SQL認証、SELECT、証明書検証、CDCの成功を確認するものではありません。SQLパスワードを渡してSQLを実行したり、外部DBの状態を変更したりしません。
 
-Trinoで参照するための見本は `infra/source/sqlserver.properties.example` です。サンプルのまま本物の資格情報を公開ファイルへ書き込まず、private設定から生成したカタログを使います。JDBCの暗号化と証明書の信頼は会社の構成に合わせて確認します。
+読み取り専用extractorの表・列mappingは [sqlserver-tables.example.json](../infra/source/sqlserver-tables.example.json) を見本に、Git外のprivate設定として用意します。[SOURCE-SQLSERVER.md](SOURCE-SQLSERVER.md) の手順でSELECTとファイル出力を確認します。本物の資格情報やmappingを公開ファイルへ書き戻しません。連続取り込みには [CDC.md](CDC.md) の別手順を使い、暗号化と証明書の信頼は会社の構成に合わせて確認します。
 
 coreの初期化ジョブは会社DBへテーブル作成・更新を行いません。CDCを開始する場合は、DB管理者と対象表、CDC有効化、権限、保持期間を別途決めます。TCP疎通、認証、SELECT、CDCの順に確認し、実機へ接続するまで外部DBは未検証と記録します。
 

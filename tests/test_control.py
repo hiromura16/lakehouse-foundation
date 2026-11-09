@@ -128,6 +128,18 @@ class ControlEnvironmentTests(unittest.TestCase):
         self.assertIn("outside the repository", exit_code)
         process.assert_not_called()
 
+    def test_invalid_volume_prefix_is_rejected_before_docker(self):
+        """A data prefix must obey the same name rules as the project."""
+        content = self.env_file.read_text().replace(
+            "DATA_VOLUME_PREFIX=", "DATA_VOLUME_PREFIX=invalid/name"
+        )
+        self.env_file.write_text(content)
+        exit_code, process, _, _ = self.invoke(
+            ["plan"], fallback=str(self.env_file)
+        )
+        self.assertIn("Invalid DATA_VOLUME_PREFIX", exit_code)
+        process.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

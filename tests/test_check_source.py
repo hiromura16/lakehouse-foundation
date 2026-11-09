@@ -63,6 +63,81 @@ class PublicationChecks(unittest.TestCase):
         self.assertFalse(MODULE.permitted_ip(host))
         self.assertFalse(MODULE.permitted_ip(host + "/32"))
 
+    def test_svg_geometry_decimal_sequences_are_not_addresses(self):
+        """Accept compressed SVG numbers without weakening other formats."""
+        host = ".".join(["203", "0", "113", "71"])
+        text = (
+            '<svg xmlns="http://www.w3.org/2000/svg"\n'
+            ' viewBox="' + host + ' 0"><title>合成の図形</title>\n'
+            '<path d="M ' + host + ' 0"/>\n'
+            '<polygon points="' + host + ' 0"/>\n'
+            '<g transform="matrix(' + host + ' 0 0 0)"/>\n'
+            "</svg>"
+        )
+        self.assertEqual(
+            MODULE.scan_text("fixture.svg", text, set(), set()), []
+        )
+        findings = MODULE.scan_text("fixture.txt", text, set(), set())
+        self.assertIn(
+            "concrete-ipv4-address", {item.rule for item in findings}
+        )
+
+    def test_svg_links_text_and_non_geometry_keep_address_detection(self):
+        """Scrub actual geometry attributes, never links, text or comments."""
+        host = ".".join(["203", "0", "113", "71"])
+        fragments = [
+            '<a href="http://' + host + '/"/>',
+            "<title>" + host + "</title>",
+            "<text>" + host + "</text>",
+            '<g data-note="' + host + '"/>',
+            '<!-- <path d="M ' + host + ' 0"/> -->',
+            '<![CDATA[<path d="M ' + host + ' 0"/>]]>',
+            '<other:path xmlns:other="urn:example" d="M ' + host + ' 0"/>',
+        ]
+        for fragment in fragments:
+            with self.subTest(fragment=fragment.split()[0]):
+                text = (
+                    '<svg xmlns="http://www.w3.org/2000/svg">\n'
+                    '<path d="M ' + host + ' 0"/>\n' + fragment + "\n</svg>"
+                )
+                findings = MODULE.scan_text("fixture.svg", text, set(), set())
+                ips = [
+                    item
+                    for item in findings
+                    if item.rule == "concrete-ipv4-address"
+                ]
+                self.assertEqual([item.line for item in ips], [3])
+        unmasked = [
+            '<svg><path d="M ' + host + ' 0">',
+            '<!DOCTYPE svg><svg><path d="M ' + host + ' 0"/></svg>',
+        ]
+        for text in unmasked:
+            self.assertIn(
+                "concrete-ipv4-address",
+                {
+                    item.rule
+                    for item in MODULE.scan_text(
+                        "fixture.svg", text, set(), set()
+                    )
+                },
+            )
+
+    def test_svg_geometry_keeps_full_secret_and_deny_checks(self):
+        """Inspect original geometry for credentials, deny terms and tokens."""
+        secret = "123456789" * 3
+        denied = ".".join(["203", "0", "113", "71"])
+        token = "ghp_" + "A" * 36
+        text = (
+            '<svg><path d="M ' + denied + " 0 " + secret + ' 0"/>'
+            '<path d="M0 0 ' + token + '"/></svg>'
+        )
+        findings = MODULE.scan_text("fixture.svg", text, {denied}, {secret})
+        rules = {item.rule for item in findings}
+        self.assertIn("private-deny-term", rules)
+        self.assertIn("private-credential-value", rules)
+        self.assertIn("github-token", rules)
+        self.assertNotIn("concrete-ipv4-address", rules)
+
     def test_tokens_home_paths_and_private_artifacts(self):
         """Find policy violations without echoing synthetic contents."""
         with tempfile.TemporaryDirectory() as directory:

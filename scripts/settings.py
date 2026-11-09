@@ -41,6 +41,12 @@ def load(path):
         r"[a-z][a-z0-9_-]{0,40}", values.get("COMPOSE_PROJECT_NAME", "")
     ):
         raise ValueError("Invalid COMPOSE_PROJECT_NAME.")
+    # Only migrations need a data name independent of the running project.
+    volume_prefix = values.get("DATA_VOLUME_PREFIX", "")
+    if volume_prefix and not re.fullmatch(
+        r"[a-z][a-z0-9_-]{0,40}", volume_prefix
+    ):
+        raise ValueError("Invalid DATA_VOLUME_PREFIX.")
     address = ipaddress.ip_address(values.get("BIND_IP", ""))
     if address.version != 4 or address.is_unspecified or address.is_global:
         raise ValueError(
@@ -54,7 +60,20 @@ def load(path):
         "PROMETHEUS_PORT",
         "N8N_PORT",
         "AIRFLOW_PORT",
+        "DEMO_GUI_PORT",
+        "DEMO_API_PORT",
+        "CDC_CONNECT_PORT",
+        "CDC_UI_PORT",
     ]:
+        # Existing sites can add the optional GUI without regenerating keys.
+        if key in {"DEMO_GUI_PORT", "DEMO_API_PORT"}:
+            values.setdefault(
+                key, "8501" if key == "DEMO_GUI_PORT" else "8502"
+            )
+        if key in {"CDC_CONNECT_PORT", "CDC_UI_PORT"}:
+            values.setdefault(
+                key, "8083" if key == "CDC_CONNECT_PORT" else "8084"
+            )
         if (
             not values.get(key, "").isdigit()
             or not 1024 <= int(values[key]) <= 65535
@@ -63,7 +82,9 @@ def load(path):
     ports = [
         values[k]
         for k in values
-        if k.endswith("_PORT") and k != "SOURCE_SQLSERVER_PORT" and values[k]
+        if k.endswith("_PORT")
+        and not k.endswith("_SQLSERVER_PORT")
+        and values[k]
     ]
     if len(ports) != len(set(ports)):
         raise ValueError("Host service ports must be distinct.")
@@ -107,11 +128,28 @@ def load(path):
         "monitoring",
         "compute",
         "orchestration",
+        "demo",
+        "cdc",
     }:
         raise ValueError(
             "Profiles may be automation, monitoring, compute, "
-            "and/or orchestration."
+            "orchestration, demo and/or cdc."
         )
+    if "demo" in profiles:
+        if not re.fullmatch(
+            r"[A-Za-z0-9]{20,128}", values.get("CONTROL_API_TOKEN", "")
+        ):
+            raise ValueError("Generate a fresh CONTROL_API_TOKEN.")
+        directory = Path(values.get("CONTROL_SETTINGS_DIR", ""))
+        if not directory.is_absolute() or directory.resolve().is_relative_to(
+            ROOT
+        ):
+            raise ValueError("Use an external CONTROL_SETTINGS_DIR.")
+        if not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9_.-]{0,100}",
+            values.get("CONTROL_SETTINGS_NAME", ""),
+        ):
+            raise ValueError("Invalid CONTROL_SETTINGS_NAME.")
     return values
 
 

@@ -47,7 +47,7 @@ compose = [
     str(ROOT / "infra/lakehouse/compose.yaml"),
 ]
 # Optional engines stay in separate Compose files to keep the core small.
-for extension in ("compute", "orchestration"):
+for extension in ("compute", "orchestration", "demo", "cdc"):
     extra_compose = ROOT / "infra" / extension / "compose.yaml"
     if extra_compose.is_file():
         compose.extend(["-f", str(extra_compose)])
