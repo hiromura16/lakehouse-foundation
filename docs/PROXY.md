@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | Docker daemon | イメージ取得、レジストリ接続 | systemd の `EnvironmentFile` |
 | 各コンテナ | パッケージ取得、Webhook、外部API | Compose / Dokploy の環境変数 |
-| ビルド処理 | `RUN pip install` 等 | BuildKit の予約済み proxy build args |
+| ビルド処理 | `RUN uv pip sync` 等 | BuildKit の予約済み proxy build args |
 | Javaアプリ | JDKや利用SDKの外部HTTP接続 | JVMのproxyプロパティ、SDK固有設定 |
 | TLS証明書 | HTTPS検査プロキシのCA信頼 | ホスト・各イメージ・JVMで個別に登録 |
 
@@ -103,10 +103,10 @@ daemon側は小さな既知イメージのpull、コンテナ側は会社で許�
 | --- | --- | --- |
 | source取得 | ホストのGit | 会社標準のGit/端末proxyとCA。Dockerの設定では代用しない |
 | image取得 | Docker daemon / remote builder | daemonの環境、registryへの到達、ホストCA。build argsだけでは直らない |
-| build | workerのpip、Sparkのapt/curl、Airflowのconstraints/pip | `site.env` の6変数、BuildKit、buildイメージ内のCA |
+| build | workerのuv、Sparkのapt/curl、Airflowのconstraints/uv | `site.env` の6変数、BuildKit、buildイメージ内のCA |
 | runtime | worker/n8n/Airflow/Sparkの各HTTP client | envの反映、内部NO_PROXY、JVM/SDK固有設定、clientのCA |
 
-現DockerfileではworkerのPython依存をPyPIから、SparkのJARをMaven Centralから、Airflowのconstraintsを公式GitHubから取得する。具体的なURLとchecksumはDockerfile/lockに固定されている。会社の許可先一覧には、Docker registry本体だけでなく、その配布/CDNや依存取得先も必要となる場合がある。失敗時は接続先のドメインをローカルで確認し、checksumやTLS検証を外して回避しない。
+現DockerfileではworkerのPython依存をuvでPyPIから、SparkのJARをMaven Centralから、Airflowのconstraintsを公式GitHubから取得する。具体的なURLとchecksumはDockerfile/lockに固定されている。会社の許可先一覧には、Docker registry本体だけでなく、その配布/CDNや依存取得先も必要となる場合がある。失敗時は接続先のドメインをローカルで確認し、checksumやTLS検証を外して回避しない。
 
 ## 別ファイルを併用する場合の適用範囲
 
@@ -150,3 +150,11 @@ proxy URLをenvへ保存しても、企業CAがコンテナへ自動配布され
 CDCのSQL Server接続はJavaのTLSを使います。`CDC_SQLSERVER_TRUSTSTORE` は `/run/cdc` 配下にmountしたtruststoreの**コンテナ側path**です。hostのPEMや `DEMO_SQLSERVER_CA_FILE` をそのまま流用せず、登録したCA・証明書名・truststore形式をDB担当と確認します。KafkaやConnectの内部宛先は外向きHTTP proxyへ流しません。
 
 GUIでproxy値を保存した場合も、daemonの配置・restart、コンテナ再配置、必要なimage再buildは別の反映操作です。GUIが返す `saved` はその完了を表しません。[API.md](API.md#設定を保存してから反映する)
+
+## uvでhostの仮想環境を用意する
+
+hostのSQL読取・ダミー投入・開発・AIサンプルは `uv venv` と `uv pip sync` で環境を作ります。uv本体や指定Pythonが未取得の場合、その取得経路も会社のproxy/CAへ合わせます。既存のPythonを使う運用では、対象Pythonを事前に用意し `UV_PYTHON_DOWNLOADS=never` で追加ダウンロードを抑制できます。
+
+uvはHTTP(S) proxy変数を使いますが、TLSの信頼先も別に確認します。企業CAをOSのtrust storeへ登録した場合は `uv --system-certs ...`、または `UV_SYSTEM_CERTS=true` を使えます。`PIP_CERT` はpip向けの設定です。uvで専用CA bundleを使う場合は `SSL_CERT_FILE` で指定し、必要な公開CAも含めたbundleを用意します。認証URLやCA実値を公開コードへ書かず、TLS無効化で回避しません。[uv公式の証明書設定](https://docs.astral.sh/uv/concepts/authentication/certificates/)
+
+`requirements-dev.lock` と `examples/ai/requirements.lock` はfull hash lockです。`uv pip sync --require-hashes` で検証して導入します。SQLドライバだけの `requirements-demo.txt` は既存の版固定入力で、現在このhost専用ファイルにはhash lockがないため、各手順ではそのファイルを `uv pip sync` へ渡します。コンテナ側は各image用lockを使い、hostの環境と混在させません。

@@ -41,12 +41,12 @@ Goldが未作成なら、素材投入とメダリオン処理を先に実行し�
 
 ## CLIでcontextを保存する
 
-独立したPython環境を使います。worker、Spark、Airflowの依存をこの環境へ混在させません。
+独立したuv仮想環境を使います。worker、Spark、Airflowの依存をこの環境へ混在させません。`requirements.lock` は既存のLangChain/Trino固定版と推移依存をhash付きで保持し、Python 3.12と3.14向けに共通解決しています。例は3.12で、3.14を使う場合は `uv venv --python 3.14` とします。
 
 ```bash
-python3 -m venv /absolute/private/ai-venv
-/absolute/private/ai-venv/bin/python -m pip install \
-  -r examples/ai/requirements.txt
+uv venv --python 3.12 /absolute/private/ai-venv
+uv pip sync --python /absolute/private/ai-venv/bin/python \
+  --require-hashes examples/ai/requirements.lock
 
 /absolute/private/ai-venv/bin/python scripts/ai_context.py \
   --env-file /absolute/private/site.env \

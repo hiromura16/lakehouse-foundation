@@ -49,8 +49,8 @@ python3 scripts/generate-demo.py \
 この機能だけ追加ドライバが必要です。
 
 ```sh
-python3 -m venv /srv/demo-venv
-/srv/demo-venv/bin/python -m pip install -r requirements-demo.txt
+uv venv --python 3.12 /srv/demo-venv
+uv pip sync --python /srv/demo-venv/bin/python requirements-demo.txt
 ```
 
 管理者が先に専用の検証DBと書き込み用ユーザーを用意します。生成器はDBを作りません。会社の読み取り接続を示す `SOURCE_SQLSERVER_*` を書き込みには使わず、別の非公開envファイルに次を設定します。ファイルはリポジトリ外・0600にします。

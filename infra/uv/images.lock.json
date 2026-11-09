@@ -1,0 +1,13 @@
+{
+  "uv": {
+    "version": "0.13.7",
+    "pinned": "ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490",
+    "verified_at": "2026-11-09",
+    "release": "https://github.com/astral-sh/uv/releases/tag/0.13.7",
+    "registry_manifest": "https://ghcr.io/v2/astral-sh/uv/manifests/0.13.7",
+    "platforms": {
+      "linux/amd64": "sha256:c7db1d63057f268a8b6da8af9077850a60461f98d23db23c676a82089a050c91",
+      "linux/arm64": "sha256:2ae13457dd79d5a50670bdaed54f2a064445eb90a39821724f9b1f2bd315da5e"
+    }
+  }
+}

@@ -9,8 +9,8 @@
 SQL接続には追加ドライバが必要です。ダミーSQL投入と同じ固定依存ファイルを使います。
 
 ```sh
-python3 -m venv /srv/source-reader-venv
-/srv/source-reader-venv/bin/python -m pip install -r requirements-demo.txt
+uv venv --python 3.12 /srv/source-reader-venv
+uv pip sync --python /srv/source-reader-venv/bin/python requirements-demo.txt
 ```
 
 導入先で、必要な表・ビューにSELECTだけを許可したログインを準備します。ツール自身は権限を作ったり変更したりしません。接続設定はリポジトリ外の非公開ファイルへ保存し、0600にします。

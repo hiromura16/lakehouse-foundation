@@ -23,7 +23,7 @@ SQL Serverは会社にある既存DBへ接続します。この構成にSQL Serv
 
 ## 最短の導入
 
-Linux x86-64、Docker Engine、Docker Compose **2.23.1以上**、Python **3.12以上**を用意します。通常ユーザーからDockerを管理できる状態を前提とし、既存ホストの権限をスクリプトで変更しません。最初はcoreだけで起動し、Airflow等は資源を確認して追加します。
+Linux x86-64、Docker Engine、Docker Compose **2.23.1以上**、Python **3.12以上**を用意します。追加ドライバ・開発用の仮想環境は **uv 0.13.7** で構築します。[uvの公式導入手順](https://docs.astral.sh/uv/getting-started/installation/)を参照してください。通常ユーザーからDockerを管理できる状態を前提とし、既存ホストの権限をスクリプトで変更しません。最初はcoreだけで起動し、Airflow等は資源を確認して追加します。
 
 ```bash
 git clone https://github.com/hiromura16/lakehouse-foundation.git
@@ -55,6 +55,32 @@ export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 会社のproxyが必要な場合は、イメージ取得前に [PROXY.md](docs/PROXY.md) のdaemon設定・社内CAを準備します。Composeの環境変数だけではDocker自身のimage pullには反映されません。
 
 初期状態のWeb口はloopbackに限定します。共有する場合はprivate設定の `BIND_IP`、認証、HTTPS、接続元制限を導入先に合わせて設定します。内部カタログは単一チームの検証モードです。
+
+## Pythonの仮想環境と開発用チェック
+
+host側のPython依存は用途ごとのuv環境へ入れます。uvを会社標準の配布経路または[公式手順](https://docs.astral.sh/uv/getting-started/installation/)で用意し、会社proxy/CAがある場合は先に [PROXY.md](docs/PROXY.md) を確認してください。CIはPython 3.12とuv 0.13.7を固定し、開発ツールの依存全体を `requirements-dev.lock` のhashで検証します。
+
+```bash
+uv --version
+uv venv --python 3.12 "$HOME/.local/share/lakehouse-foundation/dev-venv"
+uv pip sync \
+  --python "$HOME/.local/share/lakehouse-foundation/dev-venv/bin/python" \
+  --require-hashes requirements-dev.lock
+"$HOME/.local/share/lakehouse-foundation/dev-venv/bin/python" \
+  -m unittest discover -s tests
+```
+
+同期先はその用途の専用環境です。`uv pip sync` はlockにない既存パッケージを除去するため、worker、Airflow、AIの環境を共有しません。lockを更新するときは、既存の入力ファイルを使って明示的に再生成し、試験します。
+
+```bash
+uv pip compile requirements-dev.txt --python-version 3.12 \
+  --generate-hashes --no-header --output-file requirements-dev.lock
+uv pip compile examples/ai/requirements.txt --python-version 3.12 \
+  --universal --generate-hashes --no-header \
+  --output-file examples/ai/requirements.lock
+```
+
+AIサンプルは独立した [AI向け環境](docs/AI-READINESS.md#cliでcontextを保存する)、SQL読取と専用DBへの素材投入は [SQL抽出手順](docs/SOURCE-SQLSERVER.md) のuv環境を使います。Spark公式imageに同梱されるPythonとJARの組合せは、これらのhost環境の都合で変更しません。
 
 ## ダミーデータを投入する
 

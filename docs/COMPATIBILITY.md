@@ -89,6 +89,8 @@ coreが正常に起動し、バケットとWarehouseが初期化済みの状態�
 
 Airflow 3.4.0の公式試験対象はPython 3.11～3.14、PostgreSQL 14～18です。公式3.4.0 Docker Composeと同じ `postgresql+psycopg` の接続方式を使用します。[対応要件の固定ソース](https://github.com/apache/airflow/blob/3.4.0/airflow-core/docs/installation/prerequisites.rst) / [公式3.4.0 Compose](https://github.com/apache/airflow/blob/3.4.0/airflow-core/docs/howto/docker-compose/docker-compose.yaml)
 
+公式イメージは既に `/home/airflow/.local` をvenvとして使います。このPython・PATH・entrypointを維持し、固定したuv 0.13.7の `pip install --python /home/airflow/.local/bin/python` で同じ本体・Provider・constraintsを適用します。新しいvenvへ本体を移さず、追加後は `uv pip check` で依存を検査します。uvの配布digestは [共有lock](../infra/uv/images.lock.json) に記録しています。[公式3.4.0のvenv設定](https://github.com/apache/airflow/blob/3.4.0/Dockerfile#L2545)
+
 ```text
 apache/airflow:3.4.0-python3.12
 @sha256:818f94affc5bd7ce0be0cc04f2ace09aa8382e65190a73a08881229ff32700cb

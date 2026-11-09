@@ -219,8 +219,9 @@ schema history と Connect internal topics は通常のデータ topic と別の
 実行には [requirements-demo.txt](../requirements-demo.txt) の optional driver が必要です。
 
 ```sh
-python3 -m venv "$HOME/.venvs/lakehouse-demo"
-"$HOME/.venvs/lakehouse-demo/bin/pip" install -r requirements-demo.txt
+uv venv --python 3.12 "$HOME/.venvs/lakehouse-demo"
+uv pip sync --python "$HOME/.venvs/lakehouse-demo/bin/python" \
+  requirements-demo.txt
 
 "$HOME/.venvs/lakehouse-demo/bin/python" scripts/cdc-demo.py create \
   --env-file "$HOME/.config/lakehouse-foundation/demo-admin.env" \

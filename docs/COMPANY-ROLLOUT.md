@@ -18,11 +18,12 @@
 
 ## 2. ホストと資源を確認する
 
-Linux x86-64、Bash、Git、ホストPython 3.12以上、Docker Engine、Docker Compose 2.23.1以上を用意します。通常利用者からDockerを操作できることを管理者が確認します。スクリプト自身はDocker権限を追加しません。SambaとDokployのホスト設定だけは別途管理権限が必要です。
+Linux x86-64、Bash、Git、ホストPython 3.12以上、uv 0.13.7、Docker Engine、Docker Compose 2.23.1以上を用意します。通常利用者からDockerを操作できることを管理者が確認します。スクリプト自身はDocker権限を追加しません。SambaとDokployのホスト設定だけは別途管理権限が必要です。
 
 ```bash
 uname -m
 python3 --version
+uv --version
 docker version
 docker compose version
 docker info --format '{{.DockerRootDir}}'
@@ -168,9 +169,11 @@ DB担当が対象表/ビューへのSELECT権限を持つログインを用意�
 これは名前解決とTCP到達確認までです。成功してもSQL認証、TLS、SELECT、CDCの成功とは扱いません。実際の抽出は専用のホストvenvを用意して行います。
 
 ```bash
-python3 -m venv "$HOME/.local/share/lakehouse-foundation/source-reader-venv"
-"$HOME/.local/share/lakehouse-foundation/source-reader-venv/bin/python" \
-  -m pip install -r requirements-demo.txt
+uv venv --python 3.12 \
+  "$HOME/.local/share/lakehouse-foundation/source-reader-venv"
+uv pip sync \
+  --python "$HOME/.local/share/lakehouse-foundation/source-reader-venv/bin/python" \
+  requirements-demo.txt
 install -m 0600 infra/source/sqlserver-tables.example.json \
   "$HOME/.config/lakehouse-foundation/sqlserver-tables.json"
 ```
