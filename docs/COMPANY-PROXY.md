@@ -120,6 +120,7 @@ uvは0.13.7をtagとdigestで固定しています。標準はMozillaのrootを�
 | Python requests | `REQUESTS_CA_BUNDLE`。独自Sessionやverify指定で変わる場合を確認 |
 | curl | `CURL_CA_BUNDLE`とproxy変数 |
 | Python AWS/Botocore系 | `AWS_CA_BUNDLE`、SDKのproxy設定。S3 clientごとの適用を確認 |
+| n8n / Node.js | `NODE_EXTRA_CA_CERTS`で公開CAを追加。下記のn8n手順を確認 |
 | Java/JVM | JREのcacerts、`http(s).proxyHost`等、`http.nonProxyHosts` |
 | AWS SDK for Java | 使用HTTP clientとJVM設定・envの優先順位を確認 |
 
@@ -128,6 +129,48 @@ uvの `UV_OFFLINE=1` は完成環境でのパッケージ・Python取得を防�
 JavaへHTTP(S)_PROXYを設定するだけで、全HTTP clientが動くとは扱いません。JVMの除外は `|` 区切りの `http.nonProxyHosts` であり、カンマ区切りNO_PROXYとは異なります。AWS SDK for JavaはHTTP clientと設定の優先順位にも差があります。認証情報を `JAVA_TOOL_OPTIONS` の文字列へ埋め込まず、製品の秘密設定へ分けます。[JDK公式](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/net/doc-files/net-properties.html)、[AWS SDK公式](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/http-config-proxy-support.html)
 
 Trino、Lakekeeper、Grafana等の第三者imageへ、このBuildKit secretが一律に適用される構成ではありません。そこへ外向きHTTPS通信を追加する場合は、各製品のproxyとtrust設定を別途確認します。DebeziumのSQL Server TLSは既存のJava truststore設定を使い、HTTP proxy用の設定と区別します。[CDC手順](CDC.md)
+
+### n8nのHTTP Request nodeで社内HTTPSへ接続する
+
+公式n8n imageは再buildせず、同じ `CORPORATE_CA_FILE` を
+`/etc/n8n/corporate-ca.pem` へ読み取り専用でbindします。Nodeの
+`NODE_EXTRA_CA_CERTS` は既存の公開rootを残し、そのPEM chainを追加します。
+自作imageのOS bundle設定とは別の仕組みです。CA未設定・空欄ではこの変数も
+空欄になり、追加CAの読み込みと警告を発生させません。
+[Node公式の追加CA](https://nodejs.org/api/cli.html#node_extra_ca_certsfile)
+
+指定するのは公開CA証明書だけです。秘密鍵、資格情報、`site.env` を同じmountへ
+渡しません。事前に正式なfingerprintを照合し、Nodeユーザーが読めるPEM fileに
+します。公開CA自体のmodeは0644で構いません。ホストの保存ディレクトリ全体を
+n8nへ渡す必要はありません。
+
+```bash
+openssl x509 -in /absolute/private/certs/company-root.crt \
+  -noout -sha256 -fingerprint
+chmod 0644 /absolute/private/certs/company-root.crt
+```
+
+private設定の `CORPORATE_CA_FILE` とproxy6変数を確認してから、planと再配置を
+行います。n8nはCAを起動時に読むため、画面で設定を保存しただけでは反映されません。
+CAの内容だけを更新した場合も、保守時間にn8nを再起動／再作成します。既存の
+`n8n` / `n8n-db` volumeと暗号鍵は保持します。この方式ではCA用image buildは不要です。
+
+HTTP Request nodeの **Proxy** 欄は通常空欄にし、共通のHTTP(S)_PROXYを使います。
+node個別のProxyは共通設定より優先されます。小文字のproxy変数は大文字より優先
+されるので、両caseを同じ値に保ちます。内部の `worker` 等はNO_PROXYに残します。
+[n8n proxy変数](https://docs.n8n.io/hosting/configuration/environment-variables/deployment/)、
+[HTTP RequestのProxy](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/#proxy)
+
+認証なし、またはURL userinfoを使うBasic認証のHTTP CONNECTを想定しています。
+API宛てのBasic auth credentialはproxy認証の代用にはなりません。NTLM/Kerberosの
+自動認証、PAC/WPAD、proxy自体へのmTLSは同梱設定で対応済みとは扱わず、会社標準の
+認証中継や各clientを別途確認します。実会社proxyでn8nのHTTP Requestを実行し、
+外向きHTTPSと内部bypassの両方を受け入れ確認してください。
+
+**Ignore SSL Issues** は無効のままにします。独自nodeやcredentialがTLSの `ca` を
+明示するとNode標準の追加CAが使われないことがあるため、製品側の設定も照合します。
+Code node、外部task runner、独自community nodeの通信まで一律に保証する設定では
+ありません。[n8nの証明書検証](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/#ignore-ssl-issues)
 
 ## 6. NO_PROXYを確認する
 
@@ -185,6 +228,7 @@ host診断の成功は、そのhost上のPython通信だけの結果です。コ
 | pullのみ失敗 | daemon／remote builder側。コンテナenvでは修正されない |
 | uvだけTLS失敗 | system-certs／SSL_CERT_FILE、既定rootの置換を確認 |
 | Javaだけ失敗 | cacerts・JVM property・SDK独自client、SQL用truststoreを確認 |
+| n8nだけTLS失敗 | CA fileの公開PEM・読取権限・起動時の追加CA、独自nodeのca指定を確認 |
 | 内部通信がproxyへ出る | host名と両caseのNO_PROXY、SDK独自除外。変更後に対象を再配置 |
 
 ## 検証済み範囲と元へ戻す方法
@@ -192,5 +236,7 @@ host診断の成功は、そのhost上のPython通信だけの結果です。コ
 ローカルのループバック上で模擬Basic認証CONNECT proxyとTLS originを起動し、認証＋CAの成功、誤認証407、CA不足、NO_PROXY迂回、redirect拒否、秘密値非表示を試験しています。生成した秘密鍵・証明書は一時領域だけに置き、公開sourceへ含めません。
 
 CA helperは既存root保持、OS bundle再生成後のroot復元、秘密鍵拒否、空入力no-op、Javaの非破壊hash alias追加を一時領域で検証しています。これを会社の実proxy、会社CA、NTLM等の認証試験が済んだ結果として扱いません。
+
+n8nの固定image内のNode子プロセスでは、追加CA未設定・空欄で警告なし、公開CA bundleの読込、存在しないfileでの警告を確認しています。CA未設定・空欄・指定時の全profile Composeも解決し、追加差分がn8n専用envと読み取り専用bindだけであることを照合しています。既存n8nの設定・workflow・dataは変更せず、n8n HTTP Request自体を模擬proxyへ実行した結果ではありません。
 
 戻す場合はprivateのHTTP(S)_PROXYを両caseとも空にし、daemonはplan→apply→管理者の保守時間でrestart、コンテナは再配置します。CAをimageから除くときは `CORPORATE_CA_FILE` を空にし、元のbaseから `--no-cache` で再buildします。稼働中のtruststoreを手作業で削除して対処しません。データvolume・暗号鍵は保持します。

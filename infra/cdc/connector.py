@@ -90,26 +90,59 @@ def configuration(values, mapping):
 
 
 def register(values, mapping, endpoint):
-    """Create a connector once, refusing to overwrite existing
-    configuration.
-    """
+    """Create once or confirm an identical existing config without writes."""
     opener = build_opener(ProxyHandler({}))
     name = values["CDC_CONNECTOR_NAME"]
+    candidate = configuration(values, mapping)
     deadline = time.monotonic() + 180
     while True:
         try:
             with opener.open(endpoint + "/connectors", timeout=5) as reply:
+                if reply.status != 200:
+                    raise RuntimeError("Kafka Connect discovery was rejected.")
                 existing = json.load(reply)
+            if not isinstance(existing, list) or not all(
+                isinstance(item, str) for item in existing
+            ):
+                raise ValueError("Invalid Kafka Connect connector list.")
             break
+        except HTTPError:
+            # Authentication and HTTP failures need review, not a create retry.
+            raise RuntimeError(
+                "Kafka Connect discovery was rejected."
+            ) from None
         except OSError:
             if time.monotonic() >= deadline:
                 raise RuntimeError("Kafka Connect did not become ready.")
             time.sleep(2)
     if name in existing:
-        raise ValueError(
-            "Connector already exists; review it before changing."
+        with opener.open(
+            endpoint + "/connectors/" + name + "/config", timeout=5
+        ) as reply:
+            if reply.status != 200:
+                raise RuntimeError("Connector configuration was unavailable.")
+            current = json.load(reply)
+        if not isinstance(current, dict):
+            raise ValueError("Invalid existing connector configuration.")
+        # Connect may add its own name property. Only that exact value may be
+        # removed; every other key and value must match without coercion.
+        if "name" in current:
+            if current["name"] != name:
+                raise ValueError("Existing connector name did not match.")
+            current = {
+                key: value for key, value in current.items() if key != "name"
+            }
+        if current != candidate:
+            raise ValueError(
+                "Connector configuration differs; review it before changing."
+            )
+        print(
+            json.dumps(
+                {"registered": True, "unchanged": True, "tables": len(mapping)}
+            )
         )
-    payload = {"name": name, "config": configuration(values, mapping)}
+        return
+    payload = {"name": name, "config": candidate}
     request = Request(
         endpoint + "/connectors",
         data=json.dumps(payload).encode(),

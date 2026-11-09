@@ -145,7 +145,9 @@ python3 scripts/control.py up
 
 core の warehouse bootstrap が完了してから consumer が起動します。
 `cdc-register` は最初に connector を登録し、同じ設定なら再実行しても変更しません。
-同名 connector の設定が違えば停止し、GUI の編集を自動で元に戻しません。
+再配置時は既存nameの `GET /connectors/{name}/config` を読み戻し、候補設定の全key・値と厳密比較します。Connectが追加する `name` だけは指定名と一致することを検証して除外します。文字列のtrimや型変換、他の追加defaultの無視はしません。
+
+完全一致なら `registered: true, unchanged: true` で正常終了します。設定、source DB、topic、offset、schema historyを変更せず、既存の取り込み位置を維持します。同名 connector の設定が違う場合、nameが不一致の場合、認証・HTTP・読戻しに失敗した場合は停止し、GUI の編集を自動で元に戻しません。更新・削除・再作成やoffset初期化へ切り替える処理はなく、PUT/PATCH/DELETEを送りません。差異があるときはprivateの現在設定と候補を管理者が照合し、再配置のためだけに既存connectorを消さないでください。
 `cdc-consumer` は失敗時の無限再起動を避けるため、異常終了後は operator が確認して
 再開します。通常の host 再起動後も、状態を確認して consumer を明示起動してください。
 
