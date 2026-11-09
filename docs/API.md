@@ -54,7 +54,7 @@ SwaggerのJavaScript・CSS・faviconはimage内から配信します。ブラウ
 ```json
 {
   "values": {
-    "TRINO_PORT": "8082",
+    "TRINO_PORT": "8090",
     "SOURCE_SQLSERVER_TIMEZONE": "UTC"
   }
 }

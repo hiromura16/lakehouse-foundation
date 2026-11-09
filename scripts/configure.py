@@ -42,6 +42,9 @@ values = {
     "PROMETHEUS_PORT": "9090",
     "N8N_PORT": "5678",
     "AIRFLOW_PORT": "8081",
+    "SPARK_MASTER_UI_PORT": "8082",
+    "SPARK_WORKER_UI_PORT": "8085",
+    "SPARK_HISTORY_UI_PORT": "18080",
     "DEMO_GUI_PORT": "8501",
     "DEMO_API_PORT": "8502",
     "CDC_CONNECT_PORT": "8083",
@@ -90,6 +93,12 @@ values = {
     "N8N_HOST": "localhost",
     "N8N_PROTOCOL": "http",
     "N8N_SECURE_COOKIE": "false",
+    "N8N_SSRF_PROTECTION_ENABLED": "true",
+    "N8N_SSRF_BLOCKED_IP_RANGES": "default,100.64.0.0/10",
+    "N8N_SSRF_ALLOWED_IP_RANGES": "",
+    "N8N_SSRF_ALLOWED_HOSTNAMES": "worker",
+    "N8N_SSRF_BLOCKED_HOSTNAMES": "",
+    "N8N_SSRF_DNS_CACHE_MAX_SIZE": "1048576",
     "SOURCE_SQLSERVER_HOST": "",
     "SOURCE_SQLSERVER_PORT": "1433",
     "SOURCE_SQLSERVER_DATABASE": "",
@@ -138,7 +147,8 @@ values = {
         "n8n,n8n-db,prometheus,grafana,airflow,airflow-db,demo,demo-api,"
         "cdc-kafka,cdc-connect,cdc-consumer,cdc-ui,"
         "dokploy,dokploy-postgres,superset,superset-db,superset-redis,"
-        "jupyter,qdrant,marquez,marquez-db,marquez-web,mcp"
+        "jupyter,qdrant,marquez,marquez-db,marquez-web,mcp,"
+        "spark-master,spark-worker,spark-history,spark-volumes-init"
     ),
 }
 for key in ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"]:

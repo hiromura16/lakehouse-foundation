@@ -1,0 +1,4 @@
+# Match the notebook driver; Spark/PySpark stays in the pinned base image.
+numpy==2.2.6
+pandas==2.3.3
+pyarrow==25.0.0

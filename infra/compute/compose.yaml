@@ -1,39 +1,176 @@
-# Merge after the core Compose file. No host filesystem or Docker socket mount.
-services:
-  spark-check:
-    profiles: [compute]
-    image: ${COMPOSE_PROJECT_NAME:-lakehouse}-spark-check:local
-    build:
-      secrets:
-        - corporate_ca
-      context: ../..
-      dockerfile: infra/compute/Dockerfile
-      args:
-        HTTP_PROXY: ${HTTP_PROXY:-}
-        HTTPS_PROXY: ${HTTPS_PROXY:-}
-        NO_PROXY: ${NO_PROXY:-}
-        http_proxy: ${http_proxy:-}
-        https_proxy: ${https_proxy:-}
-        no_proxy: ${no_proxy:-}
-    # An explicit `compose run` launches this job. Ordinary `up` stays idle.
-    deploy:
-      replicas: 0
-    restart: 'no'
-    labels:
-      app.owner: lakehouse-foundation
-      traefik.enable: 'false'
-    mem_limit: 2g
-    cpus: 2
-    environment:
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
-      S3_SECRET_KEY: ${S3_SECRET_KEY}
-      WAREHOUSE_NAME: ${WAREHOUSE_NAME}
+# Merge after the core. All services reuse one pinned Spark/Iceberg image.
+x-spark-image: &spark_image
+  image: ${COMPOSE_PROJECT_NAME:-lakehouse}-spark-check:local
+  build:
+    secrets: [corporate_ca]
+    context: ../..
+    dockerfile: infra/compute/Dockerfile
+    args:
+      SPARK_UID: ${WORKER_UID:-10001}
+      SPARK_GID: ${WORKER_GID:-10001}
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
       NO_PROXY: ${NO_PROXY:-}
       http_proxy: ${http_proxy:-}
       https_proxy: ${https_proxy:-}
       no_proxy: ${no_proxy:-}
+x-spark-labels: &spark_labels
+  app.owner: lakehouse-foundation
+  traefik.enable: 'false'
+x-spark-logging: &spark_logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+x-spark-environment: &spark_environment
+  HTTP_PROXY: ${HTTP_PROXY:-}
+  HTTPS_PROXY: ${HTTPS_PROXY:-}
+  NO_PROXY: ${NO_PROXY:-}
+  http_proxy: ${http_proxy:-}
+  https_proxy: ${https_proxy:-}
+  no_proxy: ${no_proxy:-}
+  SPARK_DAEMON_MEMORY: 512m
+  SPARK_LOG_DIR: /opt/spark/work/logs
+x-spark-daemon: &spark_daemon
+  <<: *spark_image
+  profiles: [compute]
+  user: "${WORKER_UID:-10001}:${WORKER_GID:-10001}"
+  init: true
+  restart: unless-stopped
+  labels: *spark_labels
+  logging: *spark_logging
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  # Override the Kubernetes-oriented image entrypoint; keep the JVM foreground.
+  entrypoint: [python3, /opt/lakehouse/spark_cluster.py]
+  stop_grace_period: 30s
+  volumes:
+    - spark-events:/opt/spark/events
+    - spark-work:/opt/spark/work
+
+services:
+  # Root is limited to the two dedicated volume roots, with no data traversal.
+  # notebooks can record local events even when the cluster profile is off.
+  spark-volumes-init:
+    <<: *spark_image
+    profiles: [compute, notebooks]
+    user: '0:0'
+    restart: 'no'
+    labels: *spark_labels
+    logging: *spark_logging
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    environment:
+      WORKER_UID: ${WORKER_UID:-10001}
+      WORKER_GID: ${WORKER_GID:-10001}
+    entrypoint: [python3, /opt/lakehouse/spark_cluster.py]
+    command: [init]
+    volumes:
+      - spark-events:/opt/spark/events
+      - spark-work:/opt/spark/work
+    healthcheck:
+      disable: true
+
+  # RPC 7077 and worker 7078 stay inside the Compose network.
+  spark-master:
+    <<: *spark_daemon
+    hostname: spark-master
+    mem_limit: 768m
+    cpus: 1
+    environment:
+      <<: *spark_environment
+      SPARK_LOCAL_HOSTNAME: spark-master
+      SPARK_MASTER_OPTS: >-
+        -Dspark.ui.reverseProxy=true
+        -Dspark.ui.reverseProxyUrl=http://localhost:${SPARK_MASTER_UI_PORT:-8082}
+        -Dspark.master.ui.historyServerUrl=http://localhost:${SPARK_HISTORY_UI_PORT:-18080}
+        -Dspark.master.rest.enabled=false
+        -Dspark.deploy.defaultCores=2
+    command: [master]
+    ports:
+      - 127.0.0.1:${SPARK_MASTER_UI_PORT:-8082}:8080
+    depends_on:
+      spark-volumes-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python3, /opt/lakehouse/spark_cluster.py, health, master]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  # Two executor cores and 2 GiB advertised RAM fit within the container cap.
+  spark-worker:
+    <<: *spark_daemon
+    hostname: spark-worker
+    mem_limit: 4g
+    cpus: 2
+    environment:
+      <<: *spark_environment
+      SPARK_LOCAL_HOSTNAME: spark-worker
+      SPARK_WORKER_OPTS: >-
+        -Dspark.ui.reverseProxy=true
+        -Dspark.ui.reverseProxyUrl=http://localhost:${SPARK_MASTER_UI_PORT:-8082}
+    command: [worker]
+    ports:
+      - 127.0.0.1:${SPARK_WORKER_UI_PORT:-8085}:8081
+    depends_on:
+      spark-volumes-init:
+        condition: service_completed_successfully
+      spark-master:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python3, /opt/lakehouse/spark_cluster.py, health, worker]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  # Preserve event logs across restarts; do not auto-delete historical evidence.
+  spark-history:
+    <<: *spark_daemon
+    hostname: spark-history
+    mem_limit: 1g
+    cpus: 1
+    environment:
+      <<: *spark_environment
+      SPARK_LOCAL_HOSTNAME: spark-history
+      SPARK_HISTORY_OPTS: >-
+        -Dspark.history.fs.logDirectory=file:///opt/spark/events
+        -Dspark.history.ui.port=18080
+        -Dspark.history.store.path=/opt/spark/work/history
+        -Dspark.history.retainedApplications=50
+        -Dspark.history.fs.cleaner.enabled=false
+    command: [history]
+    ports:
+      - 127.0.0.1:${SPARK_HISTORY_UI_PORT:-18080}:18080
+    depends_on:
+      spark-volumes-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python3, /opt/lakehouse/spark_cluster.py, health, history]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  # Explicit temporary local smoke remains independent of cluster availability.
+  spark-check:
+    <<: *spark_image
+    profiles: [compute]
+    deploy:
+      replicas: 0
+    restart: 'no'
+    labels: *spark_labels
+    mem_limit: 2g
+    cpus: 2
+    environment:
+      <<: *spark_environment
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      WAREHOUSE_NAME: ${WAREHOUSE_NAME}
     command:
       - /opt/spark/bin/spark-submit
       - --master
@@ -41,8 +178,10 @@ services:
       - --driver-memory
       - 768m
       - /opt/lakehouse/spark_smoke.py
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: '3'
+    logging: *spark_logging
+
+volumes:
+  spark-events:
+    name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_spark-events
+  spark-work:
+    name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_spark-work

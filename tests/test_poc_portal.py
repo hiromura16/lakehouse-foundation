@@ -178,6 +178,84 @@ class PortalApiTests(unittest.TestCase):
         )
         self.assertEqual(gateway["access"], "write")
 
+    def test_compute_cards_use_separate_native_ports_and_profile_states(self):
+        public = self.get("/settings").json()["values"]
+        self.assertEqual(public["SPARK_MASTER_UI_PORT"], "8082")
+        self.assertEqual(public["SPARK_WORKER_UI_PORT"], "8085")
+        self.assertEqual(public["SPARK_HISTORY_UI_PORT"], "18080")
+        store = self.app.state.store
+        store.applied.update(
+            {
+                "COMPOSE_PROFILES": "compute",
+                "SPARK_MASTER_UI_PORT": "18082",
+                "SPARK_WORKER_UI_PORT": "18085",
+                "SPARK_HISTORY_UI_PORT": "18081",
+            }
+        )
+        self.probe.return_value = {"spark-master": True, "spark-history": True}
+        response = self.get("/services")
+        cards = {item["id"]: item for item in response.json()["services"]}
+        self.assertEqual(cards["spark-master"]["state"], "available")
+        self.assertEqual(cards["spark-worker"]["state"], "unreachable")
+        self.assertEqual(cards["spark-history"]["state"], "available")
+        self.assertEqual(
+            cards["spark-master"]["url"], "http://localhost:18082/"
+        )
+        self.assertEqual(
+            cards["spark-worker"]["url"], "http://localhost:18085/"
+        )
+        self.assertEqual(
+            cards["spark-history"]["url"], "http://localhost:18081/"
+        )
+        store.applied["COMPOSE_PROFILES"] = "demo"
+        cards = {
+            item["id"]: item
+            for item in self.get("/services").json()["services"]
+        }
+        self.assertTrue(
+            all(
+                cards[key]["state"] == "not_enabled"
+                for key in ("spark-master", "spark-worker", "spark-history")
+            )
+        )
+        self.assertTrue(
+            all(
+                cards[key]["profile"] == "compute"
+                for key in ("spark-master", "spark-worker", "spark-history")
+            )
+        )
+
+    def test_n8n_ssrf_settings_are_editable_without_proxy_or_runtime_changes(
+        self,
+    ):
+        updates = {
+            "N8N_SSRF_PROTECTION_ENABLED": "true",
+            "N8N_SSRF_BLOCKED_IP_RANGES": "default,100.64.0.0/10",
+            "N8N_SSRF_ALLOWED_IP_RANGES": "",
+            "N8N_SSRF_ALLOWED_HOSTNAMES": "worker",
+            "N8N_SSRF_BLOCKED_HOSTNAMES": "",
+            "N8N_SSRF_DNS_CACHE_MAX_SIZE": "1048576",
+        }
+        proxy = self.app.state.store.read()["NO_PROXY"]
+        response = self.client.patch(
+            "/settings", headers=self.headers, json={"values": updates}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["applied"])
+        self.assertTrue(
+            all(
+                response.json()["values"][key] == value
+                for key, value in updates.items()
+            )
+        )
+        self.assertEqual(self.app.state.store.read()["NO_PROXY"], proxy)
+        self.network.assert_not_called()
+        self.reader.assert_not_called()
+        help_slugs = {
+            item["slug"] for item in self.get("/help").json()["documents"]
+        }
+        self.assertIn("ssrf", help_slugs)
+
     def test_preview_is_bounded_and_uses_only_the_fixed_gold_exporter(self):
         response = self.get("/catalog/preview?dataset=sales&limit=12")
         self.assertEqual(response.status_code, 200)
@@ -395,6 +473,31 @@ class FixedServiceProbeTests(unittest.TestCase):
         self.assertNotIn("unit-notebook-token", str(rendered))
         self.assertNotIn("unit-vector-admin", str(rendered))
         self.assertNotIn("unit-vector-reader", str(rendered))
+
+    def test_compute_probes_only_the_three_fixed_spark_ui_origins(self):
+        services = sys.modules["poc_services"]
+        client = mock.MagicMock()
+        client.__enter__.return_value = client
+        client.get.return_value.status_code = 200
+        with mock.patch.object(services.httpx, "Client", return_value=client):
+            health = services.probe_services({"COMPOSE_PROFILES": "compute"})
+        self.assertTrue(
+            all(
+                health[key]
+                for key in ("spark-master", "spark-worker", "spark-history")
+            )
+        )
+        called = {call.args[0] for call in client.get.call_args_list}
+        self.assertEqual(
+            called,
+            {
+                "http://trino:8080/v1/info",
+                "http://catalog:8181/health",
+                "http://spark-master:8080/",
+                "http://spark-worker:8081/",
+                "http://spark-history:18080/",
+            },
+        )
 
 
 class FixedQualityQueryTests(unittest.TestCase):

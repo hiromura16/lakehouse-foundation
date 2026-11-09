@@ -59,6 +59,46 @@ JARは次のMaven Central URLからビルド時に取得します。公式のSHA
 - [Spark runtime JAR](https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-4.1_2.13/1.12.0/iceberg-spark-runtime-4.1_2.13-1.12.0.jar) / [SHA-512](https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-4.1_2.13/1.12.0/iceberg-spark-runtime-4.1_2.13-1.12.0.jar.sha512)
 - [AWS bundle JAR](https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-aws-bundle/1.12.0/iceberg-aws-bundle-1.12.0.jar) / [SHA-512](https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-aws-bundle/1.12.0/iceberg-aws-bundle-1.12.0.jar.sha512)
 
+### 常駐SparkとJupyterからの利用
+
+`compute` profileはMaster・Worker・History Serverの3サービスを常駐させます。
+既存のSpark/Iceberg imageを共用し、workerの枠は2 core / 2 GiB、containerは
+4 GiBに制限します。RPCの7077/7078は内部networkだけで使用します。
+
+| 画面 | private設定と既定host port |
+| --- | --- |
+| Master | `SPARK_MASTER_UI_PORT=8082` |
+| Worker | `SPARK_WORKER_UI_PORT=8085` |
+| History | `SPARK_HISTORY_UI_PORT=18080` |
+
+各画面の公開先はloopbackです。Masterのreverse proxyを有効にし、Workerと実行中
+アプリのUIをMaster経由で参照します。リンクの基点はprivateのMaster UI portを
+使う `http://localhost:<port>` です。遠隔操作では同じportのSSH転送を用意します。
+HistoryへのリンクにもprivateのHistory portを使います。RPCを外部へ公開する必要は
+ありません。[Spark standalone](https://spark.apache.org/docs/4.1.4/spark-standalone.html)
+
+Jupyterはclient driverとして `spark://spark-master:7077` へ投入します。driverの
+hostは `jupyter`、RPCは39000、block managerは39001、実行中UIは4040を内部で使います。
+Python driverは `/opt/notebook-venv/bin/python`、executorは
+`/opt/spark-venv/bin/python` です。同じ固定baseのPython 3.10を使い、numpy 2.2.6・
+pandas 2.3.3・PyArrow 25.0.0を揃えます。executor環境もuv 0.13.7とhash lockで
+構築し、実行時には依存を取得しません。Notebook側の `compute` 無効時は明示した
+local実行を使い、cluster接続失敗を黙ってlocalへ切り替えません。
+
+`spark-events` volumeをJupyterとHistoryが `/opt/spark/events` で共有します。
+Jupyterはevent logを有効化し、終了後もHistoryから参照できます。`spark-work` は
+workerの一時作業・ログとHistory cacheです。両volume名は `DATA_VOLUME_PREFIX`
+の規約に従い、通常の停止で保持します。専用initは二つのmount rootだけを
+`WORKER_UID/GID` とmode 2770へ揃え、保存済みファイルを再帰変更・削除しません。
+そのため導入後にUID/GIDを変える場合は、別途データの所有権移行を計画します。
+Historyの自動削除は無効です。event logの容量・保存期間を運用で管理します。
+[Historyとevent log](https://spark.apache.org/docs/4.1.4/monitoring.html)
+
+この構成は同一チームの信頼されたCompose networkを前提とする単一ホスト構成です。
+Spark RPCの利用者認証・TLS、UIのSSO、HA、第三者Notebookの隔離は同梱していません。
+Sparkを使える利用者はexecutor上でコードを動かせます。会社での利用者・networkの
+境界は別途設定してください。新しい常駐clusterの実機確認は検証記録を正とします。
+
 ### Sparkの連携スモーク
 
 coreが正常に起動し、バケットとWarehouseが初期化済みの状態で実行します。
@@ -67,11 +107,11 @@ coreが正常に起動し、バケットとWarehouseが初期化済みの状態�
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env spark-check
 ```
 
-この操作は `compute` プロファイルの `spark-check` を一時コンテナとして起動します。通常の `up` ではreplicasを0にしており、Sparkの常駐プロセスを増やしません。Docker Composeを直接使う場合はcore、compute、orchestrationの同じ設定ファイルを指定し、`--profile compute run --rm --build --no-deps spark-check` を実行します。
+この操作は `compute` プロファイルの `spark-check` を一時コンテナとして起動し、local[2]で既存の相互参照を確認します。通常の `up` ではこの一時serviceだけをreplicas 0にし、上記Master・Worker・Historyを常駐させます。Docker Composeを直接使う場合は同じ追加Composeを全て指定し、`--profile compute run --rm --build --no-deps spark-check` を実行します。
 
 `infra/compute/smoke.sql` は専用の `compatibility.spark_roundtrip` 表を作成・置換します。固定の3行に日本語・decimalを含め、Sparkで書いた表をSparkで読み、その後Trinoの `iceberg.compatibility.spark_roundtrip` から同じ行を読みます。再実行でも追記による二重化をせず、業務表は対象にしません。成功時は版と行数だけを出力し、鍵や接続文字列を表示しません。
 
-このスモークは小さな単一ホストの読み書き確認です。大量データ、複数writerの競合、分散Sparkクラスタ、認証付きOIDC、Iceberg v3の機能を検証したものではありません。
+この一時スモークは小さなlocal実行の読み書き確認です。常駐clusterの受入では、別途Jupyterから分散task・Python UDF・Arrow処理を実行し、Masterの完了アプリ、Workerのexecutor、Historyのevent logを照合します。大量データ、複数writerの競合、複数ホスト、認証付きOIDC、Iceberg v3の機能は別の確認です。
 
 ## Airflow・Python・Providerの組み合わせ
 

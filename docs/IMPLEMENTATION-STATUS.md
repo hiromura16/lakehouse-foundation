@@ -13,17 +13,17 @@
 | SQLの素材投入・読取 | 専用投入schema、読み取り専用抽出、TLS/CA | 両ツール実機成功、GUI用DB限定writerを用意 |
 | n8nを新構成で保持 | 専用PostgreSQL・暗号鍵・volume、現行安定版固定 | 同梱workflow実行成功。旧構成は削除、データ控えは保持 |
 | GrafanaのGUI保存 | 初回だけimport、既存dashboardは上書きしない | 編集・再起動・再初期化後の保持を確認 |
-| Spark・Airflowの互換性 | 版・JAR・Provider・Pythonを組で固定 | Spark相互参照・手動DAG成功。uv原本配置後の再検証を継続 |
+| Spark・Airflowの互換性 | 版・JAR・Provider・Pythonを組で固定 | 公開Git uv imageのSpark/Trino3行、手動DAG成功 |
 | Python環境をuvへ | uv固定・hash付きlock・自作venv、Airflow公式venv保持 | 原本Gitからのuv buildとサービス起動成功 |
-| Streamlit・FastAPI・Swagger | 投入/処理/設定/状態/AI、非同期job、ローカルSwagger asset | unit/AppTest成功。配置後の一連操作を継続確認 |
-| 異常シナリオを拡充 | 26種類・7preset・複数選択・影響率・高度fault同意 | 全ケース生成・API/GUIの163試験成功。配置反映待ち |
+| Streamlit・FastAPI・Swagger | 投入/処理/設定/状態/AI、非同期job、ローカルSwagger asset | unit/AppTest、公開Git配置後のSQL/landing/stream/処理/設定成功 |
+| 異常シナリオを拡充 | 26種類・7preset・複数選択・影響率・高度fault同意 | 26生成とGUI試験、配置APIで選択投入・Gold非変更を確認 |
 | CDC | Debezium/Kafka/consumer/Kafbat、LSN・offset・状態保持 | I/U/D各6、raw168・重複0、Silver/Gold・再起動成功 |
 | AIレディー・LangChain | main snapshot固定context、Document、任意Ollama例 | 34Document生成成功。モデル推論は別途評価 |
-| AIから操作するMCP | 型付きread toolsと任意mutating toolsを追加中 | SDKとHTTP/authを実装・検証中 |
-| PoC向けOSS | Superset・Spark/Jupyter・Qdrant・Marquezを追加中 | 互換lock・GUI/API・seed・起動検証を進行中 |
-| 操作ポータル・API充実 | サービス入口・catalog・capabilities・品質・helpを追加中 | GUI・MCPとの統合を進行中 |
-| 社内proxy・CA | daemon/build/runtime/Java/uvの設定を分ける | 模擬proxy試験と会社向け手順を拡充中。実社内環境は現地確認 |
-| GitHubの見栄えと図 | 公式ロゴ7種・SVG構成図2枚、詳細文書 | hero・badge・機能ナビゲーションを整備中 |
+| AIから操作するMCP | 9read tools・2resources、任意の3write tools | 公式SDKのHTTP/Bearer/全readと任意write同意を確認 |
+| PoC向けOSS | Superset・Spark/Jupyter・Qdrant・Marquez任意profiles | 公開Gitから主基盤へ配置、native API/kernel/検索/系統と再起動後の保存保持を確認 |
+| 操作ポータル・API充実 | サービス入口・catalog・capabilities・品質・helpを実装 | GUI AppTestと本体の固定API13経路を確認 |
+| 社内proxy・CA | daemon/build/runtime/Java/uvの設定を分ける | 認証CONNECT/TLS模擬試験、企業CA build/n8n対応。実社内は現地確認 |
+| GitHubの見栄えと図 | 公式ロゴ7種・SVG構成図2枚、詳細文書 | SVG hero・実CI badge・機能ナビ・説明文書を公開 |
 | Cloudflare用途 | Tunnel/Access/R2/Basin/AI機能の適用案 | 資格情報・外部公開・課金は未設定。採用時に別途接続確認 |
 
 ## 完了時に確認すること

@@ -205,6 +205,38 @@ class ControlEnvironmentTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     SETTINGS.load(self.env_file)
 
+    def test_ssrf_rules_reject_typos_before_deployment(self):
+        """Do not silently skip invalid policy entries as upstream may do."""
+        valid = {"N8N_SSRF_ALLOWED_HOSTNAMES": "worker,*.example.invalid"}
+        SETTINGS.validate_ssrf(valid)
+        self.assertEqual(valid["N8N_SSRF_PROTECTION_ENABLED"], "true")
+        invalid = [
+            {"N8N_SSRF_ALLOWED_IP_RANGES": "not-a-network"},
+            {"N8N_SSRF_BLOCKED_IP_RANGES": "defaut"},
+            {"N8N_SSRF_ALLOWED_HOSTNAMES": "http://worker:8000"},
+            {"N8N_SSRF_ALLOWED_HOSTNAMES": "*"},
+            {"N8N_SSRF_PROTECTION_ENABLED": "yes"},
+            {"N8N_SSRF_DNS_CACHE_MAX_SIZE": "-1"},
+        ]
+        for values in invalid:
+            with self.subTest(keys=list(values)):
+                with self.assertRaises(ValueError):
+                    SETTINGS.validate_ssrf(values)
+
+    def test_inactive_profile_ports_do_not_break_existing_sites(self):
+        """A new optional default must not reserve a port until enabled."""
+        content = self.env_file.read_text().replace(
+            "TRINO_PORT=8080", "TRINO_PORT=8082"
+        )
+        self.env_file.write_text(content)
+        self.assertEqual(SETTINGS.load(self.env_file)["TRINO_PORT"], "8082")
+        content = content.replace(
+            "COMPOSE_PROFILES=", "COMPOSE_PROFILES=compute"
+        )
+        self.env_file.write_text(content)
+        with self.assertRaisesRegex(ValueError, "Active host service ports"):
+            SETTINGS.load(self.env_file)
+
 
 if __name__ == "__main__":
     unittest.main()

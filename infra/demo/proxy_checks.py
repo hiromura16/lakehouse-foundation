@@ -80,8 +80,12 @@ def configuration_report(values):
             or values.get("REQUESTS_CA_BUNDLE")
             or values.get("CORPORATE_CA_FILE")
         ),
-        "uv_system_certs": values.get("UV_SYSTEM_CERTS", "").lower()
-        in {"1", "true"},
+        # Image build settings cannot be inferred from a site env file.
+        "uv_system_certs": (
+            values["UV_SYSTEM_CERTS"].lower() in {"1", "true"}
+            if "UV_SYSTEM_CERTS" in values
+            else None
+        ),
     }
 
 

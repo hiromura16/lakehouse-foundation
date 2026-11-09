@@ -106,7 +106,7 @@ CLIでは `scripts/lakehouse.sh` が7つのファイルをまとめて扱いま�
 compose -p lakehouse-development --env-file infra/lakehouse/.env -f infra/lakehouse/compose.yaml -f infra/compute/compose.yaml -f infra/orchestration/compose.yaml -f infra/demo/compose.yaml -f infra/cdc/compose.yaml -f infra/poc/compose.yaml -f infra/mcp/compose.yaml up -d --build --remove-orphans --wait --wait-timeout 600
 ```
 
-`COMPOSE_PROFILES` には必要なものだけを指定します。`compute` のSparkスモークは通常の `up` では常駐せず、CLIの `spark-check` で一時実行します。Airflowの接続トークンはAirflowのConnection画面へ登録します。[COMPATIBILITY.md](COMPATIBILITY.md) に追加要件と実行方法があります。
+`COMPOSE_PROFILES` には必要なものだけを指定します。`compute` を有効にするとSpark Master/Worker/Historyが常駐します。`spark-check` は別の明示スモークで、通常のupでは起動しません。Jupyterのremote実行は `notebooks,compute` を組み合わせます。Airflowの接続トークンはAirflowのConnection画面へ登録します。[COMPATIBILITY.md](COMPATIBILITY.md) に追加要件と実行方法があります。
 
 Custom Commandを使うと、pull、build、待機、削除対象等のflagも自分で保持する必要があります。UIが表示する既定値と比較し、別アプリの `appName`、共有volumeを消す操作、意図しないプロファイルを含めません。Preview等で別の `appName` を使う場合も、その名前へ合わせた構成を別に用意します。
 

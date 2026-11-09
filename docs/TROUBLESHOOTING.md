@@ -131,3 +131,6 @@ CDCの対象・変換・削除イベント・再実行の保証は、導入し�
 4. バックアップ復元が必要なら、元環境と異なる名前・ポート・volumeへ復元し検証します。
 
 GrafanaのGUI変更はGrafana DBが正本です。初回テンプレートを再importして復旧する前に、そのDBへ正しくmountできているか確認します。[GRAFANA.md](GRAFANA.md)、[OPERATIONS.md](OPERATIONS.md)
+
+
+SSRFの設定値、内部workerの例外、NO_PROXYとの違い、GUI保存と再配置、許可・拒否の受入は [SSRF.md](SSRF.md) を参照してください。

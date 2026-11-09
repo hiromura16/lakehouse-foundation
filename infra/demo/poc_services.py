@@ -56,7 +56,8 @@ def service_cards(values, health):
         # Optional PoC and CDC ports deliberately bind to host loopback.
         link_host = (
             "localhost"
-            if item.profile in {"cdc", "bi", "notebooks", "vector", "lineage"}
+            if item.profile
+            in {"cdc", "bi", "notebooks", "vector", "lineage", "compute"}
             else host
         )
         result.append(

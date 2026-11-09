@@ -449,8 +449,20 @@ def render_settings():
         "DEMO_SQLSERVER_HOST": "ダミー投入用SQL Server",
         "DEMO_SQLSERVER_DATABASE": "ダミー投入専用DB名",
         "DEMO_SQLSERVER_USER": "ダミー投入用ユーザー",
+        "N8N_SSRF_PROTECTION_ENABLED": "n8nのSSRF保護（true/false）",
+        "N8N_SSRF_BLOCKED_IP_RANGES": "拒否するIP範囲（defaultは製品既定）",
+        "N8N_SSRF_ALLOWED_IP_RANGES": "例外として許可するIP範囲",
+        "N8N_SSRF_ALLOWED_HOSTNAMES": "例外として許可するホスト名",
+        "N8N_SSRF_BLOCKED_HOSTNAMES": "拒否するホスト名",
+        "N8N_SSRF_DNS_CACHE_MAX_SIZE": "SSRF検査のDNSキャッシュ上限",
     }
-    groups = {"基本": [], "SQL接続": [], "プロキシ": [], "サービスと配置": []}
+    groups = {
+        "基本": [],
+        "SQL接続": [],
+        "プロキシ": [],
+        "接続制限（SSRF）": [],
+        "サービスと配置": [],
+    }
     basic = {
         "COMPOSE_PROJECT_NAME",
         "DATA_VOLUME_PREFIX",
@@ -465,12 +477,19 @@ def render_settings():
             group = "SQL接続"
         elif key.upper().endswith("PROXY"):
             group = "プロキシ"
+        elif key.startswith("N8N_SSRF_"):
+            group = "接続制限（SSRF）"
         else:
             group = "サービスと配置"
         groups[group].append(key)
     with st.form("private-settings"):
         for group, keys in groups.items():
             with st.expander(group, expanded=group == "基本"):
+                if group == "接続制限（SSRF）":
+                    st.caption(
+                        "NO_PROXYはproxyを迂回する宛先、SSRFは接続の許可制御です。"
+                        "生成既定は保護を有効にし、内部workerを明示例外にします。"
+                    )
                 for key in keys:
                     value = str(values[key])
                     entered = st.text_input(
@@ -496,6 +515,14 @@ def render_settings():
         )
         if saved is not None:
             st.success("設定を保存しました。再配置は別の操作です。")
+    with st.expander("接続制限の同梱説明"):
+        if st.button("SSRFの設定説明を開く", key="settings-ssrf-help"):
+            document = call_api("/help/ssrf")
+            if document is not None:
+                st.session_state["settings-ssrf-document"] = document
+        document = st.session_state.get("settings-ssrf-document")
+        if document:
+            st.markdown(document["markdown"])
 
 
 def render_pipeline():

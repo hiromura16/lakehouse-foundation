@@ -431,7 +431,7 @@ class ControlApiTests(unittest.TestCase):
         response = self.request(
             "PATCH",
             "/settings",
-            json={"values": {"S3_SECRET_KEY": "", "TRINO_PORT": "8082"}},
+            json={"values": {"S3_SECRET_KEY": "", "TRINO_PORT": "8090"}},
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
@@ -550,7 +550,7 @@ class ControlApiTests(unittest.TestCase):
         self.request(
             "PATCH",
             "/settings",
-            json={"values": {"TRINO_PORT": "8082"}},
+            json={"values": {"TRINO_PORT": "8090"}},
         )
         accepted = self.request("POST", "/jobs", json={}).json()
         self.assertTrue(accepted["pending_restart"])

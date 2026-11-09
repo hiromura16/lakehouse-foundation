@@ -34,7 +34,7 @@
 | **試す・壊れ方を確かめる** | 6ソースの合成データ、有限マイクロバッチ、選択式の26異常シナリオ | [異常シナリオ](docs/ANOMALY-SCENARIOS.md) |
 | **API・AIから参照する** | 認証付きFastAPI / Swagger、main snapshot固定context、LangChain例、MCPアダプター | [API](docs/API.md) · [AI](docs/AI-READINESS.md) · [MCPの設定](docs/MCP.md) |
 | **分析を広げる** | Superset、JupyterLab + Spark、Qdrant、Marquezを独立profileで追加 | [PoCツール](docs/POC-TOOLS.md) |
-| **運用する** | Dokploy、n8n、Airflow、Grafana / Prometheus、uv・hash lock、企業proxy / CA | [運用](docs/OPERATIONS.md) · [会社proxy](docs/COMPANY-PROXY.md) |
+| **運用する** | Dokploy、n8n、Airflow、Grafana / Prometheus、uv・hash lock、企業proxy / CA | [運用](docs/OPERATIONS.md) · [会社proxy](docs/COMPANY-PROXY.md) · [SSRF設定](docs/SSRF.md) |
 
 ![データレイクハウスの全体構成](docs/assets/architecture.svg)
 
@@ -92,7 +92,7 @@ SQLへの素材投入やCDCテスト用の追加・更新・削除は、専用DB
 | --- | --- |
 | `demo` / `monitoring` | 操作ハブ・API / Grafana・Prometheus |
 | `cdc` / `automation` | SQL Server CDC・Kafbat / n8n |
-| `compute` / `orchestration` | Spark一時スモーク / Airflow手動DAG |
+| `compute` / `orchestration` | 常駐Spark Master・Worker・History / Airflow手動DAG |
 | `bi` / `notebooks` | Superset / JupyterLab + Spark |
 | `vector` / `lineage` | Qdrant / Marquez |
 | `mcp` | AIクライアント向けMCP。内部APIを一緒に起動 |

@@ -1,5 +1,5 @@
 {
-  "checked_on": "2026-11-09",
+  "checked_on": "2026-11-10",
   "platform": "Linux x86_64, single host",
   "results": {
     "core": {
@@ -107,7 +107,7 @@
       "original_dockerfile_hash_locked_build": true
     },
     "source_quality": {
-      "unit_tests": 140,
+      "unit_tests": 217,
       "ruff": true,
       "pycodestyle_max_length": 79,
       "sqlfluff_trino": true,
@@ -145,12 +145,143 @@
       ],
       "gold_insert_update_delete_checked": true,
       "kafka_consumer_lag": 0,
-      "original_source_rows_preserved": 12
+      "original_source_rows_preserved": 12,
+      "main_gui_insert_update_delete_checked": true,
+      "redeploy_existing_exact_config_noop": true,
+      "config_drift_refused_without_update": true
+    },
+    "public_git_deployment": {
+      "ok": true,
+      "original_compose_and_dockerfiles": true,
+      "uv_version": "0.13.7",
+      "hash_locked_environments": true,
+      "compose_services": 30,
+      "runtime_containers": 29,
+      "running_containers": 26,
+      "successful_one_shots": 3,
+      "spark_normal_up_replicas": 0,
+      "existing_secrets_preserved": true,
+      "existing_volume_prefix_preserved": true,
+      "validated_application_commit": "a84eae43ee47174c3ff0b99fbd933bf99b2b1884"
+    },
+    "gui_api": {
+      "ok": true,
+      "source_only_sql_and_landing_batch": true,
+      "finite_stream_batches": 2,
+      "sql_limited_user_and_tls": true,
+      "gold_unchanged_until_explicit_processing": true,
+      "medallion_and_isolated_verify": true,
+      "settings_saved_versus_applied": true,
+      "private_env_mode": "0600",
+      "swagger_assets_local": true
+    },
+    "operator_portal": {
+      "ok": true,
+      "typed_capabilities": true,
+      "catalog_and_snapshot_preview": true,
+      "fixed_quality_queries": true,
+      "allowlisted_offline_help_and_diagrams": true,
+      "anomalies": 26,
+      "presets": 7,
+      "selected_anomaly_generated_through_api": true,
+      "anomaly_source_only": true,
+      "job_history_persistent": false,
+      "job_history_limit": 20,
+      "all_13_service_cards_available": true
+    },
+    "mcp": {
+      "ok": true,
+      "sdk_version": "2.3.0",
+      "http_bearer_authentication": true,
+      "unauthenticated_status": 401,
+      "default_read_tools": 9,
+      "resources": 2,
+      "mutating_tools_opt_in": 3,
+      "per_call_confirmation_tested": true,
+      "source_only_generation_and_job_polling_tested": true,
+      "structured_output": true,
+      "all_read_tools_against_deployed_api": true,
+      "arbitrary_sql_or_shell": false
+    },
+    "corporate_proxy": {
+      "simulated_authenticated_connect_and_tls": true,
+      "bad_password_407": true,
+      "missing_ca_fails_closed": true,
+      "internal_bypass_and_redirect_refusal": true,
+      "build_secret_ca_for_custom_images": true,
+      "existing_os_and_java_roots_preserved": true,
+      "n8n_optional_node_extra_ca": true,
+      "direct_fixed_https_targets": 4,
+      "actual_company_proxy_tested": false
+    },
+    "spark_public_git": {
+      "ok": true,
+      "spark_and_trino_rows": 3,
+      "original_git_image": true,
+      "temporary_job_removed": true
+    },
+    "poc_tools": {
+      "ok": true,
+      "main_public_git_deployment": true,
+      "superset": {
+        "health": true,
+        "login_gui": true,
+        "jwt_login_api": true,
+        "csrf": true,
+        "trino_connection": true,
+        "gold_datasets": 2,
+        "sqllab_rows": 27,
+        "sqlalchemy": "1.4.54",
+        "trino_driver": "0.340.0"
+      },
+      "jupyter": {
+        "native_api_auth": true,
+        "initial_notebook_seeded": true,
+        "kernel_execute": true,
+        "trino_gold_rows": 10,
+        "spark": "4.1.4",
+        "iceberg": "1.12.0",
+        "iceberg_read_write_rows": 1,
+        "workspace_owner": true
+      },
+      "vector_and_lineage": {
+        "qdrant_health": true,
+        "dashboard": true,
+        "seed_points": 3,
+        "nearest_point_ids": [
+          1,
+          2
+        ],
+        "readonly_search": true,
+        "readonly_write_denied": true,
+        "seed_idempotent": true,
+        "lineage_api": true,
+        "lineage_web": true,
+        "manual_demo_job": true
+      },
+      "persistence": {
+        "superset_dashboard_persisted": true,
+        "notebook_workspace_persisted": true,
+        "qdrant_points_persisted": 3,
+        "marquez_job_persisted": true,
+        "restarted_only_owned_test_services": true,
+        "protected_container_ids_states_unchanged": true,
+        "protected_count": 74,
+        "protected_main_and_sql_started_at_unchanged": true,
+        "protected_started_at_count": 26
+      }
+    },
+    "cleanup": {
+      "temporary_apps_removed": 5,
+      "temporary_runtime_containers_remaining": 0,
+      "main_and_test_sql_kept": true,
+      "historical_backup_volumes_not_targeted": true
     }
   },
   "limits": [
     "Company SQL Server, corporate proxy/CA and IdP require on-site validation.",
     "Model inference, HA and backup restore were not executed.",
     "Authenticated SMB file transfer was not tested with the existing account."
-  ]
+  ],
+  "timezone": "Asia/Tokyo"
 }

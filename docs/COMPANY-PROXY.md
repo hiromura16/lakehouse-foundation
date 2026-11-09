@@ -240,3 +240,9 @@ CA helperは既存root保持、OS bundle再生成後のroot復元、秘密鍵拒
 n8nの固定image内のNode子プロセスでは、追加CA未設定・空欄で警告なし、公開CA bundleの読込、存在しないfileでの警告を確認しています。CA未設定・空欄・指定時の全profile Composeも解決し、追加差分がn8n専用envと読み取り専用bindだけであることを照合しています。既存n8nの設定・workflow・dataは変更せず、n8n HTTP Request自体を模擬proxyへ実行した結果ではありません。
 
 戻す場合はprivateのHTTP(S)_PROXYを両caseとも空にし、daemonはplan→apply→管理者の保守時間でrestart、コンテナは再配置します。CAをimageから除くときは `CORPORATE_CA_FILE` を空にし、元のbaseから `--no-cache` で再buildします。稼働中のtruststoreを手作業で削除して対処しません。データvolume・暗号鍵は保持します。
+
+
+診断の `uv_system_certs` が `null` の場合は、サイト設定だけからimageのbuild設定を判定できない意味です。無効という意味ではありません。自作Dockerfileでは `UV_SYSTEM_CERTS=1` とOS bundleを明示しています。GUIのPython通信診断でuvの依存取得やJava、daemonの成功までを判定しません。
+
+
+SSRFの設定値、内部workerの例外、NO_PROXYとの違い、GUI保存と再配置、許可・拒否の受入は [SSRF.md](SSRF.md) を参照してください。

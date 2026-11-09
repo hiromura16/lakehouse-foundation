@@ -154,7 +154,7 @@ def platform():
         text(1262, 294, "SQL参照・変換", 16),
         rect(1425, 237, 177, 56, "#14263d", "none", 9),
         logo("spark", 1436, 242, 150, 45),
-        text(1427, 322, "Spark 4.1 / Iceberg 1.12", 14),
+        text(1427, 322, "常駐Spark + History", 14),
         rect(1174, 390, 452, 130),
         text(1193, 426, "LangChain / ローカルLLM", 25, weight=700),
         text(1193, 461, "Gold事実 + 固定snapshot + 引用", 17),

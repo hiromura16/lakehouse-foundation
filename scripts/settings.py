@@ -10,6 +10,48 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def validate_ssrf(values):
+    """Reject malformed rules before n8n could ignore a CIDR typo."""
+    defaults = {
+        "N8N_SSRF_PROTECTION_ENABLED": "true",
+        "N8N_SSRF_BLOCKED_IP_RANGES": "default,100.64.0.0/10",
+        "N8N_SSRF_ALLOWED_IP_RANGES": "",
+        "N8N_SSRF_ALLOWED_HOSTNAMES": "worker",
+        "N8N_SSRF_BLOCKED_HOSTNAMES": "",
+        "N8N_SSRF_DNS_CACHE_MAX_SIZE": "1048576",
+    }
+    for key, value in defaults.items():
+        values.setdefault(key, value)
+    if values["N8N_SSRF_PROTECTION_ENABLED"] not in {"true", "false"}:
+        raise ValueError("N8N_SSRF_PROTECTION_ENABLED must be true or false.")
+    size = values["N8N_SSRF_DNS_CACHE_MAX_SIZE"]
+    if not size.isdigit() or not 65536 <= int(size) <= 16777216:
+        raise ValueError("Invalid N8N_SSRF_DNS_CACHE_MAX_SIZE.")
+    for key in ("N8N_SSRF_ALLOWED_IP_RANGES", "N8N_SSRF_BLOCKED_IP_RANGES"):
+        entries = [entry.strip() for entry in values[key].split(",") if entry]
+        if len(entries) > 64:
+            raise ValueError("Too many CIDR entries in " + key)
+        for entry in entries:
+            if entry.lower() == "default" and key.endswith(
+                "BLOCKED_IP_RANGES"
+            ):
+                continue
+            try:
+                ipaddress.ip_network(entry, strict=True)
+            except ValueError:
+                raise ValueError("Invalid CIDR entry in " + key) from None
+    for key in ("N8N_SSRF_ALLOWED_HOSTNAMES", "N8N_SSRF_BLOCKED_HOSTNAMES"):
+        for entry in filter(None, values[key].split(",")):
+            hostname = entry.strip().removeprefix("*.")
+            if len(hostname) > 253 or not all(
+                re.fullmatch(
+                    r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label
+                )
+                for label in hostname.split(".")
+            ):
+                raise ValueError("Use DNS names without URL or port in " + key)
+
+
 def load(path):
     """Parse private settings literally and validate deployment boundaries."""
     path = Path(path).expanduser().resolve()
@@ -70,21 +112,43 @@ def load(path):
         "MARQUEZ_API_PORT": "5000",
         "MARQUEZ_UI_PORT": "3001",
         "MCP_PORT": "8503",
+        "SPARK_MASTER_UI_PORT": "8082",
+        "SPARK_WORKER_UI_PORT": "8085",
+        "SPARK_HISTORY_UI_PORT": "18080",
     }
     for key, default in port_defaults.items():
         # New inactive profiles remain compatible with older site settings.
         values.setdefault(key, default)
         if not values[key].isdigit() or not 1024 <= int(values[key]) <= 65535:
             raise ValueError("Invalid port: " + key)
+    profiles = set(filter(None, values.get("COMPOSE_PROFILES", "").split(",")))
+    port_profiles = {
+        "GRAFANA_PORT": {"monitoring"},
+        "PROMETHEUS_PORT": {"monitoring"},
+        "N8N_PORT": {"automation"},
+        "AIRFLOW_PORT": {"orchestration"},
+        "DEMO_GUI_PORT": {"demo"},
+        "DEMO_API_PORT": {"demo", "mcp"},
+        "CDC_CONNECT_PORT": {"cdc"},
+        "CDC_UI_PORT": {"cdc"},
+        "SUPERSET_PORT": {"bi"},
+        "JUPYTER_PORT": {"notebooks"},
+        "QDRANT_PORT": {"vector"},
+        "MARQUEZ_API_PORT": {"lineage"},
+        "MARQUEZ_UI_PORT": {"lineage"},
+        "MCP_PORT": {"mcp"},
+        "SPARK_MASTER_UI_PORT": {"compute"},
+        "SPARK_WORKER_UI_PORT": {"compute"},
+        "SPARK_HISTORY_UI_PORT": {"compute"},
+    }
+    # An inactive profile publishes no port and must not break an older site.
     ports = [
-        values[k]
-        for k in values
-        if k.endswith("_PORT")
-        and not k.endswith("_SQLSERVER_PORT")
-        and values[k]
+        int(values[key])
+        for key in port_defaults
+        if key not in port_profiles or profiles & port_profiles[key]
     ]
     if len(ports) != len(set(ports)):
-        raise ValueError("Host service ports must be distinct.")
+        raise ValueError("Active host service ports must be distinct.")
     for key in [
         "S3_ACCESS_KEY",
         "S3_SECRET_KEY",
@@ -119,7 +183,6 @@ def load(path):
             "LANDING_DIR must be an absolute directory "
             "outside the source tree."
         )
-    profiles = set(filter(None, values.get("COMPOSE_PROFILES", "").split(",")))
     if not profiles <= {
         "automation",
         "monitoring",
@@ -178,13 +241,14 @@ def load(path):
         values["QDRANT_API_KEY"] == values["QDRANT_READ_ONLY_API_KEY"]
     ):
         raise ValueError("Use distinct Qdrant management and read-only keys.")
-    if "notebooks" in profiles:
+    if profiles & {"notebooks", "compute"}:
         if (
             not values.get("WORKER_UID", "").isdigit()
             or int(values["WORKER_UID"]) == 0
             or not values.get("WORKER_GID", "").isdigit()
         ):
-            raise ValueError("Notebook UID must be non-root; GID numeric.")
+            raise ValueError("Compute UID must be non-root; GID numeric.")
+    if "notebooks" in profiles:
         workspace = Path(values.get("NOTEBOOKS_DIR", ""))
         if not workspace.is_absolute() or workspace.resolve().is_relative_to(
             ROOT
@@ -195,6 +259,7 @@ def load(path):
     ca_file = values.get("CORPORATE_CA_FILE", "")
     if ca_file and not Path(ca_file).is_absolute():
         raise ValueError("CORPORATE_CA_FILE must be absolute when configured.")
+    validate_ssrf(values)
     return values
 
 

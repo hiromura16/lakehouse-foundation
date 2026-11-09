@@ -12,7 +12,7 @@ export LAKEHOUSE_ENV_FILE=/absolute/private/site.env
 ./scripts/lakehouse.sh up
 ```
 
-追加サービスは必要なprofileだけを選びます。監視は `monitoring`、n8nは `automation`、Airflowは `orchestration`、Kafka管理画面は `cdc`、BIは `bi`、Notebookは `notebooks`、ベクトルDBは `vector`、lineageは `lineage` です。既存private設定では、追加された設定項目と容量を確認してから再配置します。ポータルからDockerの権限を使って自動インストールする仕組みではありません。
+追加サービスは必要なprofileだけを選びます。Sparkの常駐Master/Worker/Historyは `compute` です。監視は `monitoring`、n8nは `automation`、Airflowは `orchestration`、Kafka管理画面は `cdc`、BIは `bi`、Notebookは `notebooks`、ベクトルDBは `vector`、lineageは `lineage` です。既存private設定では、追加された設定項目と容量を確認してから再配置します。ポータルからDockerの権限を使って自動インストールする仕組みではありません。
 
 ## 入口カードの読み方
 
@@ -25,7 +25,7 @@ export LAKEHOUSE_ENV_FILE=/absolute/private/site.env
 
 未到達だけで未導入と断定しません。ポータルはDocker socketを持たず、HTTPによる到達確認と設定上の有効化を区別します。healthが成功しても、業務数値やバックアップの受入は別の確認です。
 
-表示するURLにはパスワード、Jupyter token、Qdrant API keyを入れません。各製品のログインはその製品の認証で行います。localhostはブラウザーを開いた端末自身なので、遠隔利用では必要なportを会社標準の方法で転送します。PoC追加サービスとCDCのhost portはloopbackへ限定しています。
+表示するURLにはパスワード、Jupyter token、Qdrant API keyを入れません。各製品のログインはその製品の認証で行います。localhostはブラウザーを開いた端末自身なので、遠隔利用では必要なportを会社標準の方法で転送します。PoC追加サービス・CDC・Sparkのhost portはloopbackへ限定しています。
 
 | サービス | profile | host portの既定 | 開くもの |
 | --- | --- | --- | --- |
@@ -35,11 +35,16 @@ export LAKEHOUSE_ENV_FILE=/absolute/private/site.env
 | n8n | automation | 5678 | workflow編集・実行 |
 | Grafana / Prometheus | monitoring | 3000 / 9090 | 監視画面・指標 |
 | Airflow | orchestration | 8081 | DAGと実行結果 |
+| Spark Master | compute | 8082 | クラスタ受付、登録worker、実行アプリ |
+| Spark Worker | compute | 8085 | worker資源とexecutor |
+| Spark History | compute | 18080 | 保存したevent logによるアプリ履歴 |
 | Kafbat | cdc | 8084 | Kafka topic・lag・Connect |
 | Superset | bi | 8088 | Goldの探索・BI |
 | JupyterLab | notebooks | 8888 | Notebook分析 |
 | Qdrant | vector | 6333 | vector collection |
 | Marquez | lineage | 3001 | 登録済みlineage |
+
+Sparkの3入口は `SPARK_MASTER_UI_PORT` / `SPARK_WORKER_UI_PORT` / `SPARK_HISTORY_UI_PORT` でhost側のportを変更できます。内部healthは固定したMaster 8080、Worker 8081、History 18080へ接続し、ホストの公開portと区別します。compute未選択ならカードはprofile未選択、設定済みで到達できなければ停止・起動待ち・未到達と表示します。Master UIの稼働確認と、個々のSparkジョブの成功は別に確認します。Historyはevent logを参照するため、対象ログがまだなければ履歴一覧は空です。
 
 設定の保存後に `pending_restart` がある場合、カードは起動時の適用済み設定を使い続けます。新しいportやprofileを保存しただけでは入口が移りません。再配置と製品の初期化、データ登録はそれぞれ確認します。
 

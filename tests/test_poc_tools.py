@@ -3,9 +3,12 @@
 import importlib.util
 import io
 import json
+import os
 import re
+import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -91,13 +94,131 @@ class PocToolsTests(unittest.TestCase):
 
     def test_initial_notebook_contains_no_saved_execution_output(self):
         """Published examples contain code and prose, never runtime secrets."""
-        notebook = json.loads(
-            (ROOT / "infra/poc/notebooks/01-lakehouse-tour.ipynb").read_text()
+        for path in (ROOT / "infra/poc/notebooks").glob("*.ipynb"):
+            notebook = json.loads(path.read_text())
+            for cell in notebook["cells"]:
+                if cell["cell_type"] == "code":
+                    self.assertIsNone(cell["execution_count"])
+                    self.assertEqual(cell["outputs"], [])
+
+
+class SparkNotebookTests(unittest.TestCase):
+    """Keep remote execution, callback addresses and Python workers aligned."""
+
+    def settings(self, profiles="compute,notebooks"):
+        """Return synthetic values without opening network connections."""
+        return {
+            "COMPOSE_PROFILES": profiles,
+            "WAREHOUSE_NAME": "synthetic-warehouse",
+            "S3_ACCESS_KEY": "synthetic-access",
+            "S3_SECRET_KEY": "synthetic-secret",
+        }
+
+    def builder(self, master):
+        """Represent initialization while inspecting Spark configuration."""
+        context = SimpleNamespace(
+            master=master, applicationId="app-synthetic", setLogLevel=Mock()
         )
-        for cell in notebook["cells"]:
-            if cell["cell_type"] == "code":
-                self.assertIsNone(cell["execution_count"])
-                self.assertEqual(cell["outputs"], [])
+        spark = SimpleNamespace(sparkContext=context)
+        builder = Mock()
+        builder.master.return_value = builder
+        builder.appName.return_value = builder
+        builder.config.return_value = builder
+        builder.getOrCreate.return_value = spark
+        session = SimpleNamespace(builder=builder)
+        modules = {
+            "pyspark": SimpleNamespace(),
+            "pyspark.sql": SimpleNamespace(SparkSession=session),
+        }
+        return builder, spark, modules
+
+    def test_compute_disabled_selects_explicit_local_mode(self):
+        """An unused remote setting never changes the local-only selection."""
+        helper = module("lakehouse_session")
+        values = self.settings("notebooks")
+        values["SPARK_MASTER_URL"] = "invalid-unused-value"
+        actual = helper.execution_settings(values)
+        self.assertEqual(actual["master"], "local[2]")
+        self.assertEqual(actual["executor_python"], helper.DRIVER_PYTHON)
+        self.assertIsNone(actual["master_ui"])
+        self.assertIsNone(actual["history_ui"])
+
+    def test_cluster_uses_reachable_driver_and_executor_python(self):
+        """Python tasks launch the worker venv, not the driver's local path."""
+        helper = module("lakehouse_session")
+        master = "spark://spark-master:7077"
+        builder, spark, modules = self.builder(master)
+        with (
+            patch.dict(os.environ, self.settings(), clear=True),
+            patch.dict(sys.modules, modules),
+            patch.object(helper, "show_session") as display,
+        ):
+            self.assertIs(helper.spark_session(), spark)
+            self.assertEqual(
+                os.environ["PYSPARK_PYTHON"], helper.EXECUTOR_PYTHON
+            )
+        options = dict(call.args for call in builder.config.call_args_list)
+        self.assertEqual(options["spark.driver.host"], "jupyter")
+        self.assertEqual(options["spark.driver.bindAddress"], "0.0.0.0")
+        self.assertEqual(options["spark.driver.port"], "39000")
+        self.assertEqual(
+            options["spark.pyspark.driver.python"], helper.DRIVER_PYTHON
+        )
+        self.assertEqual(
+            options["spark.pyspark.python"], helper.EXECUTOR_PYTHON
+        )
+        self.assertEqual(options["spark.eventLog.dir"], helper.EVENT_LOG_DIR)
+        display.assert_called_once_with(spark)
+
+    def test_remote_failure_never_retries_on_local(self):
+        """An unavailable Master produces an error instead of false success."""
+        helper = module("lakehouse_session")
+        builder, _, modules = self.builder("spark://spark-master:7077")
+        builder.getOrCreate.side_effect = RuntimeError("unavailable")
+        with (
+            patch.dict(os.environ, self.settings(), clear=True),
+            patch.dict(sys.modules, modules),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "No automatic local"):
+                helper.spark_session()
+        builder.master.assert_called_once_with("spark://spark-master:7077")
+        self.assertEqual(builder.getOrCreate.call_count, 1)
+
+    def test_existing_local_session_cannot_mask_cluster_selection(self):
+        """getOrCreate must not silently return an existing local context."""
+        helper = module("lakehouse_session")
+        _, spark, modules = self.builder("local[2]")
+        with (
+            patch.dict(os.environ, self.settings(), clear=True),
+            patch.dict(sys.modules, modules),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "another master"):
+                helper.spark_session()
+        spark.sparkContext.setLogLevel.assert_not_called()
+
+    def test_session_links_include_master_proxy_and_history(self):
+        """Users can reach driver UI through the configured Master proxy."""
+        helper = module("lakehouse_session")
+        _, spark, _ = self.builder("spark://spark-master:7077")
+        with patch.dict(os.environ, self.settings(), clear=True):
+            info = helper.session_info(spark)
+        self.assertEqual(info["mode"], "standalone")
+        self.assertTrue(
+            info["application_ui"].endswith("/proxy/app-synthetic/")
+        )
+        self.assertTrue(info["history_ui"].startswith("http://localhost:"))
+        self.assertIsNotNone(info["worker_ui"])
+
+    def test_compute_python_dependencies_match_notebook_lock(self):
+        """Remote Pandas/Arrow tasks use the same dependency versions."""
+        compute = (ROOT / "infra/compute/requirements.lock").read_text()
+        notebook = (ROOT / "infra/poc/requirements-notebooks.lock").read_text()
+        expression = r"(?m)^([A-Za-z0-9_.-]+)==([^ \\]+)"
+        expected = dict(re.findall(expression, notebook))
+        actual = dict(re.findall(expression, compute))
+        self.assertTrue(actual)
+        for name, version in actual.items():
+            self.assertEqual(version, expected[name], name)
 
 
 if __name__ == "__main__":

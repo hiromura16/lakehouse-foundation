@@ -282,3 +282,13 @@ SSL_CERT_FILE、REQUESTS_CA_BUNDLE、AWS_CA_BUNDLE、CURL_CA_BUNDLEはimage内�
 `NOTEBOOKS_DIR` はリポジトリ外の絶対pathで事前作成し、非rootの `WORKER_UID` と数値 `WORKER_GID` に書込権を与えます。追加キーは生成された値を保持し、公開Composeへ秘密値を直書きしません。`SUPERSET_SECRET_KEY` と `JUPYTER_TOKEN` は32文字以上、Qdrantの2鍵は異なる値を使います。全hostportを一意にします。
 
 `NO_PROXY` と `no_proxy` に、新しい内部名 `superset,superset-db,superset-redis,jupyter,qdrant,marquez,marquez-db,marquez-web,mcp` を追加します。`--upgrade` は既存のproxy指定を変更しません。GUI保存後はDokployのEnvironmentとprivate設定を一致させて再配置し、CA変更時はcacheを使わず再buildします。[PoCツール](POC-TOOLS.md)、[MCP](MCP.md)、[会社proxy手順](COMPANY-PROXY.md) も確認してください。
+
+
+SSRFの設定値、内部workerの例外、NO_PROXYとの違い、GUI保存と再配置、許可・拒否の受入は [SSRF.md](SSRF.md) を参照してください。
+
+
+## 常駐Sparkの画面
+
+`compute` はMaster/Worker/Historyを常駐させます。`SPARK_MASTER_UI_PORT`（8082）、`SPARK_WORKER_UI_PORT`（8085）、`SPARK_HISTORY_UI_PORT`（18080）は他のhostportと重ならない値へ変更できます。cluster RPCとNotebook driver portはDocker内部だけです。`NO_PROXY` / `no_proxy` に `spark-master,spark-worker,spark-history,spark-volumes-init` を含めます。Notebookはcomputeの有無でremote/localを選びます。
+
+`WORKER_UID/GID` はNotebookとSparkのshared volumeを使う非rootの同じ実行IDにします。再配置でデータを消す構成にはせず、運用開始後の実行ID変更は既存ファイル所有権の移行として扱います。SSRF設定6項目と値の意味は [SSRF.md](SSRF.md) を参照してください。

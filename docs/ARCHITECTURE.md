@@ -30,6 +30,7 @@
 | ファイル受け口 | ホストのSamba共有（別設定） | `LANDING_DIR` にCSV・JSON・画像等を投入 |
 | 外部業務DB | 会社のSQL Server | サイト設定で指定。読み取り専用抽出と任意CDCの接続先 |
 | 任意の自動化 | n8n + 専用PostgreSQL | HTTP連携、依頼・承認、ジョブの呼び出し |
+| 任意の常駐計算 | Spark Master / Worker / History | Jupyterからクラスタへ投入し、GUIで資源・実行・履歴を参照 |
 | 任意の監視 | Prometheus + Grafana | メトリクス保存と可視化 |
 | 管理基盤 | Dokploy（別導入） | コンテナの配置管理。coreの手動起動も独立して可能 |
 
@@ -147,7 +148,7 @@ n8nテンプレートはGUIからワーカーの `/run` を呼び、`medallion` 
 | 拡張 | 推奨する役割 | 導入条件 |
 | --- | --- | --- |
 | 定期取り込み | 提供ワーカーの定時実行 | n8n等で開始条件・再試行・監視を追加 |
-| Spark（compute） | 提供するREST/S3相互参照スモークを基礎に、大きな変換へ拡張 | Java/Scala/Iceberg runtimeを固定し、実行時に確認 |
+| Spark（compute） | 常駐Master/Workerと履歴、Jupyterからの分散計算。明示スモークも保持 | Java/Scala/Iceberg runtimeを固定し、実行時に確認 |
 | Superset | Trino経由の業務BI | 利用者認証とデータ権限を確定 |
 | Airflow（orchestration） | 提供する手動DAGからworkerへ依頼。将来の依存関係・バックフィル管理 | 企業運用ではstandaloneから構成を分離 |
 | Apache Hop / NiFi | 列のマッピング等をGUIで設計 | SQL編集で足りない要件と運用負荷を評価 |

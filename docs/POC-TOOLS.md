@@ -7,7 +7,7 @@
 | profile | ツール | GUI の入口 | 主な API / 接続先 | メモリ上限の目安 |
 | --- | --- | --- | --- | --- |
 | `bi` | Apache Superset | `http://localhost:8088` | `/api/v1/`、SQL Lab、Trino | 本体 2 GiB + init 1.5 GiB + DB/cache |
-| `notebooks` | JupyterLab + Spark | `http://localhost:8888/lab` | `/api/contents`、`/api/kernels`、kernel WebSocket | 4 GiB、local[2] |
+| `notebooks` | JupyterLab + Spark | `http://localhost:8888/lab` | `/api/contents`、`/api/kernels`、kernel WebSocket | driver 4 GiB、executor は compute Worker |
 | `vector` | Qdrant | `http://localhost:6333/dashboard/` | `/collections`、`/points/query`、OpenAPI | 1 GiB |
 | `lineage` | Marquez | `http://localhost:3001` | `http://localhost:5000/api/v1/` | API 1 GiB + Web/DB |
 
@@ -159,7 +159,7 @@ SQL Lab API の `client_id` は短い識別子を使います。metadata の列�
 1. `http://localhost:8888/lab` を開き、private `JUPYTER_TOKEN` でログインする。
 2. File Browser にある `01-lakehouse-tour.ipynb` を開く。
 3. Gold の参照 cell を上から実行する。結果は Pandas の表で表示する。
-4. Spark の cell を実行する。最初に local[2] の JVM が起動する。
+4. Spark の cell を実行する。compute 有効時は常駐 Master/Worker、無効時は local[2] と表示する。
 5. `notebook_demo.notes` の作成・MERGE・SELECT を実行し、小さな Iceberg 読書きを確認する。
 6. notebook を保存し、利用後は kernel を shutdown する。
 
@@ -168,10 +168,11 @@ SQL Lab API の `client_id` は短い識別子を使います。metadata の列�
 表の保存先は別です。最後の `spark.stop()` で JVM を終了できます。
 
 ```python
-from lakehouse_session import read_gold, spark_session
+from lakehouse_session import read_gold, session_info, spark_session
 
 columns, rows = read_gold("sales_fulfillment", limit=20)
 spark = spark_session()
+print(session_info(spark))
 spark.sql("SHOW NAMESPACES IN lakehouse").show()
 spark.stop()
 ```
@@ -182,14 +183,59 @@ SparkSession は同じ REST catalog と S3 を使います。初期例の書込�
 ただし notebook 自体を sandbox 化したわけではなく、operator はコードを変更できます。
 受け取った notebook は中身を読み、信頼できるものだけ実行してください。
 
+### 常駐 cluster と local の選び方
+
+| 有効な profile | `spark_session()` の実行先 | 表示・保存 |
+| --- | --- | --- |
+| `notebooks,compute` | `spark://spark-master:7077` の常駐 Master/Worker | 実 master、application ID、Master/Worker/application/History へのリンク |
+| `notebooks`、compute 無効 | Jupyter 内の `local[2]` | local であることを明示。event log は保存する |
+
+実際の選択は container が受け取る `COMPOSE_PROFILES` に基づきます。
+remote 時の接続先は `SPARK_MASTER_URL` です。Master 停止、Worker 不在、Python の不整合は
+失敗として確認し、黙って local へ切り替えません。すでに別 master の SparkSession が
+kernel にあれば、再利用して成功したことにせずエラーにします。切替前に notebook を
+保存し、`spark.stop()` と kernel shutdown を行い、設定変更・再配置後に新しい kernel を
+使ってください。
+
+`02-spark-cluster.ipynb` が cluster 用の追加例です。既存の `01-lakehouse-tour.ipynb`
+を編集していても上書きせず、02 を新しいファイルとして追加します。例では 2 partition の
+Python task が実際の executor hostname・Python/Pandas/Arrow/NumPy 版を返します。
+`mapInPandas` による Arrow 処理と、専用 `notebook_demo.cluster_roundtrip` table への
+小さな Iceberg MERGE/SELECT も実行できます。
+
+Notebook は client mode の driver です。Worker が driver へ戻れるよう、内部名
+`jupyter`、bind `0.0.0.0`、driver RPC 39000 / block manager 39001 を指定します。
+これらの host port は公開しません。driver UI も 4040 を内部だけで使用し、実行中の
+application は Master の reverse proxy を通して開きます。
+
+| UI | 既定の入口 | 主な用途 |
+| --- | --- | --- |
+| Master | `http://localhost:8082` | Worker、実行中/完了 application、driver UI の proxy |
+| Worker | `http://localhost:8085` | executor、CPU/memory、作業状態 |
+| History | `http://localhost:18080` | 終了後の job/stage/task 履歴 |
+
+port は `SPARK_MASTER_UI_PORT` / `SPARK_WORKER_UI_PORT` / `SPARK_HISTORY_UI_PORT` で
+変えられます。Jupyter の表示リンクも同じ値を使います。localhost の入口は server 上、
+またはその port を forward したブラウザーから利用します。
+
+`spark-events` named volume を driver と History が `/opt/spark/events` に共有し、
+`file:///opt/spark/events` へ event log を書きます。`spark-volumes-init` は compute と
+notebooks の両 profile から使え、local-only の実行時も UID/GID を揃えます。
+local-only で保存した履歴は、後から compute/History を起動して閲覧できます。
+History の一覧には終了後数秒で反映されます。通常の停止で event volume を削除しないで
+ください。Notebook 自体の保存先である `NOTEBOOKS_DIR` とは別の保存物です。
+
 ### Python と Spark の組合せ
 
 compute profile と同じ Spark 4.1.4 / Scala 2.13 / Java 21 image、同じ Iceberg 1.12.0 の
 2 JAR と SHA-512 を使います。Spark の標準 image は Ubuntu 22.04 / Python 3.10 です。
 その Python に対応する JupyterLab 4.6.6、ipykernel 7.3.0、Pandas 2.3.3、Arrow 25.0.0 を
 固定しました。ipykernel 7.4 や Arrow 26 は Python 3.11 以上を要求するため混在させません。
-worker の Python/Arrow と notebook の Python/Arrow が別環境でも、同じ Iceberg table を
-catalog/S3 経由で読み書きします。
+Spark executor は `/opt/spark-venv/bin/python`、Jupyter driver は
+`/opt/notebook-venv/bin/python` を使います。両方で Python 3.10 と Pandas 2.3.3 / Arrow
+25.0.0 / NumPy 2.2.6、および共有する 7 依存の版を hash lock で揃えています。
+worker 側だけ別の Python を起動して失敗しないよう、`PYSPARK_PYTHON` と Spark 設定の
+両方を切り替えます。driver/worker は同じ Iceberg JAR を持ち、同じ catalog/S3 を使います。
 
 `/api/contents` は workspace の一覧・保存、`/api/kernels` は kernel の生成・停止、
 `/api/kernels/<id>/channels` は WebSocket の実行プロトコルです。
@@ -261,6 +307,7 @@ x86-64 向けです。この profile は Linux x86-64 と PostgreSQL 18.6 で mi
 | --- | --- | --- |
 | Superset user/chart/dashboard/SQL Lab | `superset-db` named volume | DB password と `SUPERSET_SECRET_KEY` |
 | Notebook と `.ipynb_checkpoints` | 外部 `NOTEBOOKS_DIR` bind | 同じ path と UID/GID |
+| Spark の event log | `spark-events` named volume | driver と History の共通 UID/GID、保存先 |
 | Qdrant collection/vector/payload | `qdrant` named volume | API keys、volume |
 | Marquez lineage/job/run | `marquez-db` named volume | DB password、volume |
 

@@ -144,6 +144,14 @@ class PortalUiTests(unittest.TestCase):
                     }
                 ],
             }
+        if path == "/help/ssrf":
+            return {
+                "slug": "ssrf",
+                "title": "SSRFの接続制限",
+                "markdown": (
+                    "# SSRFの接続制限\nNO_PROXYは経路、SSRFは接続許可です。"
+                ),
+            }
         if path == "/help/proxy":
             return {
                 "slug": "proxy",
@@ -218,7 +226,18 @@ class PortalUiTests(unittest.TestCase):
                 "conflicts": [],
             }
         if path == "/settings":
-            return {"values": {}, "secret_keys": [], "configured_secrets": []}
+            return {
+                "values": {
+                    "N8N_SSRF_PROTECTION_ENABLED": "true",
+                    "N8N_SSRF_BLOCKED_IP_RANGES": "default,100.64.0.0/10",
+                    "N8N_SSRF_ALLOWED_IP_RANGES": "",
+                    "N8N_SSRF_ALLOWED_HOSTNAMES": "worker",
+                    "N8N_SSRF_BLOCKED_HOSTNAMES": "",
+                    "N8N_SSRF_DNS_CACHE_MAX_SIZE": "1048576",
+                },
+                "secret_keys": [],
+                "configured_secrets": [],
+            }
         if path == "/status":
             return {"services": {"worker": {"healthy": True, "busy": False}}}
         raise AssertionError("Unexpected portal call: " + method + " " + path)
@@ -240,6 +259,28 @@ class PortalUiTests(unittest.TestCase):
         )
         self.assertIn(
             "http://localhost:8503/mcp", [item.value for item in app.code]
+        )
+        self.assertEqual([call for call in self.calls if call[0] != "GET"], [])
+
+    def test_settings_opens_only_the_bundled_ssrf_manual(self):
+        app = self.app()
+        self.assertTrue(
+            any(item.label == "接続制限（SSRF）" for item in app.expander)
+        )
+        protection = next(
+            item
+            for item in app.text_input
+            if item.label == "n8nのSSRF保護（true/false）"
+        )
+        self.assertEqual(protection.value, "true")
+        self.assertTrue(
+            any("NO_PROXYはproxyを迂回" in item.value for item in app.caption)
+        )
+        app.button(key="settings-ssrf-help").click().run(timeout=10)
+        self.assertEqual(len(app.exception), 0)
+        self.assertIn(("GET", "/help/ssrf", None), self.calls)
+        self.assertTrue(
+            any("NO_PROXYは経路" in item.value for item in app.markdown)
         )
         self.assertEqual([call for call in self.calls if call[0] != "GET"], [])
 

@@ -41,7 +41,8 @@ ss -lnt
 | 監視追加 | 約0.75GiB | Prometheusは15日/2GBの保存上限を設定。Grafana DBは別に保持する |
 | Airflow追加 | 約4.4GiB | standaloneの複数役割を1コンテナで動かすため、core起動後に追加する |
 | 操作画面・FastAPI追加 | 約1.25GiB | 専用private設定dirとlandingの書込権限を準備する |
-| Sparkスモーク | 一時的に2GiB | 常駐クラスタではなく、明示実行時の予算として確保する |
+| 常駐Spark | Master/Worker/Historyの上限はCompose参照 | computeで起動。Notebookのdriverメモリは別途確保する |
+| Sparkスモーク | 一時的に2GiB | 明示の互換確認。常駐クラスタの代わりにはしない |
 
 これらは設定上限の合計で、実測使用量や必要ホストRAMの保証ではありません。入力量・同時実行数・既存ワークロードを含めて導入先で実測します。port競合がある場合は [CONFIGURATION.md](CONFIGURATION.md) のhost portを変更し、既存サービスを停止して空ける判断を初手にしません。
 
@@ -245,9 +246,13 @@ Simple Authの初期画面パスワードはstate volume内で生成され、DB�
 
 n8nとAirflowのどちらが定期実行を担当するかを決めます。workerのlockは同時実行を防ぎますが、二重にscheduleを作る理由にはしません。現DAGは自動scheduleを設定していません。
 
-### Sparkの互換性を確認する
+### Sparkを常駐させ、Jupyterから使う
 
-core初期化後、必要な場合に一時実行します。
+private envの既存profileに `compute` を追加して `plan` → `up` を実行すると、Master/Worker/Historyが常駐します。`notebooks` も追加するとJupyterが内部の `spark://spark-master:7077` を使い、遠隔worker上で処理を実行します。Master UIは既定8082、Worker UIは8085、History UIは18080です。RPC7077はhostへ公開しません。
+
+Notebook helperはcompute有効時のremote接続を明示し、接続失敗を黙ってlocalへ切り替えません。computeを使わないNotebookはlocal[2]です。event logとworker work用の専用volume、非root UID/GIDを保持し、再起動後の実行履歴も確認します。[COMPATIBILITY.md](COMPATIBILITY.md) と [POC-TOOLS.md](POC-TOOLS.md) にGUI・接続・資源設定を説明します。
+
+core初期化後、独立した互換性スモークを確認する場合は次を実行します。
 
 ```bash
 ./scripts/lakehouse.sh spark-check
@@ -314,3 +319,6 @@ CLIから起動済みの同じ環境をDokployへ渡す場合は、`appName`、`
 | 画面は起動したが業務数値が違う | 日時、主キー、更新優先、NULL、表間snapshot時点、集計範囲を照合 |
 
 停止は `./scripts/lakehouse.sh down` で、名前付きvolumeは保持します。障害調査中にvolume削除やpruneを復旧手順として実行しません。通常のログ・停止・再開の具体操作は [DEPLOYMENT.md](DEPLOYMENT.md) を参照してください。
+
+
+SSRFの設定値、内部workerの例外、NO_PROXYとの違い、GUI保存と再配置、許可・拒否の受入は [SSRF.md](SSRF.md) を参照してください。

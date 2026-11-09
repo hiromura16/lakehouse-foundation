@@ -1,8 +1,8 @@
 # 検証記録
 
-検証日: 2026-11-09。Linux x86-64の単一ホスト上に、既存アプリと別のネットワーク・DB・S3・資格情報・ランディング先を持つ環境を作成しました。公開用の機械可読結果は [verification.json](verification.json) に保存しています。接続先、管理APIの記録、認証情報、生ログは公開しません。
+検証日: 2026-11-10（JST）。Linux x86-64の単一ホスト上に、既存アプリと別のネットワーク・DB・S3・資格情報・ランディング先を持つ環境を作成しました。公開用の機械可読結果は [verification.json](verification.json) に保存しています。接続先、管理APIの記録、認証情報、生ログは公開しません。
 
-公開HTTPS URLからの認証不要clone、原本Compose、原本Dockerfileの `pip --require-hashes` ビルドが成功しました。この別環境でも画像保存・メダリオンの全期待値・再投入を検証済みです。[公開CI](https://github.com/hiromura16/lakehouse-foundation/actions) にもPython書式、SQL、全profileのCompose検査を定義しています。現在のローカル同等検査では140テストが成功しています。
+公開HTTPS URLからの認証不要clone、原本Compose、原本Dockerfileの `uv pip sync --require-hashes` ビルドが成功しました。この別環境でも画像保存・メダリオンの全期待値・再投入を検証済みです。[公開CI](https://github.com/hiromura16/lakehouse-foundation/actions) にもPython書式、SQL、全profileのCompose検査を定義しています。現在のローカル同等検査では217テストが成功しています。
 
 ## 実機で成功した経路
 
@@ -46,4 +46,25 @@ Airflowのstandalone、固定S3資格情報、内部の未認証Trino/カタロ�
 - CDC consumerの再起動後もrawは168件かつdistinct168件で増えず、Silverの6表が144行の初期状態へ戻ること、Kafbatでconsumer lagが0であることを確認しました。
 - SQL投入GUI用には試験DBだけの専用ユーザーを作り、sysadmin権限がないこと、通常TLSと証明書名照合が成功することを確認しました。
 
-GUIとAPIを含む公開Git原本コンテナの受け入れ結果は、最終配置後にこの記録へ追記します。
+GUIとAPIを含む公開Git原本を主基盤へ配置しました。SQL/landingへのbatch、2回の有限stream、秘密値を返さない設定API、保存と適用の区別、同梱Swagger asset、明示したメダリオンと隔離verifyを確認しました。素材生成直後にGold snapshotが変わらないことも照合しています。
+
+## 操作ポータル・追加OSS・MCPの受入
+
+公開Git原本から全7buildを実行し、全11profileを同一Composeプロジェクトへ統合しました。30service定義のうちSparkは通常replicas=0、29containerは26稼働と3つの正常終了one-shotです。設定追加・再配置時に既存の秘密値・データvolume・landing先を保持しました。
+
+- ポータルの13経路で、capabilities・catalog・snapshot preview・固定品質SQL・service一覧・allowlistヘルプ・オフライン構成図・直近履歴を確認しました。
+- 26異常・7presetのcatalog、GUI/APIでの選択を実装し、実APIから `reject_spike` を指定して素材生成とGold非変更を確認しました。意図的に壊すファイルは追加同意が必要です。
+- Supersetのnative認証・CSRF・Trino接続・Gold2dataset・SQL Lab、Jupyterのnative API/実kernelとSpark/Iceberg1行の読書き、Qdrantの3点検索とread-only書込み403、MarquezのGUI/APIと手動の系統eventを確認しました。vectorは合成数値の疎通試験で、意味検索の精度試験ではありません。系統eventはデモseedで、自動採取の保証ではありません。
+- MCPの公式SDK2.3.0で実HTTP接続し、Bearerなし401、既定の9read tools・2resources・構造化応答と、配置済みAPIへの参照を確認しました。一時プロセスだけ書込みを有効化し、同意なし拒否、同意付き素材生成、job poll、Gold非変更を確認しています。主MCPは参照専用です。
+- 公開GitからbuildしたSparkで3行をIcebergへ書き、Trinoの同じ3行を確認しました。一時検証アプリは削除しました。
+
+追加4サービスだけを再起動し、SupersetのGUI作成dashboard、Jupyterのworkspace、Qdrantの3点、Marquezのjob保持を確認しました。他コンテナのIDと状態、主基盤の他サービスと試験SQLの起動時刻は保持しています。その後、n8n手動workflowとAirflow同梱DAGも最新構成で再実行して成功し、ポータルの全13サービス入口が利用可能でした。
+
+## 再配置と社内proxyの検証
+
+再配置の実試験で既存CDC登録が停止する問題を修正しました。既存connectorの設定29項目を厳密比較し、Connectが追加する同一nameだけを除いて一致する場合に無変更成功します。差異・認証失敗・HTTP失敗では更新せず停止します。offsetや履歴のリセット、PUT/PATCH/DELETEは行いません。修正後に主基盤の再配置とconsumer再稼働が成功しました。
+
+企業proxyはローカルのBasic認証付きCONNECT・TLS模擬サーバーで、正常接続、407、CA欠落の拒否、内部bypass、redirect拒否、秘密値非表示を試験しました。企業CA未指定で全原本imageがbuildでき、n8nの任意追加CA設定も未設定・空欄・CA指定のComposeとNode動作で確認しました。GUIからPyPI/Maven/npm/GitHubの固定4HTTPS先への直接通信も成功しました。これは実会社proxy・認証方式・HTTPS検査・daemon・全Java/SDK通信の成功を意味しません。[会社での設定・受入](COMPANY-PROXY.md) に従って現地で確認します。
+
+
+受入後、一時のCDC・PoC検証5アプリを削除し、主基盤と分離した試験SQLを保持しました。削除対象のvolumeが他の稼働アプリと共有されないことを事前に確認し、旧構成のデータ控えは削除対象へ含めていません。公開する設定・手順・コードと、私有の資格情報・実行データ・生ログは分けて保管しています。
