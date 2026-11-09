@@ -28,6 +28,8 @@ services:
     profiles: [orchestration]
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-airflow:local
     build:
+      secrets:
+        - corporate_ca
       context: ../..
       dockerfile: infra/orchestration/Dockerfile
       args:

@@ -4,6 +4,8 @@ services:
     profiles: [compute]
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-spark-check:local
     build:
+      secrets:
+        - corporate_ca
       context: ../..
       dockerfile: infra/compute/Dockerfile
       args:

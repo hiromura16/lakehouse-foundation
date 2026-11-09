@@ -140,6 +140,71 @@ class ControlEnvironmentTests(unittest.TestCase):
         self.assertIn("Invalid DATA_VOLUME_PREFIX", exit_code)
         process.assert_not_called()
 
+    def test_upgrade_preserves_existing_keys_and_adds_missing_keys(self):
+        """Upgrade an older site without rotating encryption or API keys."""
+        original = self.env_file.read_text()
+        kept = [
+            line
+            for line in original.splitlines()
+            if not line.startswith(("MCP_", "SUPERSET_", "JUPYTER_"))
+        ]
+        old = "\n".join(kept) + "\n"
+        self.env_file.write_text(old)
+        arguments = [
+            str(CONFIGURE),
+            "--output",
+            str(self.env_file),
+            "--upgrade",
+        ]
+        with (
+            mock.patch.dict(sys.modules, {"settings": SETTINGS}),
+            mock.patch.object(sys, "argv", arguments),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            runpy.run_path(str(CONFIGURE), run_name="__main__")
+        upgraded = SETTINGS.load(self.env_file)
+        before = dict(
+            line.split("=", 1)
+            for line in kept
+            if line and not line.startswith("#")
+        )
+        for key, value in before.items():
+            self.assertEqual(upgraded[key], value)
+        self.assertEqual(len(upgraded["MCP_API_TOKEN"]), 64)
+        self.assertEqual(self.env_file.stat().st_mode & 0o777, 0o600)
+        backup = self.env_file.with_name(
+            self.env_file.name + ".before-upgrade"
+        )
+        self.assertEqual(backup.read_text(), old)
+        self.assertEqual(backup.stat().st_mode & 0o777, 0o600)
+
+    def test_new_profiles_validate_identity_and_separate_vector_keys(self):
+        """Reject settings which would fail or erase the privilege boundary."""
+        original = self.env_file.read_text()
+        cases = [
+            ("vector", "QDRANT_READ_ONLY_API_KEY", "QDRANT_API_KEY"),
+            ("notebooks", "WORKER_UID", "0"),
+            ("notebooks", "JUPYTER_TOKEN", "a" * 20),
+            ("bi", "SUPERSET_SECRET_KEY", "a" * 20),
+        ]
+        for profile, key, replacement in cases:
+            with self.subTest(profile=profile, key=key):
+                lines = dict(
+                    line.split("=", 1)
+                    for line in original.splitlines()
+                    if line and not line.startswith("#")
+                )
+                lines["COMPOSE_PROFILES"] = profile
+                lines[key] = lines.get(replacement, replacement)
+                self.env_file.write_text(
+                    "\n".join(
+                        key + "=" + value for key, value in lines.items()
+                    )
+                    + "\n"
+                )
+                with self.assertRaises(ValueError):
+                    SETTINGS.load(self.env_file)
+
 
 if __name__ == "__main__":
     unittest.main()

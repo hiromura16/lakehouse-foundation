@@ -197,6 +197,32 @@ CDC接続・mapping・connector登録の検査はCDCツールが行い、設定�
 
 `CDC_TEST_TRUST_SERVER_CERTIFICATE` は既定falseの隔離試験専用overrideです。loopbackの `lh_cdc_demo_...` DBに限定し、通常のGUI編集項目には含めません。会社接続はJava truststoreと証明書名を正しく設定します。SQL Serverを模した単体試験や専用DBでの試験成功を、会社側でのCDC受入結果に転記しません。
 
+## 任意のPoCサービス
+
+各機能は `bi`、`notebooks`、`vector`、`lineage` profileで選びます。portはComposeの既定、秘密値は生成器の値を保持します。既存site.envには追加キーを個別に補い、秘密値を再生成して置き換えません。入口状態の読み方は [POC-PORTAL.md](POC-PORTAL.md) を参照してください。
+
+| 項目 | 既定・指定 | 意味と変更時の影響 | 秘密 |
+| --- | --- | --- | --- |
+| `SUPERSET_PORT` | 8088 | BIのhost入口。loopbackで公開 | 社内 |
+| `SUPERSET_DB_PASSWORD` | 生成値を保持 | Superset metadata DB。DB側と整合が必要 | はい |
+| `SUPERSET_SECRET_KEY` | 生成値を保持 | 保存情報の暗号化/signing。DBと一緒に保持 | はい |
+| `SUPERSET_ADMIN_USERNAME` | admin | 初期管理者名。既存アカウントをenvだけで置換しない | 社内 |
+| `SUPERSET_ADMIN_PASSWORD` | 生成値を保持 | 初期管理者の秘密値。URLへ含めない | はい |
+| `SUPERSET_ADMIN_EMAIL` | admin@example.invalid | 初期管理者のメール欄。実運用の値はprivateへ | 社内 |
+| `SUPERSET_REDIS_PASSWORD` | 生成値を保持 | BI専用Redisの認証 | はい |
+| `JUPYTER_PORT` | 8888 | JupyterLabのhost入口。loopbackで公開 | 社内 |
+| `JUPYTER_TOKEN` | 生成値を保持 | Notebookのログイン。portalのURLへ埋め込まない | はい |
+| `NOTEBOOKS_DIR` | 専用host dir | Notebookの保存先。UID/GIDとmountを揃え、変更は再配置 | 社内 |
+| `QDRANT_PORT` | 6333 | Qdrant API/画面のhost入口。loopbackで公開 | 社内 |
+| `QDRANT_API_KEY` | 生成値を保持 | collection作成等の管理用。読取専用鍵と分離 | はい |
+| `QDRANT_READ_ONLY_API_KEY` | 生成値を保持 | 参照用。管理キーの代わりに書込みへ使わない | はい |
+| `MARQUEZ_API_PORT` | 5000 | lineage登録/参照APIのhost入口 | 社内 |
+| `MARQUEZ_UI_PORT` | 3001 | lineage画面のhost入口 | 社内 |
+| `MARQUEZ_DB_PASSWORD` | 生成値を保持 | Marquez metadata DB。DBと整合して管理 | はい |
+| `CORPORATE_CA_FILE` | 空 | host上の企業CA PEM。build secretでOS/Javaのtrustへ追加。診断で使う場合はCONTROL_SETTINGS_DIR配下に置く。変更はimage再build/再配置が必要 | 社内 |
+
+SSL_CERT_FILE、REQUESTS_CA_BUNDLE、AWS_CA_BUNDLE、CURL_CA_BUNDLEはimage内の固定bundleを指すruntime設定です。private入力としてGUIから任意のpathに変更する項目ではありません。CA保存後の反映と、保存値を使う診断を区別します。[PROXY.md](PROXY.md)
+
 ## Dokploy・Swarmの別導入設定
 
 これらはcoreの `up` では使わず、`infra/dokploy/install.sh --env-file ...` が検査します。空の必須項目を実環境に合わせて埋めるまではDokploy導入を行えません。
@@ -235,3 +261,24 @@ CDC接続・mapping・connector登録の検査はCDCツールが行い、設定�
 - 入力形式・表の意味の変更では、envだけで吸収せず、`medallion/sources.json` とSQL、検証データを一緒に見直す。
 
 生成器の現在の項目が正本です。旧版のprivate設定を新しい版へ引き継ぐ場合は、追加キーを個別に補い、既存の秘密値を保持したまま `plan` を通します。新しく生成した別ファイルは比較用に使えますが、既存設定全体の置換には使いません。
+
+
+## PoCツール・MCP・企業CAの追加設定
+
+追加profileの一覧は `bi,notebooks,vector,lineage,mcp` です。coreだけの設定は引き続き利用できます。既存環境はprofile追加前に `python3 scripts/configure.py --output /absolute/private/site.env --upgrade` を実行し、新項目だけを追加します。既存の暗号鍵・パスワード・接続先・profileは保持し、直前ファイルを `.before-upgrade` として0600で保存します。控えが既にあるときは上書きしません。
+
+| 設定 | 用途 |
+| --- | --- |
+| `SUPERSET_PORT` / `SUPERSET_DB_PASSWORD` / `SUPERSET_SECRET_KEY` | BIの入口・専用DB・署名鍵 |
+| `SUPERSET_ADMIN_USERNAME` / `SUPERSET_ADMIN_PASSWORD` / `SUPERSET_ADMIN_EMAIL` | 初回BI管理者。既存ユーザーの秘密値を再初期化しない |
+| `SUPERSET_REDIS_PASSWORD` | BI専用cache認証 |
+| `JUPYTER_PORT` / `JUPYTER_TOKEN` / `NOTEBOOKS_DIR` | Spark付きNotebookの認証と外部workspace |
+| `QDRANT_PORT` / `QDRANT_API_KEY` / `QDRANT_READ_ONLY_API_KEY` | vector DB。管理と参照の鍵を分離 |
+| `MARQUEZ_API_PORT` / `MARQUEZ_UI_PORT` / `MARQUEZ_DB_PASSWORD` | 系統APIとUI・専用DB |
+| `MCP_PORT` / `MCP_API_TOKEN` | AI接続先とMCP専用認証 |
+| `MCP_ENABLE_MUTATIONS` / `MCP_ALLOWED_HOSTS` | 書込みtoolの明示有効化とHost許可 |
+| `CORPORATE_CA_FILE` | buildへ渡す公開企業CA PEM chainのホスト側絶対path。未設定は追加CAなし |
+
+`NOTEBOOKS_DIR` はリポジトリ外の絶対pathで事前作成し、非rootの `WORKER_UID` と数値 `WORKER_GID` に書込権を与えます。追加キーは生成された値を保持し、公開Composeへ秘密値を直書きしません。`SUPERSET_SECRET_KEY` と `JUPYTER_TOKEN` は32文字以上、Qdrantの2鍵は異なる値を使います。全hostportを一意にします。
+
+`NO_PROXY` と `no_proxy` に、新しい内部名 `superset,superset-db,superset-redis,jupyter,qdrant,marquez,marquez-db,marquez-web,mcp` を追加します。`--upgrade` は既存のproxy指定を変更しません。GUI保存後はDokployのEnvironmentとprivate設定を一致させて再配置し、CA変更時はcacheを使わず再buildします。[PoCツール](POC-TOOLS.md)、[MCP](MCP.md)、[会社proxy手順](COMPANY-PROXY.md) も確認してください。

@@ -1,0 +1,24 @@
+FROM docker.io/apache/superset:6.1.0@sha256:16b50bbef6648912a79e3293d418fefa743ce555d36c5af6b85d859119ed7f88
+COPY --from=ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490 /uv /usr/local/bin/uv
+USER root
+COPY infra/proxy/install_ca.py /opt/lakehouse/install_ca.py
+# Empty/unprovided secret is a no-op; proxy credentials never enter the image.
+RUN --mount=type=secret,id=corporate_ca \
+    python3 /opt/lakehouse/install_ca.py --ca-file /run/secrets/corporate_ca
+ENV UV_SYSTEM_CERTS=true \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    AWS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+COPY infra/poc/requirements-superset.lock /opt/lakehouse/requirements.lock
+# The upstream image owns its complete application environment. Add only the
+# locked drivers; syncing would remove Superset's existing dependencies.
+RUN uv --system-certs --no-cache pip install --python /app/.venv/bin/python \
+      --require-hashes -r /opt/lakehouse/requirements.lock \
+    && uv pip check --python /app/.venv/bin/python
+COPY infra/poc/superset_config.py /opt/lakehouse/superset_config.py
+COPY infra/poc/superset_init.py /opt/lakehouse/superset_init.py
+ENV SUPERSET_CONFIG_PATH=/opt/lakehouse/superset_config.py \
+    UV_OFFLINE=1 PYTHONDONTWRITEBYTECODE=1
+USER superset
+CMD ["/app/.venv/bin/gunicorn", "--bind", "0.0.0.0:8088", "--workers", "2", "--timeout", "180", "superset.app:create_app()"]

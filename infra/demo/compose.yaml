@@ -8,9 +8,11 @@ x-demo-logging: &demo_logging
 
 services:
   demo-api:
-    profiles: [demo]
+    profiles: [demo, mcp]
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-demo:local
     build:
+      secrets:
+        - corporate_ca
       context: ../..
       dockerfile: infra/demo/Dockerfile
       args:

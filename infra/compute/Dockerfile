@@ -2,6 +2,15 @@
 FROM apache/spark:4.1.4-scala2.13-java21-python3-ubuntu@sha256:847f91f8bb2f28d632064dfe632d423020f8fd60b27c7704c0e5bf5b0c6432c7
 
 USER root
+# Optional public corporate CA; no credential or private key enters the image.
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    AWS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    UV_SYSTEM_CERTS=true
+COPY infra/proxy/install_ca.py /usr/local/share/lakehouse/install_ca.py
+RUN --mount=type=secret,id=corporate_ca,required=false \
+    python3 /usr/local/share/lakehouse/install_ca.py
 RUN apt-get update \
     && apt-get install --no-install-recommends -y ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*

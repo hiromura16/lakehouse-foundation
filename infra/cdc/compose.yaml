@@ -132,6 +132,8 @@ services:
     profiles: [cdc]
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-cdc:local
     build:
+      secrets:
+        - corporate_ca
       context: ../..
       dockerfile: infra/cdc/Dockerfile
       args:
@@ -177,8 +179,8 @@ services:
       S3_BUCKET_WAREHOUSE: ${S3_BUCKET_WAREHOUSE}
       WAREHOUSE_NAME: ${WAREHOUSE_NAME}
       WORKER_TOKEN: ${WORKER_TOKEN}
-      NO_PROXY: storage,catalog,trino,cdc-kafka,cdc-connect,localhost,127.0.0.1
-      no_proxy: storage,catalog,trino,cdc-kafka,cdc-connect,localhost,127.0.0.1
+      NO_PROXY: ${NO_PROXY:-storage,catalog,trino,cdc-kafka,cdc-connect,localhost,127.0.0.1}
+      no_proxy: ${no_proxy:-storage,catalog,trino,cdc-kafka,cdc-connect,localhost,127.0.0.1}
     volumes:
       - cdc-state:/state
       - type: bind

@@ -1,0 +1,91 @@
+{
+  "superset": {
+    "version": "6.1.0",
+    "pinned": "docker.io/apache/superset:6.1.0@sha256:16b50bbef6648912a79e3293d418fefa743ce555d36c5af6b85d859119ed7f88",
+    "platforms": [
+      {
+        "architecture": "arm64",
+        "os": "linux"
+      },
+      {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    ]
+  },
+  "redis": {
+    "version": "8.10.3-alpine",
+    "pinned": "docker.io/library/redis:8.10.3-alpine@sha256:71885d8cc6e42f2bc0aa2eb853bfc4be200b5108a46ac50e117ae1df0531fb80",
+    "platforms": [
+      {
+        "architecture": "amd64",
+        "os": "linux"
+      },
+      {
+        "architecture": "arm",
+        "os": "linux",
+        "variant": "v6"
+      },
+      {
+        "architecture": "arm",
+        "os": "linux",
+        "variant": "v7"
+      },
+      {
+        "architecture": "arm64",
+        "os": "linux",
+        "variant": "v8"
+      },
+      {
+        "architecture": "386",
+        "os": "linux"
+      },
+      {
+        "architecture": "ppc64le",
+        "os": "linux"
+      },
+      {
+        "architecture": "riscv64",
+        "os": "linux"
+      },
+      {
+        "architecture": "s390x",
+        "os": "linux"
+      }
+    ]
+  },
+  "qdrant": {
+    "version": "v1.20.0",
+    "pinned": "docker.io/qdrant/qdrant:v1.20.0@sha256:9bfc89f9914fc14876a88c05270685921a55b8877b254a98bcc1cc2f0a424cd2",
+    "platforms": [
+      {
+        "architecture": "amd64",
+        "os": "linux"
+      },
+      {
+        "architecture": "arm64",
+        "os": "linux"
+      }
+    ]
+  },
+  "marquez": {
+    "version": "0.50.0",
+    "pinned": "docker.io/marquezproject/marquez:0.50.0@sha256:6d8a2c2cdb28a4f6d13f9ca6f8cc055d8312c4dee204ebeb848efdd76e6ab30e",
+    "platforms": [
+      {
+        "os": "linux",
+        "architecture": "amd64"
+      }
+    ]
+  },
+  "marquez-web": {
+    "version": "0.50.0",
+    "pinned": "docker.io/marquezproject/marquez-web:0.50.0@sha256:e8d53e10ab141cde1b121b01ff47776a58b407813fb6e10f490842d20c184346",
+    "platforms": [
+      {
+        "os": "linux",
+        "architecture": "amd64"
+      }
+    ]
+  }
+}

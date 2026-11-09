@@ -1,0 +1,3 @@
+# Official SDK v2; isolated from the worker and Airflow environments.
+mcp==2.3.0
+uvicorn==0.54.0

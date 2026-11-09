@@ -6,6 +6,7 @@ import os
 import re
 import secrets
 import sys
+from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -18,6 +19,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from job_manager import JobConflict, JobManager, OperationFailure
+from poc_api import portal_router
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from service import generate_batch
 
@@ -32,6 +34,49 @@ KNOWN_HEALTH_URLS = {
     "cdc-connect": "http://cdc-connect:8083/",
     "cdc-ui": "http://cdc-ui:8080/actuator/health",
 }
+
+
+@lru_cache(maxsize=1)
+def source_scenario_engine():
+    """Load the same fixed catalog and validator used by CLI generation."""
+    specification = importlib.util.spec_from_file_location(
+        "api_source_scenarios", ROOT / "scripts/source_scenarios.py"
+    )
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return module
+
+
+class ScenarioDefinition(BaseModel):
+    """Describe an available mutation and its actual downstream expectation."""
+
+    id: str
+    label: str
+    description: str
+    category: str
+    targets: list[str]
+    supported_destinations: list[Literal["landing", "sqlserver", "both"]]
+    expected_effect: str
+    requires_images: bool = False
+    requires_file_consent: bool = False
+
+
+class ScenarioPreset(BaseModel):
+    """Supply an editable starting selection without hiding its anomaly IDs."""
+
+    id: str
+    label: str
+    base_scenario: Literal["clean", "edge"]
+    anomalies: list[str] = Field(max_length=32)
+
+
+class ScenarioCatalog(BaseModel):
+    """Publish one source of truth for input choices and conflict groups."""
+
+    version: Literal[1]
+    scenarios: list[ScenarioDefinition]
+    presets: list[ScenarioPreset]
+    conflicts: list[list[str]]
 
 
 class SettingsPatch(BaseModel):
@@ -52,6 +97,9 @@ class SourceJob(BaseModel):
     orders: int = Field(default=20, ge=1, le=1000)
     days: int = Field(default=7, ge=1, le=366)
     scenario: Literal["clean", "edge"] = "edge"
+    anomalies: list[str] = Field(default_factory=list, max_length=32)
+    anomaly_rate: int = Field(default=10, ge=1, le=100)
+    allow_file_faults: bool = False
     destination: Literal["landing", "sqlserver", "both"] = "landing"
     images: bool = False
     allow_sql_write: bool = False
@@ -67,6 +115,15 @@ class SourceJob(BaseModel):
             raise ValueError("SQL destination requires explicit consent.")
         if self.destination == "sqlserver" and self.images:
             raise ValueError("Images require a landing destination.")
+        self.anomalies = list(
+            source_scenario_engine().validate_selection(
+                anomalies=self.anomalies,
+                destination=self.destination,
+                images=self.images,
+                allow_file_faults=self.allow_file_faults,
+                anomaly_rate=self.anomaly_rate,
+            )
+        )
         return self
 
 
@@ -293,6 +350,22 @@ def create_app(
             status_code=200 if ready else 503,
             content={"status": "ok" if ready else "not_configured"},
         )
+
+    @application.get(
+        "/scenarios",
+        response_model=ScenarioCatalog,
+        dependencies=protected,
+        tags=["素材投入"],
+    )
+    def get_scenarios():
+        """Expose static choices, consent needs and incompatible selections."""
+        engine = source_scenario_engine()
+        return {
+            "version": 1,
+            "scenarios": engine.catalog(),
+            "presets": engine.presets(),
+            "conflicts": [sorted(group) for group in engine.CONFLICTS],
+        }
 
     @application.get(
         "/settings",
@@ -614,6 +687,9 @@ def create_app(
                 "メダリオンを実行後に再試行し、Goldの状態を確認してください。",
             )
 
+    application.include_router(
+        portal_router(store, jobs, authorize, ai_exporter)
+    )
     return application
 
 

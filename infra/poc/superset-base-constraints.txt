@@ -1,0 +1,13 @@
+# Relevant constraints from Apache Superset 6.1.0 requirements/base.txt.
+# https://github.com/apache/superset/blob/6.1.0/requirements/base.txt
+certifi==2025.6.15
+charset-normalizer==3.4.2
+greenlet==3.1.1
+idna==3.10
+python-dateutil==2.9.0.post0
+pytz==2025.2
+requests==2.32.4
+six==1.17.0
+sqlalchemy==1.4.54
+urllib3==2.6.3
+zstandard==0.23.0

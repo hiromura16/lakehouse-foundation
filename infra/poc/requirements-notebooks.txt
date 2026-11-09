@@ -1,0 +1,6 @@
+# Spark/PySpark comes from the same pinned image as the compute profile.
+jupyterlab==4.6.6
+ipykernel==7.3.0
+trino[sqlalchemy]==0.340.0
+pandas==2.3.3
+pyarrow==25.0.0

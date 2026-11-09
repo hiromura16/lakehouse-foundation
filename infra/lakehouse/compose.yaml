@@ -166,6 +166,8 @@ services:
     # Separate environments keep separate local image tags.
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-worker:local
     build:
+      secrets:
+        - corporate_ca
       context: ../..
       dockerfile: infra/lakehouse/Dockerfile
       args:
@@ -395,3 +397,8 @@ volumes:
     name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_prometheus
   grafana:
     name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_grafana
+
+# Empty/default source preserves builds without a corporate CA.
+secrets:
+  corporate_ca:
+    file: ${CORPORATE_CA_FILE:-/dev/null}

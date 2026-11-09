@@ -7,6 +7,7 @@ never connects to or starts a lakehouse, catalog, or deployment service.
 
 import argparse
 import csv
+import importlib.util
 import io
 import ipaddress
 import json
@@ -22,6 +23,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CONTRACT = ROOT / "medallion/sources.json"
+SCENARIO_SPEC = importlib.util.spec_from_file_location(
+    "synthetic_source_scenarios", ROOT / "scripts/source_scenarios.py"
+)
+SCENARIOS = importlib.util.module_from_spec(SCENARIO_SPEC)
+SCENARIO_SPEC.loader.exec_module(SCENARIOS)
 
 
 def contracts():
@@ -496,7 +502,7 @@ def publish_file(path, payload, replace=False):
 def main(argv=None):
     """Validate the requested source destination and publish synthetic rows."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--output", type=Path)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--orders", type=int, default=20)
     parser.add_argument("--days", type=int, default=7)
@@ -518,12 +524,41 @@ def main(argv=None):
     )
     parser.add_argument("--env-file", type=Path)
     parser.add_argument("--allow-sql-write", action="store_true")
+    parser.add_argument("--anomaly", action="append", default=[])
+    parser.add_argument("--anomaly-rate", type=int, default=10)
+    parser.add_argument("--allow-file-faults", action="store_true")
+    parser.add_argument("--images", action="store_true")
+    parser.add_argument("--list-scenarios", action="store_true")
     parser.add_argument(
         "--test-trust-server-certificate",
         action="store_true",
         help="Loopback-only test exception. Encryption remains required.",
     )
     args = parser.parse_args(argv)
+    if args.list_scenarios:
+        print(
+            json.dumps(
+                {
+                    "version": 1,
+                    "scenarios": SCENARIOS.catalog(),
+                    "presets": SCENARIOS.presets(),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+    if args.output is None:
+        parser.error("--output is required unless --list-scenarios is used.")
+    anomalies = SCENARIOS.validate_selection(
+        args.anomaly,
+        args.destination,
+        args.images,
+        args.allow_file_faults,
+        args.anomaly_rate,
+    )
+    if args.images and args.destination == "sqlserver":
+        raise ValueError("Synthetic images require a landing destination.")
     output = output_directory(args.output)
     sql = args.destination in {"sqlserver", "both"}
     if sql and (not args.allow_sql_write or args.env_file is None):
@@ -537,7 +572,22 @@ def main(argv=None):
         )
     values = private_demo_settings(args.env_file) if sql else None
     data = build_data(args.seed, args.orders, args.days, args.scenario)
+    changes = []
+    if anomalies:
+        data, changes = SCENARIOS.apply_rows(
+            data, anomalies, args.anomaly_rate, args.seed
+        )
     payloads = encoded_sources(data)
+    if args.images:
+        images_dir = output / "images"
+        if images_dir.is_symlink() or (
+            images_dir.exists() and not images_dir.is_dir()
+        ):
+            raise ValueError("Image output must be an ordinary directory.")
+        payloads["images/inspection.png"] = SCENARIOS.synthetic_png(args.seed)
+    payloads, marker_policies, faults = SCENARIOS.apply_files(
+        payloads, anomalies
+    )
     targets = [output / "manifest.json"]
     if args.destination in {"landing", "both"}:
         targets += [output / filename for filename in payloads]
@@ -559,11 +609,14 @@ def main(argv=None):
     if args.destination in {"landing", "both"}:
         for filename, payload in payloads.items():
             publish_file(output / filename, payload, args.force)
-            publish_file(
-                output / (filename + ".ready"),
-                (sha256(payload).hexdigest() + "\n").encode(),
-                args.force,
+            marker = output / (filename + ".ready")
+            ready = SCENARIOS.ready_payload(
+                payload, marker_policies.get(filename)
             )
+            if ready is not None:
+                publish_file(marker, ready, args.force)
+            elif args.force:
+                marker.unlink(missing_ok=True)
     manifest = {
         "format_version": 1,
         "seed": args.seed,
@@ -582,6 +635,23 @@ def main(argv=None):
             for source in contracts()
         ],
     }
+    if args.images:
+        manifest["images"] = [
+            {
+                "path": "images/inspection.png",
+                "sha256": sha256(
+                    payloads["images/inspection.png"]
+                ).hexdigest(),
+            }
+        ]
+    if anomalies:
+        manifest["diagnostics"] = {
+            "anomalies": list(anomalies),
+            "anomaly_rate": args.anomaly_rate,
+            "row_changes": changes,
+            "file_faults": faults,
+            "intentional_file_faults": bool(faults),
+        }
     publish_file(
         output / "manifest.json",
         (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode(),

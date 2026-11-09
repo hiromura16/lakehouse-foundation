@@ -1,142 +1,129 @@
+<p align="center">
+  <img src="docs/assets/hero.svg" alt="Lakehouse Foundation — MES・ERPからIceberg、SQL、AIの根拠データへ" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/hiromura16/lakehouse-foundation/actions/workflows/validate.yml"><img src="https://github.com/hiromura16/lakehouse-foundation/actions/workflows/validate.yml/badge.svg" alt="Validate public source"></a>
+</p>
+
+<p align="center">
+  <a href="docs/START-HERE.md">はじめに</a> ·
+  <a href="docs/COMPANY-ROLLOUT.md">会社へ導入</a> ·
+  <a href="docs/POC-PORTAL.md">GUIで操作</a> ·
+  <a href="docs/API.md">API / Swagger</a> ·
+  <a href="docs/IMPLEMENTATION-STATUS.md">実装・検証状況</a>
+</p>
+
 # Lakehouse Foundation
 
-会社のMES・ERPデータを扱う、Iceberg中心のデータレイクハウス基盤です。公開リポジトリからcloneし、導入先のアドレス・認証情報を**リポジトリ外の設定ファイル**へ入力して構築できます。
+**MES・ERPの素材を受け取り、Icebergで保存し、SQLとGUI・APIから使うデータレイクハウス基盤。** 公開Gitをcloneし、導入先の接続先・資格情報・保存先をGit外のprivate設定へ入力して構築します。会社のSQL Serverは既存の外部DBへ接続します。
 
-SQL Serverは会社にある既存DBへ接続します。この構成にSQL Serverコンテナは含みません。
+| Apache Iceberg | Lakekeeper | Trino | Apache Spark | Prometheus | Grafana | Cloudflare |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| <img src="docs/assets/logos/iceberg.svg" alt="Apache Iceberg" height="32"> | <img src="docs/assets/logos/lakekeeper.svg" alt="Lakekeeper" height="32"> | <img src="docs/assets/logos/trino.svg" alt="Trino" height="32"> | <img src="docs/assets/logos/spark.svg" alt="Apache Spark" height="32"> | <img src="docs/assets/logos/prometheus.svg" alt="Prometheus" height="32"> | <img src="docs/assets/logos/grafana.svg" alt="Grafana" height="32"> | <img src="docs/assets/logos/cloudflare.svg" alt="Cloudflare" height="32"> |
 
-まず [はじめに読むガイド](docs/START-HERE.md) と [会社への導入手順](docs/COMPANY-ROLLOUT.md) を参照してください。設定、GUI、業務ルール、運用を目的別に読めるようにしています。
+[公式ロゴの出典](docs/assets/README.md)を記録しています。Cloudflareは任意の外部連携候補で、接続済みの構成要素ではありません。
 
-![全体構成図](docs/assets/architecture.svg)
+## できること
 
-## 用意しているもの
+| 目的 | 同梱するもの | 詳細 |
+| --- | --- | --- |
+| **受け取る・蓄積する** | Samba landing、SQL読取、Debezium / Kafka CDC、SeaweedFS S3、Lakekeeper | [SQL抽出](docs/SOURCE-SQLSERVER.md) · [CDC](docs/CDC.md) |
+| **整える・集計する** | Bronze原本、Silver最新版・型検査、Quarantine、Gold生産・出荷指標 | [メダリオン](docs/MEDALLION.md) |
+| **画面から使う** | Streamlit操作ハブ、サービス入口、データカタログ、品質・履歴・ヘルプ | [操作ポータル](docs/POC-PORTAL.md) |
+| **試す・壊れ方を確かめる** | 6ソースの合成データ、有限マイクロバッチ、選択式の26異常シナリオ | [異常シナリオ](docs/ANOMALY-SCENARIOS.md) |
+| **API・AIから参照する** | 認証付きFastAPI / Swagger、main snapshot固定context、LangChain例、MCPアダプター | [API](docs/API.md) · [AI](docs/AI-READINESS.md) · [MCPの設定](docs/MCP.md) |
+| **分析を広げる** | Superset、JupyterLab + Spark、Qdrant、Marquezを独立profileで追加 | [PoCツール](docs/POC-TOOLS.md) |
+| **運用する** | Dokploy、n8n、Airflow、Grafana / Prometheus、uv・hash lock、企業proxy / CA | [運用](docs/OPERATIONS.md) · [会社proxy](docs/COMPANY-PROXY.md) |
 
-| 目的 | 実装 |
-| --- | --- |
-| 永続保存・カタログ・SQL | SeaweedFS S3、Lakekeeper、PostgreSQL、Trino、Iceberg v2 / Parquet |
-| メダリオン | Bronze原本・履歴、Silver型整備・重複排除、Quarantine不正行、Gold工場・受注集計 |
-| ダミー投入 | MES生産実績・停止履歴、ERP製品・製造指図・受注・出荷をファイルまたはテスト用SQLスキーマへ投入 |
-| GUI・API | Streamlitの素材/処理/設定/状態/AI画面、FastAPIとSwagger UI、n8nワークフロー |
-| 運用 | Grafana・Prometheus、Samba共有設定、Dokploy導入、企業proxy/CA手順 |
-| 任意の計算・定期実行 | 対応JARを固定したSpark、Airflowと対応Provider、相互接続の確認コード |
+![データレイクハウスの全体構成](docs/assets/architecture.svg)
 
-最新版だけを個別に並べず、[互換性の表](docs/COMPATIBILITY.md)に沿って安定版のタグ・digest・JARを固定します。実機で通った範囲と未検証の範囲は [検証記録](docs/VALIDATION.md) に分けて記録します。
+## cloneから最短で起動する
 
-## 最短の導入
-
-Linux x86-64、Docker Engine、Docker Compose **2.23.1以上**、Python **3.12以上**を用意します。追加ドライバ・開発用の仮想環境は **uv 0.13.7** で構築します。[uvの公式導入手順](https://docs.astral.sh/uv/getting-started/installation/)を参照してください。通常ユーザーからDockerを管理できる状態を前提とし、既存ホストの権限をスクリプトで変更しません。最初はcoreだけで起動し、Airflow等は資源を確認して追加します。
+Linux x86-64、Docker Engine / BuildKit、Docker Compose **2.23.1以上**、Python **3.12以上**、[uv **0.13.7**](https://docs.astral.sh/uv/getting-started/installation/)を用意します。通常ユーザーがDockerを管理できる環境を前提とします。会社のproxyが必要なら、image取得前に [企業proxy・CA手順](docs/COMPANY-PROXY.md) を済ませます。
 
 ```bash
 git clone https://github.com/hiromura16/lakehouse-foundation.git
 cd lakehouse-foundation
 
-# 秘密値は自動生成され、画面には表示されません。
+# 秘密値はGit外へ生成します。既存ファイルは上書きしません。
 python3 scripts/configure.py \
   --output "$HOME/.config/lakehouse-foundation/site.env"
+export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 
-# 作成するディレクトリの所有者は、運用する通常ユーザーにします。
+# 既定のlanding例。別の保存先はprivate設定のLANDING_DIRへ指定します。
 sudo install -d -m 0770 -o "$(id -un)" -g "$(id -gn)" \
   /srv/lakehouse/landing
-
-# site.envのLANDING_DIR、UID/GID、使用ポートを手元で確認します。
-./scripts/lakehouse.sh \
-  --env-file "$HOME/.config/lakehouse-foundation/site.env" plan
-./scripts/lakehouse.sh \
-  --env-file "$HOME/.config/lakehouse-foundation/site.env" up
 ```
 
-設定ファイルは環境変数で選べます。clone先のパスは自動で解決され、ホスト側のランディング先だけを `LANDING_DIR` で指定します。
+private設定をエディターで開き、`LANDING_DIR`、`WORKER_UID/GID`、portを確認します。最初に操作画面と監視を使う場合は `COMPOSE_PROFILES=demo,monitoring`、coreだけなら空欄にします。既存環境では生成済みの秘密値・暗号鍵を保持します。
 
 ```bash
-export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 ./scripts/lakehouse.sh plan
+./scripts/lakehouse.sh up
 ./scripts/lakehouse.sh status
 ```
 
-会社のproxyが必要な場合は、イメージ取得前に [PROXY.md](docs/PROXY.md) のdaemon設定・社内CAを準備します。Composeの環境変数だけではDocker自身のimage pullには反映されません。
+サーバー自身のブラウザーから **[操作GUI](http://localhost:8501/)** ／ **[Swagger UI](http://localhost:8502/docs)** を開きます（`demo` profile）。最初はloopbackに限定し、遠隔利用はSSHポート転送等を使います。利用者認証・HTTPS・接続制限、別環境の名前・port・volumeは [会社導入](docs/COMPANY-ROLLOUT.md) と [設定一覧](docs/CONFIGURATION.md) に沿って準備します。
 
-初期状態のWeb口はloopbackに限定します。共有する場合はprivate設定の `BIND_IP`、認証、HTTPS、接続元制限を導入先に合わせて設定します。内部カタログは単一チームの検証モードです。
+## 素材を投入し、結果を確かめる
 
-## Pythonの仮想環境と開発用チェック
-
-host側のPython依存は用途ごとのuv環境へ入れます。uvを会社標準の配布経路または[公式手順](https://docs.astral.sh/uv/getting-started/installation/)で用意し、会社proxy/CAがある場合は先に [PROXY.md](docs/PROXY.md) を確認してください。CIはPython 3.12とuv 0.13.7を固定し、開発ツールの依存全体を `requirements-dev.lock` のhashで検証します。
+**素材の生成と、取り込み・変換は別の操作です。** GUIでbatch / finite stream、投入先、異常のpreset・個別選択・率を指定できます。型不正と、遅延・不良増等の業務異常を区別し、期待する隔離理由・Goldの変化・ファイル拒否を表示します。
 
 ```bash
-uv --version
-uv venv --python 3.12 "$HOME/.local/share/lakehouse-foundation/dev-venv"
-uv pip sync \
-  --python "$HOME/.local/share/lakehouse-foundation/dev-venv/bin/python" \
-  --require-hashes requirements-dev.lock
-"$HOME/.local/share/lakehouse-foundation/dev-venv/bin/python" \
-  -m unittest discover -s tests
+# 利用できる26シナリオを確認します。
+python3 scripts/generate-demo.py --list-scenarios
+
+# 再現可能な素材だけをlandingへ生成します。
+python3 scripts/generate-demo.py --destination landing \
+  --output /srv/lakehouse/landing --seed 42 --orders 20 --days 7 \
+  --scenario clean --anomaly reject_spike --anomaly-rate 20
+
+# ここから先は明示した後続処理です。
+./scripts/lakehouse.sh medallion
+./scripts/lakehouse.sh verify
 ```
 
-同期先はその用途の専用環境です。`uv pip sync` はlockにない既存パッケージを除去するため、worker、Airflow、AIの環境を共有しません。lockを更新するときは、既存の入力ファイルを使って明示的に再生成し、試験します。
+SQLへの素材投入やCDCテスト用の追加・更新・削除は、専用DB・所有権検証・明示同意を必要とします。通常のsource生成からworker・n8n・Airflowを起動しません。[素材投入](docs/DEMO-GUI.md) · [異常の期待結果](docs/ANOMALY-SCENARIOS.md)
 
-```bash
-uv pip compile requirements-dev.txt --python-version 3.12 \
-  --generate-hashes --no-header --output-file requirements-dev.lock
-uv pip compile examples/ai/requirements.txt --python-version 3.12 \
-  --universal --generate-hashes --no-header \
-  --output-file examples/ai/requirements.lock
-```
-
-AIサンプルは独立した [AI向け環境](docs/AI-READINESS.md#cliでcontextを保存する)、SQL読取と専用DBへの素材投入は [SQL抽出手順](docs/SOURCE-SQLSERVER.md) のuv環境を使います。Spark公式imageに同梱されるPythonとJARの組合せは、これらのhost環境の都合で変更しません。
-
-## ダミーデータを投入する
-
-このコマンドは**素材を投入するだけ**です。取り込み・SQL変換・ワークフローを起動しません。
-
-```bash
-python3 scripts/generate-demo.py \
-  --destination landing \
-  --output /srv/lakehouse/landing \
-  --seed 42 --orders 20 --days 7 --scenario edge
-```
-
-`clean` は正常データ、`edge` は重複・改訂・遅延・型不正・参照不整合を含むデータです。同じseedと引数で同じ内容を生成します。SQL Serverへの投入は専用の `DEMO_SQLSERVER_*` 設定と書き込み指定を必要とし、毎回新しいスキーマを使います。[データ契約・SQLへの投入方法](docs/DEMO-DATA.md)
-
-## メダリオンを実行する
-
-```bash
-# 素材の投入とは別の操作です。Bronze取り込み→Silver/Gold更新を実行します。
-./scripts/lakehouse.sh \
-  --env-file "$HOME/.config/lakehouse-foundation/site.env" medallion
-
-# 固定の疑似データを、隔離した検証用namespaceで確かめます。
-./scripts/lakehouse.sh \
-  --env-file "$HOME/.config/lakehouse-foundation/site.env" verify
-```
-
-業務ルールは [medallion/](medallion/) のコメント付きSQL、素材の列契約は [sources.json](medallion/sources.json) です。取り込み用Pythonを業務ルールごとに書き換える構成にしません。原本のハッシュと由来を保存し、更新ファイルの再投入・ジョブの再実行で二重計上しない仕組みにしています。
-
-Goldでは工場・日別の生産進捗、良品数、不良数、歩留まり、停止時間と、受注別の出荷・未出荷・遅延を集計します。複数の実績と出荷を直接多重結合しないよう、先にそれぞれ集約します。
-
-## GUI・監視・Spark・Airflow
-
-private設定の `COMPOSE_PROFILES` へ必要な機能を追加し、`up` を再実行します。
+## 必要なprofileだけを追加する
 
 | profile | 用途 |
 | --- | --- |
-| `demo` | Streamlitの操作画面と認証付きFastAPI / Swagger UI |
-| `cdc` | SQL Server CDC、Kafka、Debezium、consumer、Kafka管理GUI |
-| `automation` | n8n。`infra/automation/workflow-medallion.json` 等をインポートし、GUIで実行 |
-| `monitoring` | PrometheusとGrafana。初回だけ登録し、その後はGUIで編集・保存 |
-| `orchestration` | Airflow。明示的な手動DAG実行から開始 |
-| `compute` | Sparkの相互運用確認。通常起動では常駐しない |
+| `demo` / `monitoring` | 操作ハブ・API / Grafana・Prometheus |
+| `cdc` / `automation` | SQL Server CDC・Kafbat / n8n |
+| `compute` / `orchestration` | Spark一時スモーク / Airflow手動DAG |
+| `bi` / `notebooks` | Superset / JupyterLab + Spark |
+| `vector` / `lineage` | Qdrant / Marquez |
+| `mcp` | AIクライアント向けMCP。内部APIを一緒に起動 |
 
-例: `COMPOSE_PROFILES=automation,monitoring`。n8nにはGUIからHTTP Header Auth資格情報を登録します。APIトークンをワークフローJSONに書き込みません。
+追加profileには専用の秘密設定・workspace・メモリが必要です。[PoCツールの起動条件](docs/POC-TOOLS.md)を確認し、設定を保存した後に再配置します。GUIの「保存済み」は反映済みを意味しません。
 
-- [GUIとダミー投入](docs/DEMO-GUI.md) / [APIとSwagger](docs/API.md)
-- [メダリオン詳説](docs/MEDALLION.md) / [GUI操作手順](docs/GUI-WALKTHROUGHS.md)
-- [設定項目一覧](docs/CONFIGURATION.md) / [運用](docs/OPERATIONS.md) / [障害対応](docs/TROUBLESHOOTING.md)
-- [CDC](docs/CDC.md) / [AIとLangChain](docs/AI-READINESS.md) / [Cloudflare](docs/CLOUDFLARE.md)
-- [GrafanaのGUI編集・保存・バックアップ](docs/GRAFANA.md)
-- [GUIでできること・各OSSの比較](docs/GUI-OPTIONS.md)
-- [構成とメダリオン設計](docs/ARCHITECTURE.md)
-- [導入・運用・停止・GUI資格情報の手順](docs/DEPLOYMENT.md)
-- [DokployのProject・環境の整理とGitからの展開](docs/DOKPLOY.md)
-- [既存SQL Serverからの読み取り専用抽出](docs/SOURCE-SQLSERVER.md)
-- [Spark / Airflow / Icebergの互換性](docs/COMPATIBILITY.md)
-- [検証記録](docs/VALIDATION.md)
+**MCP**は標準Python SDK **2.3.0**を使い、9個のread toolと2個のresourceを同梱します。書き込み3 toolは既定で公開せず、operatorのopt-inと呼出ごとの`confirm`を必要とします。任意SQL・shell・任意ファイル読取は公開しません。HTTP認証と公式SDKからの参照を検証し、[実装・検証状況](docs/IMPLEMENTATION-STATUS.md)で配置の確認を追跡します。
 
-停止は `lakehouse.sh --env-file <private-file> down` です。データボリュームは保持します。会社DBへのCDC接続、企業IdP、バックアップからの復元、モデル推論は、それぞれ後続の接続・運用検証が必要です。
+**AI向けcontext**はGoldの各main snapshotを固定し、表とsnapshot IDを根拠にします。export側のコード・参照SQLのhashは、過去のsnapshotを生成したSQL版の保証には使いません。LangChain例は外部tracingを無効化し、モデル推論は任意の別操作です。[AIの境界](docs/AI-READINESS.md)
+
+## 再現性と開発チェック
+
+自作Python環境はuvで構築し、依存はhash付きlock、imageとJARはdigest / checksumで固定します。Airflowは公式venvとconstraintsを維持します。[互換性](docs/COMPATIBILITY.md)
+
+```bash
+uv venv --python 3.12 /absolute/private/lakehouse-dev
+uv pip sync --python /absolute/private/lakehouse-dev/bin/python \
+  --require-hashes requirements-dev.lock
+/absolute/private/lakehouse-dev/bin/python -m unittest discover -s tests
+```
+
+[公開CI](https://github.com/hiromura16/lakehouse-foundation/actions/workflows/validate.yml)でsource / history、Python、SQL、全profileのComposeを検査します。各導入先の受入は [検証記録](docs/VALIDATION.md) と分けます。会社の実DB・proxy / CA・IdP、復元、並列負荷、ARM64・GPUモデル推論は個別の確認が必要です。Qdrantの埋め込み生成や実ジョブのlineage自動収集も、profile追加だけでは完成しません。
+
+## 目的別のガイド
+
+| やりたいこと | 読む文書 |
+| --- | --- |
+| 初めて導入・会社へ展開する | [はじめに](docs/START-HERE.md) · [会社導入](docs/COMPANY-ROLLOUT.md) · [企業proxy / CA](docs/COMPANY-PROXY.md) |
+| 設定・配置・既存データを引き継ぐ | [設定](docs/CONFIGURATION.md) · [配置](docs/DEPLOYMENT.md) · [Dokploy](docs/DOKPLOY.md) |
+| データ・GUI・APIを理解する | [メダリオン](docs/MEDALLION.md) · [操作ハブ](docs/POC-PORTAL.md) · [API](docs/API.md) |
+| 監視・更新・復旧を扱う | [Grafana](docs/GRAFANA.md) · [運用](docs/OPERATIONS.md) · [障害対応](docs/TROUBLESHOOTING.md) |
+| AIや外部サービスを検討する | [AI / LangChain](docs/AI-READINESS.md) · [Cloudflare](docs/CLOUDFLARE.md) · [PoCツール](docs/POC-TOOLS.md) |
+
+停止は `./scripts/lakehouse.sh down`。名前付きvolumeを保持します。原本、カタログDB、暗号鍵、GUIの保存内容を一組として保管し、復元は別環境で確認します。

@@ -261,6 +261,16 @@ core初期化後、必要な場合に一時実行します。
 
 Kafka、Debezium、consumer、Kafbat UIの任意構成を用意していますが、会社DBに対する実通信の成否は導入先で確認します。connector、topic、offset、raw変更イベント、現在状態、Goldの照合を段階ごとに記録します。[CDC.md](CDC.md) と [CONFIGURATION.md](CONFIGURATION.md#sql-serverの変更を読むcdc設定) の手順・設定を確認し、設定欄の保存や画面の起動だけでCDCの受入完了とはしません。
 
+### PoCツールとAI向け入口を追加する
+
+必要なprofileを現在のリストへ追加します。`bi` はSuperset、`notebooks` はSpark付きJupyter、`vector` はQdrant、`lineage` はMarquez、`mcp` はAIクライアント用です。各ポート・個別秘密値・外部 `NOTEBOOKS_DIR` を準備し、`plan` → `up` →GUI/APIの確認の順に進めます。全機能を一度に有効にする前にメモリとディスクを確認してください。
+
+既存設定へ追加する場合は、profile変更の前に `python3 scripts/configure.py --output "$LAKEHOUSE_ENV_FILE" --upgrade` を実行します。既存の暗号鍵やパスワードは保持し、変更前ファイルを0600で保存します。追加した内部サービス名を `NO_PROXY` と `no_proxy` にも追記し、DokployのEnvironmentへ反映します。
+
+[POC-PORTAL.md](POC-PORTAL.md) が画面の入口とデータ契約・品質・ヘルプを、[POC-TOOLS.md](POC-TOOLS.md) が各OSSの初期化・認証・保存方法を説明します。[MCP.md](MCP.md) では専用Bearer認証、read tools、明示有効化した場合だけ使える書込みツールを説明します。[ANOMALY-SCENARIOS.md](ANOMALY-SCENARIOS.md) から異常の影響と選び方を確認できます。
+
+社内proxy導入は [COMPANY-PROXY.md](COMPANY-PROXY.md) を順に確認し、daemon、Git取得、BuildKit、コンテナ実行、Java、uv、内部通信を分けて受入します。GUIの診断は固定の外部取得先だけを試し、daemonの設定変更やDocker再起動は行いません。
+
 ## 11. Dokployを管理基盤にする場合
 
 coreのCompose起動とは別に、Dokployのprivate設定を埋めてplanを実行します。

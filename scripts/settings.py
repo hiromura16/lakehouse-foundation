@@ -52,32 +52,29 @@ def load(path):
         raise ValueError(
             "BIND_IP must be a specific local/private IPv4 address."
         )
-    for key in [
-        "TRINO_PORT",
-        "CATALOG_PORT",
-        "S3_PORT",
-        "GRAFANA_PORT",
-        "PROMETHEUS_PORT",
-        "N8N_PORT",
-        "AIRFLOW_PORT",
-        "DEMO_GUI_PORT",
-        "DEMO_API_PORT",
-        "CDC_CONNECT_PORT",
-        "CDC_UI_PORT",
-    ]:
-        # Existing sites can add the optional GUI without regenerating keys.
-        if key in {"DEMO_GUI_PORT", "DEMO_API_PORT"}:
-            values.setdefault(
-                key, "8501" if key == "DEMO_GUI_PORT" else "8502"
-            )
-        if key in {"CDC_CONNECT_PORT", "CDC_UI_PORT"}:
-            values.setdefault(
-                key, "8083" if key == "CDC_CONNECT_PORT" else "8084"
-            )
-        if (
-            not values.get(key, "").isdigit()
-            or not 1024 <= int(values[key]) <= 65535
-        ):
+    port_defaults = {
+        "TRINO_PORT": "8080",
+        "CATALOG_PORT": "8181",
+        "S3_PORT": "8333",
+        "GRAFANA_PORT": "3000",
+        "PROMETHEUS_PORT": "9090",
+        "N8N_PORT": "5678",
+        "AIRFLOW_PORT": "8081",
+        "DEMO_GUI_PORT": "8501",
+        "DEMO_API_PORT": "8502",
+        "CDC_CONNECT_PORT": "8083",
+        "CDC_UI_PORT": "8084",
+        "SUPERSET_PORT": "8088",
+        "JUPYTER_PORT": "8888",
+        "QDRANT_PORT": "6333",
+        "MARQUEZ_API_PORT": "5000",
+        "MARQUEZ_UI_PORT": "3001",
+        "MCP_PORT": "8503",
+    }
+    for key, default in port_defaults.items():
+        # New inactive profiles remain compatible with older site settings.
+        values.setdefault(key, default)
+        if not values[key].isdigit() or not 1024 <= int(values[key]) <= 65535:
             raise ValueError("Invalid port: " + key)
     ports = [
         values[k]
@@ -130,12 +127,17 @@ def load(path):
         "orchestration",
         "demo",
         "cdc",
+        "bi",
+        "notebooks",
+        "vector",
+        "lineage",
+        "mcp",
     }:
         raise ValueError(
             "Profiles may be automation, monitoring, compute, "
-            "orchestration, demo and/or cdc."
+            "orchestration, demo, cdc, bi, notebooks, vector, lineage, mcp."
         )
-    if "demo" in profiles:
+    if profiles & {"demo", "mcp"}:
         if not re.fullmatch(
             r"[A-Za-z0-9]{20,128}", values.get("CONTROL_API_TOKEN", "")
         ):
@@ -150,6 +152,49 @@ def load(path):
             values.get("CONTROL_SETTINGS_NAME", ""),
         ):
             raise ValueError("Invalid CONTROL_SETTINGS_NAME.")
+    profile_secrets = {
+        "bi": (
+            "SUPERSET_DB_PASSWORD",
+            "SUPERSET_SECRET_KEY",
+            "SUPERSET_ADMIN_PASSWORD",
+            "SUPERSET_REDIS_PASSWORD",
+        ),
+        "notebooks": ("JUPYTER_TOKEN",),
+        "vector": ("QDRANT_API_KEY", "QDRANT_READ_ONLY_API_KEY"),
+        "lineage": ("MARQUEZ_DB_PASSWORD",),
+        "mcp": ("MCP_API_TOKEN",),
+    }
+    for profile, keys in profile_secrets.items():
+        if profile not in profiles:
+            continue
+        for key in keys:
+            minimum = (
+                32 if key in {"SUPERSET_SECRET_KEY", "JUPYTER_TOKEN"} else 20
+            )
+            pattern = r"[A-Za-z0-9]{" + str(minimum) + r",128}"
+            if not re.fullmatch(pattern, values.get(key, "")):
+                raise ValueError("Generate a fresh secret for " + key)
+    if "vector" in profiles and (
+        values["QDRANT_API_KEY"] == values["QDRANT_READ_ONLY_API_KEY"]
+    ):
+        raise ValueError("Use distinct Qdrant management and read-only keys.")
+    if "notebooks" in profiles:
+        if (
+            not values.get("WORKER_UID", "").isdigit()
+            or int(values["WORKER_UID"]) == 0
+            or not values.get("WORKER_GID", "").isdigit()
+        ):
+            raise ValueError("Notebook UID must be non-root; GID numeric.")
+        workspace = Path(values.get("NOTEBOOKS_DIR", ""))
+        if not workspace.is_absolute() or workspace.resolve().is_relative_to(
+            ROOT
+        ):
+            raise ValueError("Use an external absolute NOTEBOOKS_DIR.")
+    if values.get("MCP_ENABLE_MUTATIONS", "false") not in {"true", "false"}:
+        raise ValueError("MCP_ENABLE_MUTATIONS must be true or false.")
+    ca_file = values.get("CORPORATE_CA_FILE", "")
+    if ca_file and not Path(ca_file).is_absolute():
+        raise ValueError("CORPORATE_CA_FILE must be absolute when configured.")
     return values
 
 

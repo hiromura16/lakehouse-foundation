@@ -19,6 +19,7 @@ SPEC = importlib.util.spec_from_file_location(
 )
 GENERATOR = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(GENERATOR)
+SCENARIOS = GENERATOR.SCENARIOS
 ID_COLUMNS = {
     "product_id",
     "work_order_id",
@@ -131,13 +132,13 @@ def sql_settings(settings):
         return GENERATOR.private_demo_settings(path)
 
 
-def publish_source(path, payload):
+def publish_source(path, payload, policy=None):
     """Publish immutable bytes first, then the atomic SHA-256 ready marker."""
     GENERATOR.publish_file(path, payload)
     digest = sha256(payload).hexdigest()
-    GENERATOR.publish_file(
-        path.with_name(path.name + ".ready"), (digest + "\n").encode()
-    )
+    marker = SCENARIOS.ready_payload(payload, policy)
+    if marker is not None:
+        GENERATOR.publish_file(path.with_name(path.name + ".ready"), marker)
     return digest
 
 
@@ -154,9 +155,15 @@ def generate_batch(
     images=False,
     allow_sql_write=False,
     settings=None,
+    anomalies=(),
+    anomaly_rate=10,
+    allow_file_faults=False,
 ):
     """Create one source-only batch; return metadata containing no secrets."""
     validate_options(run_id, batch, seed, orders, days, scenario, destination)
+    anomalies = SCENARIOS.validate_selection(
+        anomalies, destination, images, allow_file_faults, anomaly_rate
+    )
     if type(images) is not bool or type(allow_sql_write) is not bool:
         raise ValueError("images and allow_sql_write must be booleans.")
     sql = destination in {"sqlserver", "both"}
@@ -192,6 +199,8 @@ def generate_batch(
             destination,
             images,
             values,
+            anomalies,
+            anomaly_rate,
         )
     finally:
         os.close(descriptor)
@@ -208,6 +217,8 @@ def _publish_batch(
     destination,
     images,
     values,
+    anomalies,
+    anomaly_rate,
 ):
     """Publish after acquiring the cross-session source writer lock."""
     suffix = f"__{run_id}_{batch:04d}"
@@ -215,13 +226,23 @@ def _publish_batch(
     if manifest_path.exists() or manifest_path.is_symlink():
         raise ValueError("This batch has already been published.")
     data = namespaced_data(run_id, batch, seed, orders, days, scenario)
+    changes = []
+    if anomalies:
+        data, changes = SCENARIOS.apply_rows(
+            data, anomalies, anomaly_rate, seed, batch
+        )
     payloads = GENERATOR.encoded_sources(data)
+    if images:
+        payloads["images/inspection.png"] = synthetic_png(seed + batch)
+    payloads, policies, faults = SCENARIOS.apply_files(payloads, anomalies)
     sources = []
     targets = []
+    paths = {}
     for source in GENERATOR.contracts():
         original = Path(source["path"])
         relative = original.with_name(original.stem + suffix + original.suffix)
         payload = payloads[source["path"]]
+        paths[source["path"]] = relative.as_posix()
         sources.append(
             {
                 "table": source["table"],
@@ -230,28 +251,33 @@ def _publish_batch(
                 "sha256": sha256(payload).hexdigest(),
             }
         )
-        targets.append((output / relative, payload))
+        targets.append(
+            (output / relative, payload, policies.get(source["path"]))
+        )
     image_sources = []
     if images:
         relative = Path("images") / ("inspection" + suffix + ".png")
-        payload = synthetic_png(seed + batch)
+        payload = payloads["images/inspection.png"]
+        paths["images/inspection.png"] = relative.as_posix()
         image_sources.append(
             {
                 "path": relative.as_posix(),
                 "sha256": sha256(payload).hexdigest(),
             }
         )
-        targets.append((output / relative, payload))
+        targets.append(
+            (output / relative, payload, policies.get("images/inspection.png"))
+        )
     # Reject reused filenames before any SQL writes. No overwrite is offered.
     if destination != "sqlserver" and any(
         path.exists() or path.with_name(path.name + ".ready").exists()
-        for path, _ in targets
+        for path, _, _ in targets
     ):
         raise ValueError("Batch filenames already exist; choose a new run.")
     schema = GENERATOR.write_sql(data, values) if values is not None else None
     if destination != "sqlserver":
-        for path, payload in targets:
-            publish_source(path, payload)
+        for path, payload, policy in targets:
+            publish_source(path, payload, policy)
     result = {
         "format_version": 1,
         "run_id": run_id,
@@ -266,6 +292,16 @@ def _publish_batch(
         "sql_schema": schema,
         "manifest": manifest_path.relative_to(output).as_posix(),
     }
+    if anomalies:
+        result["diagnostics"] = {
+            "anomalies": list(anomalies),
+            "anomaly_rate": anomaly_rate,
+            "row_changes": changes,
+            "file_faults": [
+                {**fault, "path": paths[fault["path"]]} for fault in faults
+            ],
+            "intentional_file_faults": bool(faults),
+        }
     GENERATOR.publish_file(
         manifest_path, (json.dumps(result, indent=2) + "\n").encode()
     )

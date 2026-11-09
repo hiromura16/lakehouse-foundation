@@ -47,7 +47,7 @@ compose = [
     str(ROOT / "infra/lakehouse/compose.yaml"),
 ]
 # Optional engines stay in separate Compose files to keep the core small.
-for extension in ("compute", "orchestration", "demo", "cdc"):
+for extension in ("compute", "orchestration", "demo", "cdc", "poc", "mcp"):
     extra_compose = ROOT / "infra" / extension / "compose.yaml"
     if extra_compose.is_file():
         compose.extend(["-f", str(extra_compose)])
@@ -85,7 +85,10 @@ elif args.action == "up":
             "Create LANDING_DIR with the intended owner "
             "before starting services."
         )
-    run(["up", "-d", "--build", "--wait", "--wait-timeout", "240"])
+    if "notebooks" in values.get("COMPOSE_PROFILES", "").split(","):
+        if not Path(values["NOTEBOOKS_DIR"]).is_dir():
+            raise SystemExit("Create NOTEBOOKS_DIR with WORKER_UID/GID first.")
+    run(["up", "-d", "--build", "--wait", "--wait-timeout", "600"])
     run(
         [
             "exec",

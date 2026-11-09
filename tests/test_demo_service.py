@@ -90,6 +90,63 @@ class DemoSourceTests(unittest.TestCase):
                 self.generate()
             writer.assert_not_called()
 
+    def test_anomalies_apply_after_namespacing_and_record_diagnostics(self):
+        result = self.generate(
+            anomalies=["missing_required"], anomaly_rate=100
+        )
+        source = next(
+            item for item in result["sources"] if item["table"] == "mes_events"
+        )
+        rows = [
+            json.loads(line)
+            for line in (self.output / source["path"]).read_text().splitlines()
+        ]
+        self.assertTrue(all(row["event_id"] == "" for row in rows))
+        self.assertTrue(all(RUN_ID in row["work_order_id"] for row in rows))
+        diagnostics = result["diagnostics"]
+        self.assertEqual(diagnostics["anomalies"], ["missing_required"])
+        self.assertFalse(diagnostics["intentional_file_faults"])
+
+    def test_wrong_marker_reports_actual_payload_and_intentional_fault(self):
+        result = self.generate(
+            anomalies=["wrong_checksum"], allow_file_faults=True
+        )
+        fault = result["diagnostics"]["file_faults"][0]
+        path = self.output / fault["path"]
+        actual = sha256(path.read_bytes()).hexdigest()
+        self.assertNotEqual(
+            path.with_name(path.name + ".ready").read_text().strip(), actual
+        )
+        source = next(
+            item for item in result["sources"] if item["path"] == fault["path"]
+        )
+        self.assertEqual(source["sha256"], actual)
+        self.assertTrue(result["diagnostics"]["intentional_file_faults"])
+
+    def test_file_faults_do_not_modify_sql_rows_and_require_consent(self):
+        with self.assertRaisesRegex(ValueError, "consent"):
+            self.generate(anomalies=["extra_column"])
+        self.assertFalse(self.output.exists())
+        values = {
+            "DEMO_SQLSERVER_HOST": "demo.invalid",
+            "DEMO_SQLSERVER_PORT": "1433",
+            "DEMO_SQLSERVER_DATABASE": "ManufacturingDemo",
+            "DEMO_SQLSERVER_USER": "demo_writer",
+            "DEMO_SQLSERVER_PASSWORD": "test-placeholder",
+        }
+        with mock.patch.object(
+            SERVICE.GENERATOR, "write_sql", return_value="lh_demo_synthetic"
+        ) as writer:
+            self.generate(
+                destination="both",
+                allow_sql_write=True,
+                settings=values,
+                anomalies=["extra_column"],
+                allow_file_faults=True,
+            )
+        expected = SERVICE.namespaced_data(RUN_ID, 1, 42, 2, 7, "clean")
+        self.assertEqual(writer.call_args.args[0], expected)
+
     def test_sql_requires_consent_and_refuses_source_and_system_databases(
         self,
     ):

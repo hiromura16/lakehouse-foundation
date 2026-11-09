@@ -1,0 +1,53 @@
+# AI clients get a narrow MCP surface; arbitrary SQL/shell are never exposed.
+# Merge after core and demo Compose. The controller holds site credentials.
+services:
+  mcp:
+    profiles: [mcp]
+    image: ${COMPOSE_PROJECT_NAME:-lakehouse}-mcp:local
+    build:
+      context: ../..
+      dockerfile: infra/mcp/Dockerfile
+      secrets: [corporate_ca]
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+        http_proxy: ${http_proxy:-}
+        https_proxy: ${https_proxy:-}
+        no_proxy: ${no_proxy:-}
+    restart: unless-stopped
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    mem_limit: 256m
+    cpus: 1
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      MCP_API_TOKEN: ${MCP_API_TOKEN:-}
+      CONTROL_API_TOKEN: ${CONTROL_API_TOKEN:-}
+      MCP_ENABLE_MUTATIONS: ${MCP_ENABLE_MUTATIONS:-false}
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-localhost:*,127.0.0.1:*,mcp:*}
+      MCP_CONTROL_API_URL: http://demo-api:8000
+    ports:
+      - ${BIND_IP:-127.0.0.1}:${MCP_PORT:-8503}:8001
+    depends_on:
+      demo-api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health',timeout=3)
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'

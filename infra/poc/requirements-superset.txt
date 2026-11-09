@@ -1,0 +1,4 @@
+# Superset itself is supplied by its pinned upstream image.
+# Keep its SQLAlchemy 1.4 API and base constraints while adding Trino/Postgres.
+trino[sqlalchemy]==0.340.0
+psycopg2-binary==2.9.13

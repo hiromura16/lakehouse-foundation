@@ -5,12 +5,18 @@ import argparse
 import base64
 import os
 import secrets
+import tempfile
 from pathlib import Path
 
-from settings import ROOT
+from settings import ROOT, load
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--output", required=True, type=Path)
+parser.add_argument(
+    "--upgrade",
+    action="store_true",
+    help="Add missing keys, retaining existing values.",
+)
 args = parser.parse_args()
 target = args.output.expanduser().absolute()
 if target.resolve().is_relative_to(ROOT):
@@ -41,6 +47,27 @@ values = {
     "CDC_CONNECT_PORT": "8083",
     "CDC_UI_PORT": "8084",
     "COMPOSE_PROFILES": "",
+    "SUPERSET_PORT": "8088",
+    "SUPERSET_DB_PASSWORD": secrets.token_hex(32),
+    "SUPERSET_SECRET_KEY": secrets.token_hex(32),
+    "SUPERSET_ADMIN_USERNAME": "admin",
+    "SUPERSET_ADMIN_PASSWORD": secrets.token_hex(32),
+    "SUPERSET_ADMIN_EMAIL": "admin@example.invalid",
+    "SUPERSET_REDIS_PASSWORD": secrets.token_hex(32),
+    "JUPYTER_PORT": "8888",
+    "JUPYTER_TOKEN": secrets.token_hex(32),
+    "NOTEBOOKS_DIR": "/srv/lakehouse/notebooks",
+    "QDRANT_PORT": "6333",
+    "QDRANT_API_KEY": secrets.token_hex(32),
+    "QDRANT_READ_ONLY_API_KEY": secrets.token_hex(32),
+    "MARQUEZ_API_PORT": "5000",
+    "MARQUEZ_UI_PORT": "3001",
+    "MARQUEZ_DB_PASSWORD": secrets.token_hex(32),
+    "MCP_PORT": "8503",
+    "MCP_API_TOKEN": secrets.token_hex(32),
+    "MCP_ENABLE_MUTATIONS": "false",
+    "MCP_ALLOWED_HOSTS": "localhost:*,127.0.0.1:*,mcp:*",
+    "CORPORATE_CA_FILE": "",
     "WAREHOUSE_NAME": "lakehouse",
     "S3_BUCKET_RAW": "lakehouse-raw",
     "S3_BUCKET_WAREHOUSE": "lakehouse-warehouse",
@@ -110,22 +137,58 @@ values = {
         "localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,"
         "n8n,n8n-db,prometheus,grafana,airflow,airflow-db,demo,demo-api,"
         "cdc-kafka,cdc-connect,cdc-consumer,cdc-ui,"
-        "dokploy,dokploy-postgres"
+        "dokploy,dokploy-postgres,superset,superset-db,superset-redis,"
+        "jupyter,qdrant,marquez,marquez-db,marquez-web,mcp"
     ),
 }
 for key in ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"]:
     values[key.lower()] = values[key]
-# Exclusive creation prevents replacing an existing site's credentials.
-fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-with os.fdopen(fd, "w") as output:
-    output.write(
-        "# Private site settings. Keep outside Git; "
-        "do not paste contents into logs.\n"
+if args.upgrade:
+    # Read and validate before adding defaults; never rotate existing keys.
+    load(target)
+    original = target.read_bytes()
+    existing = {
+        line.partition("=")[0]
+        for line in original.decode().splitlines()
+        if line and not line.startswith("#")
+    }
+    missing = {
+        key: value for key, value in values.items() if key not in existing
+    }
+    if not missing:
+        print("Settings already include all current keys; no changes made.")
+        raise SystemExit(0)
+    backup = target.with_name(target.name + ".before-upgrade")
+    backup_fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(backup_fd, "wb") as output:
+        output.write(original)
+    candidate = original.decode().rstrip("\n") + "\n"
+    candidate += "# Added keys; previous values preserved.\n"
+    candidate += "\n".join(key + "=" + value for key, value in missing.items())
+    candidate += "\n"
+    temporary_fd, temporary_name = tempfile.mkstemp(dir=target.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(temporary_fd, "w") as output:
+            output.write(candidate)
+        load(temporary)
+        if target.read_bytes() != original:
+            raise SystemExit(
+                "Settings changed concurrently; review and retry."
+            )
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    print("Added missing keys (0600); previous file saved beside settings.")
+else:
+    # Exclusive creation never replaces an existing site's credentials.
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as output:
+        output.write("# Private site settings. Keep outside Git.\n")
+        output.write(
+            "\n".join(key + "=" + value for key, value in values.items())
+        )
+        output.write("\n")
+    print(
+        "Created private configuration (0600). Edit site paths and profiles."
     )
-    output.write(
-        "\n".join(key + "=" + value for key, value in values.items()) + "\n"
-    )
-print(
-    "Created private configuration (0600). Edit site-specific paths, "
-    "ports and optional source settings locally."
-)

@@ -96,14 +96,14 @@ GitHubのclone成功は、会社proxy経由のimage取得や依存ダウンロ�
 
 ## 任意Composeを重ねる
 
-`infra/lakehouse/compose.yaml` だけを指定する既定配置では、coreとその中にある `automation`／`monitoring` を扱います。`compute`、`orchestration`、`demo`、`cdc` は追加ファイルに定義があるため、複数の `-f` を指定します。
+`infra/lakehouse/compose.yaml` だけを指定する既定配置では、coreとその中にある `automation`／`monitoring` を扱います。`compute`、`orchestration`、`demo`、`cdc`、PoCツール、`mcp` は追加ファイルに定義があるため、複数の `-f` を指定します。
 
-CLIでは `scripts/lakehouse.sh` が5つのファイルをまとめて扱います。DokployではAdvancedのCustom Commandへ同じ組み合わせを指定できます。Custom Commandは既定コマンド全体を置き換え、Dokploy側が先頭へ `docker` を付けます。
+CLIでは `scripts/lakehouse.sh` が7つのファイルをまとめて扱います。DokployではAdvancedのCustom Commandへ同じ組み合わせを指定できます。Custom Commandは既定コマンド全体を置き換え、Dokploy側が先頭へ `docker` を付けます。
 
 次は `appName` が説明用の `lakehouse-development` と一致する場合の入力例です。実際のEnvironmentの `appName` に合わせ、UIの欄へ一つのコマンドとして設定します。
 
 ```text
-compose -p lakehouse-development --env-file infra/lakehouse/.env -f infra/lakehouse/compose.yaml -f infra/compute/compose.yaml -f infra/orchestration/compose.yaml -f infra/demo/compose.yaml -f infra/cdc/compose.yaml up -d --build --remove-orphans --wait --wait-timeout 240
+compose -p lakehouse-development --env-file infra/lakehouse/.env -f infra/lakehouse/compose.yaml -f infra/compute/compose.yaml -f infra/orchestration/compose.yaml -f infra/demo/compose.yaml -f infra/cdc/compose.yaml -f infra/poc/compose.yaml -f infra/mcp/compose.yaml up -d --build --remove-orphans --wait --wait-timeout 600
 ```
 
 `COMPOSE_PROFILES` には必要なものだけを指定します。`compute` のSparkスモークは通常の `up` では常駐せず、CLIの `spark-check` で一時実行します。Airflowの接続トークンはAirflowのConnection画面へ登録します。[COMPATIBILITY.md](COMPATIBILITY.md) に追加要件と実行方法があります。
@@ -148,3 +148,12 @@ UIで生成した `.env` に対し、サイト設定の外部保存を前提と�
 4. コード版とイメージのlock、private設定の管理先、バックアップ対象を記録します。
 
 通常の配置管理はDokployへ揃え、単発の取り込み・検証等をCLIから実行する場合も同じ環境へ向けます。複数の正本から同じアプリを同時に再配置しません。会社のproxy、外部SQL、利用者認証、バックアップからの復元は、それぞれ実環境で確認した結果を記録します。
+
+
+## PoC操作とAI連携の追加
+
+`bi`（Superset）、`notebooks`（Spark/Jupyter）、`vector`（Qdrant）、`lineage`（Marquez）、`mcp` は同じComposeプロジェクトの任意profileです。新規設定には個別の秘密値を生成します。既存環境はprofileを追加する前に `python3 scripts/configure.py --output /absolute/private/site.env --upgrade` を実行し、既存値を保持して追加キーを用意します。
+
+`NOTEBOOKS_DIR` はリポジトリ外の既存ディレクトリを指定し、非rootの `WORKER_UID/GID` に書込権を与えます。全profileを無条件に有効化せず資源を確認し、[POC-TOOLS.md](POC-TOOLS.md) の手順で必要な機能を追加します。[POC-PORTAL.md](POC-PORTAL.md) の画面から入口・データ契約・品質・説明を辿れます。AI向けMCPの専用認証と参照優先の設定は [MCP.md](MCP.md) を参照します。
+
+proxyやCAを変えるときは、Dokploy EnvironmentとGUIが保存するprivate envを管理者が一致させ、build時のCA反映には再buildを行います。内部サービス名は新profile分も `NO_PROXY` / `no_proxy` の両方へ追記します。詳細は [COMPANY-PROXY.md](COMPANY-PROXY.md) にまとめています。

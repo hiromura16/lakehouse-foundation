@@ -190,6 +190,27 @@ class PublicationChecks(unittest.TestCase):
             result = self.inspect(root, "--deny-file", str(root / "notes.txt"))
             self.assertEqual(result.returncode, 2)
 
+    def test_private_scripts_are_not_parsed_as_env_assignments(self):
+        """Keep real env secrets while rejecting shell comparison noise."""
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / "source"
+            root.mkdir()
+            private = parent / "private"
+            private.mkdir()
+            command = 'test "$$API_KEY" != "$$READ_ONLY_API_KEY";'
+            (private / "script.sh").write_text(command + "\n")
+            (root / "example.sh").write_text(command + "\n")
+            result = self.inspect(root, "--secret-dir", str(private))
+            self.assertEqual(result.returncode, 0, result.stdout)
+            secret = "SyntheticCredential" + "7" * 24
+            (private / "site.env").write_text("API_KEY=" + secret + "\n")
+            (root / "leaked.txt").write_text(secret)
+            result = self.inspect(root, "--secret-dir", str(private))
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("private-credential-value", result.stdout)
+            self.assertNotIn(secret, result.stdout + result.stderr)
+
     def test_deleted_history_and_staged_content_are_checked(self):
         """Detect deleted leaks and staged leaks hidden by clean files."""
         with tempfile.TemporaryDirectory() as directory:

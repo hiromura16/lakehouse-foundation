@@ -274,6 +274,147 @@ class ControlApiTests(unittest.TestCase):
         self.assertIn("HTTPBearer", schema["components"]["securitySchemes"])
         self.assertIn("SourceJob", schema["components"]["schemas"])
 
+    def test_scenario_catalog_is_authenticated_and_matches_shared_metadata(
+        self,
+    ):
+        self.assertEqual(self.client.get("/scenarios").status_code, 401)
+        with mock.patch.object(API.httpx, "Client") as outbound:
+            response = self.request("GET", "/scenarios")
+            outbound.assert_not_called()
+        self.assertEqual(response.status_code, 200)
+        catalog = response.json()
+        engine = API.source_scenario_engine()
+        self.assertEqual(catalog["version"], 1)
+        self.assertEqual(catalog["scenarios"], engine.catalog())
+        self.assertEqual(catalog["presets"], engine.presets())
+        self.assertEqual(
+            catalog["conflicts"], [sorted(group) for group in engine.CONFLICTS]
+        )
+        schema = self.client.get("/openapi.json").json()
+        self.assertIn("ScenarioCatalog", schema["components"]["schemas"])
+        self.assertIn(
+            "anomalies",
+            schema["components"]["schemas"]["SourceJob"]["properties"],
+        )
+
+    def test_selected_anomalies_and_rate_reach_source_only_generator(self):
+        with mock.patch.object(API.httpx, "Client") as outbound:
+            accepted = self.request(
+                "POST",
+                "/jobs",
+                json={
+                    "scenario": "clean",
+                    "anomalies": ["missing_required", "duplicate_row"],
+                    "anomaly_rate": 35,
+                },
+            )
+            self.assertEqual(accepted.status_code, 202)
+            result = self.wait_job(accepted.json()["id"])
+            outbound.assert_not_called()
+        self.assertEqual(result["status"], "succeeded")
+        options = self.generator.call_args.kwargs
+        self.assertEqual(
+            options["anomalies"], ["duplicate_row", "missing_required"]
+        )
+        self.assertEqual(options["anomaly_rate"], 35)
+        self.assertFalse(options["allow_file_faults"])
+        self.assertEqual(options["scenario"], "clean")
+        self.assertNotIn("WORKER_TOKEN", options["settings"])
+
+    def test_invalid_or_incompatible_anomalies_never_start_source_generation(
+        self,
+    ):
+        requests = [
+            {"anomalies": ["missing_required", "missing_required"]},
+            {"anomalies": ["private-sentinel-unknown"]},
+            {"anomalies": "missing_required"},
+            {"anomalies": ["missing_required"] * 33},
+            {"anomaly_rate": 0},
+            {"anomaly_rate": 101},
+            {"anomaly_rate": True},
+            {"allow_file_faults": "true"},
+            {"anomalies": ["wrong_checksum"]},
+            {
+                "anomalies": ["wrong_checksum"],
+                "allow_file_faults": True,
+                "destination": "sqlserver",
+                "allow_sql_write": True,
+            },
+            {"anomalies": ["corrupt_image"], "allow_file_faults": True},
+            {"anomalies": ["invalid_number", "negative_quantity"]},
+            {
+                "anomalies": ["extra_column", "missing_column"],
+                "allow_file_faults": True,
+            },
+        ]
+        for body in requests:
+            with self.subTest(body=body):
+                response = self.request("POST", "/jobs", json=body)
+                self.assertEqual(response.status_code, 422)
+                self.assertEqual(response.json()["code"], "INVALID_REQUEST")
+                self.assertNotIn("private-sentinel-unknown", response.text)
+        self.generator.assert_not_called()
+        self.assertEqual(self.app.state.jobs.jobs, {})
+
+    def test_explicit_file_fault_consent_reaches_the_generator(self):
+        accepted = self.request(
+            "POST",
+            "/jobs",
+            json={
+                "anomalies": ["corrupt_image"],
+                "allow_file_faults": True,
+                "images": True,
+            },
+        )
+        self.assertEqual(accepted.status_code, 202)
+        result = self.wait_job(accepted.json()["id"])
+        self.assertEqual(result["status"], "succeeded")
+        options = self.generator.call_args.kwargs
+        self.assertEqual(options["anomalies"], ["corrupt_image"])
+        self.assertTrue(options["allow_file_faults"])
+        self.assertTrue(options["images"])
+
+    def test_intentional_file_fault_generation_succeeds_with_real_sources(
+        self,
+    ):
+        self.app = API.create_app(
+            self.private,
+            token="unit-api-token",
+            landing=self.directory / "real-landing",
+        )
+        self.client = TestClient(self.app)
+        self.addCleanup(self.client.close)
+        with mock.patch.object(API.httpx, "Client") as outbound:
+            response = self.request(
+                "POST",
+                "/jobs",
+                json={
+                    "scenario": "clean",
+                    "anomalies": ["wrong_checksum"],
+                    "allow_file_faults": True,
+                },
+            )
+            self.assertEqual(response.status_code, 202)
+            result = self.wait_job(response.json()["id"])
+            outbound.assert_not_called()
+        self.assertEqual(result["status"], "succeeded")
+        generated = result["results"][0]
+        diagnostics = generated["diagnostics"]
+        self.assertEqual(diagnostics["anomalies"], ["wrong_checksum"])
+        self.assertTrue(diagnostics["intentional_file_faults"])
+        fault = diagnostics["file_faults"][0]
+        source = self.directory / "real-landing" / fault["path"]
+        marker = source.with_name(source.name + ".ready")
+        self.assertTrue(source.is_file())
+        self.assertNotEqual(
+            marker.read_text().strip(),
+            next(
+                item["sha256"]
+                for item in generated["sources"]
+                if item["path"] == fault["path"]
+            ),
+        )
+
     def test_settings_never_return_secrets_or_authentication_values(self):
         values = self.app.state.store.read()
         response = self.request("GET", "/settings")

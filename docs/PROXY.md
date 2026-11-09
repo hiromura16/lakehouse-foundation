@@ -1,6 +1,6 @@
 # 会社プロキシへの切り替え
 
-2026-11-09 作成。自宅では `HTTP_PROXY` / `HTTPS_PROXY` を空欄にして直接接続する。会社では下記の設定箇所を切り分け、必要なサービスにだけ適用する。ホストのDocker・コンテナ設定は変更していない。
+2026-11-09 更新。初見向けの通し手順・固定先診断・企業CA buildは [COMPANY-PROXY.md](COMPANY-PROXY.md) を参照する。直接接続では `HTTP_PROXY` / `HTTPS_PROXY` を空欄にして直接接続する。会社では下記の設定箇所を切り分け、必要なサービスにだけ適用する。ホストのDocker・コンテナ設定は変更していない。
 
 ## 設定する場所
 
@@ -126,7 +126,7 @@ docker compose --env-file /absolute/private/site.env \
 
 ## CAを追加する作業と秘密値の設定を混同しない
 
-proxy URLをenvへ保存しても、企業CAがコンテナへ自動配布されることはない。現在のComposeには任意の企業CAを一括mountする設定項目を設けていないため、必要なイメージの派生版や会社の信頼済みbase imageを用意し、buildとruntime双方で確認する。
+proxy URLをenvへ保存しても、企業CAがコンテナへ自動配布されることはない。自作imageは任意のBuildKit secret `corporate_ca` に対応し、privateの `CORPORATE_CA_FILE` から公開CA chainを受け取る。空欄では追加なし。既存のOS/JRE trustを残して追加し、buildとruntime双方で確認する。CAは完成imageの信頼ストアに残る。第三者imageへの適用は製品ごとに別途設定する。詳しい再build手順は [COMPANY-PROXY.md](COMPANY-PROXY.md) を参照する。
 
 ホストで動くSQL抽出の `SOURCE_SQLSERVER_CA_FILE` はSQL ServerのTLS用であり、HTTP proxyのCAを全コンテナへ配る設定ではない。会社DBへはSQLのTCP経路が必要で、HTTP(S)_PROXYにSQLの宛先を書いてもその経路は作られない。
 

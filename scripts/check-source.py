@@ -216,7 +216,13 @@ def private_inputs(args, root):
                 pass
             for line in text.splitlines():
                 name, separator, value = line.partition("=")
-                if separator and SENSITIVE_KEY.search(name):
+                # Logs and scripts may contain comparisons such as !=.
+                # Accept an env assignment only when its left side is a key.
+                if (
+                    separator
+                    and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name)
+                    and SENSITIVE_KEY.search(name)
+                ):
                     value = value.strip().strip("\"'")
                     if len(value) >= 8:
                         secrets.add(value)

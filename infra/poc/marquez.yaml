@@ -1,0 +1,23 @@
+# SQL credentials are expanded inside Marquez, not in this public file.
+server:
+  applicationConnectors:
+    - type: http
+      port: 5000
+      httpCompliance: RFC7230_LEGACY
+  adminConnectors:
+    - type: http
+      port: 5001
+db:
+  driverClass: org.postgresql.Driver
+  url: jdbc:postgresql://marquez-db:5432/marquez
+  user: marquez
+  password: ${MARQUEZ_DB_PASSWORD}
+migrateOnStartup: true
+graphql:
+  enabled: true
+search:
+  enabled: false
+logging:
+  level: WARN
+  appenders:
+    - type: console

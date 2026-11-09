@@ -35,6 +35,7 @@ SwaggerのJavaScript・CSS・faviconはimage内から配信します。ブラウ
 | `GET /settings` | 保存済みの非秘密値と秘密設定済みの印を取得 | values、configured_secrets、pendingフラグ |
 | `PATCH /settings` | 許可された項目をprivateファイルへ保存 | `saved: true, applied: false` |
 | `GET /status` | 固定した内部サービスの簡易healthを確認 | services、処理中、反映待ち |
+| `GET /scenarios` | 共有の異常26件・preset7種・競合groupと期待挙動を取得 | version、scenarios、presets、conflicts |
 | `POST /jobs` | 合成素材を1回、または有限回の連続投入 | 202、id、queued |
 | `POST /cdc/demo/{action}` | 準備済み専用CDC検証DBの固定6行を変更 | 202、kind: cdc-source、ジョブID |
 | `GET /jobs/{id}` | 素材投入または後続処理の進捗 | status、completed、results、error |
@@ -76,6 +77,30 @@ SwaggerのJavaScript・CSS・faviconはimage内から配信します。ブラウ
 
 CLI管理の環境では、確認した同じprivate設定で `plan` と `up` を実行して反映します。Dokploy管理の環境では、GUIのEnvironmentへ保持した設定とprivateファイルは自動同期しません。管理者が両者を整合させてGit配置を再実行します。`pending_restart: false` はAPI自身の読込時点との一致であり、全コンテナやDokployの設定一致を証明するものではありません。
 
+## PoCポータルの読み取りAPI
+
+すべてBearer認証を使います。任意SQL、任意URL、任意ファイルpathは入力に取りません。
+
+| API | 返すもの・上限 |
+| --- | --- |
+| `GET /capabilities` | version、固定APIのread/write分類、必要profile、目的 |
+| `GET /services` | 適用済みprofile/必要設定/固定healthから入口stateを区別。URLに秘密を含めない |
+| `GET /catalog` | Silver6契約とGold2の列・型・説明・粒度・業務キー・公開の由来 |
+| `GET /catalog/preview?dataset=all&limit=20` | 既存AI exporterと同じ固定Gold snapshot参照。limitは1〜500 |
+| `GET /quality` | 固定6表のBronze/Silver/Quarantine件数。任意SQLなし、最大6行、期限付き取消 |
+| `GET /jobs?limit=20` | 最新最大20件。persistent=false、再起動で消失、自動再実行なし |
+| `GET /help` | 固定文書slugと同梱図ID、利用可能か |
+| `GET /help/{slug}` | allowlist内のMarkdown。最大256KiB、symlink拒否 |
+| `GET /help/assets/{id}` | 同梱SVG2種。最大512KiB、path指定不可 |
+| `GET /network/config?use_saved=false` | オフラインのproxy/NO_PROXY/CA有無。秘密値を返さない |
+| `POST /network/checks` | 固定HTTPS宛先のみを並列診断。設定反映・DB変更なし |
+
+`/services` のstateは `not_enabled` / `unconfigured` / `available` / `unreachable` です。health未到達を未導入と断定しません。previewとqualityは表ごとの読取りで、全表の同一時点を保証しません。data catalogは会社SQLの接続先やprivateの表対応を含みません。
+
+接続診断の本文は `{"targets":["pypi","maven","npm","github"],"use_saved":false}` です。重複・未知target・追加の任意URLを拒否します。既定は起動時のapplied設定で、use_saved=trueはprivateファイルの保存値を試します。応答のconfiguration_scopeとpending_restartで区別し、診断成功を反映完了とは扱いません。
+
+企業CAのprivate入力はCORPORATE_CA_FILEだけです。診断では設定dir配下host pathを/privateへ安全に対応付けます。範囲外・不在・symlinkは422 NETWORK_CA_UNAVAILABLEです。runtimeのSSL_CERT_FILE等はimage内の固定bundleを使うため、設定APIから変更しません。[POC-PORTAL.md](POC-PORTAL.md)
+
 ## 素材だけを投入する
 
 ```json
@@ -86,6 +111,9 @@ CLI管理の環境では、確認した同じprivate設定で `plan` と `up` �
   "orders": 20,
   "days": 7,
   "scenario": "edge",
+  "anomalies": [],
+  "anomaly_rate": 10,
+  "allow_file_faults": false,
   "destination": "landing",
   "images": true,
   "allow_sql_write": false
@@ -103,6 +131,9 @@ CLI管理の環境では、確認した同じprivate設定で `plan` と `up` �
 | `orders` | 1バッチ1〜1000件の基準受注数 |
 | `days` | 1〜366日のデータ範囲 |
 | `scenario` | `clean` または、改訂・不正値・未参照を含む `edge` |
+| `anomalies` | 追加する異常IDの配列。空が既定。最大32、重複・未知・競合は拒否 |
+| `anomaly_rate` | 1〜100の整数、既定10。行の選択率であり、最終隔離率を保証しない |
+| `allow_file_faults` | 高度なファイル異常を意図して作る場合だけtrue。既定false |
 | `destination` | `landing`、専用テストDBの `sqlserver`、両方の `both` |
 | `images` | landing/bothのとき画像素材も生成する |
 | `allow_sql_write` | SQLへ書く場合だけ、利用者が明示的にtrueにする |
@@ -110,6 +141,14 @@ CLI管理の環境では、確認した同じprivate設定で `plan` と `up` �
 SQL投入は `DEMO_SQLSERVER_*` の専用DBへ行い、毎回新しい `lh_demo_...` schemaを作ります。SOURCEと同じDB名やsystem DBは拒否します。APIは新規DBや会社側の権限を用意しません。SQLのみの投入で画像を選ぶと422になります。[DEMO-DATA.md](DEMO-DATA.md)
 
 SQLの企業CAを使う場合、CAファイルを `CONTROL_SETTINGS_DIR` の配下に置き、`DEMO_SQLSERVER_CA_FILE` にそのhost側の絶対pathを設定します。APIは同じ相対位置を `/private` へ変換して読みます。たとえばprivate dirが `/srv/lakehouse/private` なら、CAは `/srv/lakehouse/private/enterprise-ca.pem` に置けます。専用dirの外、symlink、regular file以外は拒否します。hostのCLIも同じenvで元のpathを読めます。空または `system` は実行環境の信頼ストアを使うため、hostとコンテナそれぞれのCA登録を確認します。
+
+## 異常カタログと診断結果
+
+`GET /scenarios` はBearer認証付きで、`version: 1`、`scenarios`、`presets`、`conflicts` を返します。各scenarioはid、label、description、category、targets、supported_destinations、expected_effect、requires_images、requires_file_consentを持ちます。presetはid、label、base_scenario、anomaliesです。conflictsはIDの配列群で、同じgroupから2つ以上を選べません。Swaggerの `ScenarioCatalog` で型を確認できます。
+
+GUI、API、CLIは共有の検査を使います。POST /jobsでは未知・重複・最大32超過・率の範囲外・競合を422で拒否します。ファイル異常はlanding/bothだけ、corrupt_imageはimages=true、file consentが必要です。bothのSQL素材には行異常だけを適用し、ファイル破損をSQLの文字列値に混ぜません。
+
+追加異常を指定した生成結果には `diagnostics` が入り、選択ID/率、`row_changes` の対象表と操作件数、`file_faults` の実ファイル名と期待挙動、`intentional_file_faults` を保持します。これは秘密値や生のDBエラーを含まない素材の診断情報です。意図した不正素材を生成できればジョブはsucceededで、後続処理の拒否等を生成エラーとは扱いません。素材生成からpipelineは起動しません。[ANOMALY-SCENARIOS.md](ANOMALY-SCENARIOS.md)
 
 ## CDC用の追加・更新・削除を試す
 

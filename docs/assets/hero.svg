@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="380" viewBox="0 0 1280 380" role="img" aria-labelledby="title description">
+  <title id="title">Lakehouse Foundation</title>
+  <desc id="description">An open data lakehouse for MES and ERP. Three abstract layers represent Bronze, Silver and Gold, connected to reproducible SQL and snapshot-pinned AI context.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0c1729"/>
+      <stop offset="1" stop-color="#142d40"/>
+    </linearGradient>
+    <linearGradient id="top-layer" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#96f1d6"/>
+      <stop offset="1" stop-color="#47b9b3"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="380" rx="24" fill="url(#background)"/>
+  <g stroke="#244156" stroke-width="1" opacity="0.5">
+    <path d="M840 40 V340 M920 40 V340 M1000 40 V340 M1080 40 V340 M1160 40 V340"/>
+    <path d="M800 90 H1230 M800 170 H1230 M800 250 H1230 M800 330 H1230"/>
+  </g>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <rect x="64" y="53" width="44" height="44" rx="12" fill="#93ead5"/>
+    <text x="86" y="82" text-anchor="middle" font-size="20" font-weight="700" fill="#102a38">LF</text>
+    <text x="124" y="81" font-size="15" letter-spacing="3" font-weight="700" fill="#b6d5df">OPEN DATA PLATFORM</text>
+    <text x="62" y="171" font-size="62" font-weight="700" fill="#f8fbff">Lakehouse Foundation</text>
+    <text x="65" y="214" font-size="24" fill="#c4d7e4">MES &amp; ERP. Iceberg. AI-ready facts.</text>
+    <path d="M65 244 H730" stroke="#3a5768" stroke-width="1"/>
+    <text x="65" y="284" font-size="18" fill="#e0ebf3">Source data</text>
+    <path d="M179 277 H214 M207 272 L214 277 L207 282" fill="none" stroke="#78d9c7" stroke-width="2"/>
+    <text x="232" y="284" font-size="18" fill="#e0ebf3">Versioned SQL</text>
+    <path d="M371 277 H406 M399 272 L406 277 L399 282" fill="none" stroke="#78d9c7" stroke-width="2"/>
+    <text x="424" y="284" font-size="18" fill="#e0ebf3">Snapshot context</text>
+    <text x="65" y="333" font-size="15" fill="#9db9c9">GUI + API + MCP   /   Reproducible environments with uv</text>
+  </g>
+  <g stroke-linejoin="round" stroke-width="2">
+    <path d="M866 249 L1002 197 L1148 249 L1012 301 Z" fill="#a47249" stroke="#c89b6b"/>
+    <path d="M866 249 L1012 301 L1012 316 L866 264 Z" fill="#79563d" stroke="#c89b6b"/>
+    <path d="M1012 301 L1148 249 L1148 264 L1012 316 Z" fill="#654c3b" stroke="#c89b6b"/>
+    <path d="M866 194 L1002 142 L1148 194 L1012 246 Z" fill="#adc2cf" stroke="#d2e4ed"/>
+    <path d="M866 194 L1012 246 L1012 261 L866 209 Z" fill="#788f9f" stroke="#d2e4ed"/>
+    <path d="M1012 246 L1148 194 L1148 209 L1012 261 Z" fill="#5a778b" stroke="#d2e4ed"/>
+    <path d="M866 139 L1002 87 L1148 139 L1012 191 Z" fill="url(#top-layer)" stroke="#b5f8e3"/>
+    <path d="M866 139 L1012 191 L1012 206 L866 154 Z" fill="#329e9a" stroke="#b5f8e3"/>
+    <path d="M1012 191 L1148 139 L1148 154 L1012 206 Z" fill="#237d88" stroke="#b5f8e3"/>
+  </g>
+  <g font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="2" fill="#092934" text-anchor="middle">
+    <text x="1006" y="144">GOLD</text>
+    <text x="1007" y="228">SILVER</text>
+    <text x="1007" y="283" fill="#fff2e2">BRONZE</text>
+  </g>
+</svg>

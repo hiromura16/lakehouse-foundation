@@ -203,6 +203,9 @@ class JobManager:
                     orders=options["orders"],
                     days=options["days"],
                     scenario=options["scenario"],
+                    anomalies=list(options.get("anomalies", [])),
+                    anomaly_rate=options.get("anomaly_rate", 10),
+                    allow_file_faults=options.get("allow_file_faults", False),
                     destination=options["destination"],
                     images=options["images"],
                     allow_sql_write=options["allow_sql_write"],
@@ -229,6 +232,13 @@ class JobManager:
                 }
         finally:
             self.operation.release()
+
+    def history(self, limit: int = 20) -> list[dict]:
+        """Return recent process-local jobs without options or credentials."""
+        if type(limit) is not int or not 1 <= limit <= 20:
+            raise ValueError("History limit must be in 1..20.")
+        with self.lock:
+            return copy.deepcopy(list(reversed(self.jobs.values()))[:limit])
 
     def get(self, identifier: str) -> dict:
         """Return metadata without mutable internal cancellation state."""
