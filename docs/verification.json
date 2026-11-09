@@ -107,7 +107,7 @@
       "original_dockerfile_hash_locked_build": true
     },
     "source_quality": {
-      "unit_tests": 217,
+      "unit_tests": 236,
       "ruff": true,
       "pycodestyle_max_length": 79,
       "sqlfluff_trino": true,
@@ -155,14 +155,14 @@
       "original_compose_and_dockerfiles": true,
       "uv_version": "0.13.7",
       "hash_locked_environments": true,
-      "compose_services": 30,
-      "runtime_containers": 29,
-      "running_containers": 26,
-      "successful_one_shots": 3,
+      "compose_services": 34,
+      "runtime_containers": 33,
+      "running_containers": 29,
+      "successful_one_shots": 4,
       "spark_normal_up_replicas": 0,
       "existing_secrets_preserved": true,
       "existing_volume_prefix_preserved": true,
-      "validated_application_commit": "a84eae43ee47174c3ff0b99fbd933bf99b2b1884"
+      "validated_application_commit": "b5acdb6b642a1bb31ae95cfd2a114912526c3d15"
     },
     "gui_api": {
       "ok": true,
@@ -187,7 +187,7 @@
       "anomaly_source_only": true,
       "job_history_persistent": false,
       "job_history_limit": 20,
-      "all_13_service_cards_available": true
+      "available_service_cards": 16
     },
     "mcp": {
       "ok": true,
@@ -276,6 +276,43 @@
       "temporary_runtime_containers_remaining": 0,
       "main_and_test_sql_kept": true,
       "historical_backup_volumes_not_targeted": true
+    },
+    "persistent_spark": {
+      "ok": true,
+      "driver_python": "3.10.12",
+      "python_worker_count": 2,
+      "worker_python": "3.10.12",
+      "worker_pandas": "2.3.3",
+      "worker_pyarrow": "25.0.0",
+      "worker_numpy": "2.2.6",
+      "worker_hosts_differ_from_driver": true,
+      "worker_hostname": "spark-worker",
+      "arrow_rows": 6,
+      "iceberg_rows": 3,
+      "application_proxy_ui": true,
+      "trino_cross_read_rows": 3,
+      "history_completed_application": true,
+      "history_jobs": 9,
+      "master_alive_after_application": true,
+      "history_restart_only": true,
+      "completed_history_retained_after_restart": true,
+      "master_worker_started_at_unchanged": true,
+      "master": "spark://spark-master:7077",
+      "rpc_published_to_host": false,
+      "master_worker_history_always_on_with_compute": true,
+      "local_mode_explicit_and_executed": true,
+      "local_events_visible_to_history": true
+    },
+    "n8n_ssrf": {
+      "ok": true,
+      "protection_enabled": true,
+      "allowed_internal_host": "worker",
+      "unallowed_internal_health_blocked": true,
+      "blocked_probe_used_no_credentials": true,
+      "native_http_request_node": true,
+      "test_workflow_removed": true,
+      "allowed_workflow_succeeded": true,
+      "no_proxy_is_separate_from_allowlist": true
     }
   },
   "limits": [

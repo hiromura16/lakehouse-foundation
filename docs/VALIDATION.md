@@ -2,7 +2,7 @@
 
 検証日: 2026-11-10（JST）。Linux x86-64の単一ホスト上に、既存アプリと別のネットワーク・DB・S3・資格情報・ランディング先を持つ環境を作成しました。公開用の機械可読結果は [verification.json](verification.json) に保存しています。接続先、管理APIの記録、認証情報、生ログは公開しません。
 
-公開HTTPS URLからの認証不要clone、原本Compose、原本Dockerfileの `uv pip sync --require-hashes` ビルドが成功しました。この別環境でも画像保存・メダリオンの全期待値・再投入を検証済みです。[公開CI](https://github.com/hiromura16/lakehouse-foundation/actions) にもPython書式、SQL、全profileのCompose検査を定義しています。現在のローカル同等検査では217テストが成功しています。
+公開HTTPS URLからの認証不要clone、原本Compose、原本Dockerfileの `uv pip sync --require-hashes` ビルドが成功しました。この別環境でも画像保存・メダリオンの全期待値・再投入を検証済みです。[公開CI](https://github.com/hiromura16/lakehouse-foundation/actions) にもPython書式、SQL、全profileのCompose検査を定義しています。現在のローカル同等検査では236テストが成功しています。
 
 ## 実機で成功した経路
 
@@ -50,7 +50,7 @@ GUIとAPIを含む公開Git原本を主基盤へ配置しました。SQL/landing
 
 ## 操作ポータル・追加OSS・MCPの受入
 
-公開Git原本から全7buildを実行し、全11profileを同一Composeプロジェクトへ統合しました。30service定義のうちSparkは通常replicas=0、29containerは26稼働と3つの正常終了one-shotです。設定追加・再配置時に既存の秘密値・データvolume・landing先を保持しました。
+公開Git原本から全7buildを実行し、全11profileを同一Composeプロジェクトへ統合しました。34service定義のうち一時smokeのspark-checkはreplicas=0、33containerは29稼働と4つの正常終了one-shotです。設定追加・再配置時に既存の秘密値・データvolume・landing先を保持しました。
 
 - ポータルの13経路で、capabilities・catalog・snapshot preview・固定品質SQL・service一覧・allowlistヘルプ・オフライン構成図・直近履歴を確認しました。
 - 26異常・7presetのcatalog、GUI/APIでの選択を実装し、実APIから `reject_spike` を指定して素材生成とGold非変更を確認しました。意図的に壊すファイルは追加同意が必要です。
@@ -58,7 +58,7 @@ GUIとAPIを含む公開Git原本を主基盤へ配置しました。SQL/landing
 - MCPの公式SDK2.3.0で実HTTP接続し、Bearerなし401、既定の9read tools・2resources・構造化応答と、配置済みAPIへの参照を確認しました。一時プロセスだけ書込みを有効化し、同意なし拒否、同意付き素材生成、job poll、Gold非変更を確認しています。主MCPは参照専用です。
 - 公開GitからbuildしたSparkで3行をIcebergへ書き、Trinoの同じ3行を確認しました。一時検証アプリは削除しました。
 
-追加4サービスだけを再起動し、SupersetのGUI作成dashboard、Jupyterのworkspace、Qdrantの3点、Marquezのjob保持を確認しました。他コンテナのIDと状態、主基盤の他サービスと試験SQLの起動時刻は保持しています。その後、n8n手動workflowとAirflow同梱DAGも最新構成で再実行して成功し、ポータルの全13サービス入口が利用可能でした。
+追加4サービスだけを再起動し、SupersetのGUI作成dashboard、Jupyterのworkspace、Qdrantの3点、Marquezのjob保持を確認しました。他コンテナのIDと状態、主基盤の他サービスと試験SQLの起動時刻は保持しています。その後、n8n手動workflowとAirflow同梱DAGも最新構成で再実行して成功し、ポータルの全16サービス入口が利用可能でした。
 
 ## 再配置と社内proxyの検証
 
@@ -68,3 +68,10 @@ GUIとAPIを含む公開Git原本を主基盤へ配置しました。SQL/landing
 
 
 受入後、一時のCDC・PoC検証5アプリを削除し、主基盤と分離した試験SQLを保持しました。削除対象のvolumeが他の稼働アプリと共有されないことを事前に確認し、旧構成のデータ控えは削除対象へ含めていません。公開する設定・手順・コードと、私有の資格情報・実行データ・生ログは分けて保管しています。
+
+
+## 常駐SparkとSSRFの最終受入
+
+`compute` でSpark Master/Worker/Historyを常駐させました。Jupyterの実kernelからstandalone masterへ接続し、Python RDDが別hostのworker上で動くこと、Python minorとPandas/Arrow/NumPyの固定版一致を確認しました。remote mapInPandasで6行、専用Iceberg表へ3行を書き、Trinoから同じ3行を照合しています。Masterの実アプリreverseProxy UI、完了したHistoryと9jobsを確認し、Historyだけを再起動しても同じ履歴が残り、Master/Workerの起動時刻が変わらないことを確認しました。別kernel内だけcomputeを無効にしたlocal[2]分岐も、明示表示・2行処理・共有Historyへの記録を実動確認しました。
+
+n8nのSSRF保護を有効化し、同梱workflow用のhostname例外を `worker` に限定しました。実HTTP Requestノードから未許可の内部監視healthを参照すると、SSRFのrestrictedエラーで拒否されました。秘密値を付けない専用試験workflowは検証後にarchive→deleteしました。許可されたworkerへの同梱メダリオンworkflowは同じ設定で成功しています。実会社proxy経由・独自nodeの保護をこの結果から保証しません。設定と受入は [SSRF.md](SSRF.md) を参照してください。

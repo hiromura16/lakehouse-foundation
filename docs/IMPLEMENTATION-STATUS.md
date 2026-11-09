@@ -14,6 +14,8 @@
 | n8nを新構成で保持 | 専用PostgreSQL・暗号鍵・volume、現行安定版固定 | 同梱workflow実行成功。旧構成は削除、データ控えは保持 |
 | GrafanaのGUI保存 | 初回だけimport、既存dashboardは上書きしない | 編集・再起動・再初期化後の保持を確認 |
 | Spark・Airflowの互換性 | 版・JAR・Provider・Pythonを組で固定 | 公開Git uv imageのSpark/Trino3行、手動DAG成功 |
+| Sparkの常時起動 | Master/Worker/History、Jupyter remote/local明示、履歴volume | 実worker Python/Arrow、Iceberg/Trino、Master UI、History再起動保持を確認 |
+| SSRFの設定と説明 | n8n保護有効・workerだけ内部例外、GUI6設定・専用手順 | 実HTTPノードの拒否と正規workflow成功、誤入力拒否を確認 |
 | Python環境をuvへ | uv固定・hash付きlock・自作venv、Airflow公式venv保持 | 原本Gitからのuv buildとサービス起動成功 |
 | Streamlit・FastAPI・Swagger | 投入/処理/設定/状態/AI、非同期job、ローカルSwagger asset | unit/AppTest、公開Git配置後のSQL/landing/stream/処理/設定成功 |
 | 異常シナリオを拡充 | 26種類・7preset・複数選択・影響率・高度fault同意 | 26生成とGUI試験、配置APIで選択投入・Gold非変更を確認 |

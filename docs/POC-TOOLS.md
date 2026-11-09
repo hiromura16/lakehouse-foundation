@@ -327,12 +327,21 @@ Superset init が失敗したときは `/tmp/superset-setup-error.log` に owner
 | 項目 | 実機で確認する内容 |
 | --- | --- |
 | Superset | native login/JWT/CSRF、Trino 接続、Gold 2 dataset、SQL Lab で受注 20 件を集計 |
-| Jupyter | token API、初期 notebook、実 kernel 実行、Trino Gold 10 行、Spark/Iceberg 読書き 1 行 |
+| Jupyter / Spark | token API、実 kernel、Trino Gold 参照、常駐 Worker の Python / Arrow 処理、Iceberg と Trino の 3 行照合 |
 | Qdrant | native dashboard、3 点 seed、近傍 ID 1/2、read-only 検索と書込拒否 |
 | Marquez | PG migration/health、native GUI/API、2 input / 1 output のデモ系統 |
 
-これらは新しい独立 PoC 環境で確認する機能試験です。大規模性能、複数利用者の分離、
-長期 backup 復旧、本物の会社 proxy/CA の接続を実証したものではありません。
+初回の独立 PoC 検証に加え、主基盤の常駐 Spark でも次を確認しています。
+
+- Python の 2 partition が driver とは別の `spark-worker` で実行される。
+- driver/executor が同じ Python 3.10.12、Pandas 2.3.3 / Arrow 25.0.0 / NumPy 2.2.6 を使う。
+- `mapInPandas` の 6 行処理と、専用 notebook_demo table の Iceberg 3 行 / Trino 3 行が一致する。
+- 実行中の Master reverse proxy から application UI が開き、終了後に History の completed application / 9 jobs が読める。
+- History のみ再起動しても同じ application/job が残り、Master/Worker の起動時刻は変わらない。
+- 別 kernel で local[2] を明示選択した 2 行処理も成功し、共有 History へ完了履歴が残る。
+
+これらは小規模な機能・再起動試験です。大規模性能、複数利用者の分離、長期 backup
+復旧、本物の会社 proxy/CA の接続を実証したものではありません。
 
 [images.lock.json](../infra/poc/images.lock.json) に公式 registry の digest と CPU 対応を
 記録しています。Superset 6.1.0、Redis 8.10.3、JupyterLab 4.6.6、Qdrant 1.20.0、

@@ -28,6 +28,8 @@ N8N_SSRF_DNS_CACHE_MAX_SIZE=1048576
 
 許可する名前は自分たちが管理するDNSだけにします。hostname許可はIPの拒否より優先されるため、広いwildcardを入れる前に対象を確認します。名前の許可はportやpathの許可まで絞る設定ではありません。同梱workflowの `http://worker:8000/run` を固定し、外部入力から接続先を組み立てない構成を保ちます。[n8n公式の有効化手順](https://docs.n8n.io/deploy/host-n8n/configure-n8n/security/enable-ssrf-protection)
 
+公開IPへのHTTP通信は既定で許可されます。業務上必要な公開ドメインだけへ接続を絞る場合は、会社proxyやFWのegress制御も設定します。
+
 n8n本体は無効なCIDRを警告して飛ばす場合があります。本基盤の `plan` とGUI保存は先にCIDR・hostname・boolean・cacheサイズを検査し、誤入力を拒否します。hostname欄に `http://worker:8000` を入力せず、`worker` とします。全宛先を許可する `*` は基盤の入力検査では受け付けません。
 
 ## GUIとDokployで反映する
@@ -85,3 +87,6 @@ APIのBearer認証と、MCPのHost検査は別の保護です。`MCP_ALLOWED_HOS
 拒否ログの宛先・接続情報はprivateに保管します。実会社の宛先を公開issueへ貼りません。n8nの保護範囲はnodeや実装によって異なるため、独自node・raw socket・DB接続・Sparkの任意コードに、同じHTTP保護が自動適用されるとは扱いません。FWとネットワークの分離、workflow編集権限、資格情報の権限も合わせて運用します。
 
 本書の値は固定したn8n版の公式仕様と実コンテナで照合します。会社のproxy・DNS・node追加後には導入先で同じ受入を行ってください。
+
+
+検証環境では `automation,monitoring` を有効にし、Manual Trigger → HTTP Request（認証なし）の試験workflowで `http://prometheus:9090/-/ready` を指定して、restrictedエラーを確認しました。これは拒否されることが期待結果です。同じ環境の同梱medallion workflowは `worker` の狭い例外で成功しました。試験workflowはGUIのArchive後にDeleteし、実業務workflowへ混ぜません。
