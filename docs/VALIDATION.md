@@ -2,7 +2,7 @@
 
 検証日: 2026-11-10（JST）。Linux x86-64の単一ホスト上に、既存アプリと別のネットワーク・DB・S3・資格情報・ランディング先を持つ環境を作成しました。公開用の機械可読結果は [verification.json](verification.json) に保存しています。接続先、管理APIの記録、認証情報、生ログは公開しません。
 
-公開HTTPS URLからの認証不要clone、原本Compose、原本Dockerfileの `uv pip sync --require-hashes` ビルドが成功しました。この別環境でも画像保存・メダリオンの全期待値・再投入を検証済みです。[公開CI](https://github.com/hiromura16/lakehouse-foundation/actions) にもPython書式、SQL、全profileのCompose検査を定義しています。現在のローカル同等検査では238テストが成功しています。
+公開HTTPS URLからの認証不要clone、原本Compose、原本Dockerfileの `uv pip sync --require-hashes` ビルドが成功しました。この別環境でも画像保存・メダリオンの全期待値・再投入を検証済みです。[公開CI](https://github.com/hiromura16/lakehouse-foundation/actions) にもPython書式、SQL、全profileのCompose検査を定義しています。現在のローカル同等検査では260テストが成功しています。
 
 ## 実機で成功した経路
 
@@ -78,3 +78,12 @@ n8nのSSRF保護を有効化し、同梱workflow用のhostname例外を `worker`
 
 
 共通Spark imageのbuildは一つのserviceへ集約し、複数serviceが同じtagへ並行exportしないことを実YAMLのmerge後に検査しています。通常の再配置ではdaemonが再作成される場合があり、保存履歴と無停止性を同じ保証として扱いません。
+
+
+## Docker 29・Bake・会社proxy互換性修正
+
+2026-11-10に260自動テスト、書式・SQL検査、core6／全34サービスのCompose検査を実行しました。古いshellのlegacy NO_PROXY、大小caseの異なる追加値、private設定upgrade・GUI編集と削除、Dokploy相当のraw Compose、cwdに依存しない空CAとBake pathを確認しています。proxyとoptional CA以外のサービス名・image・volume・profile・port・commandは、修正前後の実Composeモデルで一致しました。
+
+公開作業ブランチの原本workerを、通常サービスを起動しない一時アプリでキャッシュなしBake buildし、空CA helperのskipとビルド成功を確認しました。既存workerとTrinoの一時プロセスには到達不能proxyを設定し、内部S3への直接通信、Trinoへの依頼、隔離verify11項目を確認しました。稼働プロセスの設定やSwarmは変更していません。
+
+既存Swarmの取得・pool検証は、Docker 29互換の厳密CLI stubと実config.pyを接続して正常・不一致・不正JSONを確認しました。ホスト直接のDocker socket権限がないため、実Swarmへのdocker infoは未実行です。会社の実proxy・DNS・認証方式の受入は引き続き現地で行います。[会社VMの更新手順](COMPANY-UPDATE.md) に、ローカル一時修正の退避、private設定更新、Dokploy Environmentへの転記、再配置と確認を記載しています。
