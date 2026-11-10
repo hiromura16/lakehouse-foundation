@@ -1,11 +1,25 @@
 """Use real portal widgets while keeping all transport local and mocked."""
 
+import importlib.util
 import sys
 import types
 import unittest
 from pathlib import Path
 
-from streamlit.testing.v1 import AppTest
+# Only a genuinely absent optional package skips this test module. A broken
+# installed package or any application import failure must remain an error.
+try:
+    from streamlit.testing.v1 import AppTest
+except ModuleNotFoundError as error:
+    if (
+        error.name != "streamlit"
+        or importlib.util.find_spec("streamlit") is not None
+    ):
+        raise
+    raise unittest.SkipTest(
+        "Optional tests need streamlit. In a uv virtual environment, run "
+        "uv pip sync --require-hashes requirements-dev.lock."
+    ) from error
 
 ROOT = Path(__file__).resolve().parents[1]
 

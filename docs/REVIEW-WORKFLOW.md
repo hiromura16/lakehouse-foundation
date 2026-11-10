@@ -24,3 +24,5 @@ GitHubのissue、PR review、修正依頼文書から、対象commitと根拠を
 6. merge直前にもmainと新着reviewを確認します。mainが進んでいれば差分を統合し、影響する検査を再実行します。
 
 図・exportの編集規約は [編集ガイド](reports/EDITING-GUIDE.md)、機密情報の境界は [公式資料・文書監査](REFERENCES.md)、既存の機能検証は [VALIDATION.md](VALIDATION.md) を参照します。作業中の新着確認と、常設の自動監視を区別します。
+
+具体的な指摘・原因・修正・回帰の例は [REVIEW-FOLLOWUP](REVIEW-FOLLOWUP.md) にあります。レビュー文書を読むだけでなく、再現と受入条件を実装へ結び付けます。

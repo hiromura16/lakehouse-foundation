@@ -125,8 +125,10 @@ def validate_ssrf(values):
 def load(path):
     """Parse private settings literally and validate deployment boundaries."""
     path = Path(path).expanduser().resolve()
-    if path.is_relative_to(ROOT) or not path.is_file():
+    if path.is_relative_to(ROOT):
         raise ValueError("Use a private env file outside the repository.")
+    if not path.is_file():
+        raise ValueError("Private env file not found.")
     if path.stat().st_mode & 0o077:
         raise ValueError("Env file must have mode 0600 or stricter.")
     values = {}

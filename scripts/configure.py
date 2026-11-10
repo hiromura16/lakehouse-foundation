@@ -193,7 +193,18 @@ if args.upgrade:
         print("Settings already include all current keys; no changes made.")
         raise SystemExit(0)
     backup = target.with_name(target.name + ".before-upgrade")
-    backup_fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        backup_fd = os.open(
+            backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+        )
+    except FileExistsError:
+        # Keep the exclusive open: an existence precheck would race another
+        # upgrade. The message gives recovery steps without private paths.
+        raise SystemExit(
+            "An upgrade backup already exists. Move the .before-upgrade "
+            "backup to a private location, then rerun --upgrade. "
+            "Existing settings and backup were not changed."
+        ) from None
     with os.fdopen(backup_fd, "wb") as output:
         output.write(original)
     candidate = normalized_original
