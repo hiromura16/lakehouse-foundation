@@ -39,6 +39,8 @@
 
 ![データレイクハウスの全体構成](docs/assets/architecture.svg)
 
+会社VMで一時修正したcloneを更新する場合は、[修正取り込み・Dokploy再配置手順](docs/COMPANY-UPDATE.md) を先に確認してください。
+
 ## 導入の順番
 
 **会社でDokploy管理にする場合は、レイクハウスをDeployする前にDokployを導入します。** Docker・社内proxy/CAの準備 → cloneとprivate設定 → Dokploy導入 → GUIから公開GitをDeploy、の順です。

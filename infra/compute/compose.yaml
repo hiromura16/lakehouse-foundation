@@ -1,3 +1,5 @@
+x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
+
 # Merge after the core. All services reuse one pinned Spark/Iceberg image.
 x-spark-image: &spark_image
   image: ${COMPOSE_PROJECT_NAME:-lakehouse}-spark-check:local
@@ -12,10 +14,10 @@ x-spark-logging: &spark_logging
 x-spark-environment: &spark_environment
   HTTP_PROXY: ${HTTP_PROXY:-}
   HTTPS_PROXY: ${HTTPS_PROXY:-}
-  NO_PROXY: ${NO_PROXY:-}
+  NO_PROXY: *effective_no_proxy
   http_proxy: ${http_proxy:-}
   https_proxy: ${https_proxy:-}
-  no_proxy: ${no_proxy:-}
+  no_proxy: *effective_no_proxy
   SPARK_DAEMON_MEMORY: 512m
   SPARK_LOG_DIR: /opt/spark/work/logs
 x-spark-daemon: &spark_daemon
@@ -50,10 +52,10 @@ services:
         SPARK_GID: ${WORKER_GID:-10001}
         HTTP_PROXY: ${HTTP_PROXY:-}
         HTTPS_PROXY: ${HTTPS_PROXY:-}
-        NO_PROXY: ${NO_PROXY:-}
+        NO_PROXY: *effective_no_proxy
         http_proxy: ${http_proxy:-}
         https_proxy: ${https_proxy:-}
-        no_proxy: ${no_proxy:-}
+        no_proxy: *effective_no_proxy
     profiles: [compute, notebooks]
     user: '0:0'
     restart: 'no'

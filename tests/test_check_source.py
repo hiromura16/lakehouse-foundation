@@ -159,6 +159,91 @@ class PublicationChecks(unittest.TestCase):
             self.assertNotIn(token, result.stdout + result.stderr)
             self.assertNotIn(home, result.stdout + result.stderr)
 
+    def test_only_exact_empty_ca_placeholder_is_allowed(self):
+        """Keep the PEM path ban except for the single zero-byte source."""
+        allowed = "infra/proxy/empty-ca.pem"
+        self.assertEqual(
+            MODULE.scan_blob(allowed, b"", set(), set(), set()), []
+        )
+        names = [
+            "other.pem",
+            "infra/proxy/other.pem",
+            "infra/proxy/empty-ca.PEM",
+            "infra/proxy/nested/empty-ca.pem",
+            "infra/proxy/./empty-ca.pem",
+        ]
+        for name in names:
+            with self.subTest(name=name):
+                findings = MODULE.scan_blob(name, b"", set(), set(), set())
+                self.assertIn(
+                    "private-or-runtime-file", {item.rule for item in findings}
+                )
+
+    def test_placeholder_must_be_zero_bytes_and_keeps_content_checks(self):
+        """Reject whitespace, BOM and secrets rather than skipping the file."""
+        name = "infra/proxy/empty-ca.pem"
+        token = "ghp_" + "C" * 36
+        header = "-----BEGIN " + "RSA PRIVATE " + "KEY-----"
+        contents = [b"\n", b"\xef\xbb\xbf", b"public certificate"]
+        contents.append((header + "\n" + token).encode())
+        for content in contents:
+            with self.subTest(size=len(content)):
+                findings = MODULE.scan_blob(name, content, set(), set(), set())
+                self.assertIn(
+                    "private-or-runtime-file", {item.rule for item in findings}
+                )
+        findings = MODULE.scan_blob(name, contents[-1], set(), set(), set())
+        self.assertIn("private-key", {item.rule for item in findings})
+        self.assertIn("github-token", {item.rule for item in findings})
+
+    def test_placeholder_staged_and_working_contents_are_both_checked(self):
+        """A clean copy cannot hide a changed staged blob, or vice versa."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+            path = root / "infra/proxy/empty-ca.pem"
+            path.parent.mkdir(parents=True)
+            path.write_bytes(b"")
+            self.commit(root, "Add synthetic empty placeholder")
+            self.assertEqual(self.inspect(root).returncode, 0)
+            path.write_text("not empty")
+            result = self.inspect(root)
+            self.assertEqual(result.returncode, 1)
+            subprocess.run(
+                ["git", "-C", str(root), "add", "--all"], check=True
+            )
+            path.write_bytes(b"")
+            result = self.inspect(root)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("private-or-runtime-file", result.stdout)
+
+    def test_placeholder_and_other_pem_history_keep_rejections(self):
+        """Allow empty history but reject deleted nonempty and other PEMs."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+            path = root / "infra/proxy/empty-ca.pem"
+            path.parent.mkdir(parents=True)
+            path.write_bytes(b"")
+            self.commit(root, "Add synthetic empty placeholder")
+            self.assertEqual(self.inspect(root, "--history").returncode, 0)
+            token = "ghp_" + "D" * 36
+            path.write_text(token)
+            other = root / "other.pem"
+            other.write_bytes(b"")
+            self.commit(root, "Synthetic forbidden historical PEM files")
+            path.write_bytes(b"")
+            other.unlink()
+            self.commit(root, "Restore empty placeholder and remove other")
+            self.assertEqual(self.inspect(root).returncode, 0)
+            result = self.inspect(root, "--history")
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("history:", result.stdout)
+            self.assertIn(":infra/proxy/empty-ca.pem", result.stdout)
+            self.assertIn(":other.pem", result.stdout)
+            self.assertIn("github-token", result.stdout)
+            self.assertNotIn(token, result.stdout + result.stderr)
+
     def test_external_deny_terms_and_credentials_stay_out_of_output(self):
         """Load private inputs externally and report only their rule names."""
         with tempfile.TemporaryDirectory() as directory:

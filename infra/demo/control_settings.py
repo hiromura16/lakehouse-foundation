@@ -33,7 +33,8 @@ SETTING_KEYS = frozenset(
     "DOKPLOY_BIND_IP DOKPLOY_ALLOWED_CIDRS "
     "DOKPLOY_ADMIN_PORT SWARM_ADVERTISE_ADDR SWARM_ADDRESS_POOL "
     "SWARM_SUBNET_SIZE DOCKER_BRIDGE_CIDR HTTP_PROXY HTTPS_PROXY NO_PROXY "
-    "http_proxy https_proxy no_proxy CONTROL_API_TOKEN CONTROL_SETTINGS_DIR "
+    "http_proxy https_proxy no_proxy LAKEHOUSE_NO_PROXY CONTROL_API_TOKEN "
+    "CONTROL_SETTINGS_DIR "
     "CONTROL_SETTINGS_NAME DEMO_GUI_PORT DEMO_API_PORT CDC_CONFIG_DIR "
     "CDC_SQLSERVER_HOST CDC_SQLSERVER_PORT CDC_SQLSERVER_DATABASE "
     "CDC_SQLSERVER_USER CDC_SQLSERVER_PASSWORD CDC_SQLSERVER_TRUSTSTORE "
@@ -183,7 +184,7 @@ class SettingsStore:
                 if value or key not in SECRET_KEYS
             }
             # One GUI edit updates both client conventions consistently.
-            for upper in ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"):
+            for upper in ("HTTP_PROXY", "HTTPS_PROXY"):
                 lower = upper.lower()
                 if upper in selected and lower not in selected:
                     selected[lower] = selected[upper]
@@ -195,6 +196,27 @@ class SettingsStore:
                     and selected[upper] != selected[lower]
                 ):
                     raise SettingsError("Proxy case variants must match.")
+            bypass_edits = {
+                key: value
+                for key, value in selected.items()
+                if key in VALIDATOR.BYPASS_KEYS
+            }
+            if bypass_edits:
+                # The read model already merged all legacy additions. A full
+                # explicit edit replaces it, then restores required names.
+                normalized = [
+                    VALIDATOR.normalize_no_proxy(
+                        {"LAKEHOUSE_NO_PROXY": bypass_edits[key]}
+                    )
+                    for key in VALIDATOR.BYPASS_KEYS
+                    if key in bypass_edits
+                ]
+                if len({value.casefold() for value in normalized}) != 1:
+                    raise SettingsError("Proxy bypass edits must agree.")
+                canonical = normalized[0]
+            else:
+                canonical = VALIDATOR.normalize_no_proxy(current)
+            selected.update({key: canonical for key in VALIDATOR.BYPASS_KEYS})
             candidate = {**current, **selected}
             for key in (
                 "HTTP_PROXY",

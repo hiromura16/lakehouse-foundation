@@ -2,6 +2,7 @@
 
 import base64
 import http.client
+import importlib.util
 import math
 import socket
 import ssl
@@ -17,35 +18,13 @@ TARGETS = {
     "npm": "https://registry.npmjs.org/-/ping",
     "github": "https://api.github.com/meta",
 }
-INTERNAL_SERVICES = (
-    "storage",
-    "catalog",
-    "catalog-db",
-    "trino",
-    "worker",
-    "n8n",
-    "n8n-db",
-    "prometheus",
-    "grafana",
-    "airflow",
-    "airflow-db",
-    "demo",
-    "demo-api",
-    "cdc-kafka",
-    "cdc-connect",
-    "cdc-ui",
-    "cdc-consumer",
-    "dokploy",
-    "dokploy-postgres",
-    "superset",
-    "superset-db",
-    "superset-redis",
-    "jupyter",
-    "qdrant",
-    "marquez",
-    "marquez-db",
-    "marquez-web",
+SPEC = importlib.util.spec_from_file_location(
+    "diagnostic_site_settings",
+    Path(__file__).resolve().parents[2] / "scripts/settings.py",
 )
+SETTINGS = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(SETTINGS)
+INTERNAL_SERVICES = SETTINGS.REQUIRED_NO_PROXY
 
 
 def _effective(values, key):
@@ -56,7 +35,7 @@ def _effective(values, key):
 def _bypass(host, values):
     """Evaluate Python urllib's NO_PROXY semantics for one known hostname."""
     return proxy_bypass_environment(
-        host, {"no": _effective(values, "NO_PROXY")}
+        host, {"no": SETTINGS.normalize_no_proxy(values)}
     )
 
 

@@ -27,3 +27,6 @@ __pycache__/
 .ruff_cache/
 .pytest_cache/
 /infra/demo/static/
+
+# Public zero-byte placeholder only; real CA certificates remain private.
+!infra/proxy/empty-ca.pem

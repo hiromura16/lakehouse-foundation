@@ -18,6 +18,8 @@ from xml.parsers import expat
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_TEXT_BYTES = 8 * 1024 * 1024
+# The CA placeholder must stay empty in worktree, index and history blobs.
+EMPTY_CA_SOURCE = "infra/proxy/empty-ca.pem"
 PRIVATE_NETWORKS = tuple(
     ipaddress.ip_network(value)
     for value in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
@@ -364,7 +366,7 @@ def scan_blob(name, content, allowed_png, terms, secrets):
     """Scan a text source or explicitly allowlisted synthetic PNG."""
     findings = []
     rule = path_rule(name)
-    if rule:
+    if rule and not (name == EMPTY_CA_SOURCE and content == b""):
         findings.append(Finding(name, 0, rule))
     for finding in scan_text(name, name, terms, secrets):
         findings.append(Finding(name, 0, finding.rule + "-in-path"))

@@ -214,6 +214,7 @@ def diagnostic_inputs(original):
             "https_proxy",
             "no_proxy",
             "CORPORATE_CA_FILE",
+            "LAKEHOUSE_NO_PROXY",
         )
         if key in original
     }

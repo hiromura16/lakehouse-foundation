@@ -336,3 +336,6 @@ sudo bash infra/dokploy/install.sh --env-file /absolute/private/site.env --apply
 | 外部SQL Serverへ接続できない | DNS、経路、ポート、TLS、認証、参照権限を個別に確認 |
 
 詳細を共有する際は、envファイル、展開済みCompose、接続文字列、プロキシ認証情報、ホスト名・IPを含む生ログをそのまま公開しません。機能、エラーの種類、採用版、秘密を除いた再現手順を記録します。
+
+
+Docker 29／Buildx Bake／社内proxyで判明した互換性修正の取り込みと、`LAKEHOUSE_NO_PROXY` の生成・Dokployへの登録は [会社VMの更新手順](COMPANY-UPDATE.md) を参照してください。

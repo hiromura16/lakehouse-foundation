@@ -1,3 +1,5 @@
+x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
+
 # Optional GUI and authenticated API. Merge after the core Compose file.
 # The API alone writes synthetic sources and the dedicated private settings.
 x-demo-logging: &demo_logging
@@ -18,10 +20,10 @@ services:
       args:
         HTTP_PROXY: ${HTTP_PROXY:-}
         HTTPS_PROXY: ${HTTPS_PROXY:-}
-        NO_PROXY: ${NO_PROXY:-}
+        NO_PROXY: *effective_no_proxy
         http_proxy: ${http_proxy:-}
         https_proxy: ${https_proxy:-}
-        no_proxy: ${no_proxy:-}
+        no_proxy: *effective_no_proxy
     user: "${WORKER_UID:?Set the landing reader UID}:${WORKER_GID:?Set the landing reader GID}"
     restart: unless-stopped
     labels:
@@ -37,10 +39,10 @@ services:
       WORKER_URL: http://worker:8000
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
-      NO_PROXY: ${NO_PROXY:-}
+      NO_PROXY: *effective_no_proxy
       http_proxy: ${http_proxy:-}
       https_proxy: ${https_proxy:-}
-      no_proxy: ${no_proxy:-}
+      no_proxy: *effective_no_proxy
     # Mount the private directory so an atomic settings replace is possible.
     # It must be dedicated to this environment and owned by WORKER_UID/GID.
     volumes:

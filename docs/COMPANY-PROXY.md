@@ -75,7 +75,7 @@ sudo systemctl restart docker
 
 ## 4. buildに企業CAを渡す
 
-private `site.env` の `CORPORATE_CA_FILE` に、公開CAだけを含むPEM chainのホスト側絶対パスを設定します。空欄・未設定では `/dev/null` を使い、追加CAなしで従来どおりbuildします。秘密鍵・client証明書の秘密鍵・proxy認証URLはこのファイルに入れません。GUIで再build前のCAを診断したい場合は、`CONTROL_SETTINGS_DIR` 配下に公開CAを置きます。APIはその専用ディレクトリ内のfileだけを `/private` 側へ安全に対応付けます。
+private `site.env` の `CORPORATE_CA_FILE` に、公開CAだけを含むPEM chainのホスト側絶対パスを設定します。空欄・未設定では、リポジトリ内の0バイト `infra/proxy/empty-ca.pem` を使い、追加CAなしでbuildします。placeholderへ実際の証明書を書き込みません。秘密鍵・client証明書の秘密鍵・proxy認証URLはこのファイルに入れません。GUIで再build前のCAを診断したい場合は、`CONTROL_SETTINGS_DIR` 配下に公開CAを置きます。APIはその専用ディレクトリ内のfileだけを `/private` 側へ安全に対応付けます。
 
 対象はworker、demo API/GUI、CDC Python処理、Airflow、Spark、Superset、Jupyter、MCPの自作imageです。ComposeのBuildKit secret `corporate_ca` からCAを渡し、[install_ca.py](../infra/proxy/install_ca.py) が依存取得より前に処理します。
 
@@ -246,3 +246,10 @@ n8nの固定image内のNode子プロセスでは、追加CA未設定・空欄で
 
 
 SSRFの設定値、内部workerの例外、NO_PROXYとの違い、GUI保存と再配置、許可・拒否の受入は [SSRF.md](SSRF.md) を参照してください。
+
+
+## 会社VMの修正取り込みと確定bypass
+
+[COMPANY-UPDATE.md](COMPANY-UPDATE.md) に、ローカル一時修正の退避からGit更新、private設定の正規化、Dokploy再配置、verifyまでの順番を記載しています。`configure.py --upgrade` は内部必須名とprivateの既存3項目をマージして、`LAKEHOUSE_NO_PROXY` / `NO_PROXY` / `no_proxy` を同じ値へ揃えます。Docker Composeは専用値をbuild argsとruntimeへ渡し、古いshellのlegacy値との衝突を避けます。
+
+会社固有値の保持と重複除去には、upgrade後の専用値をDokploy Environmentにも登録します。正規化前のraw Compose fallbackは内部名を補いますが、shellに隠れたenv-fileの追加値を復元する処理ではありません。`LAKEHOUSE_NO_PROXY` 自体を別値でexportせず、同じprivate設定を正本にします。

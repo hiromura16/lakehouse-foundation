@@ -8,7 +8,7 @@ import secrets
 import tempfile
 from pathlib import Path
 
-from settings import ROOT, load
+from settings import BYPASS_KEYS, ROOT, load, synchronize_no_proxy
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--output", required=True, type=Path)
@@ -142,20 +142,13 @@ values = {
     "DOCKER_BRIDGE_CIDR": "",
     "HTTP_PROXY": "",
     "HTTPS_PROXY": "",
-    "NO_PROXY": (
-        "localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,"
-        "n8n,n8n-db,prometheus,grafana,airflow,airflow-db,demo,demo-api,"
-        "cdc-kafka,cdc-connect,cdc-consumer,cdc-ui,"
-        "dokploy,dokploy-postgres,superset,superset-db,superset-redis,"
-        "jupyter,qdrant,marquez,marquez-db,marquez-web,mcp,"
-        "spark-master,spark-worker,spark-history,spark-volumes-init"
-    ),
 }
-for key in ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"]:
+for key in ["HTTP_PROXY", "HTTPS_PROXY"]:
     values[key.lower()] = values[key]
+values = synchronize_no_proxy(values)
 if args.upgrade:
     # Read and validate before adding defaults; never rotate existing keys.
-    load(target)
+    normalized = load(target)
     original = target.read_bytes()
     existing = {
         line.partition("=")[0]
@@ -165,17 +158,37 @@ if args.upgrade:
     missing = {
         key: value for key, value in values.items() if key not in existing
     }
-    if not missing:
+    # Persist the union of old case variants and prior canonical additions.
+    bypass = {key: normalized[key] for key in BYPASS_KEYS}
+    lines = []
+    written = set()
+    for line in original.decode().splitlines():
+        key = line.partition("=")[0]
+        if key in bypass:
+            line = key + "=" + bypass[key]
+            written.add(key)
+        lines.append(line)
+    for key in BYPASS_KEYS:
+        if key not in written:
+            lines.append(key + "=" + bypass[key])
+    missing = {
+        key: value for key, value in missing.items() if key not in BYPASS_KEYS
+    }
+    normalized_original = "\n".join(lines) + "\n"
+    if not missing and normalized_original.encode() == original:
         print("Settings already include all current keys; no changes made.")
         raise SystemExit(0)
     backup = target.with_name(target.name + ".before-upgrade")
     backup_fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(backup_fd, "wb") as output:
         output.write(original)
-    candidate = original.decode().rstrip("\n") + "\n"
-    candidate += "# Added keys; previous values preserved.\n"
-    candidate += "\n".join(key + "=" + value for key, value in missing.items())
-    candidate += "\n"
+    candidate = normalized_original
+    if missing:
+        candidate += "# Added keys; previous values preserved.\n"
+        candidate += (
+            "\n".join(key + "=" + value for key, value in missing.items())
+            + "\n"
+        )
     temporary_fd, temporary_name = tempfile.mkstemp(dir=target.parent)
     temporary = Path(temporary_name)
     try:

@@ -162,9 +162,11 @@ def read_env(path):
 
 def validate_swarm(swarm, pool, subnet):
     """Refuse changes to the recorded Swarm's immutable network allocation."""
-    if swarm.get("DefaultAddrPool") != [pool] or int(
-        swarm.get("SubnetSize", -1)
-    ) != int(subnet):
+    if (
+        not isinstance(swarm, dict)
+        or swarm.get("DefaultAddrPool") != [pool]
+        or int(swarm.get("SubnetSize", -1)) != int(subnet)
+    ):
         raise ValueError("Existing Swarm pool differs. Do not change it here.")
 
 
