@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 確認日: 2026-11-10（JST）。初回配置・作業端末・権限は [START-HERE.md](START-HERE.md) で準備します。以下の `up` はCLI管理の環境だけで使います。Dokploy管理では同じprivate設定とComposeサービスのEnvironmentを揃え、7ファイルを使ってDeployします。[0.31.0の配置手順](DOKPLOY.md)
 
 
@@ -22,6 +34,8 @@
 ## 起動と認証
 
 private設定に `COMPOSE_PROFILES=demo` を追加し、既存のprofileを使っている場合はカンマで併記します。`CONTROL_SETTINGS_DIR` はこの環境専用の0700ディレクトリ、`CONTROL_SETTINGS_NAME` はその中の0600設定ファイル名です。生成器は生成先から両方を設定します。GUIの実行UID/GIDが、privateディレクトリとランディングへアクセスできることを確認します。
+
+**Bash / Zsh共通**
 
 ```bash
 export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"

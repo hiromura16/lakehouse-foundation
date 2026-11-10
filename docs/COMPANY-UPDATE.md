@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 対象: 導入済みの会社VMと **Dokploy v0.31.0**。初めて導入する場合は [はじめに](START-HERE.md) から進みます。この文書では、既存のSamba・Dokploy・Swarm・保存データを保持し、公開Gitの互換性修正を取り込んでアプリを配置し直します。ホスト名・IP・proxy認証・CA実pathはprivate設定へ残します。
 
 画面名は[採用tagの公式UI](https://github.com/Dokploy/dokploy/tree/v0.31.0/apps/dokploy/components/dashboard/compose)で確認しています。所属Environmentの設定画面と、**Composeサービス自身のEnvironmentタブ**を区別してください。[初回の詳しい画面手順](DOKPLOY.md)
@@ -54,6 +66,8 @@ Docker Composeの補間はshell変数をenv fileより優先します。専用�
 
 端末でprivate設定と公開可能な変更を控えます。
 
+**Bash / Zsh共通**
+
 ```bash
 REPO_DIR="$(git rev-parse --show-toplevel)"
 cd "$REPO_DIR"
@@ -69,6 +83,8 @@ git diff > "$UPDATE_BACKUP_DIR/local-changes.patch"
 
 patchには未追跡ファイルとステージ済み変更が含まれません。必要なら次も控え、未追跡ファイルは一覧を見て個別にprivate領域へ保管します。
 
+**Bash / Zsh共通**
+
 ```bash
 git diff --cached > "$UPDATE_BACKUP_DIR/staged-changes.patch"
 git ls-files --others --exclude-standard
@@ -77,6 +93,8 @@ git ls-files --others --exclude-standard
 **期待結果:** envと変更の控えがprivate領域にでき、現在のbranch・変更内容を把握できます。秘密値を含むpatchはGitへ入れません。公開可能な一時修正だけをstashへ退避する場合は `git stash push -u -m "company temporary compatibility fixes"` を使えます。会社固有値の入った変更をstash／commitする手順にはしません。判断できない変更がある場合は、ここで内容を分離してから先へ進みます。`git clean`や強制resetで消しません。
 
 ## 2. 公開mainを取得し、実行する版を確認する
+
+**Bash / Zsh共通**
 
 ```bash
 git fetch --prune origin
@@ -88,6 +106,8 @@ git log -1 --oneline
 **期待結果:** ローカルのmainがfast-forwardされ、採用commitが確認できます。ローカル変更や分岐で止まったら手順1へ戻ります。古いpatch／stashを機械的に再適用せず、公開側に取り込まれた一時修正は重ねません。
 
 0バイトplaceholderも確認できます。CAの中身を表示する操作ではありません。
+
+**Bash / Zsh共通**
 
 ```bash
 python3 - <<'PY'
@@ -101,6 +121,8 @@ PY
 今回の取得先はアプリの公開Gitです。Dokploy本体のバージョンを上げる操作ではありません。
 
 ## 3. private設定をupgradeし、proxy除外を確認する
+
+**Bash / Zsh共通**
 
 ```bash
 python3 scripts/configure.py --output "$LAKEHOUSE_ENV_FILE" --upgrade
@@ -120,6 +142,8 @@ python3 scripts/proxy-doctor.py --env-file "$LAKEHOUSE_ENV_FILE"
 変更が必要なupgradeで既存backupがあると、現在の実装は `An upgrade backup already exists.` と退避・再実行の案内を返します。元envとbackupは書き換えません。ファイルが既に最新で変更がない場合は、backupが存在していても成功します。
 
 エラーを見たときだけ、既存backupを私有記録と照合して保管します。手順1で作った `UPDATE_BACKUP_DIR` を同じ端末で保持している場合の例です。
+
+**Bash / Zsh共通**
 
 ```bash
 : "${LAKEHOUSE_ENV_FILE:?Select the private env first}"
@@ -152,6 +176,8 @@ fi
 **既に同じDokployサービスで管理している場合は、この停止を飛ばして手順5へ進みます。** CLIで動かしたDB／S3をDokployへ引き継ぐ場合だけ、旧 `COMPOSE_PROJECT_NAME`、profile、volumeの実名、外部ディレクトリを控えます。
 
 旧設定のまま次を実行し、旧writerを止めます。
+
+**Bash / Zsh共通**
 
 ```bash
 ./scripts/lakehouse.sh down
@@ -199,6 +225,8 @@ Containersタブの更新ボタンで状態を取り直します。対象行の�
 ## 7. 同じVM・設定で往復試験し、更新を記録する
 
 配置先VMの独立cloneで、採用commitとprivate envがDokploy配置に一致することを確認してから実行します。
+
+**Bash / Zsh共通**
 
 ```bash
 ./scripts/lakehouse.sh status

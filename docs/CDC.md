@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 CDC は SQL Server の初回スナップショットと、その後の INSERT・UPDATE・DELETE を
 継続して取り込む追加機能です。`cdc` profile で Kafka、Debezium、consumer、
 Kafbat UI を起動します。通常のファイル投入と、SELECT だけの
@@ -118,6 +130,8 @@ Agent の状態確認にサーバー全体の参照権限が必要な環境で�
 
 既存siteは先に通常の配置利用者が更新します。秘密値を再生成する新規ファイルで置き換えません。
 
+**Bash / Zsh共通**
+
 ```bash
 python3 scripts/configure.py --output /absolute/private/site.env --upgrade
 ```
@@ -129,6 +143,8 @@ python3 scripts/configure.py --output /absolute/private/site.env --upgrade
 `table-map.json` を保存します。consumer/register は `WORKER_UID/GID` で読むので、
 そのユーザーに読み取りを許可してください。資格情報は env ファイルに保管し、
 mapping に埋め込まないでください。次は雛形を新しい専用directoryへ置く例で、`CDC_CONFIG_DIR` と同じpathを選びます。
+
+**Bash / Zsh共通**
 
 ```bash
 CDC_PRIVATE_DIR=/absolute/private/cdc
@@ -188,6 +204,8 @@ API や GUI で扱う接続設定を管理者以外に公開しないでくだ�
 
 private設定とmapping、landing、core資格情報を準備した後、CLI管理を選んだ場合だけ通常の入口を使います。Dokploy管理なら同じprivate値とcanonicalを既存アプリのEnvironmentへ反映し、同じアプリで再配置します。CLIから別名の二重起動をしません。
 
+**Bash / Zsh共通**
+
 ```sh
 export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 python3 scripts/control.py plan
@@ -200,6 +218,8 @@ core の warehouse bootstrap が完了してから consumer が起動します�
 
 完全一致なら `registered: true, unchanged: true` で正常終了します。設定、source DB、topic、offset、schema historyを変更せず、既存の取り込み位置を維持します。同名 connector の設定が違う場合、nameが不一致の場合、認証・HTTP・読戻しに失敗した場合は停止し、GUI の編集を自動で元に戻しません。更新・削除・再作成やoffset初期化へ切り替える処理はなく、PUT/PATCH/DELETEを送りません。差異があるときはprivateの現在設定と候補を管理者が照合し、再配置のためだけに既存connectorを消さないでください。
 register成功はconnector設定の登録／一致確認までです。DB接続、初回snapshot完了、consumerの反映成功は別に確認します。registerの正常終了はExited(0)で構いません。connector/taskの状態は固定した既存名でread-onlyに調べます。
+
+**Bash / Zsh共通**
 
 ```bash
 # port/connector名を変えたサイトではprivateの設定値に合わせる。
@@ -281,6 +301,8 @@ schema history と Connect internal topics は通常のデータ topic と別の
 1 つ作れます。`scripts/cdc-demo.py` は generator と別の、明示操作用 helper です。
 実行には [requirements-demo.txt](../requirements-demo.txt) の optional driver が必要です。
 
+**Bash / Zsh共通**
+
 ```sh
 uv venv --python 3.12 "$HOME/.venvs/lakehouse-demo"
 uv pip sync --python "$HOME/.venvs/lakehouse-demo/bin/python" \
@@ -309,6 +331,8 @@ SQL Agent の有効化や SQL Server 自体の設定変更は helper の対象�
 固定シナリオでは、生成した `demo.env` と管理用 DEMO 設定を 1 つの external private
 scenario env にまとめます。所有確認の `CDC_DEMO_OWNERSHIP_TOKEN` を維持してください。
 CLI は DB 名の prefix と DB 内の所有 token の一致を両方確認します。
+
+**Bash / Zsh共通**
 
 ```sh
 "$HOME/.venvs/lakehouse-demo/bin/python" scripts/cdc-demo.py insert \

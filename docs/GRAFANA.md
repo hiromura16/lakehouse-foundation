@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 照合日: 2026-11-10。Grafana **13.3.0** とPrometheus **3.16.0**、`scripts/grafana_setup.py` が対象です。ダッシュボードの正本はGrafanaでGUIから保存した内容です。ComposeはGrafanaの起動、Prometheus datasource、永続volumeを管理し、ダッシュボードJSONを継続的にprovisionしません。
 
 ## 何をどこへ保存するか
@@ -34,6 +46,8 @@ private設定の `COMPOSE_PROFILES` に `monitoring` を含めて起動します
 
 以下の `up` は**CLI管理の場合だけ**実行します。Dokploy管理ではComposeサービス自身のEnvironmentを保存し、7ファイルを使ってDeployします。起動方法を重ねません。[配置手順](DOKPLOY.md)
 
+**Bash / Zsh共通**
+
 ```bash
 export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 ./scripts/lakehouse.sh up
@@ -47,6 +61,8 @@ export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 - 作成が競合した場合も、既存UIDを再確認して保持します。更新用のPUTやDELETEは実行しません。
 
 DokployのGit配置など、CLIの `up` を経由せずにGrafanaを起動した場合は、起動後に明示的な初期化を実行します。
+
+**Bash / Zsh共通**
 
 ```bash
 ./scripts/lakehouse.sh grafana-init
@@ -114,12 +130,16 @@ Grafanaで `Lakehouse Operations` を開き、パネル、配置、PromQL、表�
 
 初期ダッシュボードの現在の内容を、Git外のprivateファイルへ書き出せます。
 
+**Bash / Zsh共通**
+
 ```bash
 python3 scripts/grafana_setup.py export \
   --output "$HOME/.config/lakehouse-foundation/grafana/dashboard-review.json"
 ```
 
 `LAKEHOUSE_ENV_FILE` を使わない場合:
+
+**Bash / Zsh共通**
 
 ```bash
 python3 scripts/grafana_setup.py \

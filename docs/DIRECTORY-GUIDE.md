@@ -60,6 +60,7 @@
 | `scripts/grafana_setup.py` | 初期dashboard作成・private export | 既存dashboardを上書きしない |
 | `scripts/check-source.py` | 公開ファイルとGit履歴の検査 | ローカル読み取りのみ |
 | `scripts/documentation.py` | 全MDの目的欄とマニフェストを生成 | 公開MDを更新。`--check` は読取りだけ |
+| `scripts/shell_examples.py` | 全MDのコマンド例をBash/Zshで検査 | 構文だけを読み、sudo・接続・Deployを実行しない |
 
 引数の正本は各スクリプトの `--help` です。ホスト設定のSamba、Docker proxy、Dokployは、アプリ起動とは別に管理します。ルート権限が必要な作業をアプリのGUIへ隠して実行しません。
 

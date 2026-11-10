@@ -90,6 +90,7 @@ Docker/Nginx等のホスト・基盤imageはminor/patch表記だけでなく、l
 | [報告素材](reports/README.md) | figures.json、実装一覧、VALIDATION、verification.json | 14図の根拠、過去試験と今回受入、未評価、可搬export |
 | [開発規約](../CONTRIBUTING.md)・[レビュー手順](REVIEW-WORKFLOW.md) | 固定lock、公開CI、回帰テスト、issueの最小再現 | 読みやすさ、意味のあるテスト、例外の境界、機密非表示 |
 | [文書マニフェスト](DOCUMENTATION-MANIFEST.md) | [GFM仕様](https://github.github.com/gfm/)・[GitHubの基本記法](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax) | 全件登録、冒頭役割、相対リンク、見出し、生成物の一致 |
+| [Bash / Zsh](SHELLS.md) | [Zsh builtins](https://zsh.sourceforge.io/Doc/Release/Shell-Builtin-Commands.html)・[options](https://zsh.sourceforge.io/Doc/Release/Options.html)・[parameters](https://zsh.sourceforge.io/Doc/Release/Parameters.html) | 対話read、INTERACTIVE_COMMENTS、予約変数、引用・stdin、shebangとログインシェルの区別 |
 
 ## 機密情報と検証の境界
 

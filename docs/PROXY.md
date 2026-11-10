@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 2026-11-10監査。会社で初めて設定する場合は、順番と診断をまとめた [COMPANY-PROXY.md](COMPANY-PROXY.md) を先に読みます。本書は設定ファイルの役割を調べるための参照です。操作はレイクハウスを動かすLinuxホストのclone済みリポジトリで行い、`sudo` の付いた箇所だけホスト管理者が実施します。
 
 ## どの通信を設定するか
@@ -32,6 +44,8 @@ daemon用ファイルはコンテナへ自動配布されません。Docker CLI�
 
 通常利用者が次を実行します。生成先はリポジトリ外、専用directory0700、file0600です。
 
+**Bash / Zsh共通**
+
 ```bash
 ./scripts/configure-proxy.sh --init "$HOME/.config/lakehouse-foundation/proxy.env"
 ```
@@ -49,6 +63,8 @@ https_proxy=http://proxy.example.invalid:3128
 
 確認後、必要な場合だけ管理者が配置します。
 
+**Bash / Zsh共通**
+
 ```bash
 ./scripts/configure-proxy.sh --env-file "$HOME/.config/lakehouse-foundation/proxy.env" --plan
 sudo ./scripts/configure-proxy.sh --env-file "$HOME/.config/lakehouse-foundation/proxy.env" --apply
@@ -57,6 +73,8 @@ sudo ./scripts/configure-proxy.sh --env-file "$HOME/.config/lakehouse-foundation
 planは値を表示せず検査します。applyは `/etc/lakehouse-foundation/proxy.env`（root所有0600）と `/etc/systemd/system/docker.service.d/90-lakehouse-foundation-proxy.conf`（0644）を配置し、Dockerを再起動しません。管理外の配置先や `daemon.json` のproxy定義があれば拒否します。他のdrop-inの競合は管理者が別途確認します。rootless Docker／Docker Desktopへはこのsystem用手順を適用しません。
 
 保守時間に管理者が実施し、承認済みregistryから固定imageを取得できることを確認します。
+
+**Bash / Zsh共通**
 
 ```bash
 sudo systemctl daemon-reload
@@ -76,6 +94,8 @@ daemonファイルとは別に、private `site.env` のHTTP(S)4項目を設定�
 
 生成・`--upgrade`・CLI読込は、必須内部名とprivateファイル内の既存3項目を結合して重複を除きます。shellの古い除外先は採用しません。通常利用者がリポジトリのルートで実行します。
 
+**Bash / Zsh共通**
+
 ```bash
 python3 scripts/configure.py --output /absolute/private/site.env --upgrade
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env plan
@@ -88,6 +108,8 @@ upgradeは既存秘密値を保持し、変更前を隣の `.before-upgrade` に
 ## 3. 配置の所有者を一つにする
 
 CLI管理なら、proxyをsite設定へ揃えた後に同じ利用者が次を実行します。
+
+**Bash / Zsh共通**
 
 ```bash
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env up

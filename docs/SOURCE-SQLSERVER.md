@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 `extract-sqlserver.py` は会社の既存DBを読み取り、MES・ERPの6つの入力契約に対応するCSV・JSON Linesを作ります。SQLは列を明示した `SELECT TOP (上限+1)` だけです。DB・表の作成、UPDATE・DELETE・DROP、CDCや権限の設定は行いません。ダミー投入用 `generate-demo.py` とは別のツールです。
 
 このbridgeは全件スナップショット用です。差分watermark・CDC・ストリーミングは実装していません。SQL認証や読み取りの実行を伴わない `source-check` のTCP到達確認とは用途が異なります。
@@ -36,6 +48,8 @@
 
 SQL接続には追加ドライバが必要です。ダミーSQL投入と同じ固定依存ファイルを使います。
 
+**Bash / Zsh共通**
+
 ```sh
 UV_PYTHON_DOWNLOADS=never uv venv --python /usr/bin/python3.12 \
   "$HOME/.venvs/lakehouse-source-reader"
@@ -44,6 +58,8 @@ uv pip sync --python "$HOME/.venvs/lakehouse-source-reader/bin/python" \
 ```
 
 ホストのPython3.12は事前に導入済みのものを指定します。uv0.13.7と `pymssql==2.4.6` が対象です。`requirements-demo.txt` は版固定入力で、host用のfull hash lockではありません。proxy/CAが必要なら [会社proxy手順](COMPANY-PROXY.md) を先に実施します。依存同期後に次で版を確認します。
+
+**Bash / Zsh共通**
 
 ```bash
 "$HOME/.venvs/lakehouse-source-reader/bin/python" -c \
@@ -73,6 +89,8 @@ SOURCE extractorは接続hostと証明書名が一致するDNSを使います。
 ## テーブル・列を対応付ける
 
 配置利用者が次のようにコピーし、ローカルのエディターで編集します。保存先directoryは0700にします。既存の対応表は上書きせず保持します。
+
+**Bash / Zsh共通**
 
 ```bash
 TABLE_MAP=/absolute/private/sqlserver-tables.json
@@ -109,6 +127,8 @@ fi
 
 出力先をprivate `LANDING_DIR` と揃えます。以下は既定pathの例です。抽出中はn8n/Airflow/CLI/GUIから同じ素材を取り込まないよう、定期開始を止めます。
 
+**Bash / Zsh共通**
+
 ```sh
 "$HOME/.venvs/lakehouse-source-reader/bin/python" scripts/extract-sqlserver.py \
   --env-file /absolute/private/site.env \
@@ -130,6 +150,8 @@ fi
 ## 取り込み・変換を別に実行する
 
 このツールはランディングまでで終了します。成功を確認してから、別の明示的な操作で取り込み・メダリオン更新を実行します。
+
+**Bash / Zsh共通**
 
 ```sh
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env medallion
@@ -192,6 +214,8 @@ fi
 ### 原本とmarkerを独立に確認する
 
 通常利用者が、抽出完了後のlandingで実行する読み取り例です。pathは会社用のprivate LANDING_DIRへ合わせます。内容自体は表示しません。
+
+**Bash / Zsh共通**
 
 ```bash
 python3 - <<'PY'

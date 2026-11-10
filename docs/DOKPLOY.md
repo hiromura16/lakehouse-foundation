@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 確認日: 2026-11-10。この手順の画面名と動作は、採用imageの **Dokploy v0.31.0** と[同じ公式tagのソース](https://github.com/Dokploy/dokploy/tree/v0.31.0)（commit `3ac1c8f2e025d7db7696542eb2770e08f598214c`）で確認しました。更新されるWeb版の[公式Compose説明](https://docs.dokploy.com/docs/core/docker-compose)は補助資料です。別バージョンの画面を0.31.0の仕様と読み替えません。
 
 ここでは、会社VMにDokployが導入済みで、管理画面へログインできるところから説明します。未導入の場合は [はじめに](START-HERE.md) と [基盤配置](DEPLOYMENT.md) でホスト・Docker・Dokploy・Sambaを先に準備します。既存DokployやSwarmを作り直す手順ではありません。
@@ -99,6 +111,8 @@ Generalタブの **Provider** カードで **Git** タブを選びます。GitHu
 
 VMの通常ユーザーで、独立して保持するcloneのルートへ移動します。Dokployが再取得する作業コピーへprivate設定を作りません。
 
+**Bash / Zsh共通**
+
 ```bash
 export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 python3 scripts/configure.py --output "$LAKEHOUSE_ENV_FILE"
@@ -119,6 +133,8 @@ python3 scripts/configure.py --output "$LAKEHOUSE_ENV_FILE"
 | パスワード・暗号鍵・token | 生成値を保持。既存環境は作り直さない |
 
 `LANDING_DIR`は事前作成し、指定UID/GIDにアクセス権を与えます。`demo` profileで使うprivateディレクトリは0700、envは0600にし、API実行UIDと所有者を合わせます。`notebooks`には別の `NOTEBOOKS_DIR` が必要です。proxy／CA／daemon設定と準備コマンドは [会社導入](COMPANY-ROLLOUT.md)・[会社proxy](COMPANY-PROXY.md)・[設定一覧](CONFIGURATION.md)を参照します。
+
+**Bash / Zsh共通**
 
 ```bash
 ./scripts/lakehouse.sh plan
@@ -172,6 +188,8 @@ Generalへ戻り、初回は **Auto DeployをOFF**のまま **Deploy → Deploy 
 workerはimageのCMDで `admin.py serve` を実行し、起動時にbucket・Warehouse等のbootstrapを再試行してからreadyになります。初回Dokploy Deployに別途手動bootstrapは不要です。正本は [worker Dockerfile](../infra/lakehouse/Dockerfile) と [serve実装](../scripts/admin.py)です。
 
 one-shotを緑色のrunningにするため手動Startを繰り返しません。非ゼロ終了ならそのserviceのログを確認します。配置先VMでは、同じソース版・外部private env・実appNameで次を実行します。
+
+**Bash / Zsh共通**
 
 ```bash
 ./scripts/lakehouse.sh status

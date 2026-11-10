@@ -14,11 +14,25 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 照合日: 2026-11-10。公式Python SDK **2.3.0**、`httpx2==2.16.0`、`infra/mcp/server.py` が対象です。固定の業務データと運用APIを、標準MCPのStreamable HTTPで提供します。任意SQL・shell・Docker操作・任意ファイル参照は公開しません。モデル実行や外部AI送信を、このサーバー自身は行いません。
 
 ## 初回の設定
 
 1. private envがまだなければ `--upgrade` を付けずに生成します。既存環境に追加キーを生成する場合は次を実行します。
+
+**Bash / Zsh共通**
 
    ```bash
    python3 scripts/configure.py \
@@ -32,6 +46,8 @@
 4. MCPクライアントに `http://localhost:8503/mcp`、HTTPヘッダー `Authorization: Bearer <MCP_API_TOKEN>` を登録します。トークンはクライアントの秘密設定へ保管し、URL・プロンプト・公開JSONへ埋め込みません。
 
 次の `up` は**CLI管理の場合だけ**リポジトリrootで実行します。Dokploy管理ではComposeサービス自身のEnvironmentに設定を保存し、既存appをDeployします。wrapperが7本のComposeを全て選択します。Docker Composeを直接操作する場合は [COMPATIBILITY.md](COMPATIBILITY.md#composeを直接操作する場合の省略しない例) の7ファイルの定義を使います。
+
+**Bash / Zsh共通**
 
 ```bash
 export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
@@ -102,6 +118,8 @@ MCPサーバーを再起動してもIceberg表は消えません。一方、`rec
 公式Python SDK `mcp==2.3.0` をhash付きlockで固定しています。SDKのクライアントでも同じBearerヘッダーを使います。秘密値は環境変数から読みます。
 
 独立venvを作り、client例はそのPythonで実行します。既存worker・Airflowの環境へSDKを追加しません。
+
+**Bash / Zsh共通**
 
 ```bash
 uv venv --python 3.12 "$HOME/.local/share/lakehouse/mcp-client"

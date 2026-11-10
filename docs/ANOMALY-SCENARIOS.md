@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 この機能は、異常を含む合成素材を意図して生成し、取り込み・隔離・重複排除・Goldの変化を確認するためのものです。会社の実データを改変する機能ではありません。素材生成から後続処理は起動せず、生成結果と下流の期待挙動を分けて確認します。
 
 確認日: 2026-11-10（JST）。操作GUIの起動は [初回ガイド](START-HERE.md) を使います。以下のシナリオは本基盤固有で、StreamlitやSQL Serverの標準機能一覧ではありません。
@@ -127,6 +139,8 @@ GUIは競合内容を表示して送信を止め、API/CLIも同じ共通検査�
 追加異常は最大32個で、重複・未知IDは拒否します。ファイル異常には `allow_file_faults: true`、画像破損には `images: true` を追加します。詳細な認証とジョブ進捗は [API.md](API.md) を参照してください。
 
 CLIでも同じケースを指定できます。以下は素材を作るだけで、workerを呼びません。既存出力へ上書きせず、専用の新しい出力先を選びます。
+
+**Bash / Zsh共通**
 
 ```bash
 python3 scripts/generate-demo.py \

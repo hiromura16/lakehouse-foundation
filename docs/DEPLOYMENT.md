@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 公開リポジトリ `lakehouse-foundation` を取得し、実際の環境設定だけをチェックアウトの外へ置いて導入します。clone URLはREADMEを参照してください。この文書の `/absolute/private/site.env`、共有利用者、許可範囲は説明用であり、導入先で選んだ値に置き換えます。
 
 監査日: 2026-11-10。先に配置の所有者を一つ決めます。CLI管理を選んだ場合は本書の `up/down` を使い、Dokploy管理を選んだ場合は既存の同じComposeアプリから起動・停止します。どちらでも `site.env` と配置commit・profile・実volume名を一致させます。Dokploy導入そのものと、そこへこのスタックを配置する作業は別です。
@@ -35,6 +47,8 @@
 - coreと任意のプロファイルを動かすRAM・CPU・永続ディスク、既存サービスと競合しないポート。
 
 SambaとDokployのホスト設定には別途管理権限が必要です。既存のDocker/Swarm、共有、Webポートがある場合は、その状態を確認してから該当手順を実行します。coreの起動だけでSambaやDokployのホスト設定は変更されません。
+
+**Bash / Zsh共通**
 
 ```bash
 docker version
@@ -70,6 +84,8 @@ DokployのGitソースでは、作業コピーの場所はDokployが管理しま
 
 生成済みのprivate設定ファイルの場所を、一度だけ環境変数へ設定できます。次は利用者自身の設定ディレクトリに保存した場合の例です。`$HOME` は実行する利用者に合わせて展開され、公開ソースに個人のパスを固定しません。
 
+**Bash / Zsh共通**
+
 ```bash
 export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 ```
@@ -86,6 +102,8 @@ export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 
 明示した `--env-file` が環境変数より優先されます。既存の指定方法もそのまま使用できます。
 
+**Bash / Zsh共通**
+
 ```bash
 ./scripts/lakehouse.sh --env-file /absolute/private/another-site.env plan
 ```
@@ -95,6 +113,8 @@ export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 ## 1. 非公開のサイト設定を作る
 
 cloneしたリポジトリのルートで実行します。生成先は自分で選べます。`LAKEHOUSE_ENV_FILE` を使う場合は、その変数で指定した場所と同じ場所へ生成します。
+
+**Bash / Zsh共通**
 
 ```bash
 python3 scripts/configure.py --output /absolute/private/site.env
@@ -136,6 +156,8 @@ volumeの自動rename・コピーは行いません。移行前に使用する�
 
 新規生成コマンドは既存ファイルを上書きしません。既存サイトには次を使います。
 
+**Bash / Zsh共通**
+
 ```bash
 python3 scripts/configure.py --output /absolute/private/site.env --upgrade
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env plan
@@ -149,11 +171,15 @@ privateのHTTP(S)4変数と `LAKEHOUSE_NO_PROXY` / `NO_PROXY` / `no_proxy` を�
 
 コンテナのenvだけではDocker daemonのimage pullに適用されません。会社でpull用プロキシが必要なら、[PROXY.md](PROXY.md) の独立キットでdaemon用設定を用意します。設定の配置とDocker再起動は別操作です。既存コンテナへの影響を確認してから反映します。
 
+**Bash / Zsh共通**
+
 ```bash
 ./scripts/configure-proxy.sh --init /absolute/private/proxy.env
 ```
 
 ローカルで編集した後に確認します。
+
+**Bash / Zsh共通**
 
 ```bash
 ./scripts/configure-proxy.sh --env-file /absolute/private/proxy.env --plan
@@ -165,6 +191,8 @@ sudo ./scripts/configure-proxy.sh --env-file /absolute/private/proxy.env --apply
 ## 3. coreを起動する
 
 `LANDING_DIR` は先に作成し、共有利用者が読み書きできる所有者・権限を設定します。後述のSamba手順で作成するか、管理者が専用ディレクトリを用意します。既定の `/srv/lakehouse/landing` を使う例は次のとおりです。利用者・グループを環境に合わせて置き換えます。
+
+**Bash / Zsh共通**
 
 ```bash
 SHARE_USER="$(id -un)"
@@ -180,9 +208,13 @@ fi
 
 起動前の設定確認はホストを変更しません。
 
+**Bash / Zsh共通**
+
 ```bash
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env plan
 ```
+
+**Bash / Zsh共通**
 
 ```bash
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env up
@@ -195,6 +227,8 @@ fi
 Lakekeeperは初期化時に利用条件への同意を記録するAPIを使います。採用ソフトウェアの利用条件は [ARCHITECTURE.md](ARCHITECTURE.md) と上流資料を確認してください。
 
 ## 4. coreの往復試験を行う
+
+**Bash / Zsh共通**
 
 ```bash
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env verify
@@ -221,6 +255,8 @@ coreの検証成功が確認するのは、このスタック内のS3・RESTカ�
 
 製品・製造指図・受注・出荷のCSVと、製造・停止実績のJSON Linesを生成できます。`--output` は `LANDING_DIR` と同じ専用ディレクトリか、別のリポジトリ外の作業場所を指定します。既定のランディング先へ生成する例です。
 
+**Bash / Zsh共通**
+
 ```bash
 python3 scripts/generate-demo.py \
   --destination landing --output /srv/lakehouse/landing \
@@ -230,6 +266,8 @@ python3 scripts/generate-demo.py \
 生成器の仕事は素材の生成と投入までです。Iceberg・Trino・メダリオン処理は呼び出しません。`landing` の出力は6ソース、ファイルごとの `.ready` 完了マーカー、件数・ハッシュ等のmanifestです。変換結果の期待値は生成器から独立した `medallion/expected-demo.json` に保持します。詳細な列・型・注入する異常・指標は [DEMO-DATA.md](DEMO-DATA.md) を参照します。
 
 SQLにも素材を投入したい場合は、private envに `DEMO_SQLSERVER_HOST` / `PORT` / `DATABASE` / `USER` / `PASSWORD` を設定します。業務参照用の `SOURCE_SQLSERVER_*` と別の専用DBを指定します。SQL用ドライバー等の前提は [DEMO-DATA.md](DEMO-DATA.md) を参照してください。
+
+**Bash / Zsh共通**
 
 ```bash
 UV_PYTHON_DOWNLOADS=never uv venv --python /usr/bin/python3.12 \
@@ -248,11 +286,15 @@ uv pip sync --python "$HOME/.venvs/lakehouse-demo/bin/python" \
 
 Bronzeへの取り込みだけを実行する場合:
 
+**Bash / Zsh共通**
+
 ```bash
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env ingest
 ```
 
 Bronze取り込みに続けてSilver・隔離・Goldまで実行する場合:
+
+**Bash / Zsh共通**
 
 ```bash
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env medallion
@@ -263,6 +305,8 @@ Silverは主キーごとの最新候補を選び、その型・値・参照を�
 業務変換は `medallion/01_silver.sql`、`02_quarantine.sql`、`03_gold.sql` を編集します。同じデータで再実行しても追記による二重計上をしないよう派生表を置き換えます。ただし複数表をまとめたトランザクションではないため、失敗した場合は処理結果を確認して再実行します。
 
 自分でファイルをコピーした場合は、コピー完了後に完了マーカーを作成します。取り込みは原本のSHA-256と一致するマーカーが必要です。
+
+**Bash / Zsh共通**
 
 ```bash
 python3 scripts/mark-ready.py /srv/lakehouse/landing/csv/erp_products.csv
@@ -279,6 +323,8 @@ COMPOSE_PROFILES=automation,monitoring
 ```
 
 同じ `up` を実行します。
+
+**Bash / Zsh共通**
 
 ```bash
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env up
@@ -306,6 +352,8 @@ SOURCE_SQLSERVER_PASSWORD=
 
 設定後、名前解決とTCP到達性を確認します。
 
+**Bash / Zsh共通**
+
 ```bash
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env source-check
 ```
@@ -324,6 +372,8 @@ Sambaはホストの共有サービスへ別手順で設定します。`LANDING_
 
 以下は同じUnix利用者の例です。`ALLOW_CLIENT_CIDR=127.0.0.1/32` はホスト内の試験専用なので、実共有時は承認された端末範囲へ置き換えます。`SHARE_USER` が既存Sambaアカウントであることを確認してから進めます。
 
+**Bash / Zsh共通**
+
 ```bash
 SHARE_USER="$(id -un)"
 ALLOW_CLIENT_CIDR="127.0.0.1/32"
@@ -332,6 +382,8 @@ sudo testparm -s /etc/samba/smb.conf
 ```
 
 最初は設定を書き換えないplanを実行します。Samba設定の読取に管理権限が必要な環境に合わせ、ここではsudoを使います。
+
+**Bash / Zsh共通**
 
 ```bash
 sudo python3 scripts/setup-samba.py \
@@ -342,6 +394,8 @@ sudo python3 scripts/setup-samba.py \
 ```
 
 内容を確認して適用します。
+
+**Bash / Zsh共通**
 
 ```bash
 sudo python3 scripts/setup-samba.py \
@@ -363,6 +417,8 @@ DokployはcoreのComposeとは別に導入します。提供するインスト�
 
 private envに `DOKPLOY_BIND_IP`、`DOKPLOY_ALLOWED_CIDRS`、`DOKPLOY_ADMIN_PORT`、`SWARM_ADVERTISE_ADDR`、`SWARM_ADDRESS_POOL`、`SWARM_SUBNET_SIZE` を設定します。必要なら `DOCKER_BRIDGE_CIDR` も指定します。アドレスは導入先のものを使い、Swarmのアドレスプールは会社・VPN・Dockerの既存ネットワークと重複しない範囲にします。このinstallerの管理画面は既定3100（上流の既定3000とは別）、TraefikはTCP80/443とUDP443を使用するため、既存のWebサービスと競合しないか確認します。
 
+**Bash / Zsh共通**
+
 ```bash
 bash infra/dokploy/install.sh --env-file /absolute/private/site.env
 sudo bash infra/dokploy/install.sh --env-file /absolute/private/site.env --apply
@@ -373,6 +429,8 @@ sudo bash infra/dokploy/install.sh --env-file /absolute/private/site.env --apply
 既存のDokployがある場合は再利用を優先します。別のSwarmから強制離脱したり、既存のDB・ボリュームを初期化したりして導入しません。Dokployからcoreを管理する場合も、サイト固有envを非公開のEnvironment設定へ入れ、同じスタックをCLIとUIから同時に別名で起動しないようにします。
 
 ## 10. 停止・再開・復旧
+
+**Bash / Zsh共通**
 
 ```bash
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env down

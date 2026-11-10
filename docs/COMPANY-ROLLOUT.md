@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 確認日: 2026-11-10（JST）。新規の構築順は **[START-HERE.md](START-HERE.md)** が正本です。このページは会社で必要な担当分担、Samba、実SQL Serverへの接続、業務データの照合を補足します。導入先のIP・ホスト名・proxy・実表名・資格情報はprivate記録へ保存し、公開文書へ転記しません。
 
 ## 1. 共通準備と配置の入口
@@ -37,6 +49,8 @@ Dokploy管理かCLI管理かを先に決めます。**Dokploy導入はレイク�
 
 以下の例は新規の専用ディレクトリです。別の場所を使う場合は、private設定の `LANDING_DIR` と同じ完成した絶対パスへ置き換えます。
 
+**Bash / Zsh共通**
+
 ```bash
 LANDING_PATH=/srv/lakehouse/landing
 if [ -e "$LANDING_PATH" ]; then
@@ -50,6 +64,8 @@ fi
 
 Sambaを使う場合は、会社標準の手順でSambaと `testparm` / `pdbedit` を用意します。新規Ubuntuでのpackage・アカウント準備は [HOST-SETUP](HOST-SETUP.md#5b-新規ubuntuでsambaを使う場合だけ準備する) にあります。共有に使うUnixユーザーとSambaアカウントは管理者が準備し、既存ユーザーのパスワードを再設定しないようにします。共有先はDockerやS3の内部volumeではなく、このランディングです。
 
+**Bash**
+
 ```bash
 SMB_SHARE_USER="$(id -un)"
 read -r -p '許可する接続元CIDRを入力: ' SMB_ALLOWED_CIDR
@@ -58,7 +74,19 @@ python3 scripts/setup-samba.py \
   --path "$LANDING_PATH" --plan
 ```
 
+**Zsh**
+
+```zsh
+SMB_SHARE_USER="$(id -un)"
+read -r 'SMB_ALLOWED_CIDR?許可する接続元CIDRを入力: '
+python3 scripts/setup-samba.py \
+  --user "$SMB_SHARE_USER" --allow "$SMB_ALLOWED_CIDR" \
+  --path "$LANDING_PATH" --plan
+```
+
 planが対象共有と明示allowlistを示したら、管理者が同じ引数で適用します。
+
+**Bash / Zsh共通**
 
 ```bash
 sudo python3 scripts/setup-samba.py \
@@ -69,6 +97,8 @@ sudo python3 scripts/setup-samba.py \
 共有名の既定は `Lakehouse-Landing`。専用includeだけを追加し、既存共有や認証情報を変更しません。同名共有や曖昧なincludeは拒否します。適用時はbackup→testparm→smbd reloadを行い、失敗時は設定を戻します。許可されたクライアントから認証して、新しいファイルの作成・読み取り・削除を確認してください。これは後述のcore verifyとは別の受入項目です。
 
 手動投入するファイルはコピー完了後に `.ready` を作成します。
+
+**Bash / Zsh共通**
 
 ```bash
 python3 scripts/mark-ready.py "$LANDING_PATH/csv/erp_products.csv"
@@ -122,11 +152,15 @@ mapping JSONは列名の対応です。任意の計算式やWHERE句で抽出範
 
 DB担当が対象表/ビューへのSELECT権限を持つログインを用意します。`site.env` の `SOURCE_SQLSERVER_*` に接続先、DB、読み取り用利用者、TLSのCAを記入します。タイムゾーンのない日時型を現地時刻で保存している場合は `SOURCE_SQLSERVER_TIMEZONE` も合わせます。
 
+**Bash / Zsh共通**
+
 ```bash
 ./scripts/lakehouse.sh source-check
 ```
 
 これは名前解決とTCP到達確認までです。成功してもSQL認証、TLS、SELECT、CDCの成功とは扱いません。実際の抽出は専用のホストvenvを用意して行います。
+
+**Bash / Zsh共通**
 
 ```bash
 uv venv --python 3.12 \
@@ -144,6 +178,8 @@ fi
 
 コピーしたJSONをローカルで編集し、6表の会社列名を契約列へ一対一に対応付けます。SQL式や任意WHERE句を入れる形式ではありません。必要な変換や特殊な識別子は、DB担当が準備した読み取り用ビューで解決します。既存の私有対応表がある場合は上のcopyで上書きせず、そのファイルを継続して使います。
 
+**Bash / Zsh共通**
+
 ```bash
 "$HOME/.local/share/lakehouse-foundation/source-reader-venv/bin/python" \
   scripts/extract-sqlserver.py \
@@ -158,6 +194,8 @@ fi
 
 ## 4. 会社データのメダリオンを検証する
 
+**Bash / Zsh共通**
+
 ```bash
 ./scripts/lakehouse.sh medallion
 ```
@@ -167,6 +205,8 @@ fi
 会社の受入では、抽出manifestの件数とBronze、Silver/Quarantineへの振り分け、Goldの数量・金額を、DB担当が用意した同じ範囲の集計と照合します。`verify` の合成期待値を会社データの期待値として流用しません。
 
 TrinoのCLIで読み取り確認する例です。先に [運用の補助関数](OPERATIONS.md#postgresqlの論理dump例) の `lakehouse_compose` を同じrepoルートで定義してください。7Composeと正規化したprivate設定を使い、shellに残る別project名の影響を避けます。CLIは公式Trino imageに同梱されています。
+
+**Bash / Zsh共通**
 
 ```bash
 lakehouse_compose exec -T trino trino --execute \

@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 照合日: 2026-11-10。n8n **2.46.7**、Airflow **3.4.0**（standard provider 1.21.0 / HTTP provider 6.3.0）、Grafana **13.3.0**、Prometheus **3.16.0** が対象です。英語UIの表記を示します。接続→認証→1回の手動実行→履歴→保存の順で確認します。
 
 この文書は、同梱設定を起動した後の画面操作を説明します。n8nとAirflowは登録済みのworkerジョブを呼び、Grafanaは実行状態を表示します。業務上の列変換・採用ルール・集計の正本は [medallion/](../medallion/) のSQLです。画面で任意のSQLをworkerへ送る機能はありません。
@@ -23,6 +35,8 @@
 private envの `COMPOSE_PROFILES` へ、必要な機能を追加してから起動します。3機能すべてを使う例は `automation,monitoring,orchestration` です。既存の他プロファイルを使用中なら、その設定も保持します。
 
 以下の `up` は**CLI管理の場合だけ**実行します。Dokploy管理ではComposeサービス自身のEnvironmentを保存し、7ファイルを使ってDeployします。起動方法を重ねません。[配置手順](DOKPLOY.md)
+
+**Bash / Zsh共通**
 
 ```bash
 export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
@@ -196,6 +210,8 @@ workerの `/health` は内部ネットワークから確認でき、blocked時�
 
 初回passwordの確認は、Dokployの **airflow行 → Terminal** を管理者だけが開き、次を実行する方法があります。この出力はその管理者端末内で扱います。コンテナ名やhost上のvolume pathを推測する必要はありません。
 
+**Bash / Zsh共通**
+
 ```sh
 python -m json.tool /opt/airflow/simple_auth_manager_passwords.json.generated
 ```
@@ -253,6 +269,8 @@ taskのLogsで `Worker rejected the request: HTTP 401` ならConnection、HTTP50
 
 `monitoring` を起動するとPrometheusがworkerの `/metrics` を15秒ごとに収集します。CLIのupは、初期ダッシュボードがないときだけテンプレートから作成します。DokployのGit配置等でupスクリプトを通さなかった場合は、起動後に実行します。
 
+**Bash / Zsh共通**
+
 ```bash
 ./scripts/lakehouse.sh grafana-init
 ```
@@ -289,6 +307,8 @@ taskのLogsで `Worker rejected the request: HTTP 401` ならConnection、HTTP50
 初期化は対象UIDが存在すれば保持して終了します。リポジトリのJSONを編集してupやgrafana-initを再実行しても、既存のGUI保存内容を自動上書きしません。同じvolumeを維持すれば再起動・再作成後も保存状態を引き継ぎます。
 
 初期UIDの現在の内容を控えとして残す例:
+
+**Bash / Zsh共通**
 
 ```bash
 python3 scripts/grafana_setup.py \

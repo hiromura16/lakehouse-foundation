@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<../DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](../SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 **詳細図14種、編集用Mermaid、図キャプション、報告書・評価計画・スライド構成をまとめた素材集です。** 図を一枚選んでWord/PowerPointへ貼り、同じ図のキャプションと根拠を添えて使えます。実装の照合基点は `b63b9d00d664d3e547679d0da4dd63f76fe1f45f`、照合日は2026-11-10（JST）です。図の作成日は全機能の再試験日を意味しません。
 
 [全図のHTMLギャラリー](gallery.html) / [キャプション・根拠](CAPTIONS.md) / [CSV索引](figure-index.csv) / [実装の技術付録](IMPLEMENTATION-INVENTORY.md)
@@ -61,12 +73,16 @@ HTMLはダウンロードしてブラウザーで開くと、14枚のSVGをオ�
 
 UbuntuでCairoと日本語フォントが未導入の場合だけ、管理者が次を実行します。会社proxyが必要なら [会社proxy手順](../COMPANY-PROXY.md) のapt/uv取得経路を先に用意します。
 
+**Bash / Zsh共通**
+
 ```bash
 sudo apt-get update
 sudo apt-get install --no-install-recommends libcairo2 fontconfig fonts-noto-cjk
 ```
 
 通常ユーザーで専用環境を作ります。既存venvを使う場合は、このlock専用であることを確認します。
+
+**Bash / Zsh共通**
 
 ```bash
 uv venv --python 3.12 "$HOME/.local/share/lakehouse-foundation/report-venv"
@@ -78,6 +94,8 @@ uv pip check \
 ```
 
 **Git外の新しい絶対パス**を選び、一括出力します。既存ディレクトリは上書きしません。実接続先・資格情報は指定不要です。
+
+**Bash / Zsh共通**
 
 ```bash
 "$HOME/.local/share/lakehouse-foundation/report-venv/bin/python" \
@@ -119,6 +137,8 @@ Gitには編集可能なSVGと生成元・手順を保存します。PNG/PDF/PPT
 ## 図を編集・再生成する
 
 [図とスクリプトの編集ガイド](EDITING-GUIDE.md)で項目・座標・処理順を確認できます。図の正本は [figures.json](figures.json) です。各図のタイトル、説明、用途、根拠、panel、線、注記、Mermaidを編集します。SVGとHTMLを直接直すと再生成で置き換わります。
+
+**Bash / Zsh共通**
 
 ```bash
 python3 scripts/render_report_assets.py

@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<docs/DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](docs/SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 初回構築は [START-HERE](docs/START-HERE.md)、レビューの取り込みは [REVIEW-WORKFLOW](docs/REVIEW-WORKFLOW.md)、図とexportの編集は [EDITING-GUIDE](docs/reports/EDITING-GUIDE.md) を参照します。実接続先・秘密値・企業CA・実データはGit外に保持します。
 
 ## コードを読む人へ必要な情報を残す
@@ -34,6 +46,8 @@ PythonはPEP8と79文字の規約、Ruff・pycodestyleを使います。SQLはCT
 
 リポジトリルートから、通常ユーザーで実行します。
 
+**Bash / Zsh共通**
+
 ```bash
 QUALITY_VENV="$HOME/.local/share/lakehouse-foundation/source-quality-venv"
 uv venv --python 3.12 "$QUALITY_VENV"
@@ -47,6 +61,7 @@ uv pip sync --python "$QUALITY_VENV/bin/python" \
 "$QUALITY_VENV/bin/sqlfluff" lint --dialect trino medallion
 "$QUALITY_VENV/bin/python" scripts/render_report_assets.py --check
 "$QUALITY_VENV/bin/python" scripts/documentation.py --check
+"$QUALITY_VENV/bin/python" scripts/shell_examples.py --check
 "$QUALITY_VENV/bin/python" scripts/check-source.py --history
 git diff --check
 ```

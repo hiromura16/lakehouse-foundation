@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 確認日: 2026-11-10（JST）。**このページを上から進め、各段階の成功条件を確認してから次へ進みます。** 新規のLinux x86-64サーバーと、操作用PCを想定します。採用版は [公式リファレンスと文書監査表](REFERENCES.md)、仕組みは [構成図](ARCHITECTURE.md) にあります。会社で一時修正した既存環境の更新は [COMPANY-UPDATE.md](COMPANY-UPDATE.md) を使います。
 
 ## 0. 作業場所と管理方法を決める
@@ -36,6 +48,8 @@
 空のVMでDocker・Git・uvを導入するところから必要な場合は、先に [HOST-SETUP](HOST-SETUP.md) を実行し、この章の確認へ戻ります。用語に迷ったときは [GLOSSARY](GLOSSARY.md) を参照します。
 
 通常ユーザーで実行します。
+
+**Bash / Zsh共通**
 
 ```bash
 uname -m
@@ -60,6 +74,8 @@ uvは [0.13.7の公式配布](https://github.com/astral-sh/uv/releases/tag/0.13.
 ## 2. 公開Gitを取得してprivate設定を作る
 
 通常ユーザーで、書き込み可能な任意の作業ディレクトリへcloneします。
+
+**Bash / Zsh共通**
 
 ```bash
 git clone https://github.com/hiromura16/lakehouse-foundation.git
@@ -89,6 +105,8 @@ export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 
 パスワード・暗号鍵・tokenは生成値を保持します。全項目の意味は [CONFIGURATION.md](CONFIGURATION.md) です。GUIの接続診断で企業CAを使う場合はprivate設定専用dirの配下へ置きます。CA未指定時の空ファイルは同梱済みで、`/dev/null` への差し替えは不要です。
 
+**Bash / Zsh共通**
+
 ```bash
 id -u
 id -g
@@ -101,6 +119,8 @@ stat -c '%a %u:%g %n' "$(dirname "$LAKEHOUSE_ENV_FILE")"
 ## 3. データを置く場所を準備する
 
 新しい専用landingを用意する例です。既存のディレクトリへ一括chownを行わず、用途と所有者を先に確認します。
+
+**Bash / Zsh共通**
 
 ```bash
 LANDING_PATH=/srv/lakehouse/landing
@@ -120,6 +140,8 @@ private設定の `LANDING_DIR` と上のパスを揃えます。成功時は `Co
 **Dokploy本体の導入と、その上へのレイクハウスDeployは別の作業です。** 既存のDokploy 0.31.0を使う場合はインストーラーを省略し、次のGUI登録へ進みます。他の版では画面名や挙動を読み替える前に互換性を確認します。
 
 新規導入ではprivate設定へ `DOKPLOY_BIND_IP`、`DOKPLOY_ALLOWED_CIDRS`、`SWARM_ADVERTISE_ADDR`、LAN/VPNと重ならない `SWARM_ADDRESS_POOL` / `SWARM_SUBNET_SIZE` を入力します。値はホスト管理者・ネットワーク担当と決めます。管理画面portの既定は3100です。
+
+**Bash / Zsh共通**
 
 ```bash
 # 設定値の検査と計画表示。Dockerやportを含む全ホスト検査ではない。
@@ -155,6 +177,8 @@ compose -p APP_NAME_FROM_HEADER --env-file infra/lakehouse/.env -f infra/lakehou
 
 配置後、通常ユーザーのサーバー端末で同じprivate設定・確定appNameを使います。
 
+**Bash / Zsh共通**
+
 ```bash
 ./scripts/lakehouse.sh status
 ./scripts/lakehouse.sh verify
@@ -165,6 +189,8 @@ compose -p APP_NAME_FROM_HEADER --env-file infra/lakehouse/.env -f infra/lakehou
 ## 4B. CLIで配置する場合
 
 Dokployを使用しない環境だけ、サーバー端末で実行します。
+
+**Bash / Zsh共通**
 
 ```bash
 ./scripts/lakehouse.sh up
@@ -180,6 +206,8 @@ private設定を `COMPOSE_PROFILES=demo,monitoring` にします。Dokploy管理
 
 配置成功後、Dokploy管理では通常ユーザーで標準dashboardを一度だけ作成します。CLIのupを使った場合は自動実行済みです。
 
+**Bash / Zsh共通**
+
 ```bash
 ./scripts/lakehouse.sh grafana-init
 ```
@@ -188,9 +216,20 @@ private設定を `COMPOSE_PROFILES=demo,monitoring` にします。Dokploy管理
 
 サーバー自身のブラウザーなら操作GUI `http://localhost:8501/`、Swagger `http://localhost:8502/docs`、Grafana `http://localhost:3000/` を開きます。**別のPCで作業する場合は操作用PCの端末** で次を実行し、接続中のままブラウザーを開きます。最初の2行は自分のSSH接続先を入力します。
 
+**Bash**
+
 ```bash
 read -r -p 'サーバーのSSHユーザー: ' SSH_LOGIN
 read -r -p 'サーバーのSSHホスト: ' SSH_TARGET
+ssh -N -L 8501:127.0.0.1:8501 -L 8502:127.0.0.1:8502 \
+  -L 3000:127.0.0.1:3000 "$SSH_LOGIN@$SSH_TARGET"
+```
+
+**Zsh**
+
+```zsh
+read -r 'SSH_LOGIN?サーバーのSSHユーザー: '
+read -r 'SSH_TARGET?サーバーのSSHホスト: '
 ssh -N -L 8501:127.0.0.1:8501 -L 8502:127.0.0.1:8502 \
   -L 3000:127.0.0.1:3000 "$SSH_LOGIN@$SSH_TARGET"
 ```
@@ -230,6 +269,8 @@ APIも試す場合はSwaggerの `Authorize` へprivate設定の `CONTROL_API_TOK
 
 Sparkは常駐クラスタを使います。明示の互換スモークも実行できます。
 
+**Bash / Zsh共通**
+
 ```bash
 ./scripts/lakehouse.sh spark-check
 ```
@@ -239,6 +280,8 @@ Sparkは常駐クラスタを使います。明示の互換スモークも実行
 ## 7. 停止・更新・復旧を決める
 
 Dokploy管理はGUIのStop、CLI管理は次を使います。
+
+**Bash / Zsh共通**
 
 ```bash
 ./scripts/lakehouse.sh down

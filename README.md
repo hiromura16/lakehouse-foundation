@@ -32,6 +32,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<docs/DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](docs/SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 **MES・ERPの素材を受け取り、Icebergで保存し、SQLとGUI・APIから使うデータレイクハウス基盤。** 公開Gitをcloneし、導入先の接続先・資格情報・保存先をGit外のprivate設定へ入力して構築します。会社のSQL Serverは既存の外部DBへ接続します。
 
 | Apache Iceberg | Lakekeeper | Trino | Apache Spark | Prometheus | Grafana | Cloudflare |
@@ -70,6 +82,8 @@
 
 **会社でDokploy管理にする場合は、レイクハウスをDeployする前にDokployを導入します。** Docker・社内proxy/CAの準備 → cloneとprivate設定 → Dokploy導入 → GUIから公開GitをDeploy、の順です。
 
+会社VMのログインシェルはBashでもZshでも使えます。各コマンドの共通/専用ラベルを確認し、Zshでは最初に [コメントと対話入力の準備](docs/SHELLS.md) を済ませます。Bash wrapperはZsh端末からもshebangで起動します。
+
 | 導入方法 | 共通準備の後に行うこと |
 | --- | --- |
 | Dokployを新規導入して管理 | 下記のインストーラー → DokployのGUIからDeploy |
@@ -79,6 +93,8 @@
 ### 共通準備
 
 Linux x86-64、Docker Engine / BuildKit、Docker Compose **2.23.1以上**、Python **3.12以上**、[uv **0.13.7**](https://docs.astral.sh/uv/getting-started/installation/)を用意します。通常ユーザーがDockerを管理できる環境を前提とします。会社のproxyが必要なら、image取得前に [企業proxy・CA手順](docs/COMPANY-PROXY.md) を済ませます。
+
+**Bash / Zsh共通**
 
 ```bash
 git clone https://github.com/hiromura16/lakehouse-foundation.git
@@ -114,6 +130,8 @@ private設定をエディターで開き、`LANDING_DIR`、`WORKER_UID/GID`、po
 
 まず設定値を検査・表示し、ホスト前提を検査して導入する時に `--apply` を付けます。一つ目はホストを変更せず、Docker・port等の全ホスト検査も行いません。既存Dokployを使う場合は、次のGUI設定へ進みます。
 
+**Bash / Zsh共通**
+
 ```bash
 bash infra/dokploy/install.sh --env-file "$LAKEHOUSE_ENV_FILE"
 sudo bash infra/dokploy/install.sh --env-file "$LAKEHOUSE_ENV_FILE" --apply
@@ -138,6 +156,8 @@ compose -p APP_NAME_FROM_HEADER --env-file infra/lakehouse/.env -f infra/lakehou
 
 Docker Composeを直接管理する場合は、共通準備の後に実行します。
 
+**Bash / Zsh共通**
+
 ```bash
 ./scripts/lakehouse.sh plan
 ./scripts/lakehouse.sh up
@@ -151,6 +171,8 @@ Docker Composeを直接管理する場合は、共通準備の後に実行しま
 ## 素材を投入し、結果を確かめる
 
 **素材の生成と、取り込み・変換は別の操作です。** GUIでbatch / finite stream、投入先、異常のpreset・個別選択・率を指定できます。型不正と、遅延・不良増等の業務異常を区別し、期待する隔離理由・Goldの変化・ファイル拒否を表示します。
+
+**Bash / Zsh共通**
 
 ```bash
 # 利用できる26シナリオを確認します。
@@ -188,6 +210,8 @@ python3 scripts/generate-demo.py --destination landing \
 ## 再現性と開発チェック
 
 自作Python環境はuvで構築し、依存はhash付きlock、imageとJARはdigest / checksumで固定します。Airflowは公式venvとconstraintsを維持します。[互換性](docs/COMPATIBILITY.md)
+
+**Bash / Zsh共通**
 
 ```bash
 uv venv --python 3.12 /absolute/private/lakehouse-dev

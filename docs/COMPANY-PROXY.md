@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 この手順は、会社のサーバーへ初めて配置する担当者向けです。ブラウザーで閲覧できること、Gitでcloneできること、Dockerがimageを取得できること、コンテナが外部へ通信できることを分けて確認します。実際の会社proxy・CA・認証方式では未検証です。ローカルの模擬認証proxyとTLS証明書で試験した範囲は末尾に示します。
 
 本書は2026-11-10に公開コードと公式資料を監査しました。通信経路ごとの作業を、レイクハウスを動かすLinuxホストで行います。通常利用者がprivate設定を編集し、`sudo` の付いたホスト設定だけを管理者が実施します。全コマンドの作業ディレクトリはcloneしたリポジトリのルートです。Dokploy管理の場合は、最後の反映先を既存の同じアプリに統一します。
@@ -40,6 +52,8 @@ PAC/WPADのURLを `HTTPS_PROXY` へ書くだけでは使えません。NTLM/Kerb
 ## 2. 非公開の設定を準備する
 
 リポジトリのルートで、daemon用のprivateテンプレートを作ります。
+
+**Bash / Zsh共通**
 
 ```bash
 ./scripts/configure-proxy.sh --init /absolute/private/proxy/proxy.env
@@ -68,11 +82,15 @@ daemon用 `proxy.env` は上の**6変数だけ**を受け付けます。`LAKEHOU
 
 まずplanを実行します。値の検査だけで、Dockerは再起動しません。
 
+**Bash / Zsh共通**
+
 ```bash
 ./scripts/configure-proxy.sh --env-file /absolute/private/proxy/proxy.env --plan
 ```
 
 Linuxのsystem Dockerへ適用するときだけ、管理者が次を実行します。
+
+**Bash / Zsh共通**
 
 ```bash
 sudo ./scripts/configure-proxy.sh --env-file /absolute/private/proxy/proxy.env --apply
@@ -82,6 +100,8 @@ sudo ./scripts/configure-proxy.sh --env-file /absolute/private/proxy/proxy.env -
 
 HTTPS検査を行う場合、daemonが使うホストの信頼ストアにも企業CAが必要です。Linuxの配置例は次のとおりです。実施前に正式な配布元とfingerprintを照合します。
 
+**Bash / Zsh共通**
+
 ```bash
 openssl x509 -in /absolute/private/certs/company-root.crt -noout -sha256 -fingerprint
 sudo install -m 0644 /absolute/private/certs/company-root.crt /usr/local/share/ca-certificates/lakehouse-corporate.crt
@@ -89,6 +109,8 @@ sudo update-ca-certificates
 ```
 
 Docker再起動の影響を確認した保守時間に、管理者が反映します。
+
+**Bash / Zsh共通**
 
 ```bash
 sudo systemctl daemon-reload
@@ -113,6 +135,8 @@ CAは公開証明書ですが、**追加した信頼は完成imageに残りま�
 CAを初めて追加・更新・削除するときは、secretの内容変更だけではbuild cacheが無効にならないため、`--no-cache` で作り直します。[Dockerのsecretとcache](https://docs.docker.com/build/cache/invalidation/#build-secrets)
 
 CLI管理では、repoルートの同じ端末で [OPERATIONS.mdの7Compose補助関数](OPERATIONS.md#postgresqlの論理dump例) `lakehouse_compose` を定義してから、次を実行します。関数はprivate値で子プロセス環境を揃えるため、古いshellのproxyに加え、project・profile・port等の補間差も防ぎます。
+
+**Bash / Zsh共通**
 
 ```bash
 export LAKEHOUSE_ENV_FILE="/absolute/private/site.env"
@@ -162,6 +186,8 @@ Trino、Lakekeeper、Grafana等の第三者imageへ、このBuildKit secretが�
 します。公開CA自体のmodeは0644で構いません。ホストの保存ディレクトリ全体を
 n8nへ渡す必要はありません。
 
+**Bash / Zsh共通**
+
 ```bash
 openssl x509 -in /absolute/private/certs/company-root.crt \
   -noout -sha256 -fingerprint
@@ -194,6 +220,8 @@ Code node、外部task runner、独自community nodeの通信まで一律に保�
 
 このスタックでは `LAKEHOUSE_NO_PROXY` がCompose補間用の正本です。通常利用者がprivate `site.env` を編集した後、リポジトリのルートで実行します。
 
+**Bash / Zsh共通**
+
 ```bash
 python3 scripts/configure.py --output /absolute/private/site.env --upgrade
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env plan
@@ -215,6 +243,8 @@ GUIでbypassの1項目を編集すると「会社追加分を含む希望の一�
 
 hostのツール用環境もuvで作ります。既存Pythonの絶対パスは導入先に合わせます。
 
+**Bash / Zsh共通**
+
 ```bash
 UV_PYTHON_DOWNLOADS=never uv venv --python /usr/bin/python3.12 /absolute/private/proxy-tools
 /absolute/private/proxy-tools/bin/python scripts/proxy-doctor.py \
@@ -224,6 +254,8 @@ UV_PYTHON_DOWNLOADS=never uv venv --python /usr/bin/python3.12 /absolute/private
 `--check`なしは通信せず、6変数のpresence・大小文字一致・固定内部serviceのbypass設定だけを返します。値、認証情報、CAの実pathは表示しません。
 
 外向きの試験は許可された固定IDを選びます。任意URLは指定できません。
+
+**Bash / Zsh共通**
 
 ```bash
 /absolute/private/proxy-tools/bin/python scripts/proxy-doctor.py \
@@ -310,6 +342,8 @@ SSRFの設定値、内部workerの例外、NO_PROXYとの違い、GUI保存と�
 | build | image内へPython依存・JAR等を組み込む段階 | 完成したコンテナを起動して使う段階 |
 
 初回の成功条件は、**一つのブラウザーで開けることではなく、実際に通信する各主体で期待した経路を通ること**です。通常利用者は下記のオフライン確認を行い、結果のbooleanと終了コードだけを私有の導入記録へ残します。まだ配置していない環境でも使えます。
+
+**Bash / Zsh共通**
 
 ```bash
 export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
