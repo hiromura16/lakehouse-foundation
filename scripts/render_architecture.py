@@ -10,32 +10,28 @@ import re
 from html import escape
 from pathlib import Path
 
+from svg_primitives import COLORS, svg_rectangle, svg_text
+
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "docs/assets"
 FONT = "Noto Sans CJK JP, Hiragino Sans, Yu Gothic, sans-serif"
-INK = "#14263d"
-BLUE = "#216bc4"
+INK = COLORS["architecture_ink"]
+BLUE = COLORS["architecture_blue"]
 
 
 def text(x, y, value, size=18, fill=INK, weight=400):
     """Escape diagram labels before writing them as SVG text nodes."""
-    return (
-        f'<text x="{x}" y="{y}" fill="{fill}" font-family="{FONT}" '
-        f'font-size="{size}" font-weight="{weight}">{escape(value)}</text>'
-    )
+    return svg_text(x, y, value, size, fill, weight, font=FONT)
 
 
 def rect(x, y, width, height, fill="#fff", stroke="#d7e0ec", radius=16):
     """Draw a consistent rounded container."""
-    return (
-        f'<rect x="{x}" y="{y}" width="{width}" height="{height}" '
-        f'rx="{radius}" fill="{fill}" stroke="{stroke}"/>'
-    )
+    return svg_rectangle(x, y, width, height, fill, stroke, radius)
 
 
 def logo(name, x, y, width=52, height=52):
     """Embed the unchanged upstream mark and contain its aspect ratio."""
-    content = (ASSETS / "logos" / (name + ".svg")).read_text()
+    content = (ASSETS / "logos" / (name + ".svg")).read_text(encoding="utf-8")
     # Dimension-only upstream marks need an equivalent scaling viewport.
     opening = re.search(r"<svg\b[^>]*>", content).group()
     if "viewBox=" not in opening:
@@ -287,7 +283,7 @@ def main():
         ("architecture.svg", platform),
         ("ai-cloudflare.svg", hybrid),
     ]:
-        (ASSETS / filename).write_text(renderer() + "\n")
+        (ASSETS / filename).write_text(renderer() + "\n", encoding="utf-8")
         print("Rendered docs/assets/" + filename)
 
 

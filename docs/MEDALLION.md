@@ -1,6 +1,34 @@
 # MES・ERPデータをBronzeからGoldへ整える
 
+<!-- doc-purpose:start -->
+> **役割:** 6契約の取り込み、最新版採用、不正行隔離、Gold集計と再投入の規則を追う。
+>
+> **対象読者:** データ利用担当 / 開発・設計担当
+>
+> **読むタイミング:** 素材から業務値へ変換する意味を理解し、品質や更新結果を照合するとき。
+>
+> **前提となる資料:** [用語を役割と実際の操作へ結び付ける](<GLOSSARY.md>) / [MES・ERPのダミーデータ投入](<DEMO-DATA.md>)
+>
+> **次に読む資料:** [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>) / [SQL Server の変更を Iceberg へ反映する](<CDC.md>) / [ソース・指標・API・計算基盤を拡張する](<CUSTOMIZATION.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 この文書は、同梱の6ソースを使う**ファイル取り込みとメダリオン変換**の説明です。最初に1件の製造指図と受注を追い、その後で再投入・更新・不正行・失敗時の動きを確認します。確認日: 2026-11-10（JST）。初回導入は [START-HERE.md](START-HERE.md)、配置詳細は [DEPLOYMENT.md](DEPLOYMENT.md)、素材の生成は [DEMO-DATA.md](DEMO-DATA.md)、画面からの実行は [GUI-WALKTHROUGHS.md](GUI-WALKTHROUGHS.md) を参照してください。
+
+## 読み始める前の用語と到達点
+
+メダリオンは、原本を受け取った状態、業務明細として整えた状態、意思決定向けに集計した状態を分ける考え方です。本キットのBronze/Silver/Goldは製品名ではなく、SQLとnamespaceで実装した役割です。
+
+| 用語 | この処理での意味 | 間違えやすい点 |
+| --- | --- | --- |
+| 主キー | 例: 同じ製造イベントを識別するevent_id | ファイル名や到着順とは別 |
+| 最新版 | 同じ主キーの更新時刻等で選ぶ候補 | 最新の到着ファイルが常に正しいわけではない |
+| 隔離 | 最新候補の問題を理由付きで保存 | 原本を消すことや、全異常の自動修正ではない |
+| 粒度 | Goldの1行が表す単位 | 生産は工場日、出荷は受注で異なる |
+| snapshot | Iceberg表のある版 | 複数表全体の共通版ではない |
+
+初学者は「1件の指図と分納を追う」まで、中級者は再投入と失敗時の扱いまで、変更担当者はSQL/契約/独立期待値の対応まで読み進めます。初回の操作担当は通常ユーザーでGUIから明示実行し、SQLの調査は同じ検証用環境のTrinoを使います。[学習の順序](LEARNING-PATH.md)
 
 ## 1. それぞれの層で何を保存するか
 
@@ -326,3 +354,39 @@ verifyはさらに画像1枚の原本バイト列とハッシュを照合しま�
 表置換・snapshot参照の根拠は [Trino 484 Iceberg connector](https://github.com/trinodb/trino/blob/484/docs/src/main/sphinx/connector/iceberg.md#replace-tables)、REST/FileIOは [PyIceberg 0.12.0設定](https://github.com/apache/iceberg-python/blob/pyiceberg-0.12.0/mkdocs/docs/configuration.md) です。初期化順は [Lakekeeper 0.14.3公式例](https://github.com/lakekeeper/lakekeeper/blob/v0.14.3/docker-compose/docker-compose.yaml) を照合しています。Silverの優先順位、隔離理由、Goldの業務式は本リポジトリ固有のSQLであり、これらの製品の標準メダリオン設定ではありません。
 
 最初は [初回ガイド](START-HERE.md) のGUIでclean投入→変換→プレビューを確認します。固定期待値を照合する `verify` は **業務SQL10検査＋画像1検査の11項目**です。会社データの受入は別の期待値・同一範囲で行います。[全バージョンの根拠](REFERENCES.md)
+
+## 数値が違うときは1つの業務キーから戻る
+
+全体合計だけでは、型不正、改訂、親参照、結合増幅のどれかを区別できません。まずプレビューの1つの工場日または受注を選び、次の順で調べます。調査SQLはTrino対応クライアントで同じ検証用catalogへ実行し、書込みSQLへ置き換えません。
+
+```sql
+SELECT event_id, updated_at, good_qty, reject_qty,
+       _source_file, _source_hash
+FROM iceberg.bronze.mes_events
+ORDER BY event_id, updated_at
+LIMIT 100;
+```
+
+これはBronzeの元文字列を先頭100行で確認するSQLです。追いたい業務キーがある場合は、そのキーへ絞って全版を確認します。`updated_at` の文字列順がSQL本体の安全な時刻パース・順位付けと同じになるとは限りません。採用した版はSilver、拒否した最新版と元文字列はQuarantineを確認します。
+
+| 症状 | 追う順序 | 追加で確認すること |
+| --- | --- | --- |
+| 良品が減った | event_idの全版→最新候補→隔離理由 | 最新版だけが不正になっていないか |
+| 出荷が消えた | shipment_id→sales_order_id→受注の採用状態 | 親が隔離されて参照切れになっていないか |
+| 生産日が想定外 | event_timeのUTC日→更新時刻→取込時刻 | 業務日と到着日を混同していないか |
+| 数量が倍になる | 子明細件数→事前集約→JOIN後件数 | 指図×実績×停止、受注×分納の行増幅 |
+| ファイルを消しても残る | `_source_file` と現在の台帳 | ファイル削除はDBのDELETEではない |
+
+型規則を調べるときは [01_silver.sql](../medallion/01_silver.sql) と [02_quarantine.sql](../medallion/02_quarantine.sql) を同じ変更として読みます。親を判定する順序とCASEの先頭理由も確認します。Goldだけを手修正しても、次のmedallionで再構築されます。
+
+## SQL規則を変更する前に固定するもの
+
+たとえば「停止時間を日跨ぎで按分したい」場合は、開始日へ全計上する現ルールを変更する業務仕様です。単にSQLを短くする変更として扱わず、日付境界、タイムゾーン、重複区間、分単位の端数、計画のみの日を定義します。
+
+1. 入力の粒度・主キー・時刻の意味と、変えたいGold列の式を文章へ書きます。
+2. 2日を跨ぐ停止、0分、逆転時刻を含む小さい合成入力と独立期待値を用意します。
+3. Silver/Quarantine/GoldのSQLを変更し、既存fixtureと新条件を両方照合します。
+4. 通常ファイルとCDCの両namespaceで同じ業務規則になるかを確認します。
+5. 利用者が複数表を読む時間帯を決め、14文全体の途中状態を公開してよいかを判断します。
+
+現実装は各表のatomic replaceまでです。実行世代の一括公開、全表rollback、長期snapshot削除、並列writerの調停、OEEやロット引当は、必要な要件を決めて追加します。export時の参照SQL hashだけで過去snapshotの生成規則を証明することもできません。[カスタマイズ](CUSTOMIZATION.md)・[AIの由来情報](AI-READINESS.md)

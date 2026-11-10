@@ -1,13 +1,14 @@
--- Daily factory quantities combine independent one-row-per-factory/day
--- aggregates.
--- Events and downtime join the unique Silver work order master before
--- aggregation.
--- Do not join raw events to shipments or downtime: that multiplies production
--- rows.
--- Event dates are UTC. Downtime minutes are assigned to the UTC start date.
--- No shift calendar or speed baseline is assumed, so this is not an OEE
--- calculation.
+-- 役割: 採用済みSilverから、工場×日と受注ごとの業務指標を作る。
+-- 入力はSilverの指図・受注・出荷・実績・停止、出力はGold2表。
+-- 01_silver.sqlの後に読む/実行する。
+-- 工場日別では計画・生産・停止を別々に同じ粒度へ集計してから結合する。
+-- 実績明細と停止明細を直接JOINすると行が掛け算になり、数量が水増しされる。
+-- イベントの日付はUTC。停止時間はUTCの開始日に全量を割り当て、日跨ぎ分割しない。
+-- シフト暦や速度基準を持たないため、歩留まり/計画達成をOEEと読み替えない。
+-- 各CREATE OR REPLACEは表単位commitで、2表同時のsnapshotではない。
+
 CREATE OR REPLACE TABLE iceberg.gold.factory_daily_production AS
+-- 計画日がDATEで定義された指図を、まず工場×予定日へまとめる。
 WITH plans AS (
     SELECT
         factory_id,
@@ -17,6 +18,7 @@ WITH plans AS (
     GROUP BY factory_id, planned_date
 ),
 
+-- 一意な指図から工場を引き、生産イベントのUTC日ごとに良品/不良を集計する。
 production AS (
     SELECT
         w.factory_id,
@@ -28,6 +30,7 @@ production AS (
     GROUP BY w.factory_id, cast(e.event_time AT TIME ZONE 'UTC' AS DATE)
 ),
 
+-- 秒差を分へ換算する。重なった停止区間の統合や、日付境界での分割はしない。
 downtime AS (
     SELECT
         w.factory_id,
@@ -38,6 +41,7 @@ downtime AS (
     GROUP BY w.factory_id, cast(d.start_time AT TIME ZONE 'UTC' AS DATE)
 ),
 
+-- 計画だけ/実績だけ/停止だけの日も残すため、各集計のキーを和集合にする。
 factory_dates AS (
     SELECT
         factory_id,
@@ -55,6 +59,7 @@ factory_dates AS (
     FROM downtime
 ),
 
+-- 既に1行/工場日になった集計同士を結び、該当しない数量は0として揃える。
 combined AS (
     SELECT
         k.factory_id,
@@ -72,6 +77,8 @@ combined AS (
         ON k.factory_id = d.factory_id AND k.production_date = d.production_date
 )
 
+-- 歩留まりは良品/(良品+不良)、計画達成率は良品/計画数。行率の単純平均ではない。
+-- 分母0はNULL(未定義)とし、100e0で整数除算を避け、表示用に小数2桁へ丸める。
 SELECT
     *,
     good_qty + reject_qty AS total_qty,
@@ -81,13 +88,12 @@ SELECT
         AS plan_adherence_pct
 FROM combined;
 
--- Sales is one row per unique order. Shipments aggregate before joining the
--- order.
--- A delivery is late when its UTC shipping date is after the promised date.
--- Open quantity is floored at zero. Over-fulfillment can exceed 100 percent.
--- The positive-quantity Silver contract prevents zero denominators, and NULLIF
--- also makes the calculation safe if that contract is later relaxed.
+-- 受注別の出荷充足: 出荷明細を先に受注1行へ集計してから受注明細へ結ぶ。
+-- 遅延は「UTC出荷日 > 約束日」の出荷分。未出荷の期限超過を数える指標ではない。
+-- 未出荷数は0を下限とする一方、過剰出荷の充足率は100%を超えたまま示す。
+-- Silverの受注数は正数だが、将来の契約変更に備えて分母もNULLIFで保護する。
 CREATE OR REPLACE TABLE iceberg.gold.sales_fulfillment AS
+-- 同一受注に複数出荷があっても、受注数・単価を重複計上しない粒度へ畳む。
 WITH shipment_totals AS (
     SELECT
         s.sales_order_id,
@@ -106,6 +112,7 @@ WITH shipment_totals AS (
     GROUP BY s.sales_order_id
 )
 
+-- LEFT JOINで出荷のない受注も残す。数量は0、最終出荷時刻はNULLのままになる。
 SELECT
     o.sales_order_id,
     o.factory_id,

@@ -1,5 +1,19 @@
 # GrafanaのGUI編集と保存
 
+<!-- doc-purpose:start -->
+> **役割:** GrafanaのGUIでdashboardを編集・保存し、収集対象とPromQLの意味を確認する。
+>
+> **対象読者:** データ利用担当 / 運用担当
+>
+> **読むタイミング:** monitoring起動後に初期dashboardを整え、監視値を解釈・引き継ぐとき。
+>
+> **前提となる資料:** [n8n・Airflow・Grafanaを画面から使う](<GUI-WALKTHROUGHS.md>)
+>
+> **次に読む資料:** [平時・更新・復旧の運用手順](<OPERATIONS.md>) / [症状から確認する](<TROUBLESHOOTING.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 照合日: 2026-11-10。Grafana **13.3.0** とPrometheus **3.16.0**、`scripts/grafana_setup.py` が対象です。ダッシュボードの正本はGrafanaでGUIから保存した内容です。ComposeはGrafanaの起動、Prometheus datasource、永続volumeを管理し、ダッシュボードJSONを継続的にprovisionしません。
 
 ## 何をどこへ保存するか
@@ -54,6 +68,20 @@ CLIを使わない場合は次の手順で同じテンプレートをGUIへ取�
 Grafana.comのIDや外部URLを入力しなくても、同梱JSONだけで初期画面を作れます。企業proxy経由の外部Dashboard取得も不要です。[Grafana公式のImport手順](https://grafana.com/docs/grafana/latest/visualizations/dashboards/build-dashboards/import-dashboards/)
 
 テンプレートは `editable: true` のclassic dashboard JSONです。インポートにはGrafana 13の新APIを使い、`metadata.name` にUID、`spec` にダッシュボードのモデルを渡します。旧 `/api/dashboards/db` へのfallbackは実装しません。[Dashboard API](https://grafana.com/docs/grafana/latest/developer-resources/api-reference/http-api/dashboard/)
+
+## グラフが示す範囲を、1ジョブで理解する
+
+初回は合成データ専用環境で、workerを再起動せずに1回のmedallionまたはverifyを実行します。実行前後の `lakehouse_successful_runs` と `lakehouse_last_success` を比べ、15秒scrapeの反映を待ちます。verifyもworkerの成功ジョブに含まれるため、成功件数を会社の処理済み受注数として扱いません。
+
+| 式・表示 | 読めること | 読めないこと |
+| --- | --- | --- |
+| `up{job="lakehouse"}` | Prometheusからmetrics endpointへ到達できるか | 次のメダリオンが成功するか、会社SQLへ接続できるか |
+| `lakehouse_ready` | workerの初期化が完了したか | blockedがないこと。停止判断はblockedも見る |
+| `lakehouse_blocked` | Trino取消の確認待ちで新規処理を止めているか | どの業務行が不正だったか |
+| `lakehouse_imported_files` | 現workerが取り込んだ原本数の累計 | 現在のGold行数、全履歴の原本総数 |
+| `lakehouse_last_success` | 最後の成功時刻のepoch秒 | ソースDBの最終更新時刻や業務データの鮮度 |
+
+workerの件数・時刻はプロセスメモリにあり、再起動で初期値へ戻ります。Prometheusの過去の観測と、現在のworkerの値を区別します。長期の実行監査台帳や、元DB更新からGold到着までの遅延計測を、この値だけで完成したものとはしません。
 
 ## GUIで編集する
 
@@ -114,6 +142,32 @@ GUI exportはDashboardの **Export → Export as code → Advanced options** で
 GUIで管理者パスワードを変更した場合は、private設定も現在の値へ合わせます。永続DBがある状態でComposeの初期パスワード環境変数だけを変更しても、既存の管理者パスワードがその値へ変更されるとは限りません。
 
 GUI内容の永続化にはGrafanaの名前付きvolumeが必要です。JSON exportはダッシュボードの控えであり、利用者、権限、datasourceの資格情報等を含むGrafana全体のバックアップとは別です。データ移行時はvolume、現在の認証情報、必要なバックアップと復元手順を保持します。
+
+## 最終成功からの経過秒をパネルへ追加する
+
+PrometheusのExpression画面で次の式を試してから、Grafanaの新しいパネルへ同じ式を設定できます。
+
+```promql
+(time() - lakehouse_last_success) and (lakehouse_last_success > 0)
+```
+
+`time()` は式を評価する時刻です。初回未実行の0を除外し、成功時刻がある場合だけ秒数を表示します。Grafanaでは秒の単位とわかるTitle/Unitを選び、パネルとDashboardを保存します。期間を過去へ動かした場合も、その評価時点の経過秒です。[Prometheus 3.16のtime関数](https://prometheus.io/docs/prometheus/3.16/querying/functions/#time)
+
+### No data・0・1を別々に調べる
+
+| 観測 | 確認順 |
+| --- | --- |
+| No data | datasourceを選ぶ→時間範囲→Prometheus Targets→対象metric名 |
+| upが0 | workerのcontainer/port/内部経路を確認。Grafanaのパネル削除では直らない |
+| readyが0 | bootstrap中か初期化失敗かをworkerログの種別で確認 |
+| readyが1でblockedも1 | 初期化済みでも新規処理を止めている。残存queryを管理者が確認 |
+| 件数が0へ戻った | worker再起動の有無を確認。過去TSDBや業務tableが削除されたとは即断しない |
+
+## 監視を広げるときの変更単位
+
+host/GPU/DB/CDC lag等を追加する場合は、exporterまたは収集方法、scrape先、保持量、Dashboard、通知条件、対応者を一組で設計します。現在の標準targetはworkerとPrometheus自身だけです。Grafanaで新しいパネルを作っただけでは、未収集の指標は増えません。
+
+Dashboardの受入ではGUI変更→Save→再読込→同じvolumeで再起動→grafana-init再実行の順に保持を確認します。template変更の受入は別の空の検証環境で行い、既存UIDのGUI編集を上書きしないことも確認します。[初期化コード](../scripts/grafana_setup.py)・[回帰テスト](../tests/test_grafana_setup.py)・[監視の構成図](reports/figures/10-observability.svg)
 
 ## 今回照合した一次資料と実装
 

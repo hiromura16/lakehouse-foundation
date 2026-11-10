@@ -1,13 +1,17 @@
--- Rejected latest MES/ERP records, with original strings and a stable reason
--- code.
--- Run after 01_silver.sql. Reference checks use that run's clean parent
--- tables.
--- Superseded versions and exact duplicates are not quarantine rows.
--- Each replacement commits independently. A concurrent multi-table read is not
--- a snapshot.
+-- 役割: Silverへ採用しなかった「最新候補」を、理由と元の文字列付きで保存する。
+-- 入力はBronzeと更新済みSilverの親表。出力は6つのQuarantine表の置き換え。
+-- 01_silver.sqlの後に実行し、同じ typed → ranked → latest → checkedを使う。
+-- Silverとの差は最終条件がvalidation_reason IS NOT NULLである点。
+-- 過去版や重複排除された行の全件台帳ではなく、最新候補の不正だけが対象。
+-- raw_record_jsonに変換前文字列、_source_*に原本の出所が残るため原因を追える。
+-- CASEの上から最初に該当した1理由だけを保存し、全違反を列挙するわけではない。
+-- 親表の不採用によるunknown_*も今回のSilverに対して判定する。
+-- 各表は独立commit。同時参照で全表が同じ世代に揃う保証はない。
 
--- erp_products: preserve original values even when typed values are NULL.
+-- erp_products: 製品マスター。業務キーproduct_idごとに1つの候補を判定する。
+-- 型変換結果がNULLでも、原因となった文字列はraw_record_jsonで確認する。
 CREATE OR REPLACE TABLE iceberg.quarantine.erp_products AS
+-- TRYで変換できない値をNULLにし、型の不正として後段へ渡す。
 WITH typed AS (
     SELECT
         product_id,
@@ -40,6 +44,7 @@ WITH typed AS (
     FROM iceberg.bronze.erp_products
 ),
 
+-- 更新時刻の同値を、原本hash→取込時刻→元値JSONの順で比較する。
 ranked AS (
     SELECT
         *,
@@ -52,11 +57,14 @@ ranked AS (
     FROM typed
 ),
 
+-- 品質の良否を見る前に各キーの1位を確定し、古い版への復活を防ぐ。
 latest AS (
     SELECT * FROM ranked
     WHERE version_rank = 1
 ),
 
+-- 標準サイクルは正数。名称欠落もmissing_keyとして扱う。
+-- 複数の問題がある場合も、CASEで先に現れた理由を代表値にする。
 checked AS (
     SELECT
         *,
@@ -73,6 +81,7 @@ checked AS (
     FROM latest
 )
 
+-- 不正な最新候補だけを保存し、理由と元値を修正・再投入の照合に使う。
 SELECT
     product_id,
     updated_at,
@@ -84,8 +93,10 @@ SELECT
 FROM checked
 WHERE validation_reason IS NOT NULL;
 
--- erp_work_orders: preserve original values even when typed values are NULL.
+-- erp_work_orders: 製造指図。業務キーwork_order_idごとに1つの候補を判定する。
+-- 型変換結果がNULLでも、原因となった文字列はraw_record_jsonで確認する。
 CREATE OR REPLACE TABLE iceberg.quarantine.erp_work_orders AS
+-- TRYで変換できない値をNULLにし、型の不正として後段へ渡す。
 WITH typed AS (
     SELECT
         work_order_id,
@@ -118,6 +129,7 @@ WITH typed AS (
     FROM iceberg.bronze.erp_work_orders
 ),
 
+-- 更新時刻の同値を、原本hash→取込時刻→元値JSONの順で比較する。
 ranked AS (
     SELECT
         *,
@@ -130,11 +142,14 @@ ranked AS (
     FROM typed
 ),
 
+-- 品質の良否を見る前に各キーの1位を確定し、古い版への復活を防ぐ。
 latest AS (
     SELECT * FROM ranked
     WHERE version_rank = 1
 ),
 
+-- 予定数0は許容し、製品が今回のSilverマスターに存在するかを確認する。
+-- 複数の問題がある場合も、CASEで先に現れた理由を代表値にする。
 checked AS (
     SELECT
         *,
@@ -157,6 +172,7 @@ checked AS (
     FROM latest
 )
 
+-- 不正な最新候補だけを保存し、理由と元値を修正・再投入の照合に使う。
 SELECT
     work_order_id,
     updated_at,
@@ -168,8 +184,10 @@ SELECT
 FROM checked
 WHERE validation_reason IS NOT NULL;
 
--- erp_sales_orders: preserve original values even when typed values are NULL.
+-- erp_sales_orders: 受注。業務キーsales_order_idごとに1つの候補を判定する。
+-- 型変換結果がNULLでも、原因となった文字列はraw_record_jsonで確認する。
 CREATE OR REPLACE TABLE iceberg.quarantine.erp_sales_orders AS
+-- TRYで変換できない値をNULLにし、型の不正として後段へ渡す。
 WITH typed AS (
     SELECT
         sales_order_id,
@@ -208,6 +226,7 @@ WITH typed AS (
     FROM iceberg.bronze.erp_sales_orders
 ),
 
+-- 更新時刻の同値を、原本hash→取込時刻→元値JSONの順で比較する。
 ranked AS (
     SELECT
         *,
@@ -220,11 +239,14 @@ ranked AS (
     FROM typed
 ),
 
+-- 品質の良否を見る前に各キーの1位を確定し、古い版への復活を防ぐ。
 latest AS (
     SELECT * FROM ranked
     WHERE version_rank = 1
 ),
 
+-- 受注数は正数・単価は0以上。約束日が受注日より前の版は採用しない。
+-- 複数の問題がある場合も、CASEで先に現れた理由を代表値にする。
 checked AS (
     SELECT
         *,
@@ -251,6 +273,7 @@ checked AS (
     FROM latest
 )
 
+-- 不正な最新候補だけを保存し、理由と元値を修正・再投入の照合に使う。
 SELECT
     sales_order_id,
     updated_at,
@@ -262,8 +285,10 @@ SELECT
 FROM checked
 WHERE validation_reason IS NOT NULL;
 
--- erp_shipments: preserve original values even when typed values are NULL.
+-- erp_shipments: 出荷明細。業務キーshipment_idごとに1つの候補を判定する。
+-- 型変換結果がNULLでも、原因となった文字列はraw_record_jsonで確認する。
 CREATE OR REPLACE TABLE iceberg.quarantine.erp_shipments AS
+-- TRYで変換できない値をNULLにし、型の不正として後段へ渡す。
 WITH typed AS (
     SELECT
         shipment_id,
@@ -293,6 +318,7 @@ WITH typed AS (
     FROM iceberg.bronze.erp_shipments
 ),
 
+-- 更新時刻の同値を、原本hash→取込時刻→元値JSONの順で比較する。
 ranked AS (
     SELECT
         *,
@@ -305,11 +331,14 @@ ranked AS (
     FROM typed
 ),
 
+-- 品質の良否を見る前に各キーの1位を確定し、古い版への復活を防ぐ。
 latest AS (
     SELECT * FROM ranked
     WHERE version_rank = 1
 ),
 
+-- 出荷数は正数とし、採用済み受注が存在する明細だけを通す。
+-- 複数の問題がある場合も、CASEで先に現れた理由を代表値にする。
 checked AS (
     SELECT
         *,
@@ -331,6 +360,7 @@ checked AS (
     FROM latest
 )
 
+-- 不正な最新候補だけを保存し、理由と元値を修正・再投入の照合に使う。
 SELECT
     shipment_id,
     updated_at,
@@ -342,8 +372,10 @@ SELECT
 FROM checked
 WHERE validation_reason IS NOT NULL;
 
--- mes_events: preserve original values even when typed values are NULL.
+-- mes_events: 生産実績イベント。業務キーevent_idごとに1つの候補を判定する。
+-- 型変換結果がNULLでも、原因となった文字列はraw_record_jsonで確認する。
 CREATE OR REPLACE TABLE iceberg.quarantine.mes_events AS
+-- TRYで変換できない値をNULLにし、型の不正として後段へ渡す。
 WITH typed AS (
     SELECT
         event_id,
@@ -376,6 +408,7 @@ WITH typed AS (
     FROM iceberg.bronze.mes_events
 ),
 
+-- 更新時刻の同値を、原本hash→取込時刻→元値JSONの順で比較する。
 ranked AS (
     SELECT
         *,
@@ -388,11 +421,14 @@ ranked AS (
     FROM typed
 ),
 
+-- 品質の良否を見る前に各キーの1位を確定し、古い版への復活を防ぐ。
 latest AS (
     SELECT * FROM ranked
     WHERE version_rank = 1
 ),
 
+-- 良品・不良数は0以上。工場は採用済み製造指図との関連から後段で求める。
+-- 複数の問題がある場合も、CASEで先に現れた理由を代表値にする。
 checked AS (
     SELECT
         *,
@@ -414,6 +450,7 @@ checked AS (
     FROM latest
 )
 
+-- 不正な最新候補だけを保存し、理由と元値を修正・再投入の照合に使う。
 SELECT
     event_id,
     updated_at,
@@ -425,8 +462,10 @@ SELECT
 FROM checked
 WHERE validation_reason IS NOT NULL;
 
--- mes_downtime: preserve original values even when typed values are NULL.
+-- mes_downtime: 設備停止区間。業務キーdowntime_idごとに1つの候補を判定する。
+-- 型変換結果がNULLでも、原因となった文字列はraw_record_jsonで確認する。
 CREATE OR REPLACE TABLE iceberg.quarantine.mes_downtime AS
+-- TRYで変換できない値をNULLにし、型の不正として後段へ渡す。
 WITH typed AS (
     SELECT
         downtime_id,
@@ -459,6 +498,7 @@ WITH typed AS (
     FROM iceberg.bronze.mes_downtime
 ),
 
+-- 更新時刻の同値を、原本hash→取込時刻→元値JSONの順で比較する。
 ranked AS (
     SELECT
         *,
@@ -471,11 +511,14 @@ ranked AS (
     FROM typed
 ),
 
+-- 品質の良否を見る前に各キーの1位を確定し、古い版への復活を防ぐ。
 latest AS (
     SELECT * FROM ranked
     WHERE version_rank = 1
 ),
 
+-- 終了が開始より前の区間を拒否する。同時刻の開始・終了は許容する。
+-- 複数の問題がある場合も、CASEで先に現れた理由を代表値にする。
 checked AS (
     SELECT
         *,
@@ -497,6 +540,7 @@ checked AS (
     FROM latest
 )
 
+-- 不正な最新候補だけを保存し、理由と元値を修正・再投入の照合に使う。
 SELECT
     downtime_id,
     updated_at,

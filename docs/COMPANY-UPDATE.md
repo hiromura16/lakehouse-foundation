@@ -1,5 +1,19 @@
 # 会社VMの修正を取り込み、Dokployへ再配置する
 
+<!-- doc-purpose:start -->
+> **役割:** 既存の設定・鍵・volumeを保持し、会社VMの修正を取り込んでDokployへ再配置する。
+>
+> **対象読者:** 基盤構築担当 / 運用担当
+>
+> **読むタイミング:** 既に動いている環境へ公開Gitの互換性修正を反映するとき。
+>
+> **前提となる資料:** [Dokploy 0.31.0でGitから配置する](<DOKPLOY.md>) / [サイト設定リファレンス](<CONFIGURATION.md>)
+>
+> **次に読む資料:** [平時・更新・復旧の運用手順](<OPERATIONS.md>) / [症状から確認する](<TROUBLESHOOTING.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 対象: 導入済みの会社VMと **Dokploy v0.31.0**。初めて導入する場合は [はじめに](START-HERE.md) から進みます。この文書では、既存のSamba・Dokploy・Swarm・保存データを保持し、公開Gitの互換性修正を取り込んでアプリを配置し直します。ホスト名・IP・proxy認証・CA実pathはprivate設定へ残します。
 
 画面名は[採用tagの公式UI](https://github.com/Dokploy/dokploy/tree/v0.31.0/apps/dokploy/components/dashboard/compose)で確認しています。所属Environmentの設定画面と、**Composeサービス自身のEnvironmentタブ**を区別してください。[初回の詳しい画面手順](DOKPLOY.md)
@@ -16,6 +30,21 @@
 Docker Composeの補間はshell変数をenv fileより優先します。専用変数へ正規化し、Dokployのサービス変数にも登録します。[Docker公式の補間仕様](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/)
 
 これらはソース修正です。**既存Dokploy／Swarmの再初期化、daemon再起動、volume削除は更新の必須操作ではありません。** アプリのDeployでは必要なcontainerが再作成されることがあるため、更新時間を決めます。データ・暗号鍵の控えと復元の準備は [運用手順](OPERATIONS.md) を使います。
+
+## 更新前後で一組として照合する記録
+
+更新担当は、次の表を公開Git外の運用記録へ用意します。秘密値を表へ貼らず、保管場所や同一性を確認した結果だけを残します。
+
+| 記録欄 | 更新前 | 更新後の合格条件 |
+| --- | --- | --- |
+| Git commit / 配置管理者 | 現在の版とCLI/Dokployの担当 | 意図した版を同じ管理入口から配置 |
+| 実appName / project名 | ヘッダーとCLI設定の対応 | 変更しない、または承認した移行先と一致 |
+| profile / host port | 稼働中に選んでいる機能 | 追加・削除の意図が説明でき、他環境と競合しない |
+| volume / 外部dir | 物理volume名とlanding/workspaceの対応 | 既存データを使う先が一致 |
+| 暗号鍵 / DB資格情報 | private管理先で確認 | 通常更新では保持。ローテーションは別の手順 |
+| 直前ジョブ / データ件数 | 実行中か、最終成功と照合範囲 | 二重writerがなく、同じ範囲を読戻せる |
+
+更新後にデータが空に見える場合は、新規素材の投入より先にこの対応を確認します。再投入で表を埋めると、元のvolumeを選べていない問題を隠すことがあります。
 
 ## 1. 配置先VMで現在の名前と設定を控える
 
@@ -85,6 +114,38 @@ python3 scripts/proxy-doctor.py --env-file "$LAKEHOUSE_ENV_FILE"
 `LAKEHOUSE_NO_PROXY` は、必須内部名 → privateの既存 `LAKEHOUSE_NO_PROXY` → `NO_PROXY` → `no_proxy` の順に空白と重複を除いて作ります。会社の追加名・IP・CIDRを保持し、3項目を同じ値へ揃えます。親shellのlegacy値はこの正規化へ取り込みません。確定済みの専用変数をshellへ別値でexportしません。
 
 **期待結果:** planが成功し、診断で内部serviceのbypassが有効です。診断だけの成功はdaemon pull、build、Java、実会社proxyまでの成功ではありません。CAを使う場合は正式な公開PEMと適用先も [会社proxy](COMPANY-PROXY.md) で確認します。n8nの宛先許可は別の [SSRF設定](SSRF.md)です。
+
+### `.before-upgrade` が既にある場合
+
+変更が必要なupgradeで既存backupがあると、現在の実装は `An upgrade backup already exists.` と退避・再実行の案内を返します。元envとbackupは書き換えません。ファイルが既に最新で変更がない場合は、backupが存在していても成功します。
+
+エラーを見たときだけ、既存backupを私有記録と照合して保管します。手順1で作った `UPDATE_BACKUP_DIR` を同じ端末で保持している場合の例です。
+
+```bash
+: "${LAKEHOUSE_ENV_FILE:?Select the private env first}"
+: "${UPDATE_BACKUP_DIR:?Create the private backup directory first}"
+UPGRADE_BACKUP="${LAKEHOUSE_ENV_FILE}.before-upgrade"
+SAVED_UPGRADE_BACKUP="$UPDATE_BACKUP_DIR/site.before-upgrade.env"
+if [ -e "$SAVED_UPGRADE_BACKUP" ]; then
+  printf '%s\n' 'Backup destination already exists; choose a new private location.'
+else
+  mv -n -- "$UPGRADE_BACKUP" "$SAVED_UPGRADE_BACKUP"
+fi
+```
+
+`mv -n` は保存先を上書きしません。移動先が既にある場合や元backupが見つからない場合は、削除せず保管状況を確認します。退避先が0600であり、元backupが移動したことを確認してから `configure.py --upgrade` を再実行します。バックアップ内の秘密値を端末へ全文表示する必要はありません。
+
+### 不在・拒否・反映待ちを読み分ける
+
+| 表示・症状 | 意味 | 次に確認する場所 |
+| --- | --- | --- |
+| `Private env file not found.` | 指定した外部通常ファイルを読めない | 同じ端末のLAKEHOUSE_ENV_FILE、生成済みファイルの有無 |
+| `Use a private env file outside the repository.` | Git内のpathを選んでいる | Git外の環境専用設定へ戻す。Gitへenvを置いて回避しない |
+| `An upgrade backup already exists.` | 変更前backupの上書きを拒否 | 上の退避手順。元env/backupを保持 |
+| `no changes made` | 追加・正規化する差分がなかった | 異常ではない。必要ならprofile等の明示変更へ進む |
+| GUIに反映待ち | privateファイルの保存と起動時の値が違う | サービスEnvironment、mount、再Deploy後の状態 |
+
+これらの復旧経路は [configure.py](../scripts/configure.py)、[settings.py](../scripts/settings.py)、[回帰テスト](../tests/test_company_compatibility.py) で確認できます。コード更新の受入と、企業proxyや本物の業務DBの現地受入は引き続き分けます。
 
 ## 4. CLIで動いている構成を引き継ぐ場合だけ停止する
 

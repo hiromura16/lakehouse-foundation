@@ -1,4 +1,11 @@
-"""Authenticated GUI/control API with source-only generation and Swagger."""
+"""設定保存・素材生成・明示pipeline・固定参照を認証付きAPIで提供する。
+
+読む順序は要求/応答型 → create_app → 各route → run_pipeline。
+POSTの202はJobManagerへの受付で、完了はjob IDをGETして確認する。
+素材生成はsource-onlyで、後続処理を自動開始しない。設定の保存も
+privateファイルの更新までとし、container反映やDocker操作は行わない。
+共有token・job履歴・排他はこのAPIプロセス内の構成として扱う。
+"""
 
 import importlib.util
 import json
@@ -38,7 +45,7 @@ KNOWN_HEALTH_URLS = {
 
 @lru_cache(maxsize=1)
 def source_scenario_engine():
-    """Load the same fixed catalog and validator used by CLI generation."""
+    """CLIと共通の固定異常catalog・入力検査を初回だけ読み込んで返す。"""
     specification = importlib.util.spec_from_file_location(
         "api_source_scenarios", ROOT / "scripts/source_scenarios.py"
     )
@@ -48,7 +55,7 @@ def source_scenario_engine():
 
 
 class ScenarioDefinition(BaseModel):
-    """Describe an available mutation and its actual downstream expectation."""
+    """1つの選択可能な異常と、対象・同意条件・下流で期待する影響を表す。"""
 
     id: str
     label: str
@@ -62,7 +69,7 @@ class ScenarioDefinition(BaseModel):
 
 
 class ScenarioPreset(BaseModel):
-    """Supply an editable starting selection without hiding its anomaly IDs."""
+    """利用者が編集できる初期選択として、base品質と異常ID集合を渡す。"""
 
     id: str
     label: str
@@ -71,7 +78,7 @@ class ScenarioPreset(BaseModel):
 
 
 class ScenarioCatalog(BaseModel):
-    """Publish one source of truth for input choices and conflict groups."""
+    """GUI/API共通の異常・preset・競合条件を、固定version付きで返す。"""
 
     version: Literal[1]
     scenarios: list[ScenarioDefinition]
@@ -80,14 +87,14 @@ class ScenarioCatalog(BaseModel):
 
 
 class SettingsPatch(BaseModel):
-    """Accept named settings only; empty secret values retain stored values."""
+    """設定名と単一行値の変更要求。秘密欄が空なら既存値を保持する。"""
 
     model_config = ConfigDict(extra="forbid", strict=True)
     values: dict[str, str] = Field(max_length=128)
 
 
 class SourceJob(BaseModel):
-    """Bound source size, SQL consent, and finite streaming duration."""
+    """素材生成の有限batch/stream、件数、出力先、同意を表す要求型。"""
 
     model_config = ConfigDict(extra="forbid", strict=True)
     mode: Literal["batch", "stream"] = "batch"
@@ -106,7 +113,11 @@ class SourceJob(BaseModel):
 
     @model_validator(mode="after")
     def validate_job(self):
-        """Require separate user intent for SQL writes and repeated batches."""
+        """型検査後に、回数・待機合計・SQL同意・異常の組合せを検査する。
+
+        streamも有限回で、待機合計は実処理時間を含まない。異常選択はCLIと
+        共通の検査へ委ね、この段階ではfile作成やDB接続を行わない。
+        """
         if self.mode == "batch" and self.batches != 1:
             raise ValueError("Batch mode runs once.")
         if (self.batches - 1) * self.interval_seconds > 600:
@@ -128,21 +139,21 @@ class SourceJob(BaseModel):
 
 
 class CdcConfirmation(BaseModel):
-    """Require explicit user intent without accepting SQL or TLS overrides."""
+    """任意SQLやTLS回避設定を受け付けず、固定CDC試験DMLへの同意を表す。"""
 
     model_config = ConfigDict(extra="forbid", strict=True)
     confirm: bool
 
     @model_validator(mode="after")
     def require_confirmation(self):
-        """Reject false and preserve strict JSON-boolean validation."""
+        """strictなJSON booleanのtrueだけを同意として受け付ける。"""
         if not self.confirm:
             raise ValueError("Explicit confirmation is required.")
         return self
 
 
 class SettingsView(BaseModel):
-    """Describe saved values without ever returning credentials."""
+    """非秘密設定と秘密値の設定済みフラグ、未反映状態だけを返す型。"""
 
     values: dict[str, str]
     secret_keys: list[str]
@@ -152,14 +163,14 @@ class SettingsView(BaseModel):
 
 
 class SettingsSaved(SettingsView):
-    """Distinguish a file save from a deployment or mount change."""
+    """privateファイルへの保存と、稼働環境への適用を区別する応答型。"""
 
     saved: bool
     applied: bool
 
 
 class AcceptedJob(BaseModel):
-    """Identify an accepted operation that clients can poll."""
+    """受付済みのjob IDを返す型。queuedは処理完了を意味しない。"""
 
     id: str
     status: Literal["queued"]
@@ -168,7 +179,7 @@ class AcceptedJob(BaseModel):
 
 
 class JobView(BaseModel):
-    """Expose bounded progress and source-only result metadata."""
+    """有限jobの進捗・最終状態と、許可した結果情報を返す型。履歴は非永続。"""
 
     id: str
     kind: Literal["source", "pipeline", "cdc-source"]
@@ -183,12 +194,16 @@ class JobView(BaseModel):
 
 
 def reject(status: int, code: str, message: str):
-    """Raise only application-owned error messages and stable codes."""
+    """利用者へ返してよい固定code/messageだけをHTTP例外として送出する。"""
     raise HTTPException(status, detail={"code": code, "message": message})
 
 
 def export_ai_context(datasets: list[str], limit: int) -> dict:
-    """Load the fixed read-only adapter without exposing source credentials."""
+    """固定Goldのsnapshot付きcontextを内部Trinoから読み、辞書で返す。
+
+    入力は許可済みdatasetと各表の行数上限。source資格情報を公開せず、
+    モデル実行や外部AI送信も行わない。複数表の同時snapshotは保証しない。
+    """
     scripts = str(ROOT / "scripts")
     if scripts not in sys.path:
         sys.path.insert(0, scripts)
@@ -203,13 +218,17 @@ def export_ai_context(datasets: list[str], limit: int) -> dict:
 
 
 def apply_cdc_demo(values: dict[str, str], action: str) -> dict:
-    """Invoke fixed DML with ownership checks and normal TLS validation."""
+    """所有確認済み専用DBへの固定DMLを、共通helperへ委ねて返す。
+
+    SQL側のcommitはhelperが担当する。GUIからCA/hostname検証を無効化する
+    選択は渡さず、後続CDCのIceberg到着完了とも区別する。
+    """
     specification = importlib.util.spec_from_file_location(
         "api_owned_cdc_demo", ROOT / "scripts/cdc-demo.py"
     )
     module = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(module)
-    # The GUI cannot opt out of CA or hostname verification.
+    # GUI/APIの要求から、CAやhostname検証の回避を指定できないようにする。
     return module.apply_scenario(values, action, trust_local_test=False)
 
 
@@ -221,7 +240,14 @@ def create_app(
     ai_exporter=export_ai_context,
     cdc_runner=apply_cdc_demo,
 ) -> FastAPI:
-    """Create one process-local controller with no Docker/root capability."""
+    """private設定・認証・単一JobManagerを持つFastAPIアプリを組み立てる。
+
+    settings_file等の引数は配置値や試験用I/Oを注入する入口。起動時設定と
+    現在の保存値を分け、routeは型/認証→状態確認→固定操作の順に読む。
+    source/pipeline/CDC受付の排他は共有するが、複数APIプロセスを跨がない。
+    Docker socket・sudo・自動Deployの能力は持たせない。
+    """
+    # 起動時の適用値を保持する。Save後の値をその場で実行設定へ混ぜない。
     store = SettingsStore(
         settings_file
         or Path(os.environ.get("CONTROL_SETTINGS_FILE", "/private/site.env"))
@@ -253,7 +279,7 @@ def create_app(
 
     @application.get("/docs", include_in_schema=False)
     def swagger():
-        """Serve version-pinned assets without browser-side CDN access."""
+        """固定版Swaggerを内部配信し、ブラウザーの認証保持を無効にする。"""
         return get_swagger_ui_html(
             openapi_url="/openapi.json",
             title="Lakehouse 操作API",
@@ -274,7 +300,11 @@ def create_app(
             HTTPAuthorizationCredentials | None, Depends(SECURITY)
         ],
     ) -> None:
-        """Keep tokens server-side and refuse unconfigured authentication."""
+        """起動時の共有Bearer tokenと照合し、不在・不一致を401で拒否する。
+
+        保存値を変えても稼働中tokenは切り替わらない。資格情報を要求へ返さず、
+        比較できない文字列も認証成功として扱わない。
+        """
         valid = bool(active_token and credentials)
         if valid:
             try:
@@ -290,7 +320,7 @@ def create_app(
 
     @application.middleware("http")
     async def private_error_boundary(request, call_next):
-        """Keep unexpected exception details out of server tracebacks."""
+        """未処理例外の本文・接続情報をHTTP応答へ出さず、固定500へ変換する。"""
         try:
             return await call_next(request)
         except Exception:
@@ -306,7 +336,7 @@ def create_app(
 
     @application.exception_handler(RequestValidationError)
     async def invalid_request(_, __):
-        """Pydantic errors must not echo a submitted password or body."""
+        """入力したpassword等をPydanticの詳細へ反射せず、固定422を返す。"""
         return JSONResponse(
             status_code=422,
             content={
@@ -317,7 +347,7 @@ def create_app(
 
     @application.exception_handler(HTTPException)
     async def controlled_error(_, error):
-        """Keep error responses uniform for Streamlit and Swagger clients."""
+        """アプリが用意した安全なcode/messageを、GUIとSwagger共通のJSONへ揃える。"""
         detail = (
             error.detail
             if isinstance(error.detail, dict)
@@ -330,7 +360,7 @@ def create_app(
 
     @application.exception_handler(Exception)
     async def unexpected_error(_, __):
-        """Do not expose driver messages, endpoints, SQL, or credentials."""
+        """driver例外・SQL・資格情報を出さず、想定外の失敗を固定500へ変換する。"""
         return JSONResponse(
             status_code=500,
             content={
@@ -344,7 +374,10 @@ def create_app(
 
     @application.get("/health", tags=["状態"])
     def health():
-        """Readiness contains no connection details or secret flags."""
+        """tokenと起動時設定の準備だけを、秘密なしの200/503で返す。
+
+        worker・Trino・会社DBの疎通や、業務結果の正しさはこの応答に含まない。
+        """
         ready = bool(active_token and store.applied)
         return JSONResponse(
             status_code=200 if ready else 503,
@@ -358,7 +391,7 @@ def create_app(
         tags=["素材投入"],
     )
     def get_scenarios():
-        """Expose static choices, consent needs and incompatible selections."""
+        """固定の異常選択・追加同意・競合集合を返し、生成処理は開始しない。"""
         engine = source_scenario_engine()
         return {
             "version": 1,
@@ -374,7 +407,7 @@ def create_app(
         tags=["設定"],
     )
     def get_settings():
-        """Read non-secret settings and configured-secret flags."""
+        """保存済みの非秘密項目と設定済みフラグを読み、秘密値は返さない。"""
         try:
             return store.public()
         except (OSError, ValueError):
@@ -391,7 +424,12 @@ def create_app(
         tags=["設定"],
     )
     def patch_settings(patch: SettingsPatch):
-        """Save without changing mounts, Docker services, or active tokens."""
+        """他jobの実行中を避けて許可項目を保存し、反映待ちを返す。
+
+        JobManagerと同じ排他を使い、投入途中の設定変更を避ける。保存先は
+        privateファイルだけで、mount・Docker・起動時tokenは変更しない。
+        """
+        # 素材/CDC/pipeline受付と同じlockを使い、実行中の保存を拒否する。
         if not jobs.operation.acquire(blocking=False):
             reject(
                 409,
@@ -411,7 +449,11 @@ def create_app(
 
     @application.get("/status", dependencies=protected, tags=["状態"])
     def status():
-        """Probe known internal services only; callers cannot select a URL."""
+        """既知の内部healthだけを照合し、到達・busy・反映待ちを返す。
+
+        任意URLや保存済みproxyを使った診断にはしない。未選択profileの未到達と
+        障害は別途判断し、API受付のlockとworkerのbusyも区別する。
+        """
         services = {}
         with httpx.Client(
             timeout=1, trust_env=False, follow_redirects=False
@@ -446,7 +488,11 @@ def create_app(
         tags=["素材投入"],
     )
     def create_job(options: SourceJob):
-        """Generate sources without ingestion, medallion, or workflow calls."""
+        """素材生成を非同期受付し、完了照会用のjob IDを202で返す。
+
+        SQL用には適用済みの専用設定を選ぶ。受付後のfile公開/DB commitは
+        JobManager側で進み、ingest・medallion・workflowは自動実行しない。
+        """
         if not store.applied:
             reject(
                 503, "SETTINGS_UNAVAILABLE", "非公開設定を確認してください。"
@@ -459,6 +505,7 @@ def create_app(
                 if options.destination != "landing"
                 else None
             )
+            # ここで返すのは受付IDだけ。完了状態はGETで照会し、再POSTしない。
             return jobs.submit(values, settings=source_values)
         except SettingsError:
             reject(
@@ -484,8 +531,12 @@ def create_app(
         action: Literal["insert", "update", "delete"],
         confirmation: CdcConfirmation,
     ):
-        """Change fixed records only in a previously prepared owned demo DB."""
-        del confirmation  # Request validation already requires explicit true.
+        """所有権付き専用DBの固定I/U/Dだけを非同期受付する。
+
+        DB識別子・所有権token・専用DEMO認証を確認し、会社SOURCE DBを除外する。
+        202はDML commitでもCDC到着でもない。実行結果はjob IDで確認する。
+        """
+        del confirmation  # 要求型の検査で、既に明示的なtrueを必須にしている。
         try:
             values = store.source_settings()
             for key in ("CDC_SQLSERVER_DATABASE", "CDC_DEMO_OWNERSHIP_TOKEN"):
@@ -511,7 +562,8 @@ def create_app(
             pending = store.public()["pending_restart"]
 
             def run_cdc(selected: str) -> dict:
-                """Return only fixed public counters, never driver details."""
+                """実行結果を固定6行・source_onlyへ照合し、接続情報を含まない結果だけ返す。"""
+                # helper結果の内部情報を返さず、固定の結果契約だけを採用する。
                 result = cdc_runner(values, selected)
                 if (
                     not isinstance(result, dict)
@@ -547,7 +599,7 @@ def create_app(
         tags=["素材投入"],
     )
     def get_job(identifier: str):
-        """Poll bounded source metadata without connection details."""
+        """job IDで進捗・結果を返す。404を未実行の証明にはしない。"""
         try:
             return jobs.get(identifier)
         except KeyError:
@@ -560,7 +612,11 @@ def create_app(
         tags=["素材投入"],
     )
     def cancel_job(identifier: str):
-        """Cancel between batches without undoing already published sources."""
+        """未開始処理またはsourceのbatch境界で取消を要求し、現在状態を返す。
+
+        完了済み素材は残る。開始済みCDC transactionやpipelineは、このAPIで
+        途中取消・rollbackせず409で待機を案内する。
+        """
         try:
             return jobs.cancel(identifier)
         except KeyError:
@@ -579,7 +635,11 @@ def create_app(
             )
 
     def run_pipeline(action: str) -> dict:
-        """Forward one fixed action and retain only bounded result counters."""
+        """固定actionをworkerへ依頼し、完了応答の許可した件数だけを返す。
+
+        この関数はjob thread内で待つ。応答timeoutでもworkerは継続し得る。
+        結果不明を専用codeにし、自動で再送・取消・成功扱いへ変換しない。
+        """
         try:
             with httpx.Client(
                 timeout=240, trust_env=False, follow_redirects=False
@@ -602,6 +662,7 @@ def create_app(
                 raise OperationFailure(
                     "WORKER_FAILED", "workerの処理結果を確認してください。"
                 )
+            # 下流の新しいfieldや例外本文を、自動でAPI応答へ追加しない。
             result = {}
             for key in ("imported", "skipped", "sql_statements"):
                 if type(payload.get(key)) is int:
@@ -612,7 +673,7 @@ def create_app(
                 result["checks_completed"] = len(payload["checks"])
             return result
         except httpx.TimeoutException:
-            # A lost response does not mean that the worker stopped its job.
+            # 待機切れはworkerの停止ではない。新しい実行を自動で重ねない。
             raise OperationFailure(
                 "WORKER_RESULT_UNKNOWN",
                 "処理が継続中の可能性があります。workerの実行中表示と結果を"
@@ -631,7 +692,11 @@ def create_app(
         tags=["後続処理"],
     )
     def pipeline(action: Literal["ingest", "medallion", "verify"]):
-        """Check worker state before queuing one fixed explicit action."""
+        """workerの準備状態を確かめ、固定pipeline actionを202で受付する。
+
+        API内の操作lockとworkerのbusy/blockedを別々に確認する。health確認と
+        実行開始は別時点なので、最終的な同時実行拒否はworker側のlockが担う。
+        """
         if jobs.operation.locked():
             reject(409, "OPERATION_RUNNING", "別の処理が実行中です。")
         try:
@@ -648,7 +713,7 @@ def create_app(
                 "WORKER_UNAVAILABLE",
                 "workerの状態を確認できません。接続と状態を確認してください。",
             )
-        # Older workers omit busy; their existing /run lock remains effective.
+        # healthは予備確認。busyのない旧workerでも/runのlockが最終排他する。
         if payload.get("busy") is True or payload.get("blocked") is True:
             reject(
                 409,
@@ -674,7 +739,11 @@ def create_app(
         dataset: Literal["all", "production", "sales"] = "all",
         limit: Annotated[int, Query(ge=1, le=500)] = 100,
     ):
-        """Export snapshot-pinned Gold data without executing model SQL."""
+        """許可したGoldのsnapshot固定contextを同期取得して返す。
+
+        limitは各表1〜500行で、全件合計の保証ではない。モデルSQLや推論を実行せず、
+        未準備・取得失敗は生例外を返さず409で案内する。
+        """
         datasets = ["production", "sales"] if dataset == "all" else [dataset]
         try:
             return json.loads(

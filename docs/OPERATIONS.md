@@ -1,5 +1,19 @@
 # 平時・更新・復旧の運用手順
 
+<!-- doc-purpose:start -->
+> **役割:** 平時点検・更新・backup・復旧を、鍵・DB・object・volumeの状態を揃えて行う。
+>
+> **対象読者:** 運用担当 / 基盤構築担当
+>
+> **読むタイミング:** 運用を引き継ぐとき、更新前、障害復旧前に実施順序を確認するとき。
+>
+> **前提となる資料:** [導入・検証・停止](<DEPLOYMENT.md>) / [サイト設定リファレンス](<CONFIGURATION.md>)
+>
+> **次に読む資料:** [会社VMの修正を取り込み、Dokployへ再配置する](<COMPANY-UPDATE.md>) / [症状から確認する](<TROUBLESHOOTING.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 2026-11-10監査。この文書は単一ホスト構成の手作業runbookです。自動バックアップ、無停止更新、DB migrationの自動巻き戻しは実装していません。導入時は [START-HERE.md](START-HERE.md)、設定値は [CONFIGURATION.md](CONFIGURATION.md)、画面操作は [DEMO-GUI.md](DEMO-GUI.md) を参照します。
 
 ## 操作する場所と管理の正本
@@ -124,7 +138,7 @@ GUI/API、ソース投入、カタログサーバー、Trino、Spark、n8n、Air
 
 ```bash
 lakehouse_compose() {
-  python3 - "$LAKEHOUSE_ENV_FILE" "$@" <<'PYTHON'
+  python3 -c '
 import subprocess
 import sys
 from pathlib import Path
@@ -139,11 +153,11 @@ for name in (
 ):
     command.extend(["-f", str(root / "infra" / name / "compose.yaml")])
 subprocess.run(command + sys.argv[2:], env=environment(values), check=True)
-PYTHON
+' "$LAKEHOUSE_ENV_FILE" "$@"
 }
 ```
 
-この関数はrepoルートでのみ使い、Pythonは検査済みsite値を子プロセスへ渡します。古いshellのproxyやproject値を直接Composeへ混入させません。新しいstackを起動せず、既存DBへのexecと確認に使います。
+この関数はrepoルートでのみ使い、Pythonは検査済みsite値を子プロセスへ渡します。古いshellのproxyやproject値を直接Composeへ混入させません。新しいstackを起動せず、既存DBへのexecと確認に使います。Pythonのコードは `-c` で渡すため、標準入力はarchiveのリダイレクト等にそのまま使えます。これをPython用のhere-documentへ置き換えると、子コマンドへ渡す入力を消費してしまうので変更しません。
 
 
 writer停止後に、必要なDBについてだけ実行します。未使用profileのDBを起動する必要はありません。新しい保存先を選び、既存のarchiveへ上書きしません。
@@ -167,6 +181,17 @@ lakehouse_compose exec -T airflow-db \
 ```
 
 各コマンドの終了コードとstderrを確認します。リダイレクト先が存在するだけで成功とは判断しません。`pg_restore --list`等でarchiveを検査し、ファイルのハッシュを記録します。`pg_dump`は単一DBの整合した論理exportですが、S3や別DBと同時点になる機能やcluster共通roleの保管は含みません。[PostgreSQL公式pg_dump](https://www.postgresql.org/docs/18/app-pgdump.html)
+
+同じ関数で、catalogのarchiveをDBへ書き戻さずに検査する例です。内容一覧にもschema名などが含まれるため、privateな保存先へ出します。`--list` 成功はarchiveの一覧を読めた確認であり、実データを全て復元できた保証とは区別します。
+
+```bash
+lakehouse_compose exec -T catalog-db pg_restore --list \
+  < "$BACKUP_DIR/catalog.dump" > "$BACKUP_DIR/catalog.contents"
+sha256sum "$BACKUP_DIR/catalog.dump" > "$BACKUP_DIR/catalog.sha256"
+sha256sum --check "$BACKUP_DIR/catalog.sha256"
+```
+
+`pg_restore` はファイル名を渡さなければ標準入力を使います。実復元に使う `-d`、`--clean`、`--create` はこの一覧確認には付けません。失敗してできた空・不完全なdumpは元の成功済みbackupと区別し、調査が終わるまで上書きしません。[PostgreSQL18 pg_restore](https://www.postgresql.org/docs/18/app-pgrestore.html)
 
 ### 停止したvolumeを保管する
 
@@ -198,3 +223,77 @@ coreのPostgreSQL18.6、n8n2.46.7、Kafka4.4.0／Debezium3.7.1.Final、Dokploy0.
 | [Kafka4.4 Connect設定](https://kafka.apache.org/44/configuration/kafka-connect-configs/)、[Debezium3.7](https://debezium.io/documentation/reference/3.7/connectors/sqlserver.html) | offset・schema履歴・source側保持を一組で扱う |
 
 公式の一般手順と、このリポジトリで実装した範囲は区別します。実会社のbackup／restore試験は導入先で記録してください。
+
+## 運用を引き継ぐための台帳と役割
+
+この基盤のGUIは操作しやすい入口ですが、利用者ごとの承認フローや永続監査DBを一括提供する構成ではありません。画面操作の担当と、ホスト・DB・ネットワークを変更する担当を決めます。小さなPoCでは一人が兼務しても、どの権限で何を変更したかは分けて記録します。
+
+| 担当 | 日常の作業 | 別途確認する境界 |
+| --- | --- | --- |
+| PoC利用者 | 合成素材投入、進捗と品質、読取りSQL、報告素材 | 本番SQLへの書込み許可、定期実行の有効化は自己判断で増やさない |
+| 配置担当 | private設定、同じアプリへの配置、init／health、版の台帳 | Docker操作権はホストへ強い影響を持つ。共有GUIへsocketを渡さない |
+| ホスト管理者 | Docker／Dokploy／Samba、容量、FW、企業CA、backup媒体 | daemon再起動が同居アプリへ与える影響 |
+| DBA | 参照view・権限、CDC capture／cleanup、保持期間 | SOURCE参照とDEMO書込みとCDC操作の資格情報を分ける |
+| データ責任者 | 主キー・時刻・有効性・遅着・削除の扱い | healthyだけで業務データの受入完了にしない |
+
+運用台帳には、配置commit／image digest、管理方式、appNameとproject、選択profile、実volumeの対応、bindの管理先、秘密設定の保管場所、担当、復元点を記録します。**実値を公開リポジトリの台帳へ記入しません**。公開側には空の様式や説明だけを置き、実台帳・backup・証明書は社内のアクセス制御された場所に置きます。
+
+| 保存物 | 再起動・再配置後の扱い | 運用上の記録 |
+| --- | --- | --- |
+| GUI/APIジョブ履歴 | APIメモリー上。再起動後に残る監査履歴とはしない | 必要なjob ID・最終結果・manifestを実行時に記録 |
+| 原本／ready／manifest | landingおよび取り込んだ原本として保持 | 入力集合、hash、seed／scenario、会社由来か合成か |
+| Silver／Gold | メダリオンの再実行で表が置換される | 各表のsnapshot、処理commit、品質結果 |
+| Grafana／n8n等のGUI編集 | 製品DBと対応鍵・volumeが正本 | GUI変更のexport、担当、back upした時点 |
+| CDC checkpoint | SQLite、Kafka、schema history、source保持の組合せ | 停止時刻、再開可能範囲、mappingとsource identity |
+
+Icebergのsnapshotがあることと、障害領域を分けたbackupがあることは別です。volume障害や誤ったobject削除では同じ保存先の履歴も失う場合があります。snapshot期限削除・orphan削除・compactionの自動運用は、本書の通常停止や `verify` に含まれません。追加する場合は保持要件と全writerを考慮した別の保守設計が必要です。
+
+## 計画停止の開始条件と終了条件
+
+停止の前後で、次の確認を同じ担当が追跡します。「コンテナを止めた」だけでは、外部CLI・別環境・会社側のsource captureまで止まったとは判断できません。
+
+| 段階 | 完了条件 | 完了できない場合 |
+| --- | --- | --- |
+| 受付停止 | GUI利用者へ周知し、n8n／Airflow等の新規実行が開始されない | writerの所有者を特定し、backupを開始しない |
+| 処理終了 | 実行中jobとTrino／Spark処理が終了、workerがbusy／blockedでない | 結果不明は [TROUBLESHOOTING.md](TROUBLESHOOTING.md) の確認待ち対応へ |
+| CDC停止判断 | source保持期間に対するlagと予定停止時間をDBAが確認 | 保持範囲を超える前に計画を変更。offset削除で回避しない |
+| 保存点確定 | landing／S3／catalog／任意サービスに同じwriter停止点を使う | 部分表更新のまま「整合済み」と記録しない |
+| 起動後 | 初期化、health、ログイン、認証、既存snapshot／件数を確認 | 新規素材を入れる前に不一致を切り分ける |
+| 受付再開 | 一つずつ定期実行を再開し、手動実行と重ならない | 失敗した起動元だけを調査し、別schedulerで代替起動を重ねない |
+
+CDC bridgeは連続consumerですが、Composeは `restart: "no"` です。ホスト再起動や異常終了後は、対象環境の状態を確かめて同じ配置で明示的に起動し、checkpointからの再開を確認します。KafkaやDebeziumが起動したことだけでcurrent／Goldの更新再開まで合格にしません。[CDCの停止点と再開](CDC.md)
+
+## 復元試験で業務処理を二重実行しない
+
+復元したn8n DBにはworkflowとCredentialsが、Airflow DBにはConnectionやDAG実行状態が残る場合があります。元環境と同じ接続先・鍵を戻して起動すると、試験環境から実システムへ接続する可能性があります。復元データを確認する前に、管理者が隔離先の経路と起動順を準備します。
+
+1. CLI／Dokployの配置名、全volume、bind、portを元環境から分離し、同じS3／catalogへ向いていないことを確認します。
+2. 外向き接続の制限や接続先の試験用置換を、導入先のFW・proxy・ネットワーク管理で先に準備します。本リポジトリにワンクリックの「隔離restore mode」があるとは扱いません。
+3. 自動起動するworkflow／DAG／Webhook／外部schedulerを確認し、実システムへ副作用を出さない状態で製品DBを検査します。復元した資格情報の値を画面・ログへ出しません。
+4. DBとS3の復元、製品のmigration、読取り確認が完了してから、合成データだけで単一処理を試します。会社SQL Serverへの書込みやCDC再登録を復元の疎通確認に使いません。
+5. 元環境との切替えが必要なら、旧writerの停止を確認してから一つの配置へ統一します。復元試験のために旧環境も同じ保存先へ再起動しません。
+
+DBとS3が整合して読めること、GUI編集が残ること、鍵が一致して復号できること、CDCが必要な保持範囲内で再開できることを個別に判定します。どれかが未確認なら、対象サービスの復元成功とは記録しません。
+
+## 更新の種類によって切戻しを分ける
+
+| 変更 | 変更前に保持するもの | 切戻しの注意 |
+| --- | --- | --- |
+| GUIの非秘密設定・port | 変更項目、旧値、同じ配置の対応表 | その項目を戻して再配置。backup全体で新しい秘密値を巻き戻さない |
+| proxy／CA | 旧方針と失効・併存期間、build条件 | CA内容変更時はcacheなし再build。取り消した信頼をimageへ残さない |
+| SQL／Pythonの変換 | 入力集合、旧commit、表ごとのsnapshot、期待値 | 旧codeを戻しても派生表は自動で戻らない。互換入力で再計算を判断 |
+| 製品image／DB migration | digest、同停止点のDB／S3／鍵、一組の復元試験 | 古いimageを更新済みDBへ直接接続できるとは限らない |
+| project／volume prefix／bind | 実名対応、停止した旧配置、旧データ | 名前の設定はデータコピーではない。二重writerを防ぐ |
+| CDC mapping／source identity | mapping、state、offset、history、DBAの再開判断 | 現stateへ別sourceを混ぜず、専用の移行設計で扱う |
+
+日常の運用では、復旧目標も導入先が決めます。RPOは許容するデータ損失の時間、RTOは復旧までの許容時間です。このリポジトリは数値の達成を保証しません。backupの頻度だけでRPOを達成したと判断せず、実際の復元点、取得から別媒体への保存完了、復元所要時間、CDCのsource保持を記録して評価します。
+
+| 受入項目 | 実際に記録する証跡 |
+| --- | --- |
+| backupを読める | archive一覧検査・hash・停止点・対象一覧 |
+| 別環境で復元できる | 別volume／port、復元手順、全対象の整合結果 |
+| 予定時間内に戻る | 作業開始・データ復元・検証完了の時刻。推定と実測を分ける |
+| 業務結果が合う | 同じ入力の件数・quarantine・Gold・snapshotの照合 |
+| 自動処理を安全に再開できる | scheduler所有者、旧writer停止、最初の一実行結果 |
+
+開発者がbackup自動化や保守APIを追加する場合は、任意shell・任意volume・任意保存先をそのままAPI化しません。権限、秘密値の非表示、排他、途中失敗、保存点、復元試験を設計し、通常の素材投入APIとは異なる管理権限として扱います。配置境界は [control.py](../scripts/control.py)、設定と正規化は [settings.py](../scripts/settings.py)、データ処理の確定点は [admin.py](../scripts/admin.py)、CDCのdurable状態は [state.py](../infra/cdc/state.py) が入口です。

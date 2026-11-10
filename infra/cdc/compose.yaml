@@ -1,7 +1,15 @@
+# 役割: 外部SQL Serverの変更をDebezium/Kafka経由でCDC用Iceberg表へ反映する。
+# cdc profileをcoreと同じprojectへ追加する。業務DB本体とDBAのCDC有効化は外部準備。
+# 読む順序: 共通設定 → Kafka → Connect → 登録one-shot → consumer → 管理UI。
+# 元イベントの保持と再開用SQLiteは別volumeで管理し、対応する設定と一組で扱う。
+# Connect/UIの公開はloopback固定。KafkaのPLAINTEXT接続はCompose内だけ。
+
+# 内部service名をproxy対象から除外し、社内proxyへ内部要求を送らない。
+# 同じ除外値を大文字/小文字の両方へ渡し、利用libraryの違いを吸収する。
 x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
 
-# Merge with the foundation's core Compose. Source SQL Server remains external.
-# All optional CDC resources use a separate durable volume and namespace.
+# Connect・登録器・consumerで外部DBとtopic/mappingの識別を揃える。
+# SQL Server/Kafkaへの接続をHTTP proxyで中継する設定ではない。
 x-cdc-environment: &cdc_environment
   CDC_SQLSERVER_HOST: ${CDC_SQLSERVER_HOST:-}
   CDC_SQLSERVER_PORT: ${CDC_SQLSERVER_PORT:-1433}
@@ -20,10 +28,12 @@ x-cdc-environment: &cdc_environment
   CDC_POLL_SECONDS: ${CDC_POLL_SECONDS:-5}
   CDC_CONNECT_PORT: ${CDC_CONNECT_PORT:-8083}
 
+# 管理対象を識別し、内部CDCサービスのTraefik自動公開を止める。
 x-cdc-labels: &cdc_labels
   app.owner: lakehouse-foundation
   traefik.enable: 'false'
 
+# 各段階の標準ログを回転させる。イベント本体の保存先はKafka/state/Iceberg。
 x-cdc-logging: &cdc_logging
   driver: json-file
   options:
@@ -31,6 +41,8 @@ x-cdc-logging: &cdc_logging
     max-file: '3'
 
 services:
+  # 変更イベントとConnectの管理topicを保存する単一nodeのKRaft broker。
+  # replication factor=1は単一ホストPoC向けで、別nodeへの冗長化を意味しない。
   cdc-kafka:
     profiles: [cdc]
     image: apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f
@@ -65,6 +77,8 @@ services:
       timeout: 8s
       retries: 30
 
+  # 外部SQL Serverへ接続し、snapshotと変更イベントをKafka topicへ送る。
+  # connectorの設定・offset・statusはKafkaのtopicに保存し、独立DBは設けない。
   cdc-connect:
     profiles: [cdc]
     image: quay.io/debezium/connect:3.7.1.Final@sha256:53c6d0424d09f7ccef813c895fb9b1056a726bc14ff2e6a592856cd627ebd491
@@ -86,9 +100,8 @@ services:
       CONNECT_CONFIG_PROVIDERS_ENV_CLASS: org.apache.kafka.common.config.provider.EnvVarConfigProvider
       HEAP_OPTS: -Xms256m -Xmx512m
       ADVERTISED_HOST_NAME: cdc-connect
-    # A CA truststore contains public certificates. Mount only that file,
-    # without granting Connect access to the private table-map directory.
-    # With JVM standard CAs, the unused target is an empty /dev/null bind.
+    # truststoreの公開証明書だけを渡し、private mappingディレクトリ全体は渡さない。
+    # JVM標準CAを使う場合は未使用のtargetへ/dev/nullをbindし、秘密ファイルを追加しない。
     volumes:
       - type: bind
         source: ${CDC_SQLSERVER_TRUSTSTORE_FILE:-/dev/null}
@@ -107,7 +120,8 @@ services:
       timeout: 5s
       retries: 30
 
-  # Administrator UI: broker/topic/lag views and Kafka Connect status/config.
+  # topic/lagとconnector/taskを確認する管理UI。業務変換の編集画面ではない。
+  # Connectのhealthyを待ち、hostへはloopbackからのみ接続できる。
   cdc-ui:
     profiles: [cdc]
     image: ghcr.io/kafbat/kafka-ui:v1.5.0@sha256:7cda86a33344160309fdb65146332e4da65db81a945614f2fe32e210803f6fd1
@@ -128,7 +142,8 @@ services:
       cdc-connect:
         condition: service_healthy
 
-  # Registration is a deliberate one-shot operation, never an automatic update.
+  # private mappingを読み、connectorを明示登録するone-shot。
+  # 既存connectorの差分を自動更新しないため、設定変更は専用手順で判断する。
   cdc-register:
     user: "${WORKER_UID:-10001}:${WORKER_GID:-10001}"
     profiles: [cdc]
@@ -164,6 +179,9 @@ services:
       cdc-connect:
         condition: service_healthy
 
+  # raw履歴→SQLite現在値→CDC用Bronze/Silver/Gold→checkpoint→offsetの順に反映する。
+  # 各保存は独立commit。Kafka履歴・state volume・mappingを揃えて再開する。
+  # restart=noにより失敗時は停止して状態を確認し、理由を調べてから再開する。
   cdc-consumer:
     user: "${WORKER_UID:-10001}:${WORKER_GID:-10001}"
     profiles: [cdc]
@@ -201,6 +219,7 @@ services:
       trino:
         condition: service_healthy
 
+# Kafka履歴とSQLite現在値/checkpointは別の状態。片方だけを初期化しない。
 volumes:
   cdc-kafka:
     name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_cdc-kafka

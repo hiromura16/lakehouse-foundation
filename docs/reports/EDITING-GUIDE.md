@@ -1,5 +1,19 @@
 # 図と出力スクリプトを変更する人へ
 
+<!-- doc-purpose:start -->
+> **役割:** figures.json、描画・exportコード、生成物の責務と変更後の検証を理解する。
+>
+> **対象読者:** 開発・設計担当
+>
+> **読むタイミング:** 図の意味・レイアウト・出力形式を変更し、生成差分を確認するとき。
+>
+> **前提となる資料:** [変更する人のための読みやすさと検証規約](<../../CONTRIBUTING.md>) / [PoC報告書・発表に使う図版と雛形](<README.md>)
+>
+> **次に読む資料:** [報告書用の実装構成一覧](<IMPLEMENTATION-INVENTORY.md>) / [検証記録](<../VALIDATION.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<../DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 図の編集元、処理の入口、変更後に確かめることを説明します。[素材集](README.md) の通常利用では、この文書の編集作業は不要です。
 
 ## ファイルの責任を分ける
@@ -67,3 +81,19 @@ python3 scripts/render_report_assets.py --help
 exportは `external_destination()` と `validate_report_svg()` で先に入力を確認し、個別形式→PDF集→PPTX/一覧画像→文書→hash台帳→ZIP→権限の順で進みます。新しい寸法や形式を追加する場合は、単位を名前・コメントへ書きます。PDFはpoint、SVG/PNGはpixel、PPTXの配置はinchです。
 
 コメントは処理の翻訳より「なぜその順序・境界・既定値か」を残します。公開入口のdocstringと `--help` には入力・出力・書込み・依存・失敗時の扱いを書きます。会社実値を使った例や、未評価を完了に見せる説明は追加しません。
+
+## 編集ミスを切り分ける
+
+| 症状 | 先に確認すること |
+| --- | --- |
+| JSONを読めない | UTF-8、引用符、末尾カンマ、配列/辞書の対応 |
+| 必須項目・日付のエラー | 指摘されたfigure/panelのkeyと値、YYYY-MM-DDの実在日 |
+| 文字領域のエラー | 本文を意味ごとに短くし、箱と余白を広げる |
+| `--check` が差分を報告 | 正本を保存し通常生成、生成物のdiffをレビュー |
+| export依存が見つからない | report専用venvのPythonで実行し、lock同期と `uv pip check` |
+| 既存出力先を拒否 | 以前の出力を保持し、新しいGit外絶対パスを選ぶ |
+| 日本語fontがない | Noto CJKとfontconfigを準備し、PDF内の日本語も確認 |
+
+CAPTIONSは生成物です。説明はfigures.json/rendererへ反映し、文書冒頭の役割は [文書registry](../documentation-manifest.json) から生成します。新しいMDの追加時は文書生成と図生成の両 `--check` を通します。
+
+文字コードの修正やcache化など、図の意味を変えない変更では、既存14SVGと画像出力の同一性も確認します。説明を変える変更ではbyte一致を成功条件にせず、根拠・caption・Mermaid・SVGが同じ内容を伝えることを確認します。

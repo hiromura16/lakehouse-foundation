@@ -1,5 +1,19 @@
 # 導入・検証・停止
 
+<!-- doc-purpose:start -->
+> **役割:** private設定、host構成、CLIによる起動・検証・停止の操作を確認する。
+>
+> **対象読者:** 基盤構築担当 / 運用担当
+>
+> **読むタイミング:** 管理方法を決めて配置するときや、CLI管理の構成を起動・停止するとき。
+>
+> **前提となる資料:** [初めて構築する人の一本道ガイド](<START-HERE.md>) / [Linuxサーバーを最初に準備する](<HOST-SETUP.md>)
+>
+> **次に読む資料:** [Dokploy 0.31.0でGitから配置する](<DOKPLOY.md>) / [サイト設定リファレンス](<CONFIGURATION.md>) / [平時・更新・復旧の運用手順](<OPERATIONS.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 公開リポジトリ `lakehouse-foundation` を取得し、実際の環境設定だけをチェックアウトの外へ置いて導入します。clone URLはREADMEを参照してください。この文書の `/absolute/private/site.env`、共有利用者、許可範囲は説明用であり、導入先で選んだ値に置き換えます。
 
 監査日: 2026-11-10。先に配置の所有者を一つ決めます。CLI管理を選んだ場合は本書の `up/down` を使い、Dokploy管理を選んだ場合は既存の同じComposeアプリから起動・停止します。どちらでも `site.env` と配置commit・profile・実volume名を一致させます。Dokploy導入そのものと、そこへこのスタックを配置する作業は別です。
@@ -156,7 +170,12 @@ sudo ./scripts/configure-proxy.sh --env-file /absolute/private/proxy.env --apply
 SHARE_USER="$(id -un)"
 SHARE_GROUP="$(id -gn)"
 # 新規の専用pathにだけ実施。既存pathは先に所有者とACLを確認する。
-sudo install -d -m 0770 -o "$SHARE_USER" -g "$SHARE_GROUP" /srv/lakehouse/landing
+LANDING_PATH=/srv/lakehouse/landing
+if [ -e "$LANDING_PATH" ] || [ -L "$LANDING_PATH" ]; then
+  stat -c '%a %u:%g %n' "$LANDING_PATH"
+else
+  sudo install -d -m 0770 -o "$SHARE_USER" -g "$SHARE_GROUP" "$LANDING_PATH"
+fi
 ```
 
 起動前の設定確認はホストを変更しません。
@@ -213,7 +232,11 @@ python3 scripts/generate-demo.py \
 SQLにも素材を投入したい場合は、private envに `DEMO_SQLSERVER_HOST` / `PORT` / `DATABASE` / `USER` / `PASSWORD` を設定します。業務参照用の `SOURCE_SQLSERVER_*` と別の専用DBを指定します。SQL用ドライバー等の前提は [DEMO-DATA.md](DEMO-DATA.md) を参照してください。
 
 ```bash
-python3 scripts/generate-demo.py \
+UV_PYTHON_DOWNLOADS=never uv venv --python /usr/bin/python3.12 \
+  "$HOME/.venvs/lakehouse-demo"
+uv pip sync --python "$HOME/.venvs/lakehouse-demo/bin/python" \
+  requirements-demo.txt
+"$HOME/.venvs/lakehouse-demo/bin/python" scripts/generate-demo.py \
   --destination sqlserver --output /absolute/private/demo-source \
   --env-file /absolute/private/site.env --allow-sql-write \
   --seed 42 --orders 20 --days 7 --scenario edge
@@ -235,7 +258,7 @@ Bronze取り込みに続けてSilver・隔離・Goldまで実行する場合:
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env medallion
 ```
 
-Silverは宣言した型へ変換し、主キーごとに最新の有効行を残します。無効行は同名のソース別quarantine表へ理由付きで隔離します。Goldの `factory_daily_production` と `sales_fulfillment` で、製造数量・停止時間・歩留まり・計画達成率と、受注・出荷・残数・履行率を参照できます。OEEは算出しません。
+Silverは主キーごとの最新候補を選び、その型・値・参照を検証して有効な候補だけを残します。不正な最新版から過去の正常版へは戻しません。無効候補は同名のソース別quarantine表へ理由付きで隔離します。Goldの `factory_daily_production` と `sales_fulfillment` で、製造数量・停止時間・歩留まり・計画達成率と、受注・出荷・残数・履行率を参照できます。OEEは算出しません。
 
 業務変換は `medallion/01_silver.sql`、`02_quarantine.sql`、`03_gold.sql` を編集します。同じデータで再実行しても追記による二重計上をしないよう派生表を置き換えます。ただし複数表をまとめたトランザクションではないため、失敗した場合は処理結果を確認して再実行します。
 
@@ -390,3 +413,72 @@ Docker 29／Buildx Bake／社内proxyで判明した互換性修正の取り込�
 | [Swarmネットワーク](https://docs.docker.com/engine/swarm/networking/) | address poolは初期化時に決定。既存clusterを再初期化して直さない |
 | [Dokploy0.31.0 source](https://github.com/Dokploy/dokploy/tree/v0.31.0)、[公式導入](https://docs.dokploy.com/docs/core/installation) | 提供installerとの違い・管理権限を確認 |
 | [Samba公式](https://www.samba.org/samba/docs/current/man-html/smb.conf.5.html) | host既存版のman pageと共有設定を照合 |
+
+## 初回の構築を段階で止めて確認する
+
+### 用語を最初に結び付ける
+
+| 用語 | 本構成での意味 | 配置時に記録するもの |
+| --- | --- | --- |
+| image | Dockerfileと固定依存から作る実行物 | tagだけでなくdigest/lockとGit commit |
+| container | imageを設定・mount付きで起動した実体 | 同じprojectのservice名と状態 |
+| named volume | DB/S3/GUI等の永続データ | 解決された実volume名と暗号鍵の組 |
+| bind mount | hostの既存dir/fileをcontainerへ渡すもの | landing/private/workspaceの実体と所有者 |
+| one-shot | migration/init/register等、一度の処理で終了するservice | 終了コード0。runningである必要はない |
+| profile | coreに追加する機能の選択 | 既存の選択一覧と追加先の必要条件 |
+
+「Gitから取得できた」「Composeが解釈できた」「imageがbuildできた」「healthyになった」「業務結果が合った」を一つの成功にまとめません。失敗した段階を特定すると、不要なDB初期化を避けられます。
+
+| 段階 | 操作・観測 | 次へ進む条件 |
+| --- | --- | --- |
+| 取得 | cloneしたcommit、lockと必要fileを確認 | 取得漏れやローカル一時修正の混入がない |
+| host/private | Docker、proxy、path、所有者、空port | 通常配置利用者が必要な操作を行える |
+| 構成 | `lakehouse.sh plan` | 終了0。有効profileと永続先の対応を確認済み |
+| build/pull | 同じ管理入口から配置 | 依存checksumとimage作成が成功 |
+| 起動/初期化 | DB→migration→catalog→worker | one-shot0、常駐serviceのhealthが正常 |
+| 内部往復 | `lakehouse.sh verify` | 合成の11検査、同じ原本の再投入skip |
+| 業務/UI | 素材→明示変換→Gold、各native GUI | 期待した粒度・保存先・認証・保存が正しい |
+
+Dokployルートでは、新規のDokploy導入を済ませてからGitサービスをDeployします。本書の章番号は個別作業を調べる参照順であり、先にCLIでcoreを起動してからDokployへ移すことを必須にしていません。[新規導入の一本道](START-HERE.md)
+
+## 複数環境を安全に置く
+
+| 対象 | 別環境で分けるもの | 共有しても環境分離にならないもの |
+| --- | --- | --- |
+| 実行名 | Dokployの生成後appName / CLI project名 | 画面上のdisplay nameだけ |
+| 永続化 | 独立volume、空のDATA_VOLUME_PREFIXまたは別実名 | 同じprefixを使う二つのEnvironment |
+| 入出力 | landing、Notebook workspace、private設定dir | 同じhost dirのbind |
+| 認証 | DB鍵、token、暗号鍵、GUI管理者 | 一つの資格情報を別名で登録するだけ |
+| 到達先 | 空portと必要なSSH転送 | 同じhostportを取り合うprofile設定 |
+
+合成データをGUIで通常namespaceへ取り込んだ環境を、そのまま会社データの受入先にしません。会社側は新しい空の環境を用意し、isolated verify以外のダミー生成を避けます。landingからファイルを消しても既存Bronzeは消えません。
+
+別のcloneへ移るだけなら、データの移行を伴うとは限りません。一方、別hostへの移動はvolume/bind/秘密値の転送と復元試験が必要です。同じappNameを入力してDeployするだけでは、元hostのデータが新hostへコピーされません。
+
+## 資源を見積もる担当者へ
+
+Composeの `mem_limit` は設定上限で、実測RSSや必要host RAMの保証ではありません。全profileの常駐service上限は、公開構成の集計で約30.56GiBです。one-shot、build、OS、Docker/Dokploy、file cacheやbackupの余力は別に考えます。profile別の値と共有serviceの重複は [実装台帳](reports/IMPLEMENTATION-INVENTORY.md#9-資源上限の見積もりに使う値) を確認してください。
+
+1. coreだけを受け入れ、実際の入力件数・fileサイズ・処理時間を記録します。
+2. demo/monitoring、n8n等を一つずつ追加し、起動時ピークと平常時を分けます。
+3. SparkはJupyter driverとWorker executorの両方を見ます。Workerのcontainer上限と広告するexecutor用メモリは別です。
+4. ディスクは原本、Iceberg data/metadataと旧snapshot、DB、Kafka、GUI履歴、backupの増加を測ります。`down` はこれらを削除しません。
+5. 小さいVMでは不要profileを増やさず、処理の同時実行も一つずつ確認します。資料に書いた上限をそのまま性能結果へ転記しません。
+
+## 再配置が失敗した時の管理境界
+
+| 観測 | 保持するもの | 次の操作 |
+| --- | --- | --- |
+| pull/buildで停止 | 起動済みserviceと既存volume | 通信/CA/lock/空容量を確認。既存DBを作り直さない |
+| 新serviceの初期化で停止 | 正常終了済みのmigrationとDB | 対象serviceの失敗段階を確認。同じappで再試行 |
+| health待ちがtimeout | 実container状態・ログ・資源 | 起動途中か異常終了かを区別。二重Deployを連打しない |
+| APIだけ新token、clientは旧値 | DB/暗号鍵 | 正しい一組へ同期し、同じappへ反映 |
+| DB schema更新後に起動失敗 | 更新前の整合backup | 単純な旧image起動を復旧と決めず、正式手順か別環境復元 |
+
+自作imageのlocal tagは `COMPOSE_PROJECT_NAME` にも依存します。保守用のraw Composeでbuildする場合は、shellに残る別環境のproject/profile/port値まで混入しないよう、[運用の7Compose補助関数](OPERATIONS.md#postgresqlの論理dump例) を同じrepoルートで使います。設定を別の値へ展開した `config` 全文は秘密を含み得るため公開しません。
+
+## 構成を拡張する開発者の受入
+
+新serviceを加える場合、Composeのservice定義に加えてprofile、依存順、health、one-shotか常駐か、資源上限、log保持、volume/bind、実行UID、port公開範囲、proxy/CA、設定検査を決めます。Docker socketをUIへ渡して便利さを作る前提にはしません。
+
+新規/再配置、profile未選択/選択、既存volume/空volume、proxy/直接、CAあり/なしを分けて構文・起動・小さい業務往復を確認します。初期化が冪等でも、DB major更新や秘密鍵rotationの安全性まで保証するわけではありません。追加の永続データはbackup/restore一覧と構成図にも反映します。

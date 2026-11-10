@@ -1,6 +1,20 @@
 # SSRF対策と内部接続の設定
 
-監査日: 2026-11-10（UTC）。対象はn8n2.46.7です。SSRFは、画面やワークフローに入れたURLを使って、サーバーから意図しない宛先へ通信させる攻撃です。この基盤では、n8nの宛先制御、固定API、プロキシ、ネットワーク制限をそれぞれ設定します。
+<!-- doc-purpose:start -->
+> **役割:** n8nの宛先制御、内部worker通信、proxyと固定APIの境界を設定する。
+>
+> **対象読者:** 基盤構築担当 / 開発・設計担当
+>
+> **読むタイミング:** 内部APIへの接続許可を決めるときや、SSRF制御による拒否を確認するとき。
+>
+> **前提となる資料:** [サイト設定リファレンス](<CONFIGURATION.md>) / [会社のプロキシ・CAを設定する](<COMPANY-PROXY.md>)
+>
+> **次に読む資料:** [n8n・Airflow・Grafanaを画面から使う](<GUI-WALKTHROUGHS.md>) / [症状から確認する](<TROUBLESHOOTING.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
+監査日: 2026-11-10（JST）。対象はn8n2.46.7です。SSRFは、画面やワークフローに入れたURLを使って、サーバーから意図しない宛先へ通信させる攻撃です。この基盤では、n8nの宛先制御、固定API、プロキシ、ネットワーク制限をそれぞれ設定します。
 
 ## 実行場所と対象
 
@@ -70,7 +84,7 @@ n8n本体は無効なCIDRを警告して飛ばす場合があります。本基�
 | --- | --- |
 | FastAPIの状態・service確認 | サービスごとの固定内部URLだけをprobe。利用者がURLを渡す欄はない |
 | 通信診断 | PyPI / Maven / npm / GitHubの固定HTTPS先だけ。任意URL不可、redirect拒否、認証URLを応答へ出さない |
-| workerのTrino HTTP処理 | 継続・取消URLのoriginとpathを検査。別originへtoken付き通信を転送しない |
+| workerのTrino HTTP処理 | 継続・取消URLのscheme・host・port等で内部originを検査。別originへtoken付き通信を転送しない。pathのallowlistは持たない |
 | MCP | operatorが選んだ内部APIへ固定pathだけ。redirect拒否、Bearer認証、Host保護。任意SQL・shell・URL fetchのtoolはない |
 | 同梱help | 文書・SVGの許可リスト、サイズ上限、symlink拒否。任意pathを開かず、外部画像の自動読込みを抑止 |
 | SQL Server接続 | 管理者がprivate設定する業務用TCP接続。TLS/証明書名検証と用途別DB権限を使う |
@@ -97,3 +111,62 @@ APIのBearer認証と、MCPのHost検査は別の保護です。`MCP_ALLOWED_HOS
 
 
 確認の順は、n8nログイン → 手動workflowのworker成功 → 認証情報なしの未許可内部health拒否 → 会社proxy経路で同じ許可／拒否、です。画面上のエラー種類と実行IDを記録し、宛先・token・業務payloadは公開しません。設定を戻した場合も同じアプリを再配置してから再試験します。
+
+## 接続元を区別してから設定する
+
+ブラウザーで開いたURLと、その画面からサーバーが取りに行くURLは別です。例えば自分のPCでn8nを開き、HTTP Requestノードへ `http://worker:8000/health` を入れると、workerへ接続するのはn8nコンテナです。PCのDNSやPCのlocalhostで疎通できた結果を、そのまま使いません。
+
+| 用語・場所 | この基盤での意味 | 最初に確認する人 |
+| --- | --- | --- |
+| 発信元 | HTTP Requestを実行するn8nコンテナ | workflow作成者 |
+| hostname | URLの名前部分。Docker内部名 `worker` など | 配置担当 |
+| 解決先IP | DNSが返した実アドレス。名前が同じでも変わり得る | ネットワーク管理者 |
+| redirect | 接続先が別URLへ移る応答。最初のURLだけで判断しない | workflow作成者 |
+| CIDR | IP範囲の表記。`/32` はIPv4の1宛先 | ネットワーク管理者 |
+| 認証 | 接続できた後、呼出先がその操作を許すか | API管理者 |
+
+HTTPの `401` は呼出先の認証拒否です。SSRFのrestrictedエラー、DNS失敗、proxyの `407`、TLS失敗と分けます。`worker` を許可した結果、workerの任意のAPIまで認証なしで使えることにはなりません。実処理には別途worker tokenが必要です。
+
+## 内部APIを一つ追加する変更票の例
+
+新たなAPIを使うときは、接続先名だけでなく「誰が、どの操作を、どの資格情報で呼ぶか」を決めます。次は書式例です。`mes-api.example.invalid` は説明用で、実在する接続先として実行しません。
+
+| 記録欄 | 記入例・判断 |
+| --- | --- |
+| 操作 | 承認済みのMES試験APIから読取り。最初は副作用のないhealth確認 |
+| URLの管理 | 管理者が固定し、フォームや外部Webhookの入力でhost/pathを置換しない |
+| SSRF | `worker,mes-api.example.invalid`。既存の必要な `worker` を残す |
+| proxy | 同じ宛先を直接接続する方針ならcanonical bypassへ追加。SSRF許可とは別に設定 |
+| TLS | 正式な証明書名と企業CA。IPへ置き換えてhostname検証を回避しない |
+| 資格情報 | n8nのCredentialsへ保存。試験healthは可能なら認証情報なし |
+| 完了条件 | 追加先への許可、別内部先への拒否、既存worker workflow成功 |
+| 撤回条件 | 用途廃止・DNS管理終了・資格情報失効時に許可を削除し再配置 |
+
+変更は次の順に進めます。
+
+1. 管理者が接続先とAPIの利用権限を確認します。IP範囲を広く許可する前に、固定名だけで足りるか判断します。
+2. 操作ポータルでSSRFの許可名を保存します。proxy経路の変更があれば同じ設定画面で別項目も更新します。CIDRのタイプミスやURL付きの名前で保存が失敗したら、入力を修正します。
+3. 配置担当が同じアプリへ反映します。Dokploy管理では既存Environmentとprivateファイルを揃えてDeployし、別名のCLI `up` は行いません。
+4. 再配置後に新しい手動workflowで固定URLを確認します。最初の試験に本番の更新APIや本番Webhookを使いません。
+5. 許可先の成功と、許可外の拒否を記録します。成功だけで変更を完了にしません。
+6. 試験workflowをArchive後にDeleteします。実業務へ残す場合はCredentials、編集者、実行権限、定期起動の有無を別途レビューします。
+
+ホスト名を許可すると、その名前が指すIPの拒否より優先されます。したがって「会社のprivate範囲だから安全」とは判断できません。DNSの管理者が変わる場合も許可の再確認が必要です。n8n公式はredirectとDNS解決も保護対象と説明していますが、この基盤の検証済み事実は上記の固定workflowで確認した範囲です。任意の独自nodeに対する網羅試験とは扱いません。[n8n公式の保護範囲](https://docs.n8n.io/deploy/host-n8n/configure-n8n/security/enable-ssrf-protection)
+
+## 許可・拒否試験の判定を揃える
+
+| 試験 | 期待する観測 | その観測だけでは分からないこと |
+| --- | --- | --- |
+| 同梱medallion workflowを手動実行 | workerへ認証し、処理結果を確認できる | 他のnodeや任意URLも安全か |
+| 認証なしで未許可の `prometheus` healthを指定 | n8nのrestrictedエラー | Prometheus自体のhealth。拒否されるので到達しない |
+| 許可した試験APIの証明書を検査 | 正しいCA・hostnameでTLS成功 | API利用権限や返却データの品質 |
+| n8n経由だけ失敗、同じホストのcurlは成功 | クライアント差を特定する入口 | 直ちにSSRF誤検知とは断定できない |
+| 許可名を除いて再配置し再試験 | 意図した経路が拒否される | DNS・proxy変更後も同じ結果になるか |
+
+未許可先の試験は、`monitoring` が有効な隔離試験環境で `http://prometheus:9090/-/ready` を使えます。HTTP RequestノードのAuthenticationはNone、実行はManual Triggerとし、tokenを添付しません。許可名へ `prometheus` を追加して成功させる必要はありません。単なるタイムアウトや名前解決失敗は、SSRFによる拒否の合格結果と区別します。
+
+## 拡張する開発者の確認点
+
+設定の構文は [scripts/settings.py](../scripts/settings.py)、GUIの公開・保存境界は [control_settings.py](../infra/demo/control_settings.py)、n8nへの受け渡しは [core Compose](../infra/lakehouse/compose.yaml) が入口です。構文検査の試験は [test_control.py](../tests/test_control.py)、秘密値を返さず保存する試験は [test_demo_api.py](../tests/test_demo_api.py) を参照します。
+
+新しいHTTP機能を足すときは、固定接続先を選べる設計を先に検討します。任意URLが必要な設計へ変えるなら、認証だけを追加して終わりにせず、名前解決後の宛先、redirect、proxy経路、tokenの転送範囲、timeout、応答サイズを一緒に設計・試験します。既存のn8n設定がFastAPIやPythonライブラリーへ自動適用されることはありません。保存の入力検査と、配置後の実通信試験をそれぞれ残します。

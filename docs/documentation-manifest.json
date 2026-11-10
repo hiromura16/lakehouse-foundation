@@ -1,0 +1,1047 @@
+{
+  "schema_version": 1,
+  "documents": [
+    {
+      "path": "CONTRIBUTING.md",
+      "title": "変更する人のための読みやすさと検証規約",
+      "purpose": "読みやすいコード・コメント・CLI説明と、専用uv環境での品質検査規約を揃える。",
+      "audience": [
+        "開発・設計担当"
+      ],
+      "when_to_use": "コードや文書を変更する前と、差分をレビューに出す前。",
+      "category": "06 開発・レビュー",
+      "prerequisites": [
+        "docs/DIRECTORY-GUIDE.md"
+      ],
+      "next": [
+        "docs/REVIEW-WORKFLOW.md",
+        "docs/reports/EDITING-GUIDE.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "README.md",
+      "title": "Lakehouse Foundation",
+      "purpose": "MES・ERP向けPoC基盤の機能、構築入口、任意機能と報告素材を見渡す。",
+      "audience": [
+        "初めて使う人",
+        "基盤構築担当",
+        "評価・報告担当"
+      ],
+      "when_to_use": "clone直後に、何を構築できるかと最初の手順を選ぶとき。",
+      "category": "01 入口・学習",
+      "prerequisites": [],
+      "next": [
+        "docs/LEARNING-PATH.md",
+        "docs/START-HERE.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/AI-READINESS.md",
+      "title": "AIへ渡せるデータとLangChain連携",
+      "purpose": "Goldとsnapshotの根拠をJSON・LangChain Documentへ渡し、推論やRAGとの境界を確認する。",
+      "audience": [
+        "データ利用担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "AIへ渡す業務contextを取得するときや、モデル連携の追加要件を決めるとき。",
+      "category": "04 設計・拡張",
+      "prerequisites": [
+        "docs/MEDALLION.md"
+      ],
+      "next": [
+        "docs/MCP.md",
+        "docs/CLOUDFLARE.md",
+        "docs/CUSTOMIZATION.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/ANOMALY-SCENARIOS.md",
+      "title": "異常シナリオを選んで素材を作る",
+      "purpose": "行・業務値とファイル転送の異常を選び、生成診断と下流の期待挙動を比較する。",
+      "audience": [
+        "データ利用担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "正常素材との差分、隔離、重複、破損・未完成入力を試す計画を立てるとき。",
+      "category": "03 データ・操作",
+      "prerequisites": [
+        "docs/DEMO-GUI.md",
+        "docs/DEMO-DATA.md"
+      ],
+      "next": [
+        "docs/MEDALLION.md",
+        "docs/reports/EVALUATION-PLAN.md"
+      ],
+      "status": "reference"
+    },
+    {
+      "path": "docs/API.md",
+      "title": "GUI操作APIとSwagger",
+      "purpose": "Swaggerの認証と固定APIを使い、設定保存・素材生成・非同期job・参照を行う。",
+      "audience": [
+        "データ利用担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "GUIと同じ操作をAPIクライアントや自動化から呼び出すとき。",
+      "category": "03 データ・操作",
+      "prerequisites": [
+        "docs/START-HERE.md",
+        "docs/DEMO-GUI.md"
+      ],
+      "next": [
+        "docs/MCP.md",
+        "docs/GUI-WALKTHROUGHS.md"
+      ],
+      "status": "reference"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "title": "Lakehouse Foundation アーキテクチャ",
+      "purpose": "保存・変換・操作の構成とprofileの責務を、データと制御の経路から把握する。",
+      "audience": [
+        "初めて使う人",
+        "基盤構築担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "構築前の全体理解や、構成変更時の影響範囲を調べるとき。",
+      "category": "04 設計・拡張",
+      "prerequisites": [
+        "docs/GLOSSARY.md"
+      ],
+      "next": [
+        "docs/reports/IMPLEMENTATION-INVENTORY.md",
+        "docs/COMPATIBILITY.md",
+        "docs/CUSTOMIZATION.md"
+      ],
+      "status": "reference"
+    },
+    {
+      "path": "docs/CDC.md",
+      "title": "SQL Server の変更を Iceberg へ反映する",
+      "purpose": "SQL ServerのsnapshotとI/U/DをDebezium・Kafka・consumer経由でIcebergへ反映する。",
+      "audience": [
+        "基盤構築担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "DBAの準備後にcdc profileを配置し、現在値・削除・再開位置を照合するとき。",
+      "category": "04 設計・拡張",
+      "prerequisites": [
+        "docs/COMPANY-ROLLOUT.md",
+        "docs/SOURCE-SQLSERVER.md"
+      ],
+      "next": [
+        "docs/OPERATIONS.md",
+        "docs/reports/EVALUATION-PLAN.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/CLOUDFLARE.md",
+      "title": "Cloudflareを使う場所と社内に残す場所",
+      "purpose": "Cloudflareの入口保護・外部保存・AI候補を、社内に残す処理と分けて評価する。",
+      "audience": [
+        "基盤構築担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "未接続の外部サービスを追加する前に、通信・認証・費用・データ範囲を検討するとき。",
+      "category": "04 設計・拡張",
+      "prerequisites": [
+        "docs/ARCHITECTURE.md",
+        "docs/AI-READINESS.md"
+      ],
+      "next": [
+        "docs/CUSTOMIZATION.md",
+        "docs/reports/DECISION-RECORD-TEMPLATE.md"
+      ],
+      "status": "reference"
+    },
+    {
+      "path": "docs/COMPANY-PROXY.md",
+      "title": "会社のプロキシ・CAを設定する",
+      "purpose": "Git・uv・Docker・build・runtimeごとに社内proxyとCAを準備し、通信を診断する。",
+      "audience": [
+        "基盤構築担当",
+        "運用担当"
+      ],
+      "when_to_use": "会社ネットワークへ初めて配置する前や、取得経路の失敗を切り分けるとき。",
+      "category": "02 構築・通信",
+      "prerequisites": [
+        "docs/HOST-SETUP.md"
+      ],
+      "next": [
+        "docs/PROXY.md",
+        "docs/SSRF.md",
+        "docs/DEPLOYMENT.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/COMPANY-ROLLOUT.md",
+      "title": "会社への導入・受入ガイド",
+      "purpose": "会社側の担当分担、Samba、外部SQL、業務照合と導入受入条件を決める。",
+      "audience": [
+        "基盤構築担当",
+        "データ利用担当",
+        "評価・報告担当"
+      ],
+      "when_to_use": "新規構築の手順に会社固有の準備と業務側の受入を組み合わせるとき。",
+      "category": "02 構築・通信",
+      "prerequisites": [
+        "docs/START-HERE.md"
+      ],
+      "next": [
+        "docs/COMPANY-PROXY.md",
+        "docs/SOURCE-SQLSERVER.md",
+        "docs/reports/EVALUATION-PLAN.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/COMPANY-UPDATE.md",
+      "title": "会社VMの修正を取り込み、Dokployへ再配置する",
+      "purpose": "既存の設定・鍵・volumeを保持し、会社VMの修正を取り込んでDokployへ再配置する。",
+      "audience": [
+        "基盤構築担当",
+        "運用担当"
+      ],
+      "when_to_use": "既に動いている環境へ公開Gitの互換性修正を反映するとき。",
+      "category": "02 構築・通信",
+      "prerequisites": [
+        "docs/DOKPLOY.md",
+        "docs/CONFIGURATION.md"
+      ],
+      "next": [
+        "docs/OPERATIONS.md",
+        "docs/TROUBLESHOOTING.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/COMPATIBILITY.md",
+      "title": "バージョンと連携互換性",
+      "purpose": "固定image・Python環境・Spark/Iceberg等の組合せと互換性の確認方法を調べる。",
+      "audience": [
+        "基盤構築担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "依存更新を計画するときや、build・起動・連携のどこで失敗したかを分けるとき。",
+      "category": "04 設計・拡張",
+      "prerequisites": [
+        "docs/ARCHITECTURE.md"
+      ],
+      "next": [
+        "docs/REFERENCES.md",
+        "docs/CUSTOMIZATION.md",
+        "docs/VALIDATION.md"
+      ],
+      "status": "reference"
+    },
+    {
+      "path": "docs/CONFIGURATION.md",
+      "title": "サイト設定リファレンス",
+      "purpose": "生成器・Compose・CLIが使う設定項目と、保存先・認証・反映先を照合する。",
+      "audience": [
+        "基盤構築担当",
+        "運用担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "private設定を作成・変更し、何に使われる値かを調べるとき。",
+      "category": "02 構築・通信",
+      "prerequisites": [
+        "docs/START-HERE.md"
+      ],
+      "next": [
+        "docs/PROXY.md",
+        "docs/SSRF.md",
+        "docs/OPERATIONS.md"
+      ],
+      "status": "reference"
+    },
+    {
+      "path": "docs/CUSTOMIZATION.md",
+      "title": "ソース・指標・API・計算基盤を拡張する",
+      "purpose": "Gold指標・入力契約・API・計算環境の変更を、実装箇所と回帰条件へ落とし込む。",
+      "audience": [
+        "開発・設計担当"
+      ],
+      "when_to_use": "導入済みPoCを専用検証環境で拡張し、移行・再実行・受入を計画するとき。",
+      "category": "04 設計・拡張",
+      "prerequisites": [
+        "docs/ARCHITECTURE.md",
+        "docs/MEDALLION.md",
+        "CONTRIBUTING.md"
+      ],
+      "next": [
+        "docs/DIRECTORY-GUIDE.md",
+        "docs/reports/EVALUATION-PLAN.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/DEMO-DATA.md",
+      "title": "MES・ERPのダミーデータ投入",
+      "purpose": "6種のMES・ERP素材、画像、SQL投入、有限streamの生成仕様とCLIを確認する。",
+      "audience": [
+        "データ利用担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "ダミー生成の入力・出力・書込範囲を決め、素材だけを準備するとき。",
+      "category": "03 データ・操作",
+      "prerequisites": [
+        "docs/START-HERE.md"
+      ],
+      "next": [
+        "docs/DEMO-GUI.md",
+        "docs/ANOMALY-SCENARIOS.md",
+        "docs/MEDALLION.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/DEMO-GUI.md",
+      "title": "GUIからダミーデータを投入する",
+      "purpose": "Streamlitで素材生成条件を選び、投入jobと生成結果を確認する。",
+      "audience": [
+        "初めて使う人",
+        "データ利用担当"
+      ],
+      "when_to_use": "配置済みの合成検証環境へ、GUIからダミー素材を投入するとき。",
+      "category": "03 データ・操作",
+      "prerequisites": [
+        "docs/START-HERE.md"
+      ],
+      "next": [
+        "docs/ANOMALY-SCENARIOS.md",
+        "docs/MEDALLION.md",
+        "docs/POC-PORTAL.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/DEPLOYMENT.md",
+      "title": "導入・検証・停止",
+      "purpose": "private設定、host構成、CLIによる起動・検証・停止の操作を確認する。",
+      "audience": [
+        "基盤構築担当",
+        "運用担当"
+      ],
+      "when_to_use": "管理方法を決めて配置するときや、CLI管理の構成を起動・停止するとき。",
+      "category": "02 構築・通信",
+      "prerequisites": [
+        "docs/START-HERE.md",
+        "docs/HOST-SETUP.md"
+      ],
+      "next": [
+        "docs/DOKPLOY.md",
+        "docs/CONFIGURATION.md",
+        "docs/OPERATIONS.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/DIRECTORY-GUIDE.md",
+      "title": "ファイルの場所と変更のしかた",
+      "purpose": "目的に対応するファイル、実行経路、公開コードとprivate状態の置き場を探す。",
+      "audience": [
+        "開発・設計担当",
+        "基盤構築担当"
+      ],
+      "when_to_use": "実装を読み始めるときや、変更対象と関連する確認箇所を絞るとき。",
+      "category": "06 開発・レビュー",
+      "prerequisites": [
+        "docs/ARCHITECTURE.md"
+      ],
+      "next": [
+        "CONTRIBUTING.md",
+        "docs/CUSTOMIZATION.md"
+      ],
+      "status": "reference"
+    },
+    {
+      "path": "docs/DOCUMENTATION-MANIFEST.md",
+      "title": "目的・読者から探す文書マニフェスト",
+      "purpose": "公開Markdown全件の固有の目的・読者・読む時点を、目的別と読者別に引く。",
+      "audience": [
+        "初めて使う人",
+        "基盤構築担当",
+        "データ利用担当",
+        "開発・設計担当",
+        "運用担当",
+        "評価・報告担当"
+      ],
+      "when_to_use": "必要な文書を探すときや、文書の追加・改名時に登録を更新するとき。",
+      "category": "01 入口・学習",
+      "prerequisites": [],
+      "next": [
+        "docs/LEARNING-PATH.md",
+        "docs/START-HERE.md"
+      ],
+      "status": "reference"
+    },
+    {
+      "path": "docs/DOKPLOY.md",
+      "title": "Dokploy 0.31.0でGitから配置する",
+      "purpose": "Dokploy 0.31.0の画面で、生成appName・個別Environment・7つのComposeを揃えて配置する。",
+      "audience": [
+        "基盤構築担当",
+        "運用担当"
+      ],
+      "when_to_use": "Dokployへログインできた後、同じComposeアプリを初回配置・再配置するとき。",
+      "category": "02 構築・通信",
+      "prerequisites": [
+        "docs/START-HERE.md",
+        "docs/DEPLOYMENT.md"
+      ],
+      "next": [
+        "docs/COMPANY-UPDATE.md",
+        "docs/GUI-WALKTHROUGHS.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/GLOSSARY.md",
+      "title": "用語を役割と実際の操作へ結び付ける",
+      "purpose": "保存・処理・配置・操作の用語を、同梱実装の役割へ結び付ける。",
+      "audience": [
+        "初めて使う人",
+        "データ利用担当"
+      ],
+      "when_to_use": "Iceberg、snapshot、profile、jobなどの違いを確認するとき。",
+      "category": "01 入口・学習",
+      "prerequisites": [],
+      "next": [
+        "docs/ARCHITECTURE.md",
+        "docs/LEARNING-PATH.md"
+      ],
+      "status": "reference"
+    },
+    {
+      "path": "docs/GRAFANA.md",
+      "title": "GrafanaのGUI編集と保存",
+      "purpose": "GrafanaのGUIでdashboardを編集・保存し、収集対象とPromQLの意味を確認する。",
+      "audience": [
+        "データ利用担当",
+        "運用担当"
+      ],
+      "when_to_use": "monitoring起動後に初期dashboardを整え、監視値を解釈・引き継ぐとき。",
+      "category": "03 データ・操作",
+      "prerequisites": [
+        "docs/GUI-WALKTHROUGHS.md"
+      ],
+      "next": [
+        "docs/OPERATIONS.md",
+        "docs/TROUBLESHOOTING.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/GUI-OPTIONS.md",
+      "title": "GUIで設定・操作する選択肢",
+      "purpose": "操作・オーケストレーション・列変換のGUIを分け、同梱機能と追加候補を比較する。",
+      "audience": [
+        "データ利用担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "画面で何を設定したいか整理し、追加OSSや実装の採否を決めるとき。",
+      "category": "04 設計・拡張",
+      "prerequisites": [
+        "docs/ARCHITECTURE.md"
+      ],
+      "next": [
+        "docs/GUI-WALKTHROUGHS.md",
+        "docs/CUSTOMIZATION.md"
+      ],
+      "status": "reference"
+    },
+    {
+      "path": "docs/GUI-WALKTHROUGHS.md",
+      "title": "n8n・Airflow・Grafanaを画面から使う",
+      "purpose": "n8n・Airflow・Grafanaで接続、認証、手動実行、履歴、保存を順に確かめる。",
+      "audience": [
+        "データ利用担当",
+        "運用担当"
+      ],
+      "when_to_use": "対応profileを配置した後、同梱ジョブを画面から1回実行して確認するとき。",
+      "category": "03 データ・操作",
+      "prerequisites": [
+        "docs/START-HERE.md",
+        "docs/MEDALLION.md"
+      ],
+      "next": [
+        "docs/GRAFANA.md",
+        "docs/OPERATIONS.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/HOST-SETUP.md",
+      "title": "Linuxサーバーを最初に準備する",
+      "purpose": "新規Ubuntuで操作端末・権限・Docker・Git・uvの前提を準備する。",
+      "audience": [
+        "初めて使う人",
+        "基盤構築担当"
+      ],
+      "when_to_use": "アプリ配置前にhostの状態と不足している前提を確認するとき。",
+      "category": "02 構築・通信",
+      "prerequisites": [
+        "docs/START-HERE.md"
+      ],
+      "next": [
+        "docs/COMPANY-PROXY.md",
+        "docs/DEPLOYMENT.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/IMPLEMENTATION-STATUS.md",
+      "title": "実装・配置・検証の追跡表",
+      "purpose": "依頼された機能のソース実装、配置、既存検証、残る受入を別々に追跡する。",
+      "audience": [
+        "基盤構築担当",
+        "開発・設計担当",
+        "評価・報告担当"
+      ],
+      "when_to_use": "できることと未実施の評価を確認し、PoCの範囲や進捗を説明するとき。",
+      "category": "05 運用・根拠",
+      "prerequisites": [
+        "README.md"
+      ],
+      "next": [
+        "docs/VALIDATION.md",
+        "docs/reports/EVIDENCE-MATRIX.md"
+      ],
+      "status": "reference"
+    },
+    {
+      "path": "docs/LEARNING-PATH.md",
+      "title": "初めての理解から運用・設計へ進む道順",
+      "purpose": "理解・操作・運用・設計の段階ごとに、練習と到達条件を選ぶ。",
+      "audience": [
+        "初めて使う人",
+        "データ利用担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "読む順番が分からないときや、次に学ぶ操作を決めるとき。",
+      "category": "01 入口・学習",
+      "prerequisites": [
+        "README.md"
+      ],
+      "next": [
+        "docs/GLOSSARY.md",
+        "docs/START-HERE.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/MCP.md",
+      "title": "AIクライアントからMCPで操作する",
+      "purpose": "認証付きMCPから固定の業務参照・運用APIを呼び、AIクライアントへ接続する。",
+      "audience": [
+        "開発・設計担当"
+      ],
+      "when_to_use": "APIの範囲を理解した後に、Streamable HTTPのMCP連携を用意するとき。",
+      "category": "04 設計・拡張",
+      "prerequisites": [
+        "docs/API.md",
+        "docs/AI-READINESS.md"
+      ],
+      "next": [
+        "docs/CUSTOMIZATION.md",
+        "docs/reports/EVALUATION-PLAN.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/MEDALLION.md",
+      "title": "MES・ERPデータをBronzeからGoldへ整える",
+      "purpose": "6契約の取り込み、最新版採用、不正行隔離、Gold集計と再投入の規則を追う。",
+      "audience": [
+        "データ利用担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "素材から業務値へ変換する意味を理解し、品質や更新結果を照合するとき。",
+      "category": "04 設計・拡張",
+      "prerequisites": [
+        "docs/GLOSSARY.md",
+        "docs/DEMO-DATA.md"
+      ],
+      "next": [
+        "docs/SOURCE-SQLSERVER.md",
+        "docs/CDC.md",
+        "docs/CUSTOMIZATION.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/OPERATIONS.md",
+      "title": "平時・更新・復旧の運用手順",
+      "purpose": "平時点検・更新・backup・復旧を、鍵・DB・object・volumeの状態を揃えて行う。",
+      "audience": [
+        "運用担当",
+        "基盤構築担当"
+      ],
+      "when_to_use": "運用を引き継ぐとき、更新前、障害復旧前に実施順序を確認するとき。",
+      "category": "05 運用・根拠",
+      "prerequisites": [
+        "docs/DEPLOYMENT.md",
+        "docs/CONFIGURATION.md"
+      ],
+      "next": [
+        "docs/COMPANY-UPDATE.md",
+        "docs/TROUBLESHOOTING.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/POC-PORTAL.md",
+      "title": "PoC操作ポータル",
+      "purpose": "操作ポータルの各ページから、サービス入口・データ・診断・履歴へ移動する。",
+      "audience": [
+        "初めて使う人",
+        "データ利用担当",
+        "運用担当"
+      ],
+      "when_to_use": "GUIを開いた後、目的の操作と結果確認の画面を探すとき。",
+      "category": "03 データ・操作",
+      "prerequisites": [
+        "docs/START-HERE.md"
+      ],
+      "next": [
+        "docs/DEMO-GUI.md",
+        "docs/API.md",
+        "docs/AI-READINESS.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/POC-TOOLS.md",
+      "title": "BI・Notebook・ベクトル検索・データ系統を追加する",
+      "purpose": "Superset・Jupyter・Qdrant・MarquezのGUIと合成デモを追加して用途別に検証する。",
+      "audience": [
+        "データ利用担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "coreの検証後にBI、Notebook、数値vector、手動lineageを試すとき。",
+      "category": "03 データ・操作",
+      "prerequisites": [
+        "docs/START-HERE.md",
+        "docs/MEDALLION.md"
+      ],
+      "next": [
+        "docs/AI-READINESS.md",
+        "docs/CUSTOMIZATION.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/PROXY.md",
+      "title": "プロキシ設定の場所と反映方法",
+      "purpose": "通信主体別のproxy設定ファイル、CA受渡しと反映方法を参照する。",
+      "audience": [
+        "基盤構築担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "会社向け手順を読んだ後に、個別の設定場所や再起動対象を調べるとき。",
+      "category": "02 構築・通信",
+      "prerequisites": [
+        "docs/COMPANY-PROXY.md"
+      ],
+      "next": [
+        "docs/CONFIGURATION.md",
+        "docs/SSRF.md"
+      ],
+      "status": "reference"
+    },
+    {
+      "path": "docs/REFERENCES.md",
+      "title": "採用版の公式リファレンスと文書監査",
+      "purpose": "採用版の公式仕様・tag・公開実装・検証記録の根拠を照合する。",
+      "audience": [
+        "基盤構築担当",
+        "開発・設計担当",
+        "評価・報告担当"
+      ],
+      "when_to_use": "画面名や設定の仕様を確認するときや、依存更新の調査を始めるとき。",
+      "category": "05 運用・根拠",
+      "prerequisites": [
+        "docs/COMPATIBILITY.md"
+      ],
+      "next": [
+        "docs/VALIDATION.md",
+        "docs/CUSTOMIZATION.md"
+      ],
+      "status": "reference"
+    },
+    {
+      "path": "docs/REVIEW-FOLLOWUP.md",
+      "title": "外部レビュー指摘の対応と確認",
+      "purpose": "PR #3の外部レビュー指摘と、再現・修正・回帰確認の対応を追跡する。",
+      "audience": [
+        "開発・設計担当",
+        "評価・報告担当"
+      ],
+      "when_to_use": "既存の指摘がどう解決されたか確認し、同種の回帰を避けるとき。",
+      "category": "06 開発・レビュー",
+      "prerequisites": [
+        "docs/REVIEW-WORKFLOW.md"
+      ],
+      "next": [
+        "docs/VALIDATION.md"
+      ],
+      "status": "reference"
+    },
+    {
+      "path": "docs/REVIEW-WORKFLOW.md",
+      "title": "レビュー指摘を改善へ取り込む",
+      "purpose": "issue・PR・依頼文書の指摘を対象commitで確認し、安全な回帰と差分へつなげる。",
+      "audience": [
+        "開発・設計担当"
+      ],
+      "when_to_use": "レビュー指摘を再現して修正し、検証根拠を揃えて返すとき。",
+      "category": "06 開発・レビュー",
+      "prerequisites": [
+        "CONTRIBUTING.md"
+      ],
+      "next": [
+        "docs/REVIEW-FOLLOWUP.md",
+        "docs/VALIDATION.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/SOURCE-SQLSERVER.md",
+      "title": "既存SQL Serverからランディングへ抽出する",
+      "purpose": "既存SQL Serverを読取専用SELECTで抽出し、6契約のlanding素材を作成する。",
+      "audience": [
+        "基盤構築担当",
+        "データ利用担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "実ソースDBの列対応・権限・上限を決め、全件snapshotのbridgeを試すとき。",
+      "category": "04 設計・拡張",
+      "prerequisites": [
+        "docs/COMPANY-ROLLOUT.md",
+        "docs/MEDALLION.md"
+      ],
+      "next": [
+        "docs/CDC.md",
+        "docs/reports/EVALUATION-PLAN.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/SSRF.md",
+      "title": "SSRF対策と内部接続の設定",
+      "purpose": "n8nの宛先制御、内部worker通信、proxyと固定APIの境界を設定する。",
+      "audience": [
+        "基盤構築担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "内部APIへの接続許可を決めるときや、SSRF制御による拒否を確認するとき。",
+      "category": "02 構築・通信",
+      "prerequisites": [
+        "docs/CONFIGURATION.md",
+        "docs/COMPANY-PROXY.md"
+      ],
+      "next": [
+        "docs/GUI-WALKTHROUGHS.md",
+        "docs/TROUBLESHOOTING.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/START-HERE.md",
+      "title": "初めて構築する人の一本道ガイド",
+      "purpose": "新規Linux環境の準備からcore配置と合成データ検証までを順に進める。",
+      "audience": [
+        "初めて使う人",
+        "基盤構築担当"
+      ],
+      "when_to_use": "初めてこのリポジトリを配置し、段階ごとの成功条件を確認するとき。",
+      "category": "01 入口・学習",
+      "prerequisites": [
+        "README.md"
+      ],
+      "next": [
+        "docs/HOST-SETUP.md",
+        "docs/DOKPLOY.md",
+        "docs/DEMO-GUI.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/TROUBLESHOOTING.md",
+      "title": "症状から確認する",
+      "purpose": "観測した症状から設定・起動・通信・job・データの失敗箇所を絞り込む。",
+      "audience": [
+        "基盤構築担当",
+        "データ利用担当",
+        "運用担当"
+      ],
+      "when_to_use": "成功条件を満たさないときや、削除や再生成を行う前に原因を調べるとき。",
+      "category": "05 運用・根拠",
+      "prerequisites": [
+        "docs/START-HERE.md"
+      ],
+      "next": [
+        "docs/CONFIGURATION.md",
+        "docs/OPERATIONS.md"
+      ],
+      "status": "reference"
+    },
+    {
+      "path": "docs/VALIDATION.md",
+      "title": "検証記録",
+      "purpose": "既存の合成環境・公開clone・CI・互換性修正で確認した条件と限界を読む。",
+      "audience": [
+        "開発・設計担当",
+        "運用担当",
+        "評価・報告担当"
+      ],
+      "when_to_use": "報告に結果を引用するときや、変更後の回帰と会社受入を分けるとき。",
+      "category": "05 運用・根拠",
+      "prerequisites": [
+        "docs/IMPLEMENTATION-STATUS.md"
+      ],
+      "next": [
+        "docs/reports/EVIDENCE-MATRIX.md",
+        "docs/reports/EVALUATION-PLAN.md"
+      ],
+      "status": "reference"
+    },
+    {
+      "path": "docs/assets/README.md",
+      "title": "構成図とロゴの出典",
+      "purpose": "全体図・AI候補図・公式ロゴの出典と、詳細図素材の配置を確認する。",
+      "audience": [
+        "開発・設計担当",
+        "評価・報告担当"
+      ],
+      "when_to_use": "図やロゴを引用するとき、素材の出典と編集先を調べるとき。",
+      "category": "07 報告・図版",
+      "prerequisites": [
+        "docs/ARCHITECTURE.md"
+      ],
+      "next": [
+        "docs/reports/README.md",
+        "docs/reports/EDITING-GUIDE.md"
+      ],
+      "status": "reference"
+    },
+    {
+      "path": "docs/reports/CAPTIONS.md",
+      "title": "図キャプションと根拠の台帳",
+      "purpose": "各図の説明文、表す範囲、引用する実装と根拠を図番号から引く。",
+      "audience": [
+        "評価・報告担当"
+      ],
+      "when_to_use": "図を報告書へ貼り、意味と限界が伝わる説明を添えるとき。",
+      "category": "07 報告・図版",
+      "prerequisites": [
+        "docs/reports/README.md"
+      ],
+      "next": [
+        "docs/reports/EVIDENCE-MATRIX.md",
+        "docs/reports/IMPLEMENTATION-INVENTORY.md"
+      ],
+      "status": "reference"
+    },
+    {
+      "path": "docs/reports/DECISION-RECORD-TEMPLATE.md",
+      "title": "PoCの意思決定記録テンプレート",
+      "purpose": "選択肢・根拠・制約・承認・再評価条件を、後から追える意思決定記録に残す。",
+      "audience": [
+        "評価・報告担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "PoCの採否や構成選択を決め、条件と責任を社内へ引き継ぐとき。",
+      "category": "07 報告・図版",
+      "prerequisites": [
+        "docs/reports/EVALUATION-PLAN.md",
+        "docs/reports/EVIDENCE-MATRIX.md"
+      ],
+      "next": [
+        "docs/reports/POC-REPORT-TEMPLATE.md"
+      ],
+      "status": "template"
+    },
+    {
+      "path": "docs/reports/EDITING-GUIDE.md",
+      "title": "図と出力スクリプトを変更する人へ",
+      "purpose": "figures.json、描画・exportコード、生成物の責務と変更後の検証を理解する。",
+      "audience": [
+        "開発・設計担当"
+      ],
+      "when_to_use": "図の意味・レイアウト・出力形式を変更し、生成差分を確認するとき。",
+      "category": "07 報告・図版",
+      "prerequisites": [
+        "CONTRIBUTING.md",
+        "docs/reports/README.md"
+      ],
+      "next": [
+        "docs/reports/IMPLEMENTATION-INVENTORY.md",
+        "docs/VALIDATION.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/reports/EVALUATION-PLAN.md",
+      "title": "PoCの評価計画と受入条件",
+      "purpose": "配置・品質・CDC・AI・復旧の評価範囲と受入条件を、実施前に記入する。",
+      "audience": [
+        "基盤構築担当",
+        "データ利用担当",
+        "評価・報告担当"
+      ],
+      "when_to_use": "会社PoCを始める前に、担当・条件・成功基準・残す証跡を決めるとき。",
+      "category": "07 報告・図版",
+      "prerequisites": [
+        "docs/COMPANY-ROLLOUT.md",
+        "docs/IMPLEMENTATION-STATUS.md"
+      ],
+      "next": [
+        "docs/reports/EVIDENCE-MATRIX.md",
+        "docs/reports/POC-REPORT-TEMPLATE.md"
+      ],
+      "status": "template"
+    },
+    {
+      "path": "docs/reports/EVIDENCE-MATRIX.md",
+      "title": "報告する主張と根拠の対応表",
+      "purpose": "報告する主張を既存検証・合成fixture・導入先受入・未評価に分けて根拠へ結ぶ。",
+      "audience": [
+        "評価・報告担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "数値や成功を報告へ引用するときと、導入先の証跡台帳を作るとき。",
+      "category": "07 報告・図版",
+      "prerequisites": [
+        "docs/VALIDATION.md"
+      ],
+      "next": [
+        "docs/reports/POC-REPORT-TEMPLATE.md",
+        "docs/reports/SCREENSHOT-GUIDE.md"
+      ],
+      "status": "reference"
+    },
+    {
+      "path": "docs/reports/IMPLEMENTATION-INVENTORY.md",
+      "title": "報告書用の実装構成一覧",
+      "purpose": "34サービス・11profile・port・volume・接続主体を公開定義から技術付録として照合する。",
+      "audience": [
+        "基盤構築担当",
+        "開発・設計担当",
+        "評価・報告担当"
+      ],
+      "when_to_use": "詳細図の箱と線を確認するときや、構成定義の数量と制約を引用するとき。",
+      "category": "07 報告・図版",
+      "prerequisites": [
+        "docs/ARCHITECTURE.md"
+      ],
+      "next": [
+        "docs/COMPATIBILITY.md",
+        "docs/reports/EVIDENCE-MATRIX.md"
+      ],
+      "status": "reference"
+    },
+    {
+      "path": "docs/reports/POC-REPORT-TEMPLATE.md",
+      "title": "データレイクハウスPoC 報告書テンプレート",
+      "purpose": "業務目的、評価条件、観測結果、残る条件、次段階の判断を報告書へ整理する。",
+      "audience": [
+        "評価・報告担当"
+      ],
+      "when_to_use": "評価計画と証跡が揃い、社内保存用の報告書原本を作成するとき。",
+      "category": "07 報告・図版",
+      "prerequisites": [
+        "docs/reports/EVALUATION-PLAN.md",
+        "docs/reports/EVIDENCE-MATRIX.md"
+      ],
+      "next": [
+        "docs/reports/PRESENTATION-OUTLINE.md",
+        "docs/reports/DECISION-RECORD-TEMPLATE.md"
+      ],
+      "status": "template"
+    },
+    {
+      "path": "docs/reports/PRESENTATION-OUTLINE.md",
+      "title": "PoC説明用のスライド構成",
+      "purpose": "読み手と持ち時間に合わせ、14図の選択・説明順・話す論点を組み立てる。",
+      "audience": [
+        "評価・報告担当"
+      ],
+      "when_to_use": "報告書の判断と根拠を、発表や引継ぎのスライドへ移すとき。",
+      "category": "07 報告・図版",
+      "prerequisites": [
+        "docs/reports/POC-REPORT-TEMPLATE.md"
+      ],
+      "next": [
+        "docs/reports/CAPTIONS.md",
+        "docs/reports/SCREENSHOT-GUIDE.md"
+      ],
+      "status": "template"
+    },
+    {
+      "path": "docs/reports/README.md",
+      "title": "PoC報告書・発表に使う図版と雛形",
+      "purpose": "用途別14図・キャプション・雛形を選び、PNG・PDF・PPTXへ書き出す。",
+      "audience": [
+        "評価・報告担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "PoC報告書や説明スライドを準備し、必要な図と根拠を選ぶとき。",
+      "category": "07 報告・図版",
+      "prerequisites": [
+        "docs/ARCHITECTURE.md"
+      ],
+      "next": [
+        "docs/reports/CAPTIONS.md",
+        "docs/reports/POC-REPORT-TEMPLATE.md",
+        "docs/reports/PRESENTATION-OUTLINE.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/reports/SCREENSHOT-GUIDE.md",
+      "title": "PoC報告書に載せる画面の撮り方",
+      "purpose": "各GUIで残す画面、先に確認する条件、写さない秘密や実データを決める。",
+      "audience": [
+        "評価・報告担当",
+        "運用担当"
+      ],
+      "when_to_use": "実施結果を社内報告へ載せるため、撮影前後の確認をするとき。",
+      "category": "07 報告・図版",
+      "prerequisites": [
+        "docs/reports/EVALUATION-PLAN.md"
+      ],
+      "next": [
+        "docs/reports/EVIDENCE-MATRIX.md",
+        "docs/reports/POC-REPORT-TEMPLATE.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "samples/README.md",
+      "title": "合成入力を最初に作る",
+      "purpose": "実データを使わずに最初の6契約素材を生成し、出力と後続処理の境界を確認する。",
+      "audience": [
+        "初めて使う人",
+        "データ利用担当"
+      ],
+      "when_to_use": "空の検証用landingに小さい固定条件の合成入力を初めて用意するとき。",
+      "category": "03 データ・操作",
+      "prerequisites": [
+        "docs/START-HERE.md"
+      ],
+      "next": [
+        "docs/DEMO-DATA.md",
+        "docs/DEMO-GUI.md",
+        "docs/MEDALLION.md"
+      ],
+      "status": "active"
+    }
+  ]
+}

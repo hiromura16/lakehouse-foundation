@@ -11,13 +11,17 @@
 import hashlib
 import io
 import json
+import math
 import re
 import shutil
 import subprocess
 import zipfile
 from datetime import datetime
+from functools import cache
 from pathlib import Path
 from xml.etree import ElementTree
+
+from svg_primitives import ATTRIBUTED_LOGOS
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORTS = ROOT / "docs/reports"
@@ -50,6 +54,21 @@ def external_destination(value: Path) -> Path:
     return path
 
 
+@cache
+def allowed_logo_payloads() -> frozenset[str]:
+    """Read the fixed attributed logos once per export process.
+
+    This immutable cache is an allowlist, not a cache of arbitrary SVG input.
+    A new process picks up any reviewed change to repository-local logos.
+    """
+    from render_architecture import logo
+
+    return frozenset(
+        re.search(r'href="([^"]+)"', logo(name, 0, 0))[1]
+        for name in ATTRIBUTED_LOGOS
+    )
+
+
 def validate_report_svg(content: str) -> ElementTree.Element:
     """Return parsed SVG after rejecting active or external content.
 
@@ -59,20 +78,11 @@ def validate_report_svg(content: str) -> ElementTree.Element:
     """
     if "<!doctype" in content.lower() or "<!entity" in content.lower():
         raise ValueError("Report SVG must not contain a DTD or entity.")
-    root = ElementTree.fromstring(content)
-    from render_architecture import logo
-
-    allowed_logos = set()
-    for name in (
-        "iceberg",
-        "spark",
-        "trino",
-        "grafana",
-        "prometheus",
-        "lakekeeper",
-        "cloudflare",
-    ):
-        allowed_logos.add(re.search(r'href="([^"]+)"', logo(name, 0, 0))[1])
+    try:
+        root = ElementTree.fromstring(content)
+    except ElementTree.ParseError:
+        raise ValueError("Report SVG must be well-formed XML.") from None
+    allowed_logos = allowed_logo_payloads()
     for element in root.iter():
         name = element.tag.rsplit("}", 1)[-1]
         if name in {"script", "foreignObject", "iframe", "style"}:
@@ -91,17 +101,25 @@ def validate_report_svg(content: str) -> ElementTree.Element:
 
 
 def write_pdf(
-    svg_text, pdf_path, title, pdf_timestamp, svg_renderer, pdf_module
+    svg_text,
+    pdf_path,
+    title,
+    pdf_timestamp,
+    svg_renderer,
+    pdf_module,
+    *,
+    svg_width_px,
 ):
-    """Fit a vector to A3/A4 landscape and replace volatile metadata."""
+    """Fit a prevalidated vector to A3/A4 and replace volatile metadata.
+
+    svg_width_px comes from export_bundle's preflight, which validates every
+    SVG before any destination is created. Do not parse it again per format.
+    """
     raw = svg_renderer.svg2pdf(bytestring=svg_text.encode("utf-8"))
     reader = pdf_module.PdfReader(io.BytesIO(raw))
     original = reader.pages[0]
     # Dense service map uses A3; focused figures use A4 landscape.
-    large = (
-        float(validate_report_svg(svg_text).attrib["width"])
-        > STANDARD_FIGURE_WIDTH_PX
-    )
+    large = svg_width_px > STANDARD_FIGURE_WIDTH_PX
     width, height = A3_LANDSCAPE_POINTS if large else A4_LANDSCAPE_POINTS
     scale = min(
         (width - 2 * PDF_MARGIN_POINTS) / float(original.mediabox.width),
@@ -220,11 +238,18 @@ def require_japanese_font():
 
 
 def portable_markdown(content: str, source: Path) -> str:
-    """Keep report links local and send code/reference links to public Git."""
+    """Rewrite prose links while preserving fenced examples byte for byte.
+
+    Backtick and tilde fences may be indented or longer than three markers.
+    An unclosed fence protects the remaining text as Markdown itself does.
+    Angle-bracket destinations retain their quoting, including spaced paths.
+    """
 
     def replace(match):
         """Rewrite one local Markdown link without fetching its target."""
-        label, target = match.group(1), match.group(2)
+        label = match.group(1)
+        angle_destination = match.group(2) is not None
+        target = match.group(2) if angle_destination else match.group(3)
         if "://" in target or target.startswith("#"):
             return match.group(0)
         location, separator, anchor = target.partition("#")
@@ -238,12 +263,34 @@ def portable_markdown(content: str, source: Path) -> str:
             )
         else:
             raise ValueError("Report link escapes the public repository.")
-        return "[" + label + "](" + relative + separator + anchor + ")"
+        destination = relative + separator + anchor
+        if angle_destination:
+            destination = "<" + destination + ">"
+        return "[" + label + "](" + destination + ")"
 
-    return re.sub(r"\[([^\]\n]*)\]\(([^\s)]+)\)", replace, content)
+    link = re.compile(r"\[([^\]\n]*)\]\((?:<([^>\n]*)>|([^\s)]+))\)")
+    result = []
+    closing_fence = None
+    for line in content.splitlines(keepends=True):
+        if closing_fence is not None:
+            result.append(line)
+            if closing_fence.fullmatch(line):
+                closing_fence = None
+            continue
+        opening = re.match(r"^[ \t]*(`{3,}|~{3,})", line)
+        if opening:
+            markers = opening.group(1)
+            closing_fence = re.compile(
+                rf"[ \t]*{re.escape(markers[0])}{{{len(markers)},}}"
+                r"[ \t]*(?:\r?\n)?"
+            )
+            result.append(line)
+        else:
+            result.append(link.sub(replace, line))
+    return "".join(result)
 
 
-def render_figure_exports(data, svgs, target, date):
+def render_figure_exports(data, svgs, svg_widths, target, date):
     """Write one SVG/Mermaid/PNG/PDF set per figure.
 
     PNGs preserve the rendered pixels, but intentionally omit metadata.
@@ -255,8 +302,10 @@ def render_figure_exports(data, svgs, target, date):
 
     for figure in data["figures"]:
         slug, svg = figure["id"], svgs[figure["id"]]
-        (target / "svg" / (slug + ".svg")).write_text(svg)
-        (target / "mermaid" / (slug + ".mmd")).write_text(figure["mermaid"])
+        (target / "svg" / (slug + ".svg")).write_text(svg, encoding="utf-8")
+        (target / "mermaid" / (slug + ".mmd")).write_text(
+            figure["mermaid"], encoding="utf-8"
+        )
         raw = cairosvg.svg2png(
             bytestring=svg.encode("utf-8"), output_width=PNG_EXPORT_WIDTH_PX
         )
@@ -272,6 +321,7 @@ def render_figure_exports(data, svgs, target, date):
             date,
             cairosvg,
             pypdf,
+            svg_width_px=svg_widths[slug],
         )
 
 
@@ -315,7 +365,8 @@ def copy_portable_documents(data, outputs, target):
     ):
         source = REPORTS / name
         (target / name).write_text(
-            portable_markdown(source.read_text(), source), encoding="utf-8"
+            portable_markdown(source.read_text(encoding="utf-8"), source),
+            encoding="utf-8",
         )
     for name in (
         "figure-index.csv",
@@ -363,7 +414,8 @@ def write_export_manifest(data, target):
         "scope": "public diagrams and templates; no deployment settings",
     }
     (target / "export-manifest.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
     )
 
 
@@ -420,8 +472,18 @@ def export_bundle(
         ]
         for figure in specification["figures"]
     }
-    for svg in svgs.values():
-        validate_report_svg(svg)
+    svg_widths = {}
+    for slug, svg in svgs.items():
+        root = validate_report_svg(svg)
+        try:
+            width = float(root.attrib["width"])
+        except (KeyError, ValueError):
+            raise ValueError("Report SVG needs a numeric width: " + slug)
+        if not math.isfinite(width) or width <= 0:
+            raise ValueError(
+                "Report SVG needs a positive finite width: " + slug
+            )
+        svg_widths[slug] = width
 
     # Only after all preflight checks do we create our own output tree.
     target.mkdir(parents=True, mode=0o700)
@@ -430,7 +492,7 @@ def export_bundle(
     date = "D:" + specification["reviewed_on"].replace("-", "") + "000000Z"
 
     # Keep the orchestration readable as the same steps listed in the guide.
-    render_figure_exports(specification, svgs, target, date)
+    render_figure_exports(specification, svgs, svg_widths, target, date)
     merge_pdf_book(specification, target, date)
     add_slides(specification, target, Presentation)
     contact_sheet(specification, target, Image)

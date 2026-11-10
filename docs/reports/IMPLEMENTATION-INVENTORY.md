@@ -1,5 +1,19 @@
 # 報告書用の実装構成一覧
 
+<!-- doc-purpose:start -->
+> **役割:** 34サービス・11profile・port・volume・接続主体を公開定義から技術付録として照合する。
+>
+> **対象読者:** 基盤構築担当 / 開発・設計担当 / 評価・報告担当
+>
+> **読むタイミング:** 詳細図の箱と線を確認するときや、構成定義の数量と制約を引用するとき。
+>
+> **前提となる資料:** [Lakehouse Foundation アーキテクチャ](<../ARCHITECTURE.md>)
+>
+> **次に読む資料:** [バージョンと連携互換性](<../COMPATIBILITY.md>) / [報告する主張と根拠の対応表](<EVIDENCE-MATRIX.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<../DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 照合日: 2026-11-10（JST）。照合基点は文書監査を反映した `b63b9d0` です。公開Compose・固定lock・同梱コードを読み取り、詳細構成図の各箱と線を確認するための技術付録として整理しました。導入先の実ホスト名・接続先・保存パス・秘密値は含めません。稼働環境への接続や再配置は行っていません。
 
 [素材一覧](README.md) から目的の図を選びます。過去の実機結果は [verification.json](../verification.json)・[VALIDATION.md](../VALIDATION.md)、採用版の公式資料は [REFERENCES.md](../REFERENCES.md) を参照してください。以下の個数は構成定義の数であり、性能値や常時起動数ではありません。
@@ -240,3 +254,23 @@ Qdrantの3点検索は合成数値の機能疎通で、意味検索精度の評�
 全常駐の設定上限は約30.56GiBです。profile別の行には共有serviceがあるため、そのまま全行を足して全体値にしません。Spark Workerのcontainer上限4GiBと、クラスタへ広告するexecutor用RAM2GiBも別の値です。Jupyter driverとexecutorのメモリは、それぞれのcontainer側で見ます。
 
 図や報告書では「coreから開始し、目的別profileを段階追加」「構成上限と実測値は別欄」と表記し、未測定のスループット・応答時間・費用削減率を埋めません。性能と受入の記録様式は [評価計画](EVALUATION-PLAN.md) を使います。
+
+## この一覧から稼働環境を照合する
+
+初心者はserviceの名前より先に、core、追加profile、初期化one-shot、明示smokeの4種類を区別します。34は定義数で、すべてが常駐するという意味ではありません。必要なprofileだけを選び、one-shotの正常終了を異常停止と混同しません。
+
+| 照合するもの | 公開側 | 導入先で確認するもの |
+| --- | --- | --- |
+| 構成 | 7つのCompose、選択profile | 実際のCommand、サービスenv、配置commit |
+| 保存 | volume keyとbindの役割 | 確定appName由来の実volume、privateの保存先、UID/GID |
+| 通信 | container名/内部port、host bind | 会社の接続制限、proxy bypass、SSH転送 |
+| 資源 | 宣言されたlimit | 起動/build/通常/負荷時の実使用量と空き |
+| 機能 | 起動依存と実装入口 | health、代表job、業務照合、停止・再開後の状態 |
+
+公開の既定portを別環境でもそのまま使うと衝突します。Environmentを分けるだけでなく、project/appName、volume、private設定、landing/workspace、host port、鍵の組を確認します。実値の対応表は社内で管理します。
+
+## 構成変更時の追従
+
+serviceを追加/削除したら、起動依存、NO_PROXY、health、資源、永続化、GUI入口、役割別の図を更新します。Composeの宣言と稼働結果は別の根拠なので、定義数を更新しただけで配備済みとは記録しません。図の基点が過去のcommitなら、差分と再照合の範囲を明記します。
+
+上級者は [CUSTOMIZATION](../CUSTOMIZATION.md) の追加profileの手順と [COMPATIBILITY](../COMPATIBILITY.md) の版の組合せを使います。復旧対象はこの表のvolumeだけでなく、外部bind、DB、暗号鍵、GUIの保存物も含め、[運用手順](../OPERATIONS.md) で一組として確認します。

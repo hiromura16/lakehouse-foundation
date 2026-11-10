@@ -1,5 +1,19 @@
 # 症状から確認する
 
+<!-- doc-purpose:start -->
+> **役割:** 観測した症状から設定・起動・通信・job・データの失敗箇所を絞り込む。
+>
+> **対象読者:** 基盤構築担当 / データ利用担当 / 運用担当
+>
+> **読むタイミング:** 成功条件を満たさないときや、削除や再生成を行う前に原因を調べるとき。
+>
+> **前提となる資料:** [初めて構築する人の一本道ガイド](<START-HERE.md>)
+>
+> **次に読む資料:** [サイト設定リファレンス](<CONFIGURATION.md>) / [平時・更新・復旧の運用手順](<OPERATIONS.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 2026-11-10監査。最初に対象の環境、配置commit、profile、発生時刻、ジョブIDを確認します。`site.env`、展開済みCompose、DB接続文字列、token、生のドライバー例外を公開ログへ貼り付けません。データ削除や再生成を初期対応にせず、観測した状態と保存先を確認します。
 
 ## まず見分ける
@@ -171,3 +185,87 @@ SSRFの設定値、内部workerの例外、NO_PROXYとの違い、GUI保存と�
 | [Kafka4.4 Connect REST](https://kafka.apache.org/44/kafka-connect/user-guide/#rest-interface) | status/configは参照、offset変更は別の管理操作 |
 | [n8n2.46.7固定設定](https://github.com/n8n-io/n8n/blob/n8n%402.46.7/packages/%40n8n/config/src/configs/ssrf-protection.config.ts) | SSRF既定と適用範囲 |
 | [Samba testparm](https://www.samba.org/samba/docs/current/man-html/testparm.1.html) | 構文合格とSMB認証・実アクセスの成功は別 |
+
+## 初めて対応するときの、変更しない調査順
+
+「エラーを消す」前に、どの層まで成功したかを切り分けます。同じ症状でも、配置先が違う場合と、処理が途中で止まった場合では復旧手順が変わります。調査中は新しい投入、定期実行、設定の連続変更を止め、既存データを保持します。
+
+| 順序 | 配置担当が見るもの | 成功の意味 | 失敗したら |
+| --- | --- | --- | --- |
+| 1 | 開いているDokploy Environment／アプリ、配置commit、private設定の選択 | 目的の環境を見ている | 別環境の再起動やデータ操作を中止 |
+| 2 | `plan` | 選択値と7Composeの構成検査が通る | missing file、権限、値、profile、portを修正。まだ再配置しない |
+| 3 | `status`／Dokployサービス状態 | コンテナの起動状態が分かる | failed initと常駐サービスを区別し、対象ログを非公開で確認 |
+| 4 | GUIの「状態」、API `/health` | APIの準備状態や到達性が分かる | mount・token・内部API設定を確認 |
+| 5 | 既存ジョブのGETとworkerのbusy／blocked | 再投入できるかを判断する材料が揃う | 不明結果なら既存処理を調べ、POSTを繰り返さない |
+| 6 | manifest／原本hash／各層の件数 | 業務処理の成否を判定できる | 入力契約と処理の確定点から調査 |
+
+`plan` の前にDocker自体が使えないなら、[ホスト準備](HOST-SETUP.md) のEngine・Compose・権限を確認します。Dockerグループへの所属後は新しいログインが必要な場合があります。`sudo` で別のホーム・Docker接続先・設定を使い、たまたま起動できた状態を通常運用にしません。
+
+ホストのランディングやprivate設定ディレクトリが存在するか、空き容量があるかだけを確認する例です。repoルートで実行し、private値やファイル内容は表示しません。これはホスト利用者の視点の確認であり、コンテナUIDの読書きやACL、別mount先の同一性まで保証しません。
+
+```bash
+python3 - "$LAKEHOUSE_ENV_FILE" <<'PYTHON'
+import json
+import shutil
+import sys
+from pathlib import Path
+
+from scripts.settings import load
+
+values = load(sys.argv[1])
+for key in ("LANDING_DIR", "CONTROL_SETTINGS_DIR"):
+    directory = Path(values[key])
+    exists = directory.is_dir()
+    result = {"setting": key, "directory_exists": exists}
+    if exists:
+        result["mode"] = oct(directory.stat().st_mode & 0o777)
+        result["free_bytes"] = shutil.disk_usage(directory).free
+    print(json.dumps(result))
+PYTHON
+```
+
+`directory_exists=false` なら、正しい設定と実体を確認してから [DEPLOYMENT.md](DEPLOYMENT.md) の作成手順へ戻ります。既存ディレクトリへの再帰的な `chmod`／`chown`、存在しないbind元を空ディレクトリで埋める操作は、原因が確定してから行います。空き容量不足では新規writerを止め、保持対象とバックアップを確認します。`docker system prune --volumes` や `down -v` は初期対処にしません。
+
+## 「失敗」の前後に残るものを確認する
+
+| 最後に成功したところ | 残り得る状態 | 再開の判断 |
+| --- | --- | --- |
+| source jobを受け付けた | ジョブIDのみ、まだ素材なし | GETで終了まで確認。受付応答だけで失敗／成功にしない |
+| 有限streamの途中batchが完了 | 完成済み素材とmanifest。後続batchは未作成の場合がある | 完了回数と素材を照合。新規jobは別IDで追加するため二重投入を判断 |
+| ファイルだけ到着、ready未到着 | 未取込の原本 | 転送元が閉じたこととhashを確認してからmarker作成 |
+| Bronzeまで完了 | 原本オブジェクトと処理済み判定、Silver／Goldは古い場合がある | 同じ入力の処理を確認し、必要なら明示してメダリオンを再実行 |
+| メダリオンの一部SQLが完了 | 一部表だけ新しいsnapshot | 残存queryがなくwriterが一つであることを確認し、原因修正後に同じ入力で再実行 |
+| CDC state完了、Kafka commit応答失敗 | bridgeのdurable checkpointがbroker表示より進んでいる場合がある | 再開時のstateとbroker範囲を確認。offsetを手動で巻き戻さない |
+| GUI/APIが再起動 | ジョブ履歴消失、既存ファイルや外部処理は残る | `404` を未実行と判断しない。manifest・DB・Trino側を照合 |
+
+readyを付け直す操作は、業務表への強制再取込の指定ではありません。workerは相対pathと内容hashも使います。逆に別名へコピーして取込ませると別素材になる場合があります。「もう一度押す」前に [MEDALLION.md](MEDALLION.md) の入力契約と再実行範囲を確認します。
+
+## workerの結果不明・確認待ちを復旧する
+
+APIの待機timeout、workerのエラー、Trinoのquery取消は別の状態です。呼出元の通信が終わってもサーバー側のSQLが終了しているとは限りません。`WORKER_RESULT_UNKNOWN` や `blocked: true` を見たら、次の順で管理者へ引き継ぎます。
+
+1. 対象job ID、操作名、開始・終了時刻、配置commit、返された固定エラーcodeを保存します。会社payloadとtokenは除きます。
+2. 新規のGUI実行、外部CLI、n8n、Airflow、Spark、CDCから同じ表へのwriterがないことを確認します。
+3. 管理者がTrino側の実行中queryと状態を確認し、残存処理の終了または取消完了を確定します。workerだけを再起動してこの確認を省略しません。
+4. 原本hash、処理済み情報、Silver／Goldのsnapshotと件数を照合し、部分完了を記録します。元ファイルを削除して件数を合わせません。
+5. 原因を修正してから一つの正規入口で再開します。workerの確認待ちはAPIの「強制解除」ボタンで解消する機能ではありません。CDCのSQLiteに残るblocked状態は [CDC.md](CDC.md) の復旧判断も必要です。
+
+状態管理の実装は [scripts/admin.py](../scripts/admin.py)、APIがbusy／blockedを見て受付を拒否する処理は [infra/demo/api.py](../infra/demo/api.py) にあります。改修時は、正常終了だけでなく応答timeout、取消応答不明、再開時の二重writerを試験します。[worker protocol試験](../tests/test_worker_protocol.py)、[API試験](../tests/test_demo_api.py)
+
+## 再現試験と問い合わせに残す記録
+
+問い合わせの記録は、秘密設定の控えと分離します。次の項目を社内の非公開記録へ残し、公開issueでは合成素材で再現した部分だけを使います。ジョブIDやcommitは秘密値ではなくても、実DB名や実URLと組み合わせた台帳は社内扱いにします。
+
+| 項目 | 記録する内容 |
+| --- | --- |
+| 期待 | 「同一素材のメダリオン再実行でGold件数不変」など判定できる条件 |
+| 実際 | どの層・表・操作で何が違うか。生の業務行は添付しない |
+| 対象 | commit、固定image版、選択profile、CLI／Dokployの管理方式 |
+| 時間 | timezone付き時刻、source／pipelineのjob ID、開始と最後の進捗 |
+| 最後の正常点 | manifestの存在、ready/hash一致、完了したbatch、完了したSQL |
+| エラー | HTTP status、固定code、終了コード。例外全文は別のprivate保管 |
+| 変更 | 直前の設定・CA・image・schema変更。パスワードそのものは書かない |
+| 再現 | 隔離環境、同じseedとscenario、単一writer、最小の操作手順 |
+| 実施済み | 読取確認と変更操作を区別し、変更前後の判定を残す |
+
+原因候補は一度に一つずつ変えます。例えばproxy、CA、image版を同時に変更すると、何が原因だったか判定できません。隔離環境で成功したあとも、会社のDNS・proxy・SQL認証・Sambaクライアントは導入先の条件で受け入れます。報告に使う合成データの期待値と、会社DBの実件数を混在させません。

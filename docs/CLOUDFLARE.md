@@ -1,5 +1,19 @@
 # Cloudflareを使う場所と社内に残す場所
 
+<!-- doc-purpose:start -->
+> **役割:** Cloudflareの入口保護・外部保存・AI候補を、社内に残す処理と分けて評価する。
+>
+> **対象読者:** 基盤構築担当 / 開発・設計担当
+>
+> **読むタイミング:** 未接続の外部サービスを追加する前に、通信・認証・費用・データ範囲を検討するとき。
+>
+> **前提となる資料:** [Lakehouse Foundation アーキテクチャ](<ARCHITECTURE.md>) / [AIへ渡せるデータとLangChain連携](<AI-READINESS.md>)
+>
+> **次に読む資料:** [ソース・指標・API・計算基盤を拡張する](<CUSTOMIZATION.md>) / [PoCの意思決定記録テンプレート](<reports/DECISION-RECORD-TEMPLATE.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 照合日: 2026-11-10。Cloudflareは外部のmanagedサービスで、このリポジトリに同梱するOSS・Compose profileではありません。社内のIceberg基盤を維持したまま入口を整える用途と、許可したデータをクラウド側へ置く用途を分けます。この資料は連携の設計・評価手順で、アカウント・ドメイン・Tunnel・課金サービスを自動的に有効化するものではありません。cloudflaredの採用版・lockも未設定です。
 
 ## この基盤への当てはめ
@@ -32,9 +46,15 @@ TunnelとAccessはWeb入口と利用者認証の候補です。Samba、SQL Serve
 flowchart LR
   USER[利用者] --> ACCESS[Access / 社内IdP]
   ACCESS --> TUNNEL[Tunnel]
-  TUNNEL --> UI[Streamlit / Grafana / n8n]
-  UI --> API[認証付きFastAPI]
-  API --> LOCAL[社内Trino / Iceberg]
+  TUNNEL --> STREAM[Streamlit]
+  TUNNEL --> GRAFANA[Grafana]
+  TUNNEL --> N8N[n8n]
+  STREAM --> API[認証付きFastAPI]
+  N8N --> WORKER[worker HTTP]
+  GRAFANA --> PROM[社内Prometheus]
+  API -->|pipeline依頼| WORKER
+  API -->|固定read| LOCAL[社内Trino / Iceberg]
+  WORKER --> LOCAL
 ```
 
 この案では業務表と原本を社内に残し、認証したWebアプリだけを接続対象にします。ただし画面の表示や操作に伴う通信がどこを経由するかは、会社の要件に沿って評価します。Tunnelを作ったことだけで、アプリ自身の権限やAPIのBearer認証が不要になるわけではありません。
@@ -86,3 +106,39 @@ LangChainからも接続候補はありますが、今回の同梱例はロー�
 | [AI Search](https://developers.cloudflare.com/ai-search/) | managed検索・入力・索引・回答の候補。今回のGold context取得とは別機能 |
 
 リポジトリ内にCloudflareのtoken、Tunnel設定、R2資格情報、Basin writer、Workers deployment、Vectorize索引同期はありません。リンクは導入判断用の一次資料で、会社側の疎通・公開・課金・データ移行を検証した記録ではありません。
+
+## 初心者の確認: 公開入口とアプリ本体は別
+
+この文書を読む段階ではCloudflareのaccount、token、Tunnel、R2、課金は未設定です。操作するのは、会社で利用を認められたネットワーク/IdP管理者と、対象アプリの管理者です。基盤のPoCを試すだけなら、まずloopbackとSSH転送で完了でき、Cloudflareを導入する必要はありません。
+
+| 言葉 | 役割 | このキットとの境界 |
+| --- | --- | --- |
+| 公開hostname | 利用者がブラウザー等へ入力する名前 | 会社で許可された名前を別途用意 |
+| connector | 外部入口からoriginへ接続するcloudflared | このCompose/lockへ未同梱 |
+| origin | 実際に画面/APIを提供する内部アプリ | 既存Grafana/Streamlit等。起動と認証は元のまま必要 |
+| Access policy | 外部入口へ来た利用者等の接続条件 | アプリ内のroleやテーブル認可を自動生成しない |
+
+origin URLのlocalhostは、connectorを動かす場所から見たlocalhostです。host実行と別コンテナ実行で同じ意味ではありません。最初の試験は、既に内部で正常に動く合成環境の1画面だけを選びます。UIごとに内部の接続経路も異なり、StreamlitはFastAPI、n8nはworker、GrafanaはPrometheusへ接続します。
+
+## 採用前に残す通信とデータ所在の表
+
+以下は設計用の記入表で、送信を承認したという記録ではありません。実hostname、URL、IdP利用者、token、価格条件は社内版へだけ記入します。
+
+| 経路 | 送るもの | 受け取るもの | 保存/ログ/認証で確認すること |
+| --- | --- | --- | --- |
+| Web入口だけ | 画面の要求・表示内容・操作 | アプリの画面/結果 | 利用者、session、経由先、アプリ自身の認証 |
+| 外部object保存 | 許可した原本/文書/Parquet | object参照・読出し | data/metadataの所在、鍵、保持、削除、復元 |
+| 外部検索/推論 | 許可した文書・context・質問 | 検索結果/回答 | 入力/出力のlog、権限filter、引用、再利用、費用 |
+| managed catalog/SQL | 合意した表とmetadataの操作 | catalog/SQLの結果 | writerの正本、移行、互換性、失敗/切戻し |
+
+Tunnel/Accessの評価に成功したから、原本をR2へ移す必要が生じるわけではありません。R2の採用に成功したから、LakekeeperとBasinの同じ表への独立writerを並べてよいことにもなりません。入口、保存、catalog、推論は別の意思決定として記録します。
+
+## 中級・上級: 1画面から広げるための受入
+
+1. 内部originへの到達とnativeログイン、画面の保存を先に確認します。
+2. 外部入口で未認証/許可外が拒否され、許可した利用者だけがoriginへ進めることを確認します。
+3. 画面表示だけでなく、長い要求・WebSocket・Download等、そのアプリで必要な操作を試します。成功した画面の範囲を記録します。
+4. 機械クライアントではAccess側の認証とMCP/API側のBearerを別々に扱えるか、採用する公式のclient手順で確認します。1つのtokenを全層へ使い回しません。
+5. 接続解除時のDNS/route/policy、アプリの内部利用、社内へ保持するデータへの影響を確認します。data移行の切戻しは別計画です。
+
+現コードへ統合する前にcloudflared等の版・配布元・lock、proxy/CA・origin到達、tokenの非公開保管、監視、利用範囲を決めます。Cloudflareに関する図は [用途別素材](reports/README.md) と [AIの入口](AI-READINESS.md) を使い、未導入の選択案として示します。実単価や上限は採用時の公式資料で確認し、測っていない費用削減や通信成功を報告しません。[意思決定記録](reports/DECISION-RECORD-TEMPLATE.md)

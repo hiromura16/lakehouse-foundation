@@ -1,5 +1,19 @@
 # SQL Server の変更を Iceberg へ反映する
 
+<!-- doc-purpose:start -->
+> **役割:** SQL ServerのsnapshotとI/U/DをDebezium・Kafka・consumer経由でIcebergへ反映する。
+>
+> **対象読者:** 基盤構築担当 / 開発・設計担当
+>
+> **読むタイミング:** DBAの準備後にcdc profileを配置し、現在値・削除・再開位置を照合するとき。
+>
+> **前提となる資料:** [会社への導入・受入ガイド](<COMPANY-ROLLOUT.md>) / [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>)
+>
+> **次に読む資料:** [平時・更新・復旧の運用手順](<OPERATIONS.md>) / [PoCの評価計画と受入条件](<reports/EVALUATION-PLAN.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 CDC は SQL Server の初回スナップショットと、その後の INSERT・UPDATE・DELETE を
 継続して取り込む追加機能です。`cdc` profile で Kafka、Debezium、consumer、
 Kafbat UI を起動します。通常のファイル投入と、SELECT だけの
@@ -117,9 +131,19 @@ python3 scripts/configure.py --output /absolute/private/site.env --upgrade
 mapping に埋め込まないでください。次は雛形を新しい専用directoryへ置く例で、`CDC_CONFIG_DIR` と同じpathを選びます。
 
 ```bash
-install -d -m 0700 /absolute/private/cdc
-install -m 0600 infra/source/sqlserver-tables.example.json \
-  /absolute/private/cdc/table-map.json
+CDC_PRIVATE_DIR=/absolute/private/cdc
+if [ -e "$CDC_PRIVATE_DIR" ] || [ -L "$CDC_PRIVATE_DIR" ]; then
+  stat -c '%a %u:%g %n' "$CDC_PRIVATE_DIR"
+else
+  install -d -m 0700 "$CDC_PRIVATE_DIR"
+fi
+if [ -e "$CDC_PRIVATE_DIR/table-map.json" ] || \
+  [ -L "$CDC_PRIVATE_DIR/table-map.json" ]; then
+  stat -c '%a %u:%g %n' "$CDC_PRIVATE_DIR/table-map.json"
+else
+  install -m 0600 infra/source/sqlserver-tables.example.json \
+    "$CDC_PRIVATE_DIR/table-map.json"
+fi
 ```
 
 エディターで6表すべての実名・取得列を対応付け、DBAが準備したcapture設定と一致させます。registry/image/build用HTTP proxyはsiteのcanonical設定を使い、SQL用truststoreとは別に扱います。
@@ -251,7 +275,7 @@ Kafka data、Connect internal topics、schema history topic、SQLite、catalog/S
 既定 7 日/1 topic 1 GiB の保持上限は別です。遅延が長いほど先にどちらかを失います。
 schema history と Connect internal topics は通常のデータ topic と別の保持設定です。
 
-## 7. 自宅・試験用の専用 DB を準備する
+## 7. 試験用の専用DBを準備する
 
 本物の DB で CDC を有効化して試す代わりに、既存の検証用 SQL Server へ新しい DB を
 1 つ作れます。`scripts/cdc-demo.py` は generator と別の、明示操作用 helper です。
@@ -355,3 +379,81 @@ lock を使います。更新時は SQL Server の対応版と protocol を再�
 - [Microsoft CDC有効化](https://learn.microsoft.com/en-us/sql/relational-databases/track-changes/enable-and-disable-change-data-capture-sql-server?view=sql-server-ver17): DBA準備と権限。
 
 起動停止・backupは [OPERATIONS.md](OPERATIONS.md) に従います。connector設定が異なる場合の拒否は保護動作です。再配置を通すためにDELETE・offset初期化へ進まず、DBAと管理者が既存設定との差を確認します。
+
+## 初学者向け: 何が動けばCDCが成功なのか
+
+| 用語 | 単位 | 本構成で確認するもの |
+| --- | --- | --- |
+| capture instance | SQL表の変更を記録する仕組み | DBAが有効化した対象と取得列 |
+| LSN | SQL Serverのログ上の位置 | commit/change LSNとevent serialで業務キーの新旧を比較 |
+| topic / partition / offset | Kafka内の配送位置 | rawのevent IDとconsumer再開位置 |
+| checkpoint | 派生表まで処理が完了した位置 | cdc-stateのSQLiteへ保存する完了offset |
+| tombstone | keyはあるがvalueがnullのKafka record | rawに保持。DELETE本体のイベントとは別のrecord |
+| lag | Kafka側の配送位置の差 | 0でもGoldの業務結果やsourceの捕捉成功を別確認 |
+
+consumerは常駐プロセスで、有限のpoll窓と件数を繰り返します。`CDC_POLL_SECONDS=5` はプロセスを5秒で終了する設定でも、更新の到着を5秒以内に保証する設定でもありません。1回の処理にはcurrent6表と派生14SQLの再構築も含まれます。失敗時の `restart: no` は無限再起動を避ける方針なので、host再起動後や異常終了後はoperatorが状態を確認して再開します。
+
+### 最初の確認は専用DBで一操作ずつ行う
+
+1. DBAが準備した専用試験DB・通常TLS・capture readerを使い、初回snapshotの6表/件数を確認します。
+2. KafbatでconnectorとtaskのRUNNING、6対象topic、consumer groupを確認します。RUNNINGはI/U/D到着の証明ではありません。
+3. 既存の専用デモDBでGUIのINSERTを1回だけ実行し、`source_only: true` / `changed_rows: 6` を確認します。
+4. raw、cdc_bronze、cdc_silver/cdc_goldの対象キーを確認します。ソースDMLの成功と分析側の非同期反映を分けます。
+5. UPDATE、DELETEを各1回ずつ同じ順で確認します。前提に合わず失敗したDMLを連打しません。
+6. consumerを再起動して、同じraw IDの重複がなく、現在値と派生値が維持されることを確認します。
+
+この順序は専用合成DB用です。会社の業務DBへデモDMLを実行する手順にはしません。通常のgeneratorが作る毎回新しいschemaと、CDC helperが用意する所有権token付き固定DBは別の試験方式です。
+
+## 障害の確定点から再開方法を選ぶ
+
+| 停止した時点 | 既に見えている可能性があるもの | 再開時の扱い |
+| --- | --- | --- |
+| raw commit直後 | 新しいraw、以前の現在値 | 同じevent IDのappendを抑止して後段を再適用 |
+| SQLite stage途中 | 一部キーの新しい現在値、完了checkpointは以前 | LSN順の再適用抑止を使い、未完了分を再処理 |
+| cdc_bronze/派生表の置換途中 | 表によって異なる処理世代 | Kafka offsetを先に進めず、原因修正後に全対象を再構築 |
+| SQLite complete後、broker commit前 | 派生結果は完了、Kafka上のackは以前 | durable checkpointから再開。次のbroker commitも確認 |
+| Trino取消が未確定 | 古いqueryがまだ書く可能性 | blockedを保持。再起動で強制解除しない |
+| stateやKafka履歴が不足 | raw/current/offsetの整合が不明 | 自動で最新へ飛ばず停止。整合backup復元か再構築を計画 |
+
+この仕組みはraw/LSN/checkpointによる再実行制御です。KafkaとSQLiteと全Iceberg表をまとめるexactly-once transactionではありません。外部Spark/SQL writerまで同じlockで止める構成でもありません。
+
+同じstate dirの多重consumerはfile lockで拒否します。別state dirを作って同じ分析表へ並列書込みする運用は、この保護の代替になりません。group/topic prefix/対象表を変えて「止まったものを迂回」する前に、元の状態と移行先を確認します。
+
+## DBAと保持期間を確認する
+
+SQL Server change table、Kafka data topic、Connect内部topic/schema history、SQLite checkpointには別々の保存期間・役割があります。SQL側のcleanupが必要なLSNを消した場合と、Kafkaがconsumerの未処理offsetを消した場合は、原因も復旧点も異なります。
+
+DBAが承認済み対象DBへ接続して行う**読取り例**です。結果は内部capture名を含むためprivateに保管します。
+
+```sql
+-- 選択したDBのcapture instanceごとの保持範囲の下端を確認する。
+SELECT
+    capture_instance,
+    sys.fn_cdc_get_min_lsn(capture_instance) AS oldest_available_lsn
+FROM cdc.change_tables;
+
+-- capture処理が変更表へ反映した位置の上端を確認する。
+SELECT sys.fn_cdc_get_max_lsn() AS newest_captured_lsn;
+```
+
+これはLSNを取得する例で、保持できる残り時間やKafka lagを自動計算するものではありません。権限不足でもmin LSNがゼロになる場合があるため、データがないと即断しません。DBAがcapture/cleanup job、Agent、connectorの最終捕捉位置と合わせて判断します。[Microsoft min LSN](https://learn.microsoft.com/en-us/sql/relational-databases/system-functions/sys-fn-cdc-get-min-lsn-transact-sql?view=sql-server-ver17)・[max LSN](https://learn.microsoft.com/en-us/sql/relational-databases/system-functions/sys-fn-cdc-get-max-lsn-transact-sql?view=sql-server-ver17)
+
+| 変更・事象 | 本構成で勝手に行わないこと | 必要な判断 |
+| --- | --- | --- |
+| mapping/列型/主キーを変更 | 既存stateのidentityを手で書換えない | 契約・capture・新旧データの移行方法を確認 |
+| connector configに差異 | registerからPUT/DELETEしない | 現在設定と候補の差をprivateに照合 |
+| Kafka保持を拡張 | 過去に削除されたrecordが復活すると期待しない | 現在の欠落有無を先に判定 |
+| 初期snapshotを再実行 | offset/historyを無条件に削除しない | sourceと分析側を一組として再構築する計画 |
+| stateを復元 | 最新の別Kafka状態と無計画に混ぜない | source identity・checkpoint・watermarkを照合 |
+
+## 実装を変更する人の入口
+
+| 実装 | 責任範囲 | 拡張時に確認するもの |
+| --- | --- | --- |
+| [config.py](../infra/cdc/config.py) | private設定、6表map、topic名 | 既存state identityと対象契約 |
+| [connector.py](../infra/cdc/connector.py) | 登録候補と厳密な既存比較 | 設定一致no-opと差異拒否、secret非表示 |
+| [state.py](../infra/cdc/state.py) | LSN/DELETE/現在値/checkpoint | 順序逆転、再配送、DELETE後の正当な再INSERT |
+| [consumer.py](../infra/cdc/consumer.py) | raw→state→派生→checkpoint→ack | 各確定点の失敗と再開、取消未確定、保持切れ |
+| [cdc-demo.py](../scripts/cdc-demo.py) | 所有確認済み専用DBの固定DML | source-only、誤接続拒否、同意とrollback |
+
+複合キー・schema evolution・並列consumer・増分MERGE等は、設定値を増やすだけでは実装できません。source contract、event identity、state migration、表更新の競合と受入試験を設計し、現在の小さい全表再構築方式と性能・保証の差を記録します。

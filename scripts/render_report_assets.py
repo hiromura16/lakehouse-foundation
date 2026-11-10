@@ -16,17 +16,27 @@ import argparse
 import csv
 import io
 import json
+import math
 import re
 import unicodedata
+from datetime import date
 from html import escape
 from pathlib import Path
+
+from documentation import purpose_block
+from svg_primitives import (
+    ATTRIBUTED_LOGOS,
+    COLORS,
+    svg_rectangle,
+    svg_text,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORTS = ROOT / "docs/reports"
 SPEC = REPORTS / "figures.json"
 FONT = "Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif"
-INK = "#152a43"
-MUTED = "#536780"
+INK = COLORS["report_ink"]
+MUTED = COLORS["report_muted"]
 TONES = {
     "blue": ("#edf4ff", "#b8cee8", "#245fa6"),
     "teal": ("#eaf7f3", "#a4d1c1", "#126c59"),
@@ -75,61 +85,225 @@ def text(x, y, value, size=24, color=INK, weight=400):
 
     Text stays text rather than paths, preserving SVG editing and PDF search.
     """
-    return (
-        f'<text x="{x:g}" y="{y:g}" fill="{color}" '
-        f'font-size="{size}" font-weight="{weight}">'
-        f"{escape(str(value))}</text>"
+    return svg_text(
+        x, y, str(value), size, color, weight, coordinate_format="g"
     )
 
 
 def rectangle(x, y, width, height, fill, stroke="none", radius=16):
     """Render a simple print-friendly panel without shadows."""
-    return (
-        f'<rect x="{x:g}" y="{y:g}" width="{width:g}" '
-        f'height="{height:g}" rx="{radius}" fill="{fill}" '
-        f'stroke="{stroke}"/>'
+    return svg_rectangle(
+        x, y, width, height, fill, stroke, radius, coordinate_format="g"
     )
 
 
+def spec_error(location, instruction):
+    """Identify an editable JSON location instead of exposing a traceback."""
+    return ValueError(f"{SPEC.name}: {location}: {instruction}")
+
+
+def require_fields(value, location, fields):
+    """Check an object's required fields before accessing any of them."""
+    if not isinstance(value, dict):
+        raise spec_error(location, "Use a JSON object.")
+    for field, expected in fields.items():
+        child = f"{location}.{field}"
+        if field not in value:
+            raise spec_error(child, "Add this required field.")
+        if expected == "number":
+            require_number(value[field], child)
+        elif type(value[field]) is not expected:
+            names = {str: "string", list: "array", int: "integer"}
+            raise spec_error(child, f"Use a JSON {names[expected]}.")
+
+
+def require_number(value, location, *, positive=False):
+    """Refuse booleans, nonfinite coordinates and nonpositive dimensions."""
+    try:
+        finite = type(value) in (int, float) and math.isfinite(value)
+    except OverflowError:
+        finite = False
+    if not finite or (positive and value <= 0):
+        expected = "positive finite number" if positive else "finite number"
+        raise spec_error(location, "Use a " + expected + ".")
+
+
+def require_strings(values, location):
+    """Check each list item before wrapping text or resolving source paths."""
+    for index, value in enumerate(values):
+        if not isinstance(value, str):
+            raise spec_error(f"{location}[{index}]", "Use a JSON string.")
+
+
+def validate_panel(panel, location, figure):
+    """Validate one card's content, logo and drawable geometry."""
+    require_fields(
+        panel,
+        location,
+        {
+            "key": str,
+            "x": "number",
+            "y": "number",
+            "width": "number",
+            "height": "number",
+            "tone": str,
+            "title": str,
+            "lines": list,
+            "tag": str,
+            "logo": str,
+        },
+    )
+    if not panel["key"]:
+        raise spec_error(location + ".key", "Use a nonempty panel key.")
+    require_strings(panel["lines"], location + ".lines")
+    for dimension in ("width", "height"):
+        require_number(
+            panel[dimension], location + "." + dimension, positive=True
+        )
+    x, y = panel["x"], panel["y"]
+    if (
+        x < 32
+        or y < 185
+        or x + panel["width"] > figure["width"] - 32
+        or y + panel["height"] > figure["height"] - 175
+    ):
+        raise spec_error(location, "Keep this panel inside the content area.")
+    if panel["tone"] not in TONES:
+        raise spec_error(location + ".tone", "Choose: " + ", ".join(TONES))
+    if panel["logo"] and panel["logo"] not in ATTRIBUTED_LOGOS:
+        raise spec_error(location + ".logo", "Use an attributed logo or ''.")
+
+
+def validate_edge(edge, location, keys):
+    """Check endpoints and optional waypoints before rendering a route."""
+    require_fields(
+        edge,
+        location,
+        {"source": str, "target": str, "label": str, "kind": str},
+    )
+    for endpoint in ("source", "target"):
+        if edge[endpoint] not in keys:
+            raise spec_error(
+                location + "." + endpoint, "Use an existing panel key."
+            )
+    if edge["kind"] not in EDGES:
+        raise spec_error(location + ".kind", "Choose: " + ", ".join(EDGES))
+    if "points" not in edge:
+        return
+    points = edge["points"]
+    if not isinstance(points, list) or len(points) < 2:
+        raise spec_error(
+            location + ".points", "Use at least two [x, y] pairs."
+        )
+    for index, point in enumerate(points):
+        point_location = f"{location}.points[{index}]"
+        if not isinstance(point, list) or len(point) != 2:
+            raise spec_error(point_location, "Use one [x, y] coordinate pair.")
+        for coordinate, number in enumerate(point):
+            require_number(number, f"{point_location}[{coordinate}]")
+
+
+def validate_figure(figure, location):
+    """Validate a figure independently; return its ID for duplicate checks."""
+    require_fields(
+        figure,
+        location,
+        {
+            "id": str,
+            "title": str,
+            "subtitle": str,
+            "caption": str,
+            "audience": str,
+            "width": "number",
+            "height": "number",
+            "panels": list,
+            "edges": list,
+            "notes": list,
+            "sources": list,
+            "mermaid": str,
+        },
+    )
+    slug = figure["id"]
+    if not re.fullmatch(r"[0-9]{2}-[a-z-]+", slug):
+        raise spec_error(location + ".id", "Use an ID such as 01-platform.")
+    for dimension in ("width", "height"):
+        require_number(
+            figure[dimension], location + "." + dimension, positive=True
+        )
+    require_strings(figure["notes"], location + ".notes")
+    require_strings(figure["sources"], location + ".sources")
+    for index, source in enumerate(figure["sources"]):
+        path = ROOT / source
+        if (
+            not source
+            or Path(source).is_absolute()
+            or ".." in Path(source).parts
+            or not path.exists()
+            or not path.resolve().is_relative_to(ROOT)
+        ):
+            raise spec_error(
+                f"{location}.sources[{index}]",
+                "Use an existing repository-relative path.",
+            )
+    keys = set()
+    for index, panel in enumerate(figure["panels"]):
+        panel_location = f"{location}.panels[{index}]"
+        validate_panel(panel, panel_location, figure)
+        if panel["key"] in keys:
+            raise spec_error(panel_location + ".key", "Use a unique key.")
+        keys.add(panel["key"])
+    for index, edge in enumerate(figure["edges"]):
+        validate_edge(edge, f"{location}.edges[{index}]", keys)
+    return slug
+
+
 def load_spec():
-    """Validate the public manifest before generating any output."""
-    data = json.loads(SPEC.read_text(encoding="utf-8"))
-    if data.get("schema_version") != 1:
-        raise ValueError("Unsupported report figure schema.")
+    """Reject malformed input before generating assets or creating exports.
+
+    Error messages name the JSON field and an edit the author can make.
+    In particular, export dates are checked before optional renderers run.
+    """
+    try:
+        data = json.loads(SPEC.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise spec_error(
+            f"line {error.lineno}, column {error.colno}",
+            "Fix JSON syntax: " + error.msg,
+        ) from None
+    require_fields(
+        data,
+        "$",
+        {
+            "schema_version": int,
+            "reviewed_on": str,
+            "reviewed_source_commit": str,
+            "figures": list,
+        },
+    )
+    if data["schema_version"] != 1:
+        raise spec_error("$.schema_version", "Use supported version 1.")
+    if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", data["reviewed_on"]):
+        raise spec_error("$.reviewed_on", "Use a valid YYYY-MM-DD date.")
+    try:
+        date.fromisoformat(data["reviewed_on"])
+    except ValueError:
+        raise spec_error(
+            "$.reviewed_on", "Use a valid YYYY-MM-DD date."
+        ) from None
+    if not re.fullmatch(r"[0-9a-f]{40}", data["reviewed_source_commit"]):
+        raise spec_error(
+            "$.reviewed_source_commit",
+            "Use the reviewed commit's full 40-digit SHA.",
+        )
+    if not data["figures"]:
+        raise spec_error("$.figures", "Add at least one figure.")
     names = set()
-    for figure in data["figures"]:
-        slug = figure["id"]
-        if not re.fullmatch(r"[0-9]{2}-[a-z-]+", slug) or slug in names:
-            raise ValueError("Invalid or duplicate figure ID.")
+    for index, figure in enumerate(data["figures"]):
+        location = f"$.figures[{index}]"
+        slug = validate_figure(figure, location)
+        if slug in names:
+            raise spec_error(location + ".id", "Use a unique figure ID.")
         names.add(slug)
-        keys = {panel["key"] for panel in figure["panels"]}
-        if len(keys) != len(figure["panels"]):
-            raise ValueError("Duplicate panel key: " + slug)
-        for source in figure["sources"]:
-            path = ROOT / source
-            if (
-                Path(source).is_absolute()
-                or ".." in Path(source).parts
-                or not path.exists()
-            ):
-                raise ValueError("Missing public source: " + source)
-        for panel in figure["panels"]:
-            x, y = panel["x"], panel["y"]
-            w, h = panel["width"], panel["height"]
-            if (
-                x < 32
-                or y < 185
-                or x + w > figure["width"] - 32
-                or y + h > figure["height"] - 175
-            ):
-                raise ValueError("Panel outside content area: " + slug)
-            if panel["tone"] not in TONES:
-                raise ValueError("Unknown panel tone.")
-        for edge in figure["edges"]:
-            if edge["source"] not in keys or edge["target"] not in keys:
-                raise ValueError("Unknown edge endpoint: " + slug)
-            if edge["kind"] not in EDGES:
-                raise ValueError("Unknown route kind.")
     return data
 
 
@@ -137,15 +311,7 @@ def embedded_logo(name, x, y, size=46):
     """Use only the seven attributed, repository-local upstream marks."""
     if not name:
         return ""
-    if name not in {
-        "iceberg",
-        "spark",
-        "trino",
-        "grafana",
-        "prometheus",
-        "lakekeeper",
-        "cloudflare",
-    }:
+    if name not in ATTRIBUTED_LOGOS:
         raise ValueError("Unknown attributed logo.")
     # Reuse viewport normalization from the existing architecture generator.
     from render_architecture import logo
@@ -383,12 +549,35 @@ def gallery(data, rendered):
 
 
 def captions(data):
-    """Provide captions and source links ready for report attribution."""
+    """図の用途・制約・根拠を、共通の文書役割欄と一緒に生成する。
+
+    冒頭の役割は文書registryを正本にする。図ごとの説明はfigures.jsonを
+    正本にし、手で編集したCAPTIONSが次回生成で消える状態を避ける。
+    実環境の結果を読み取ったり、評価済みと補完したりはしない。
+    """
     parts = [
         "# 図キャプションと根拠の台帳\n",
+        purpose_block("docs/reports/CAPTIONS.md") + "\n",
         "[図版集の使い方](README.md) / [HTML一覧](gallery.html)\n",
         "照合日: " + data["reviewed_on"] + "。生成元はfigures.jsonです。"
         "図の作成は、同日付で全機能を再試験したことを意味しません。\n",
+        "## 初めて図を使うとき\n",
+        "1. 説明したい問いを決め、下の用途から図を選びます。\n"
+        "2. SVG/PNGを貼り、同じ図のキャプションを添えます。\n"
+        "3. 合成条件・未評価・表単位commit等の注記も残します。\n"
+        "4. 会社での結果は別の証跡IDで示し、図の照合日と分けます。\n",
+        "captionは図の説明で、会社での実施結果の代筆ではありません。"
+        "全体を示す図01は拡大可能な付録にし、説明の中心には用途別図を"
+        "選ぶと読みやすくなります。\n",
+        "## 根拠を追って変更するとき\n",
+        "専門のレビューでは、各図の根拠からCompose・SQL・API・"
+        "検証記録へ遡り、対象commitの差分を確認します。"
+        "sourcesは公開ファイルの参照で、今回の会社受入の証跡を"
+        "自動収集する機能ではありません。\n",
+        "内容を直す場合はfigures.jsonのcaption・notes・sources・"
+        "Mermaidを揃え、SVG/HTML/台帳を再生成します。"
+        "[編集ガイド](EDITING-GUIDE.md)と"
+        "[根拠対応表](EVIDENCE-MATRIX.md)を使います。\n",
     ]
     for figure in data["figures"]:
         slug = figure["id"]
@@ -479,7 +668,7 @@ def main():
         stale = [
             path.relative_to(ROOT).as_posix()
             for path, value in outputs.items()
-            if not path.is_file() or path.read_text() != value
+            if not path.is_file() or path.read_text(encoding="utf-8") != value
         ]
         if stale:
             raise SystemExit("Stale report assets: " + ", ".join(stale))

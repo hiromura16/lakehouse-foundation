@@ -1,7 +1,15 @@
+# 役割: orchestration profileで、workerの登録済み処理を手動DAGから呼ぶ。
+# coreと同じprojectへ結合する。Spark処理系をAirflow内へ同居させる構成ではない。
+# 読む順序: metadata DB → standalone Airflow → state volume。
+# API・scheduler等を単一コンテナで動かすPoC用。並列数とprofileを明示して使う。
+# Webの公開先はBIND_IPの既定loopback。DBはhostへ公開しない。
+
+# 内部service名をproxy対象から除外し、社内proxyへ内部要求を送らない。
+# 同じ除外値を大文字/小文字の両方へ渡し、利用libraryの違いを吸収する。
 x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
 
-# Optional standalone Airflow lab, merged on the core project's default network.
 services:
+  # DAG実行状態とConnection等のmetadataを保存し、catalog DBとは独立させる。
   airflow-db:
     profiles: [orchestration]
     image: postgres:18.6-alpine@sha256:123b17998ccaf47e53b502e8c6a1e79afd8f579c6f3eec83c563da026f957395
@@ -21,11 +29,15 @@ services:
       interval: 5s
       timeout: 3s
       retries: 30
+    # metadata DBとAirflowで同じ回転上限を使い、標準ログの保管量を揃える。
     logging: &airflow_logging
       driver: json-file
       options:
         max-size: 10m
         max-file: '3'
+  # LocalExecutorのstandalone環境。DBがhealthyになってから起動する。
+  # 同梱DAGは手動実行・再試行0でworkerを呼ぶ。DAG作成時もpause状態を維持する。
+  # worker tokenは実行時にConnectionから読み、Composeに業務資格情報を埋め込まない。
   airflow:
     profiles: [orchestration]
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-airflow:local
@@ -88,8 +100,9 @@ services:
       retries: 30
       start_period: 90s
     logging: *airflow_logging
+# metadata DBとAirflow homeは別volume。復旧時はFernet/JWT鍵との対応も確認する。
 volumes:
-  # Use the same optional migration prefix as the core data volumes.
+  # 既存volumeの引継ぎprefixはcoreと同じ規則にし、DBだけの別環境参照を避ける。
   airflow-db:
     name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_airflow-db
   airflow-state:

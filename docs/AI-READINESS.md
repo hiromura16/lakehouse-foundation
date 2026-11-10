@@ -1,5 +1,19 @@
 # AIへ渡せるデータとLangChain連携
 
+<!-- doc-purpose:start -->
+> **役割:** Goldとsnapshotの根拠をJSON・LangChain Documentへ渡し、推論やRAGとの境界を確認する。
+>
+> **対象読者:** データ利用担当 / 開発・設計担当
+>
+> **読むタイミング:** AIへ渡す業務contextを取得するときや、モデル連携の追加要件を決めるとき。
+>
+> **前提となる資料:** [MES・ERPデータをBronzeからGoldへ整える](<MEDALLION.md>)
+>
+> **次に読む資料:** [AIクライアントからMCPで操作する](<MCP.md>) / [Cloudflareを使う場所と社内に残す場所](<CLOUDFLARE.md>) / [ソース・指標・API・計算基盤を拡張する](<CUSTOMIZATION.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 照合日: 2026-11-10。Trino **484**、langchain-core **1.7.6**、langchain-ollama **1.1.0**、LangSmith **0.14.17**、Trino Python client **0.340.0** の固定lockと同梱コードが対象です。
 
 この構成では、AIが利用する事実と、その根拠を取り出す経路を用意します。モデルの推論、画像OCR、埋め込みの生成、ベクトル索引は別の段階です。モデルやクラウドのアカウントを用意しなくても、データの参照とLangChain Documentへの変換を検証できます。
@@ -155,3 +169,37 @@ CloudflareのAI機能を使う選択肢は [CLOUDFLARE.md](CLOUDFLARE.md) に整
 - [langchain-core 1.7.6](https://pypi.org/project/langchain-core/1.7.6/)、[langchain-ollama 1.1.0](https://pypi.org/project/langchain-ollama/1.1.0/) の配布情報と `examples/ai/requirements.lock`。採用版と公開されている別版を区別しました。
 - [LangSmith tracing_context](https://reference.langchain.com/python/langsmith/run_helpers/tracing_context) と `context_chain.py`。`enabled=False`、Document metadata、モデルへ実行toolを渡さない構成へ照合しました。参考文書が指す新しいAPIへ自動更新する手順ではありません。
 - GUIのボタン・待機・Downloadは `infra/demo/app.py`、APIは `infra/demo/poc_api.py` と `api.py` を正本にしています。
+
+## 初めてAIの準備をする人へ: 参照と推論を分ける
+
+AIレディーは、モデルが自動で正しい判断をする意味ではありません。この基盤では、型のある表、業務指標の定義、原本の由来、表ごとのsnapshot、固定の取得APIを先に用意します。操作担当はブラウザーでcontextを保存し、分析/AI担当はそのJSONを受け取って意味と範囲を確認します。秘密のenvやworker tokenを渡す必要はありません。
+
+| やりたいこと | 今使える経路 | 成功を確認するもの |
+| --- | --- | --- |
+| 業務値の意味を知る | データcatalog | 粒度、列、主キー、Goldの式 |
+| 同じ版の事実を保存する | GUI/API/CLIのcontext export | 表名、snapshot_id、返却件数、上限 |
+| LangChainへ渡す | 同梱Document adapter | metadataの表・snapshotと内容の対応 |
+| AIクライアントから読む | MCPのgold_context等 | 認証、tool結果、構造化された応答 |
+| 文書の意味検索や回答を評価する | 追加のmodel/index/評価計画 | 正解集合、権限、引用、品質、費用。現時点の自動完成ではない |
+
+## 質問の種類から「答えられる範囲」を判断する
+
+例えばsalesを20行だけ取得したcontextに対して「全受注の未出荷残はいくつか」と聞くと、抜粋の合計を全件合計として答える危険があります。この場合は「この20行の範囲では」と限定するか、全件の正式な集計を別の許可されたSQL/データセットとして用意します。モデルへ任意SQLを実行させて上限を回避する設計にはしません。
+
+| 質問 | 必要な事実 | 現contextの限界 |
+| --- | --- | --- |
+| この工場日の歩留まりは | 対象のproduction行と指標定義 | 対象行が抜粋へ含まれることを確認 |
+| 全工場の期間合計は | 同じ範囲の全件または専用集計 | 行数上限の抜粋だけでは母集団を保証しない |
+| その値はいつの表か | tableとsnapshot_id | exporterのcreated_atだけではデータの業務鮮度は分からない |
+| 不良が増えた原因は | 比較対象、設備/工程、独立した原因根拠 | 合計の変化だけで原因や因果関係を証明しない |
+| 元の写真に何が写るか | 原本、OCR/画像model、評価 | 現context exporterは画像理解を行わない |
+
+snapshotを参照できなくなった場合、別の版へ読み替えて同じ根拠だったように扱いません。参照版が失効/利用不能かを確認し、新しい取得として記録します。複数表はそれぞれmainを選ぶため、同時点の整合が必要な評価には別の実行監査・公開世代の仕組みが必要です。
+
+## AI連携を拡張する実装ポイントと回帰
+
+固定表・並び順・行数境界は [ai_context.py](../scripts/ai_context.py) のDATASETS/collect、Document化と任意推論は [context_chain.py](../examples/ai/context_chain.py)、公開範囲は [MCP server](../infra/mcp/server.py) にあります。
+
+新しいGoldを公開するなら、①粒度/式/鮮度/母集団、②snapshotを固定する方法、③最大行数と列、④秘密/利用者権限、⑤モデルへ渡すmetadata、⑥根拠を引用できない時の応答、を先に決めます。任意表名やSQLを引数へ増やすより、必要な業務データセットを固定で追加します。
+
+回帰ではmainのrollback、Gold未作成、空の結果、上限、異なる表のsnapshot、参照SQL hashの意味、外部tracing、秘密値非表示を確認します。回答精度を測る段階では、評価問題と正解・不明の基準、モデル/設定、参照snapshot、権限を持たない質問、回答遅延/費用を記録します。Document34件生成の過去記録を、そのモデルの正答率へ読み替えません。[評価計画](reports/EVALUATION-PLAN.md)・[変更手順](CUSTOMIZATION.md)

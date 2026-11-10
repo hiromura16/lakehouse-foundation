@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="docs/START-HERE.md">はじめに</a> ·
+  <a href="docs/DOCUMENTATION-MANIFEST.md">全MDの目的とリンク</a> ·
   <a href="#dokployで管理する場合">Dokployで導入</a> ·
   <a href="docs/COMPANY-ROLLOUT.md">会社へ導入</a> ·
   <a href="docs/POC-PORTAL.md">GUIで操作</a> ·
@@ -16,6 +17,20 @@
 </p>
 
 # Lakehouse Foundation
+
+<!-- doc-purpose:start -->
+> **役割:** MES・ERP向けPoC基盤の機能、構築入口、任意機能と報告素材を見渡す。
+>
+> **対象読者:** 初めて使う人 / 基盤構築担当 / 評価・報告担当
+>
+> **読むタイミング:** clone直後に、何を構築できるかと最初の手順を選ぶとき。
+>
+> **前提となる資料:** なし。必要な用語は本文で確認します。
+>
+> **次に読む資料:** [初めての理解から運用・設計へ進む道順](<docs/LEARNING-PATH.md>) / [初めて構築する人の一本道ガイド](<docs/START-HERE.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<docs/DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
 
 **MES・ERPの素材を受け取り、Icebergで保存し、SQLとGUI・APIから使うデータレイクハウス基盤。** 公開Gitをcloneし、導入先の接続先・資格情報・保存先をGit外のprivate設定へ入力して構築します。会社のSQL Serverは既存の外部DBへ接続します。
 
@@ -48,6 +63,8 @@
 [オフラインHTML一覧](docs/reports/gallery.html) · [報告書雛形](docs/reports/POC-REPORT-TEMPLATE.md) · [評価計画](docs/reports/EVALUATION-PLAN.md)
 
 ## 導入の順番
+
+初めて触れる用語は [用語集](docs/GLOSSARY.md)、空のVMからの準備は [ホスト構築](docs/HOST-SETUP.md) にあります。[習熟度別の学習経路](docs/LEARNING-PATH.md) は操作担当・構築担当・拡張担当それぞれの到達点を示します。
 
 **初めての構築は [一本道ガイド](docs/START-HERE.md) を上から進めてください。** 作業する端末、入力場所、期待結果、全機能を追加する順序をまとめています。採用版ごとの根拠は [公式リファレンス・全ドキュメント監査表](docs/REFERENCES.md) にあります。
 
@@ -183,6 +200,8 @@ uv pip sync --python /absolute/private/lakehouse-dev/bin/python \
 
 ## 目的別のガイド
 
+**文書が多くて迷ったら [ドキュメント・マニフェスト](docs/DOCUMENTATION-MANIFEST.md) を開いてください。** 全MDの役割、読者、使う時点、前提・次の文書を一覧化しています。個々のMD冒頭にも同じ役割説明があります。
+
 | やりたいこと | 読む文書 |
 | --- | --- |
 | 初めて導入・会社へ展開する | [はじめに](docs/START-HERE.md) · [会社導入](docs/COMPANY-ROLLOUT.md) · [企業proxy / CA](docs/COMPANY-PROXY.md) |
@@ -192,3 +211,14 @@ uv pip sync --python /absolute/private/lakehouse-dev/bin/python \
 | AIや外部サービスを検討する | [AI / LangChain](docs/AI-READINESS.md) · [Cloudflare](docs/CLOUDFLARE.md) · [PoCツール](docs/POC-TOOLS.md) |
 
 Dokploy管理ではGUIのStop、CLI管理では `./scripts/lakehouse.sh down` で停止します。名前付きvolumeを保持します。原本、カタログDB、暗号鍵、GUIの保存内容を一組として保管し、復元は別環境で確認します。
+
+## 習熟度に応じた使い方
+
+| 担当 | 最初の到達点 | 次に進む条件 |
+| --- | --- | --- |
+| 初心者・操作担当 | 合成素材をGUIで投入し、変換後のGoldと品質件数を見る | 素材生成と変換、保存と反映、合成値と実績値の違いを説明できる |
+| 構築・運用担当 | core→必要profileの順に配置し、停止・再開後も同じvolumeを使う | proxyの層、appName、秘密の保管先、設定反映担当を確認済み |
+| 開発・データ担当 | 入力契約→SQL→品質検査→Gold指標→APIの対応を追う | [拡張手順](docs/CUSTOMIZATION.md)に沿って専用環境と回帰条件を用意する |
+| 評価・意思決定担当 | 対象commitと根拠を付けてPoC結果を整理する | 未評価の会社接続・性能・復元・AI精度を別の受入として扱う |
+
+この基盤は、固定の入力契約と明示的な処理APIを持つPoCの出発点です。GUIで設定できる範囲は [GUIの選択](docs/GUI-OPTIONS.md)、コード変更を伴う範囲は [拡張手順](docs/CUSTOMIZATION.md) で確認します。任意のMES/ERPスキーマを接続するだけで自動的に業務指標へ変換する機能ではありません。

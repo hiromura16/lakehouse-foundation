@@ -54,6 +54,8 @@ jobs:
       run: python -m unittest discover -s tests
     - name: Check generated report figures and offline gallery
       run: python scripts/render_report_assets.py --check
+    - name: Check Markdown roles, manifest and local links
+      run: python scripts/documentation.py --check
     - name: Check Trino SQL
       run: sqlfluff lint --dialect trino medallion
     - name: Validate all Compose profiles without starting services
@@ -71,13 +73,13 @@ jobs:
         landing.mkdir(mode=0o700, exist_ok=True)
         env_file = root / 'lakehouse-ci-private/site.env'
         lines = []
-        for line in env_file.read_text().splitlines():
+        for line in env_file.read_text(encoding='utf-8').splitlines():
             if line.startswith('LANDING_DIR='):
                 line = 'LANDING_DIR=' + str(landing)
             if line.startswith('COMPOSE_PROFILES='):
                 line = 'COMPOSE_PROFILES=automation,monitoring,compute,orchestration,demo,cdc,bi,notebooks,vector,lineage,mcp'
             lines.append(line)
-        env_file.write_text('\n'.join(lines) + '\n')
+        env_file.write_text('\n'.join(lines) + '\n', encoding='utf-8')
         PY
         ./scripts/lakehouse.sh --env-file "$RUNNER_TEMP/lakehouse-ci-private/site.env" plan
         docker compose --env-file "$RUNNER_TEMP/lakehouse-ci-private/site.env" \
