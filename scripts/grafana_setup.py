@@ -204,14 +204,31 @@ def export_dashboard(values, output):
 
 def main():
     """Initialize or privately export using explicit or shell-selected env."""
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog=(
+            "対象は標準dashboardのUIDだけです。GUI編集を上書きする機能や、"
+            "Grafana全体のbackup・利用者/権限のexportではありません。"
+        ),
+    )
     parser.add_argument(
         "--env-file",
         type=Path,
         default=os.environ.get("LAKEHOUSE_ENV_FILE") or None,
+        help=(
+            "Grafana管理者のprivate site.env。省略時はLAKEHOUSE_ENV_FILEを使う"
+        ),
     )
-    parser.add_argument("--output", type=Path)
-    parser.add_argument("action", choices=["init", "export"])
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="export時に必須のGit外JSON絶対パス。既存ファイルは上書きしない",
+    )
+    parser.add_argument(
+        "action",
+        choices=["init", "export"],
+        help="init=標準dashboardがなければ一度だけ作成、export=現在の標準UIDを保存",
+    )
     args = parser.parse_args()
     if args.env_file is None:
         parser.error("Provide --env-file or set LAKEHOUSE_ENV_FILE.")

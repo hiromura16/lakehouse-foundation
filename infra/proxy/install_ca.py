@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Install public build-time CA certificates without removing base trust."""
+"""Add public CA certificates to build-image trust without dropping roots.
+
+This command writes the OS certificate directory and bundle, and imports
+hash-named aliases into the existing Java truststore when keytool is present.
+Missing or empty optional input is skipped. Nonempty input must be a regular,
+non-symlink PEM file of at most one MiB, with at most 64 certificate blocks.
+Private keys are rejected. Added trust remains in the resulting image.
+"""
 
 import argparse
 import json
@@ -109,7 +116,12 @@ def install_java(entries, files):
 
 
 def install(ca_file, *, cert_dir=CERT_DIR, bundle=BUNDLE, java=True):
-    """Install an optional public chain; missing/empty input is a no-op."""
+    """Install a bounded public chain, preserving OS and optional JRE roots.
+
+    Return status and certificate counts only. Missing/empty input is a
+    no-op. Installing requires permission to write the selected certificate
+    directory, OS bundle and, when enabled, the existing Java truststore.
+    """
     source = Path(ca_file)
     if not source.exists() or source == Path("/dev/null"):
         return {"status": "skipped", "certificates": 0, "java_certificates": 0}
@@ -164,7 +176,13 @@ def main():
     """Run during image build; log counts only, never names or PEM bytes."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--ca-file", type=Path, default=Path("/run/secrets/corporate_ca")
+        "--ca-file",
+        type=Path,
+        default=Path("/run/secrets/corporate_ca"),
+        help=(
+            "build時に追加する公開CA PEM。既定: /run/secrets/corporate_ca。"
+            "未存在/空ならskip。OS/JREの信頼先を更新するため書込権限が必要"
+        ),
     )
     args = parser.parse_args()
     try:

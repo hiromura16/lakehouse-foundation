@@ -1,4 +1,10 @@
-"""Fetch checksum-pinned Swagger UI assets for offline documentation."""
+"""Download pinned Swagger UI files during build for local browser serving.
+
+The npm archive is fetched over HTTPS, limited to 20 MiB and checked against
+its pinned SHA-512. Only the four named regular members are written, each at
+most 8 MiB. Existing same-named output files are replaced. Browsers later use
+these local assets instead of contacting a CDN; no Node runtime is installed.
+"""
 
 import argparse
 import base64
@@ -23,7 +29,11 @@ ASSETS = {
 
 
 def fetch(output):
-    """Verify the whole npm archive and copy only named regular files."""
+    """Verify the whole archive before writing the selected local assets.
+
+    Archive paths are not extracted wholesale. The output directory is
+    created if needed; only the fixed ASSETS filenames are written there.
+    """
     with urlopen(URL, timeout=60) as response:
         content = response.read(MAX_DOWNLOAD + 1)
     if len(content) > MAX_DOWNLOAD:
@@ -47,7 +57,13 @@ def main():
     """Build assets without placing a node runtime in the API image."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--output", type=Path, default=Path(__file__).parent / "static"
+        "--output",
+        type=Path,
+        default=Path(__file__).parent / "static",
+        help=(
+            "検証済みJS/CSS/favicon/LICENSEの出力dir。既存同名は上書き。"
+            "既定: このスクリプトと同じ場所のstatic/"
+        ),
     )
     args = parser.parse_args()
     fetch(args.output)

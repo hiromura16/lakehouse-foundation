@@ -86,6 +86,7 @@ class SettingsStore:
     """Keep saved settings separate from the process's applied snapshot."""
 
     def __init__(self, path: Path):
+        """Keep the startup snapshot distinct from later saved settings."""
         self.path = Path(path)
         self.lock = threading.RLock()
         try:

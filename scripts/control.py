@@ -9,12 +9,20 @@ from pathlib import Path
 
 from settings import ROOT, environment, load
 
-parser = argparse.ArgumentParser(description=__doc__)
+parser = argparse.ArgumentParser(
+    description=__doc__,
+    epilog=(
+        "private設定から7つのComposeを同じprojectへ結合します。"
+        "planは構成検査だけ、source-checkはTCP到達だけです。"
+        "起動停止はCLIかDokployの一つへ統一し、同じ環境を別名で起動しません。"
+    ),
+)
 # An explicit flag overrides the shell's default site selection.
 parser.add_argument(
     "--env-file",
     default=os.environ.get("LAKEHOUSE_ENV_FILE") or None,
     type=Path,
+    help="対象環境のGit外site.env。省略時はLAKEHOUSE_ENV_FILEを使う",
 )
 parser.add_argument(
     "action",
@@ -30,6 +38,11 @@ parser.add_argument(
         "spark-check",
         "grafana-init",
     ],
+    help=(
+        "plan/status/source-check=検査。up/down=起動停止（volume保持）。"
+        "ingest/medallion=原本取込/変換。verify=隔離検証。"
+        "spark-check=互換smoke、grafana-init=初回dashboard作成"
+    ),
 )
 args = parser.parse_args()
 if args.env_file is None:

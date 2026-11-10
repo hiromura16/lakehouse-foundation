@@ -1,4 +1,11 @@
-"""Register one explicit SQL Server CDC connector through Kafka Connect."""
+"""Create one SQL Server CDC connector or confirm an identical configuration.
+
+Read private settings and a validated six-table mapping, then contact the
+internal or loopback Kafka Connect REST endpoint. A missing connector is
+created with POST. An existing connector must match every configured value;
+this command never updates/deletes it or resets offsets or schema history.
+Database CDC enablement and permissions remain separate DBA operations.
+"""
 
 import argparse
 import json
@@ -13,8 +20,11 @@ from config import mappings, read_env, settings
 
 
 def configuration(values, mapping):
-    """Build a TLS-required connector with environment credential
-    references.
+    """Build a TLS-required connector using validated table/column lists.
+
+    Credentials remain Connect environment references in the returned config.
+    Host names and database names are still private configuration values, so
+    the full result must not be copied into public logs or documentation.
     """
     selected = [
         re.escape(item["source_schema"] + "." + item["source_table"])
@@ -90,7 +100,12 @@ def configuration(values, mapping):
 
 
 def register(values, mapping, endpoint):
-    """Create once or confirm an identical existing config without writes."""
+    """Wait for Connect, then create once or accept an exact existing match.
+
+    Readiness is retried for up to 180 seconds on connection errors. HTTP or
+    configuration errors stop the operation. Existing configs allow only an
+    equal extra name field; drift is rejected without PUT, PATCH or DELETE.
+    """
     opener = build_opener(ProxyHandler({}))
     name = values["CDC_CONNECTOR_NAME"]
     candidate = configuration(values, mapping)
@@ -158,9 +173,23 @@ def register(values, mapping, endpoint):
 def main():
     """Register without displaying credentials or private database names."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--env-file")
-    parser.add_argument("--table-map", default="/run/cdc/table-map.json")
-    parser.add_argument("--endpoint", default="http://cdc-connect:8083")
+    parser.add_argument(
+        "--env-file",
+        help="private envの入力先。省略時は起動プロセスの環境変数を使用",
+    )
+    parser.add_argument(
+        "--table-map",
+        default="/run/cdc/table-map.json",
+        help="許可する6表・列の対応JSON。既定: /run/cdc/table-map.json",
+    )
+    parser.add_argument(
+        "--endpoint",
+        default="http://cdc-connect:8083",
+        help=(
+            "Connect RESTの内部URL、または設定portのloopback URL。"
+            "既定: http://cdc-connect:8083。任意の外部URLは使えません"
+        ),
+    )
     args = parser.parse_args()
     values = settings(read_env(args.env_file) if args.env_file else os.environ)
     if args.endpoint not in {

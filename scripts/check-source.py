@@ -505,12 +505,43 @@ def history_findings(root, allowed_png, terms, secrets):
 
 def main():
     """Run local-only publication checks and print value-free findings."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, default=ROOT)
-    parser.add_argument("--history", action="store_true")
-    parser.add_argument("--deny-file", type=Path)
-    parser.add_argument("--secret-dir", type=Path)
-    parser.add_argument("--allow-png", action="append", default=[])
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog=(
+            "ローカル読取だけで公開候補を検査し、検出内容そのものは表示しません。"
+            "終了値は0=検出なし、1=公開拒否の検出あり、2=検査未完了です。"
+        ),
+    )
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=ROOT,
+        help="検査対象のソースルート。既定はこのscriptのリポジトリ",
+    )
+    parser.add_argument(
+        "--history",
+        action="store_true",
+        help="Gitの全ローカル参照の到達可能履歴・commit/tag情報も検査する",
+    )
+    parser.add_argument(
+        "--deny-file",
+        type=Path,
+        help="Git外の非公開照合リスト。1行1語で社内識別子等を追加検査する",
+    )
+    parser.add_argument(
+        "--secret-dir",
+        type=Path,
+        help="Git外の秘密設定dir。実秘密値を内部で抽出し照合する（値は非表示）",
+    )
+    parser.add_argument(
+        "--allow-png",
+        action="append",
+        default=[],
+        help=(
+            "公開を許可する合成PNGの相対path。複数指定可。"
+            "PNG署名とpathを検査するが画像内容の機密性は別に確認"
+        ),
+    )
     args = parser.parse_args()
     root = args.root.resolve()
     try:

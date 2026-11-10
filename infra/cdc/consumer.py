@@ -1,4 +1,11 @@
-"""Retain raw CDC events and build isolated current-state Iceberg tables."""
+"""Consume Kafka changes into raw history, current state and CDC tables.
+
+This long-running command reads CDC settings from the process environment.
+It writes Iceberg cdc_* tables plus a durable SQLite state directory; it does
+not execute source SQL DML. Raw retention, state, table replacements and Kafka
+commits are separate steps, so replay uses event IDs and local checkpoints.
+Keep the state volume with the matching mapping and Kafka history on restart.
+"""
 
 import argparse
 import fcntl
@@ -25,8 +32,10 @@ RAW_COLUMNS = [
 
 
 def raw_rows(records):
-    """Preserve complete Kafka keys and envelopes, including tombstone
-    events.
+    """Convert Kafka positions and envelopes to string-valued raw rows.
+
+    Topic, partition and offset form the event ID. Tombstones retain their
+    key and use an empty envelope string; they are not silently discarded.
     """
     return [
         {
@@ -83,8 +92,10 @@ def append_raw(catalog, records):
 
 
 def materialize(admin, state):
-    """Replace six isolated current-state tables, then run existing SQL
-    rules.
+    """Replace the six cdc_bronze tables, then run cdc_* medallion SQL.
+
+    Each Iceberg table commits separately. A failure can leave earlier table
+    replacements visible; the function does not roll all tables back at once.
     """
     import pyarrow as pa
 
@@ -101,8 +112,11 @@ def materialize(admin, state):
 
 
 def process(admin, state, records, mapping, topics):
-    """Order raw retention, replayable state, medallion, and local
-    checkpoint.
+    """Apply one batch in raw, state, table and checkpoint order.
+
+    Previously completed positions are skipped. The local completion marker
+    advances only after derived tables succeed; Kafka commits happen later in
+    run(). A blocked Trino cancellation is retained for operator inspection.
     """
     count = append_raw(admin.catalog(), records)
     contracts = {item["table"]: item["columns"] for item in CONTRACTS}
@@ -148,8 +162,12 @@ def refuse_lost_state(admin, state):
 
 
 def run(directory, mapping_file):
-    """Run one durable consumer, committing Kafka only after Iceberg
-    success.
+    """Lock one state directory and consume until failure or interruption.
+
+    Message values above 16 MiB are rejected before decoding. Kafka auto
+    commits are disabled: successful table writes and a local checkpoint
+    precede the synchronous broker commit. Neither the lock nor this order
+    provides a transaction spanning Kafka, SQLite and all Iceberg tables.
     """
     import admin
     from confluent_kafka import Consumer, KafkaError, TopicPartition
@@ -229,6 +247,8 @@ def run(directory, mapping_file):
                     break
             if not records:
                 continue
+            # A broker commit must never acknowledge unmaterialized changes.
+            # If it fails, the durable checkpoint controls safe replay.
             result = process(admin, state, records, mapping, topics)
             offsets = {}
             for record in records:
@@ -252,8 +272,20 @@ def run(directory, mapping_file):
 def main():
     """Keep errors free of SQL source values and credential-bearing URLs."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--state-dir", type=Path, default=Path("/state"))
-    parser.add_argument("--table-map", default="/run/cdc/table-map.json")
+    parser.add_argument(
+        "--state-dir",
+        type=Path,
+        default=Path("/state"),
+        help=(
+            "SQLite現在値・checkpoint・lockの永続dir。既定: /state。"
+            "再開時も同じ内容を保持し、空のdirへ置き換えません"
+        ),
+    )
+    parser.add_argument(
+        "--table-map",
+        default="/run/cdc/table-map.json",
+        help="許可する6表・列の対応JSON。既定: /run/cdc/table-map.json",
+    )
     args = parser.parse_args()
     # Vendor HTTP/Kafka logs can contain source names; only our counters print.
     logging.disable(logging.CRITICAL)

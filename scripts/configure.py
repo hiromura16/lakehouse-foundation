@@ -10,12 +10,26 @@ from pathlib import Path
 
 from settings import BYPASS_KEYS, ROOT, load, synchronize_no_proxy
 
-parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("--output", required=True, type=Path)
+parser = argparse.ArgumentParser(
+    description=__doc__,
+    epilog=(
+        "新規のsite.envと秘密値をGit外へ生成します。配置やDB更新は行いません。"
+        "既存環境では--upgradeを使い、DBと暗号鍵の生成し直しを避けます。"
+    ),
+)
+parser.add_argument(
+    "--output",
+    required=True,
+    type=Path,
+    help="Git外のsite.env保存先。親0700・file0600。既存設定の新規生成は拒否",
+)
 parser.add_argument(
     "--upgrade",
     action="store_true",
-    help="Add missing keys, retaining existing values.",
+    help=(
+        "既存の秘密値を保持して欠落keyを追加し、NO_PROXYを正規化する。"
+        "変更前backupは上書きしない"
+    ),
 )
 args = parser.parse_args()
 target = args.output.expanduser().absolute()

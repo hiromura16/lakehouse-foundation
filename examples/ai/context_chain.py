@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Use exported facts as LangChain documents, optionally with local Ollama."""
+"""Convert exported Gold facts into Documents; run Ollama only on request.
+
+The input is a context_version=1 JSON export, limited to one MiB. Without a
+question, this command prints a document count and makes no model request.
+With both question and model, it sends bounded facts to the selected local
+endpoint. It does not query SQL, generate embeddings, or change lakehouse data.
+"""
 
 import argparse
 import hashlib
@@ -17,7 +23,12 @@ MAX_PROMPT_CHARS = 64000
 
 
 def documents(path):
-    """Attach table, snapshot and exporter references to every row."""
+    """Read a bounded context export and attach references to every row.
+
+    Each Document retains the source table, snapshot ID and exporter hashes.
+    The hashes describe the export reference, not the historical producer of
+    that snapshot. Returned rows remain a sample, not a complete population.
+    """
     path = Path(path)
     if path.stat().st_size > MAX_CONTEXT_BYTES:
         raise ValueError("Context exceeds one MiB; export fewer rows.")
@@ -71,7 +82,12 @@ def local_endpoint(value):
 
 
 def answer(items, question, model, base_url):
-    """Give the model fixed facts and citations instead of execution tools."""
+    """Ask local Ollama about at most 64000 characters of exported facts.
+
+    External tracing is disabled for the call. The prompt requests citations
+    and gives the model no execution tools; answer correctness still needs
+    review. The size limit applies to the facts, not the question text.
+    """
     from langchain_ollama import ChatOllama
 
     facts = "\n".join(
@@ -122,10 +138,28 @@ def answer(items, question, model, base_url):
 def main():
     """Validate documents by default; inference needs an explicit question."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--context", type=Path, required=True)
-    parser.add_argument("--question")
-    parser.add_argument("--model")
-    parser.add_argument("--ollama-url", default="http://localhost:11434")
+    parser.add_argument(
+        "--context",
+        type=Path,
+        required=True,
+        help="Gold context JSONの入力ファイル。context_version=1、最大1MiB",
+    )
+    parser.add_argument(
+        "--question",
+        help="モデルへ尋ねる質問。省略・空文字ならDocument件数の確認だけ",
+    )
+    parser.add_argument(
+        "--model",
+        help="導入済みOllamaモデル名。質問を指定する場合は必須",
+    )
+    parser.add_argument(
+        "--ollama-url",
+        default="http://localhost:11434",
+        help=(
+            "Ollamaのローカル/閉域IP URL。DNS名はlocalhostのみ。"
+            "既定: http://localhost:11434。モデルの導入は行いません"
+        ),
+    )
     args = parser.parse_args()
     items = documents(args.context)
     if not args.question:
