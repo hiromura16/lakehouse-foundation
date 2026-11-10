@@ -1,18 +1,25 @@
 # ファイルの場所と変更のしかた
 
-公開するコード、配置先の設定、保存データを分離しています。リポジトリへ追加する前に、導入先のアドレス・個人のパス・認証情報がコードへ紛れていないことを確認します。
+確認日: 2026-11-10（JST）。新規導入は [START-HERE.md](START-HERE.md)、採用版の根拠は [REFERENCES.md](REFERENCES.md) を参照します。公開するコード、配置先の設定、保存データを分離しています。リポジトリへ追加する前に、導入先のアドレス・個人のパス・認証情報がコードへ紛れていないことを確認します。
 
 ## ディレクトリの役割
 
 | 場所 | 内容 | 変更する場面 |
 | --- | --- | --- |
 | `infra/lakehouse/` | S3、カタログDB、カタログ、Trino、worker、n8n、監視のComposeと固定依存 | coreの資源、イメージ、内部設定を変更するとき |
-| `infra/compute/` | SparkとIceberg JARの組、checksum、相互参照スモーク | Sparkを更新する、処理エンジンを拡張するとき |
+| `infra/compute/` | 常駐Spark Master/Worker/History、JAR/checksum、独立スモーク | Sparkを更新する、処理エンジンを拡張するとき |
 | `infra/orchestration/` | Airflow、専用DB、constraints取得、DAG | 依存タスクやスケジュールを増やすとき |
 | `infra/automation/` | n8nへインポートするワークフロー | トリガー、通知、外部連携の流れを変更するとき |
 | `infra/monitoring/` | Prometheusのscrape、Grafana datasource、初回dashboard | 監視対象や初期の可視化例を変更するとき |
 | `infra/demo/` | 素材投入と設定のStreamlit/FastAPI | 入力UIや疑似ソースを増やすとき |
 | `infra/cdc/` | CDCの接続・イベント処理・再開の構成 | DB変更の連続取り込みを設定するとき |
+| `infra/poc/` | Superset・Jupyter・Qdrant・Marquezと初期化例 | 個別分析ツールを追加・変更するとき |
+| `infra/mcp/` | 専用Bearer認証と固定MCP tool/resource | AIクライアントの公開範囲を変更するとき |
+| `infra/proxy/` | daemon用テンプレート、build/runtime CA、0バイトCA placeholder | 会社の通信設定を準備するとき。実CAは外部へ置く |
+| `infra/uv/` | 固定版uv imageとdigest | Python環境の構築ツールを更新するとき |
+| `infra/source/` | SQL Server 6表の公開mapping例 | コピーをprivate化して実表・列を設定するとき |
+| `examples/ai/` | LangChain Document化、任意ローカルLLMの例とlock | AIの根拠データを受け渡すとき |
+| `samples/` | 合成入力の作り方 | 実データを持ち込まず最初の素材を作るとき |
 | `infra/dokploy/` | ホスト側のDokploy導入と設定検査 | 管理基盤を新規に設けるとき |
 | `medallion/` | ソース契約、Silver、隔離、Gold、期待値チェック | 業務ルールや品質条件を変更するとき |
 | `scripts/` | 設定生成、起動制御、投入、抽出、公開検査 | 操作やホスト設定の入口を変更するとき |
@@ -54,5 +61,7 @@
 Composeのタグだけでなく、digest、対応する依存lock、`COMPATIBILITY.md`、実機結果を同じ変更として扱います。Sparkのマイナー版、Scala、Iceberg runtime、AWS bundleを別々に更新しません。Airflowも本体・Python・Provider・constraintsを組で変更します。
 
 ## 公開しないもの
+
+CLIの保守・追加機能では7ファイルを同じ順で結合します。Dokployの初回core-only既定Commandはcore1ファイルだけでも動きますが、標準ガイドは初回から7ファイルを指定します。標準CLIは自動で結合します。[7ファイルのコマンド](DOKPLOY.md) を部分的に削らないでください。
 
 実際の `site.env`、企業CA、管理APIキー、実データ、volume、バックアップ、GUI exportの未レビュー原本を公開しません。これらはGit外の専用ディレクトリに保存します。過去の非公開環境のGit履歴を、この公開リポジトリへ取り込みません。

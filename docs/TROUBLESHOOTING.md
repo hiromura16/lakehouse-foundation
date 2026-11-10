@@ -1,6 +1,6 @@
 # 症状から確認する
 
-最初に対象の環境、配置commit、profile、発生時刻、ジョブIDを確認します。`site.env`、展開済みCompose、DB接続文字列、token、生のドライバー例外を公開ログへ貼り付けません。データ削除や再生成を初期対応にせず、観測した状態と保存先を確認します。
+2026-11-10監査。最初に対象の環境、配置commit、profile、発生時刻、ジョブIDを確認します。`site.env`、展開済みCompose、DB接続文字列、token、生のドライバー例外を公開ログへ貼り付けません。データ削除や再生成を初期対応にせず、観測した状態と保存先を確認します。
 
 ## まず見分ける
 
@@ -13,13 +13,36 @@
 | コンテナはhealthyだが件数が違う | source manifest、Bronze、Silver、quarantine、Goldの順に照合 |
 | 更新後に初期画面へ戻った | 空volumeや別prefixへ向いていないか確認。再初期化を進めない |
 
-CLIの確認は、配置と同じprivate設定で行います。
+確認はレイクハウスホストのリポジトリのルートで、通常の配置利用者が行います。CLIでは配置と同じprivate設定を選びます。Dokploy管理なら同じアプリのcommit・Environment・Deploymentログ・healthと照合します。調査中に別名の `up` を追加しません。
 
 ```bash
 export LAKEHOUSE_ENV_FILE="/absolute/private/site.env"
 ./scripts/lakehouse.sh plan
 ./scripts/lakehouse.sh status
 ```
+
+`plan` は構成検査、`status` は実コンテナの状態です。構成検査だけが成功しても起動成功ではありません。一時的なmigration/init/registerがExited(0)なのは正常な場合があります。
+
+## 更新・Docker29・初回build
+
+| 症状 | 次の確認と期待する結果 |
+| --- | --- |
+| `site.env.before-upgrade` が既にある | 元控えを確認してprivateな一意の別名へ保管。必要な変更のあるupgradeだけ再実行。控えを削除・上書きして解決しない |
+| `Settings already include all current keys` | 正常なno-op。canonical3項目を含め変更不要だった |
+| Buildx BakeでCA inputを扱えない | 同じcommitの `infra/proxy/empty-ca.pem` がregular fileで0バイトか確認。CAなしを `/dev/null` へ変更しない |
+| CAなしでn8n bind失敗 | checkout欠落、empty-caの存在、`CORPORATE_CA_FILE` の未設定／空欄を確認。存在しないpathをdirectoryとして新規作成しない |
+| Docker29でSwarm検査がobject/type error | 配置commitとinstaller helperを更新し、同じ既存Swarmを検査。`swarm leave --force`／再初期化は初期対応にしない |
+| raw Composeで内部通信がSquidへ流れる | 下記canonical移行を実施。`--env-file` より古いshell値が優先され得る |
+| `up` でCDC registerだけ失敗 | 同名connectorの読戻し差異、HTTP／権限／TLSをprivateに確認。同一設定ならno-op成功する。消して再作成しない |
+
+checkout上のplaceholder確認はホストを変更しません。
+
+```bash
+test -f infra/proxy/empty-ca.pem && test ! -s infra/proxy/empty-ca.pem
+./scripts/lakehouse.sh --env-file /absolute/private/site.env plan
+```
+
+最初の終了コード0が「存在する空regular file」、planの0が「選択設定の構文検査成功」です。会社更新の順は [COMPANY-UPDATE.md](COMPANY-UPDATE.md) へ進みます。
 
 ## GUI・APIのエラー
 
@@ -88,7 +111,7 @@ AI context取得はモデル実行や外部送信ではありません。根拠J
 
 | 症状 | 観測・判断・操作 |
 | --- | --- |
-| Sparkが常駐していない | spark-checkは一時ジョブ。通常upでreplicas=0は意図した動作 |
+| Sparkが常駐していない | compute profile、Master/Worker/Historyのhealthとshared volume権限を確認。replicas=0で通常起動しないのは一時spark-checkだけ |
 | SparkでClassNotFound／NoSuchMethod | Spark line・Scala binary・Iceberg runtime JARの一致、AWS bundleの重複を確認 |
 | JARのhash照合失敗 | lockと正規配布物を確認。照合を飛ばして進めない |
 | Sparkは書けるがTrinoで読めない | 同じREST catalog／warehouse／S3 endpointを参照しているか、表formatを確認 |
@@ -105,11 +128,13 @@ AI context取得はモデル実行や外部送信ではありません。根拠J
 | 観測 | 判断・操作 |
 | --- | --- |
 | image pullだけ失敗 | Docker daemon側proxy／CA／認証を確認。コンテナenvだけでは反映しない |
-| build内pip／curlだけ失敗 | build args、企業CA、配布元への許可を確認 |
+| build内uv／curlだけ失敗 | build args、企業CA、uvのsystem trust、配布元への許可を確認 |
 | 実行中Python／SQLだけ失敗 | そのクライアントのproxy／CAと内部NO_PROXYを確認 |
 | Java系Spark／Kafka／Debeziumだけ失敗 | JVM truststoreとSDKのproxy設定を確認。Python成功から類推しない |
-| 内部service名への通信が外へ流れる | NO_PROXYと小文字版、サービス名・内部hostを確認 |
+| 内部service名への通信が外へ流れる | site.envをupgradeしcanonical3項目を同期。Dokploy Environmentへも登録し既存アプリを再配置 |
 | GUIだけAPIへ接続しない | DEMO_API_URLとtokenを確認。UI内部API通信は外向きproxyを使わない |
+
+通常利用者がprivateファイルの会社追加先を保持したまま `configure.py --output ... --upgrade` し、`LAKEHOUSE_NO_PROXY` / `NO_PROXY` / `no_proxy` を同期します。CLIはprivate値を子プロセスへ明示し、raw Composeは専用canonicalを使います。古いshell値やdaemon専用proxy.envだけを直しても既存コンテナは変わりません。rawのlegacy fallbackは必須名を補いますが、会社追加先の完全保持にはupgradeが必要です。
 
 会社CA・proxy認証は導入先の方針に合わせます。CAの信頼設定を入れることと、証明書検証を止めることを混同しません。[PROXY.md](PROXY.md)
 
@@ -117,9 +142,9 @@ AI context取得はモデル実行や外部送信ではありません。根拠J
 
 CDCではソースDB、Debezium、Kafka、schema history、offset、取り込み先の状態を分けて確認します。まずconnector statusとcapture対象・権限・TLS・最終進捗を観測し、再登録や新規snapshotを繰り返しません。
 
-再開位置とschema historyを失うと、同じデータの再取得や欠損の判断が必要になります。Connectのoffset/config/status topic、DB schema history、bridgeのcheckpointを一組として扱い、初期対応でtopicやoffsetを消しません。schema変更時は対象表と記録したschemaの整合を確認します。[Debezium SQL Server公式資料](https://debezium.io/documentation/reference/stable/connectors/sqlserver.html)
+再開位置とschema historyを失うと、同じデータの再取得や欠損の判断が必要になります。Connectのoffset/config/status topic、DB schema history、bridgeのcheckpointを一組として扱い、初期対応でtopicやoffsetを消しません。schema変更時は対象表と記録したschemaの整合を確認します。[Debezium SQL Server公式資料](https://debezium.io/documentation/reference/3.7/connectors/sqlserver.html)
 
-SQL ServerではCDCのchange table／LSNの保持とcapture/cleanupの状態をDB管理者と確認します。PostgreSQL系CDCを将来追加する場合はWALとreplication slotの保持が別の確認事項です。SQL Serverの問題をWAL設定で解決しようとしません。停止可能時間はソース側の保持期間と実際のlagから決めます。[Debezium PostgreSQL公式資料](https://debezium.io/documentation/reference/stable/connectors/postgresql.html)
+SQL ServerではCDCのchange table／LSNの保持とcapture/cleanup・SQL Agentの状態をDBAと確認します。WAL/replication slotはPostgreSQLの仕組みなので、このSQL Server経路の修復手順に混ぜません。停止可能時間はソース側の保持期間と実際のlagから決めます。[Microsoft CDC準備](https://learn.microsoft.com/en-us/sql/relational-databases/track-changes/enable-and-disable-change-data-capture-sql-server?view=sql-server-ver17)
 
 CDCの対象・変換・削除イベント・再実行の保証は、導入したconnectorとbridgeの実装・専用手順に従います。この一般的な切り分けだけで会社DBのCDC実機検証が済んだとは扱いません。
 
@@ -134,3 +159,15 @@ GrafanaのGUI変更はGrafana DBが正本です。初回テンプレートを再
 
 
 SSRFの設定値、内部workerの例外、NO_PROXYとの違い、GUI保存と再配置、許可・拒否の受入は [SSRF.md](SSRF.md) を参照してください。
+
+
+## 監査対象版と一次資料
+
+対象はDocker Engine29系／Compose5.6.1、n8n2.46.7、Debezium3.7.1.Final／Kafka4.4.0です。SQL Server・Sambaは導入先の版を記録します。版の差を原因候補に含め、固定imageを単独でlatestへ変えて試す手順にはしません。
+
+| 一次資料 | 観測との対応 |
+| --- | --- |
+| [Docker29](https://docs.docker.com/engine/release-notes/29/)、[Compose補間優先順位](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/) | Engine互換・古いshellの影響 |
+| [Kafka4.4 Connect REST](https://kafka.apache.org/44/kafka-connect/user-guide/#rest-interface) | status/configは参照、offset変更は別の管理操作 |
+| [n8n2.46.7固定設定](https://github.com/n8n-io/n8n/blob/n8n%402.46.7/packages/%40n8n/config/src/configs/ssrf-protection.config.ts) | SSRF既定と適用範囲 |
+| [Samba testparm](https://www.samba.org/samba/docs/current/man-html/testparm.1.html) | 構文合格とSMB認証・実アクセスの成功は別 |

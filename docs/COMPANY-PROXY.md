@@ -2,6 +2,14 @@
 
 この手順は、会社のサーバーへ初めて配置する担当者向けです。ブラウザーで閲覧できること、Gitでcloneできること、Dockerがimageを取得できること、コンテナが外部へ通信できることを分けて確認します。実際の会社proxy・CA・認証方式では未検証です。ローカルの模擬認証proxyとTLS証明書で試験した範囲は末尾に示します。
 
+本書は2026-11-10に公開コードと公式資料を監査しました。通信経路ごとの作業を、レイクハウスを動かすLinuxホストで行います。通常利用者がprivate設定を編集し、`sudo` の付いたホスト設定だけを管理者が実施します。全コマンドの作業ディレクトリはcloneしたリポジトリのルートです。Dokploy管理の場合は、最後の反映先を既存の同じアプリに統一します。
+
+| 実行主体 | 編集・反映するファイル | 完了の確認 |
+| --- | --- | --- |
+| 通常の配置担当 | リポジトリ外の `site.env` | `lakehouse.sh plan` が終了コード0 |
+| Dockerホスト管理者 | daemon用 `proxy.env` とsystemd drop-in、ホストCA | 承認済み保守時間の反映後、固定imageを取得できる |
+| 同じ配置担当／Dokploy管理者 | imageと既存アプリ | build成功、health、内部S3/Trino、許可HTTPSの実通信 |
+
 ## 1. 接続条件を担当部署へ確認する
 
 | 確認項目 | 決める内容 |
@@ -38,7 +46,9 @@ no_proxy=localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker
 
 Basic認証では `http://<encoded-user>:<encoded-password>@proxy.example.invalid:3128` という形を使います。`@`、`:`、`%`等の予約文字はuserinfo内でURLエンコードします。引用符、空白、シェル展開を使いません。大文字・小文字の各ペアは同じ値にします。tokenやパスワードをコマンド引数へ直接入力せず、privateファイルを編集します。
 
-`site.env` にも同じ6変数を設定します。daemon用 `proxy.env` とサイト設定は自動同期しません。GUIの保存も、daemonの設定・コンテナ再配置までを自動実行する操作ではありません。
+daemon用 `proxy.env` は上の**6変数だけ**を受け付けます。`LAKEHOUSE_NO_PROXY` をこのファイルへ加えると検査エラーになります。
+
+アプリ用のprivate `site.env` には、同じHTTP(S)4変数に加え、生成済みの `LAKEHOUSE_NO_PROXY` / `NO_PROXY` / `no_proxy` を保持します。会社の追加除外先はprivate側へ追記し、後述の `--upgrade` で3項目を正規化します。daemon用ファイルとは自動同期しません。GUI保存もdaemon設定やコンテナ再配置を自動実行しません。
 
 ## 3. Docker daemonとimage取得を確認する
 
@@ -54,7 +64,7 @@ Linuxのsystem Dockerへ適用するときだけ、管理者が次を実行し�
 sudo ./scripts/configure-proxy.sh --env-file /absolute/private/proxy/proxy.env --apply
 ```
 
-キットは管理対象のEnvironmentFileとdrop-inを配置し、既存の管理外ファイルや `daemon.json` のproxy設定との競合を拒否します。`daemon.json` のproxy指定は環境変数より優先されるので、両方を別の値で管理しません。rootless DockerやDocker Desktopはこのsystem用キットを流用せず、それぞれの設定場所を使います。[Docker daemon公式](https://docs.docker.com/engine/daemon/proxy/)
+キットは `/etc/lakehouse-foundation/proxy.env`（root所有0600）と `/etc/systemd/system/docker.service.d/90-lakehouse-foundation-proxy.conf`（0644）を配置します。配置先の管理外ファイルと `daemon.json` のproxy設定は拒否します。他のsystemd drop-inの内容まで自動照合する機能ではないため、管理者が既存設定との競合も確認します。`daemon.json` のproxy指定は環境変数より優先されるので、両方を別の値で管理しません。rootless DockerやDocker Desktopはこのsystem用キットを流用せず、それぞれの設定場所を使います。[Docker daemon公式](https://docs.docker.com/engine/daemon/proxy/)
 
 HTTPS検査を行う場合、daemonが使うホストの信頼ストアにも企業CAが必要です。Linuxの配置例は次のとおりです。実施前に正式な配布元とfingerprintを照合します。
 
@@ -91,7 +101,9 @@ CAを初めて追加・更新・削除するときは、secretの内容変更だ
 ```bash
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env plan
 
-docker compose --env-file /absolute/private/site.env \
+env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy \
+  -u NO_PROXY -u no_proxy -u LAKEHOUSE_NO_PROXY \
+  docker compose --env-file /absolute/private/site.env \
   -f infra/lakehouse/compose.yaml \
   -f infra/compute/compose.yaml \
   -f infra/orchestration/compose.yaml \
@@ -103,7 +115,7 @@ docker compose --env-file /absolute/private/site.env \
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env up
 ```
 
-上はcoreと同梱engineの組合せです。PoC用Compose等を使う環境では、その追加ファイルと同じbuild secret設定も含めます。Dokployでは同じsecret参照・非公開pathを保持し、対象imageのcacheを使わない再buildを選びます。
+上は全7Composeを指定した例で、有効profileの対象をbuildします。`env -u` はこのコマンドに限って古いshell値の補間を除き、privateファイルを採用します。CLI管理なら同じ配置利用者が `up` まで行います。Dokploy管理ならCLIの `up` を追加実行せず、同じ7ファイル・secret参照・private設定を使う既存アプリでcacheなしの再build／再配置を行います。両方を別名で起動しません。
 
 base imageやuv image自体の取得は、このCA処理より先です。その通信にはdaemon／remote builder側のproxyとCAが必要です。image内のCA追加で、まだpullできないbase imageを取得できるようにはなりません。
 
@@ -150,7 +162,7 @@ openssl x509 -in /absolute/private/certs/company-root.crt \
 chmod 0644 /absolute/private/certs/company-root.crt
 ```
 
-private設定の `CORPORATE_CA_FILE` とproxy6変数を確認してから、planと再配置を
+private設定の `CORPORATE_CA_FILE`、HTTP(S)4変数と正規化済みbypass3項目を確認してから、planと再配置を
 行います。n8nはCAを起動時に読むため、画面で設定を保存しただけでは反映されません。
 CAの内容だけを更新した場合も、保守時間にn8nを再起動／再作成します。既存の
 `n8n` / `n8n-db` volumeと暗号鍵は保持します。この方式ではCA用image buildは不要です。
@@ -172,13 +184,26 @@ API宛てのBasic auth credentialはproxy認証の代用にはなりません。
 Code node、外部task runner、独自community nodeの通信まで一律に保証する設定では
 ありません。[n8nの証明書検証](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/#ignore-ssl-issues)
 
-## 6. NO_PROXYを確認する
+## 6. 内部通信をproxyへ送らない
 
-両caseに、使用する内部serviceと社内の直接接続先を設定します。`storage`、`catalog`等のCompose上のhost名を使い、製品名のSeaweedFS／Lakekeeperだけを書いて代用しません。`NO_PROXY` にスキーム付きURLは書きません。
+このスタックでは `LAKEHOUSE_NO_PROXY` がCompose補間用の正本です。通常利用者がprivate `site.env` を編集した後、リポジトリのルートで実行します。
 
-追加画面・CDC・PoCでは `demo-api`、`cdc-connect`、`cdc-kafka`、`cdc-consumer`、`cdc-ui`、`superset`、`jupyter`、`qdrant`、`marquez` 等も対象です。host名や実IPはその環境のprivate設定へ追加します。
+```bash
+python3 scripts/configure.py --output /absolute/private/site.env --upgrade
+./scripts/lakehouse.sh --env-file /absolute/private/site.env plan
+```
 
-CIDR、ドメインsuffix、port付きhost、`*`の解釈はclientごとに異なります。内部host名は明示し、Java／各SDKでは個別に照合します。CDC consumerもsite設定のNO_PROXYを利用し、会社の追加除外先を固定値で上書きしません。
+生成・upgrade・CLI読込は、必須内部名 → 既存canonical → `NO_PROXY` → `no_proxy` の順にprivate値だけを結合し、空白・空要素・大文字小文字を無視した重複を除去します。3項目は同じCSVとなります。標準名にはloopback、実際の全Composeサービス、Dokployの内部名が含まれます。`storage,catalog,trino,worker` を製品名へ置き換えません。
+
+upgradeは他の既存設定・秘密値を保持し、必要な変更があるときだけ元ファイルを隣の `site.env.before-upgrade` に0600で保存します。既存backupを上書きしないため、前回の控えがある場合は内容を確認し、private領域の別の一意な名前へ保管してから再実行します。変更不要ならbackupの有無にかかわらず正常終了します。更新順は [COMPANY-UPDATE.md](COMPANY-UPDATE.md) を参照してください。
+
+CLIは検査済みprivate値で子プロセスの3項目を明示上書きするため、古いshellの除外値を採用しません。Dokploy Git配置ではupgrade後の**3項目を含む同じsite設定**を既存アプリのEnvironmentへ転記します。`LAKEHOUSE_NO_PROXY` 自体を別値でexportしません。
+
+旧ファイルをraw Composeへ直接渡す場合、canonical未設定／空欄でも必須内部名はfallbackで補われ、両caseは一致します。ただし、そのfallbackは重複除去やshellに隠れた旧private追加値の復元を行いません。会社の追加除外先を確実に引き継ぐには先にupgradeします。[Compose公式の補間優先順位](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/)
+
+GUIでbypassの1項目を編集すると「会社追加分を含む希望の一覧」として扱い、必須名を戻して3項目を同期します。追加先を削除する際はGUIで1項目だけ編集できます。host上の手編集は3項目を揃えてからupgradeしてください。片方に残った追加先は和集合に戻ります。保存結果は `saved=true, applied=false` で、既存アプリの再配置後に初めて反映されます。
+
+直接接続先はURLでなくhost名等を記入します。CIDR・domain suffix・portの解釈はclientごとに異なるため、Java／各SDKの実通信も照合します。SQL ServerはHTTP proxyではなく専用TCP経路を使います。
 
 ## 7. 固定先への接続診断を行う
 
@@ -229,7 +254,7 @@ host診断の成功は、そのhost上のPython通信だけの結果です。コ
 | uvだけTLS失敗 | system-certs／SSL_CERT_FILE、既定rootの置換を確認 |
 | Javaだけ失敗 | cacerts・JVM property・SDK独自client、SQL用truststoreを確認 |
 | n8nだけTLS失敗 | CA fileの公開PEM・読取権限・起動時の追加CA、独自nodeのca指定を確認 |
-| 内部通信がproxyへ出る | host名と両caseのNO_PROXY、SDK独自除外。変更後に対象を再配置 |
+| 内部通信がproxyへ出る | private設定をupgradeしcanonical3項目を確認。Dokploy Environmentにも転記して既存アプリを再配置。Java/SDK独自除外は別に確認 |
 
 ## 検証済み範囲と元へ戻す方法
 
@@ -253,3 +278,17 @@ SSRFの設定値、内部workerの例外、NO_PROXYとの違い、GUI保存と�
 [COMPANY-UPDATE.md](COMPANY-UPDATE.md) に、ローカル一時修正の退避からGit更新、private設定の正規化、Dokploy再配置、verifyまでの順番を記載しています。`configure.py --upgrade` は内部必須名とprivateの既存3項目をマージして、`LAKEHOUSE_NO_PROXY` / `NO_PROXY` / `no_proxy` を同じ値へ揃えます。Docker Composeは専用値をbuild argsとruntimeへ渡し、古いshellのlegacy値との衝突を避けます。
 
 会社固有値の保持と重複除去には、upgrade後の専用値をDokploy Environmentにも登録します。正規化前のraw Compose fallbackは内部名を補いますが、shellに隠れたenv-fileの追加値を復元する処理ではありません。`LAKEHOUSE_NO_PROXY` 自体を別値でexportせず、同じprivate設定を正本にします。
+
+
+## 監査した版と一次資料
+
+採用値の正本は各Composeと [uv image lock](../infra/uv/images.lock.json) です。Docker Engine29系／Compose5.6.1はホスト側の監査対象で、リポジトリがホストパッケージを自動更新するものではありません。自作imageのuvは0.13.7、n8nは2.46.7です。
+
+| 一次資料 | 本書で照合した点 |
+| --- | --- |
+| [Docker29 release notes](https://docs.docker.com/engine/release-notes/29/)、[Compose5.6.1](https://github.com/docker/compose/releases/tag/v5.6.1) | 対象のEngine/Compose系統 |
+| [daemon proxy](https://docs.docker.com/engine/daemon/proxy/)、[Build secrets](https://docs.docker.com/build/building/secrets/) | daemonとbuildの反映単位 |
+| [uvのTLS設定](https://docs.astral.sh/uv/concepts/authentication/certificates/)、[Nodeの追加CA](https://nodejs.org/api/cli.html#node_extra_ca_certsfile) | clientごとに異なるtrust |
+| [n8n2.46.7](https://github.com/n8n-io/n8n/releases/tag/n8n%402.46.7) | 採用するn8n版 |
+
+公式のlatest文書は更新されるので、更新時は固定した版のsourceと新しい挙動を再照合します。

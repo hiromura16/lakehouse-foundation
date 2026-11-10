@@ -1,10 +1,14 @@
 # n8n・Airflow・Grafanaを画面から使う
 
+照合日: 2026-11-10。n8n **2.46.7**、Airflow **3.4.0**（standard provider 1.21.0 / HTTP provider 6.3.0）、Grafana **13.3.0**、Prometheus **3.16.0** が対象です。英語UIの表記を示します。接続→認証→1回の手動実行→履歴→保存の順で確認します。
+
 この文書は、同梱設定を起動した後の画面操作を説明します。n8nとAirflowは登録済みのworkerジョブを呼び、Grafanaは実行状態を表示します。業務上の列変換・採用ルール・集計の正本は [medallion/](../medallion/) のSQLです。画面で任意のSQLをworkerへ送る機能はありません。
 
 ## 1. 画面と接続先を区別する
 
 private envの `COMPOSE_PROFILES` へ、必要な機能を追加してから起動します。3機能すべてを使う例は `automation,monitoring,orchestration` です。既存の他プロファイルを使用中なら、その設定も保持します。
+
+以下の `up` は**CLI管理の場合だけ**実行します。Dokploy管理ではComposeサービス自身のEnvironmentを保存し、7ファイルを使ってDeployします。起動方法を重ねません。[配置手順](DOKPLOY.md)
 
 ```bash
 export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
@@ -41,6 +45,23 @@ sequenceDiagram
 ```
 
 初回の素材は [DEMO-DATA.md](DEMO-DATA.md) に従って投入します。画面で実行しただけでは、会社DBの抽出や疑似データの生成が自動で始まるわけではありません。
+
+### Dokployで配置したサイトから始める場合
+
+1. [DOKPLOY.md](DOKPLOY.md) のGit配置で7本のComposeを結合し、サービス自身のEnvironmentへprivate設定を保存してDeployを完了します。
+2. **Containers** 一覧でn8n、Airflow、Grafanaと各DBの状態を確認します。1つのContainers行のメニューにある **View Logs** / **Terminal** を使い、サイト全体の再Deployと区別します。
+3. private envの各portへブラウザーで接続します。Dokployの画面から開いたTerminalが、そのままn8n等のWeb画面になるわけではありません。
+4. GUIの初期値は管理者端末でprivate `site.env` をエディターで確認します。n8n ownerのログイン情報は、このファイルからは取得できません。
+
+| 画面・接続 | 初回の値 | 設定を変えた後 |
+| --- | --- | --- |
+| n8n owner | 初回GUIで本人が作る | GUIのユーザー設定で管理 |
+| n8n Header Auth | `WORKER_TOKEN` に `Bearer ` を付ける | Credentialを保存。workflowを再実行して確認 |
+| Airflow login | state内の生成JSONのadmin password | 同じstateを維持。会社共有用IdPは別設計 |
+| Airflow Connection | Passwordへ `WORKER_TOKEN` だけ | Save後の次のtask実行で読む |
+| Grafana admin | `admin` / `GRAFANA_ADMIN_PASSWORD` | GUIで変更した場合private設定も合わせる |
+
+private envを `source` して設定する必要はありません。秘密値を含むファイル全体の表示・共有を避け、必要な値を必要な入力欄へだけコピーします。
 
 ## 2. n8nの最初の管理者を作る
 
@@ -132,6 +153,8 @@ Header Authはヘッダー名と値をそのまま送ります。別のBearer Au
 
 この2テンプレートは `active: false` で、Manual Triggerしか持ちません。Schedule Trigger、Webhook、失敗通知、自動retryは組み込んでいません。定期実行にする場合は開始条件・実行時間帯・重複時の扱いを設計して追加し、手動経路が成功してから有効にします。
 
+n8n 2系では、エディターからの **Execute workflow** と、イベント・scheduleで自動実行する公開版を区別します。今回の手動実行に **Publish** は不要です。将来Schedule Triggerを追加する場合は、workflowのtimezoneと実行設定を確認して保存し、**Publish** した版で自動実行します。保存しただけでscheduleが開始すると解釈しません。[公式の実行種別](https://docs.n8n.io/workflows/executions/manual-partial-and-production-executions/)
+
 ### HTTP statusと次の確認
 
 | 状態 | 現在のworkerの意味 | 操作 |
@@ -156,6 +179,14 @@ workerの `/health` は内部ネットワークから確認でき、blocked時�
 2. Simple Auth Managerの管理者でログインします。初回のパスワードはAirflowのstate領域に生成される `simple_auth_manager_passwords.json.generated` を、管理者が非公開の操作で確認します。生成ファイルや内容を公開ログへ貼りません。
 3. **Admin → Connections → Add Connection** を開きます。
 4. 次の項目を設定してSaveします。HTTP providerは同梱Dockerfileで導入しています。[Airflow 3.4 Connections](https://airflow.apache.org/docs/apache-airflow/3.4.0/howto/connection.html#creating-a-connection-with-the-ui)
+
+初回passwordの確認は、Dokployの **airflow行 → Terminal** を管理者だけが開き、次を実行する方法があります。この出力はその管理者端末内で扱います。コンテナ名やhost上のvolume pathを推測する必要はありません。
+
+```sh
+python -m json.tool /opt/airflow/simple_auth_manager_passwords.json.generated
+```
+
+`AIRFLOW_DB_PASSWORD` や `AIRFLOW_JWT_SECRET` はUIのログインpasswordではありません。生成ファイルがまだないときはstandaloneの初期化完了とコンテナ状態を確認し、空の新しいstateへ付け替えないでください。
 
 | Connectionの項目 | 入力 |
 | --- | --- |
@@ -201,6 +232,8 @@ unpauseしても `schedule=None` は変わらないため、定期実行は始�
 Connectionがない、Passwordが空、HTTP401、409、500等はtask失敗です。UIがtaskを失敗と表示したときは、原因を修正した後、前のworker処理が終了していることを確認して再実行します。n8nと同時に実行した場合も、同じworkerの排他に従います。
 
 このDAGはworkerのmedallionジョブを1taskで呼ぶものです。14個のSQLがAirflow画面で別taskになる構成ではなく、列のマッピングをAirflow画面で編集する機能もありません。
+
+taskのLogsで `Worker rejected the request: HTTP 401` ならConnection、HTTP500なら原本・変換・重複実行を調べます。成功時の戻り値本文はXComやtask logへ積まない設定なので、応答JSONが表示されないこと自体は失敗ではありません。Data画面またはSupersetでGoldを確認してください。Airflow画面の過去runをClearすると再実行を起こすため、ログを見るだけの操作と区別します。[Airflow 3.4.0のDag Run状態](https://airflow.apache.org/docs/apache-airflow/3.4.0/core-concepts/dag-run.html)
 
 ## 8. Grafanaを初期化し、GUIの変更を保存する
 
@@ -264,3 +297,28 @@ export先はGit外の絶対パス、親0700、出力0600です。既存ファイ
 | ドラッグ操作で列変換や複雑な経路を新規作成 | Hop/NiFi等の追加検討が必要 |
 
 Apache Hop、NiFi、Airbyte、dbt/Dagsterは [GUI-OPTIONS.md](GUI-OPTIONS.md) の比較対象です。この手順を完了しても、それらが自動導入・接続済みになるわけではありません。SQL定義の可視化と、列変換をGUIで設計することを区別して選びます。
+
+## 10. PrometheusとTrinoで切り分ける
+
+### Prometheus 3.16.0
+
+`http://localhost:9090/targets` を開き、job `lakehouse` の `worker:8000` がUPかを確認します。Query画面で次を実行します。
+
+```promql
+up{job="lakehouse"}
+```
+
+値1はPrometheusがmetricsを収集できた状態です。別に `lakehouse_ready` と `lakehouse_blocked` を確認します。workerの成功件数が増えたのにGrafanaに反映しなければ、収集の15秒とDashboard refreshを待ち、Datasource `foundation-prometheus` を確認します。Prometheus自身は通知先付きAlertmanager、host/GPU exporterを同梱していません。
+
+### Trino 484
+
+`http://localhost:8080/ui/` のQuery一覧で、実行中・終了したSQLとQuery IDを確認します。社内基盤の実行時にはこのportを外部へ公開しません。coreは認証・ユーザー別認可を完成した構成ではなく、UIで入力するユーザー名は認証済み利用者の証明ではありません。
+
+SQLを書く画面が必要な場合は [SupersetのSQL Lab](POC-TOOLS.md) を使います。HTTP POSTの受付やUIの一覧表示だけでメダリオン全体の成功とせず、n8n/Airflowの終了結果とGoldまで照合します。
+
+## 今回照合した一次資料とコード
+
+- n8n: [2.46.7 release tag](https://github.com/n8n-io/n8n/releases/tag/n8n@2.46.7)、[JSON Import](https://docs.n8n.io/workflows/export-import/)、[手動・自動実行](https://docs.n8n.io/workflows/executions/manual-partial-and-production-executions/)。同梱2 JSONのManual Trigger・Header Auth・timeoutと照合しました。n8nのWeb文書は版固定ではないため、採用tagとテンプレートの値も併記しています。
+- Airflow: [3.4.0 Connections](https://airflow.apache.org/docs/apache-airflow/3.4.0/howto/connection.html)、[3.4.0 Dag Runs](https://airflow.apache.org/docs/apache-airflow/3.4.0/core-concepts/dag-run.html)、[3.4.0の初期password設定](https://airflow.apache.org/docs/apache-airflow/3.4.0/configurations-ref.html#simple-auth-manager-passwords-file)。同梱DAGの `BaseHook`、HTTP待機300秒、再試行0と照合しました。
+- Grafana: [13.3.0 tagのDashboard APIコード](https://github.com/grafana/grafana/blob/v13.3.0/pkg/api/dashboard.go)、[公式Dashboard API](https://grafana.com/docs/grafana/latest/developer-resources/api-reference/http-api/dashboard/)。実装は `/apis/dashboard.grafana.app/v1/` を使用します。
+- 保存と指標: `infra/monitoring/prometheus.yml`、`foundation.json`、`scripts/grafana_setup.py`、`scripts/admin.py` が本キットの正本です。一般の製品マニュアルにある自動通知等を、同梱済みと読み替えません。

@@ -1,6 +1,6 @@
 # MES・ERPデータをBronzeからGoldへ整える
 
-この文書は、同梱の6ソースを使う**ファイル取り込みとメダリオン変換**の説明です。最初に1件の製造指図と受注を追い、その後で再投入・更新・不正行・失敗時の動きを確認します。導入自体は [DEPLOYMENT.md](DEPLOYMENT.md)、素材の生成は [DEMO-DATA.md](DEMO-DATA.md)、画面からの実行は [GUI-WALKTHROUGHS.md](GUI-WALKTHROUGHS.md) を参照してください。
+この文書は、同梱の6ソースを使う**ファイル取り込みとメダリオン変換**の説明です。最初に1件の製造指図と受注を追い、その後で再投入・更新・不正行・失敗時の動きを確認します。確認日: 2026-11-10（JST）。初回導入は [START-HERE.md](START-HERE.md)、配置詳細は [DEPLOYMENT.md](DEPLOYMENT.md)、素材の生成は [DEMO-DATA.md](DEMO-DATA.md)、画面からの実行は [GUI-WALKTHROUGHS.md](GUI-WALKTHROUGHS.md) を参照してください。
 
 ## 1. それぞれの層で何を保存するか
 
@@ -138,7 +138,7 @@ FROM iceberg.bronze."mes_events$snapshots"
 ORDER BY committed_at DESC;
 ```
 
-スナップショットと原本ハッシュは異なる識別子です。前者は表のある時点、後者は受領した1ファイルの内容を示します。Trinoは表の原子的な置換と過去スナップショット参照に対応します。[Trino Iceberg connector](https://trino.io/docs/current/connector/iceberg.html#snapshots-table)
+スナップショットと原本ハッシュは異なる識別子です。前者は表のある時点、後者は受領した1ファイルの内容を示します。Trinoは表の原子的な置換と過去スナップショット参照に対応します。[Trino Iceberg connector](https://github.com/trinodb/trino/blob/484/docs/src/main/sphinx/connector/iceberg.md)
 
 現在のキットは通常運用のスナップショット失効・原本世代削除を自動化していません。保存期間と復旧方法は導入先で設計します。原本だけのコピーでは、カタログとIcebergの整合したバックアップにはなりません。
 
@@ -320,3 +320,9 @@ verifyは通常の業務表を初期化する操作ではありません。実�
 検証は件数だけではなく、工場日別14行、受注別20行、改訂後の良品46、遅延到着の日付、不正文字列の保持も確かめます。主な合計は、計画2347、良品2154、不良62、生産2216、停止185分、受注1435、出荷1363、未出荷残72、納期後出荷132・4件です。
 
 verifyはさらに画像1枚の原本バイト列とハッシュを照合します。したがって初回の取り込みファイル数は6業務原本 + 画像1枚の7件、同じ入力の再取り込みは0件取り込み・7件skipです。再変換後も10組のSQL期待値が変わらないことを確認します。これは短い固定データの機能検証であり、会社の全例外・長期耐久・CDC・障害復旧を網羅する試験ではありません。
+
+## 採用版と業務ルールを分けて確認する
+
+表置換・snapshot参照の根拠は [Trino 484 Iceberg connector](https://github.com/trinodb/trino/blob/484/docs/src/main/sphinx/connector/iceberg.md#replace-tables)、REST/FileIOは [PyIceberg 0.12.0設定](https://github.com/apache/iceberg-python/blob/pyiceberg-0.12.0/mkdocs/docs/configuration.md) です。初期化順は [Lakekeeper 0.14.3公式例](https://github.com/lakekeeper/lakekeeper/blob/v0.14.3/docker-compose/docker-compose.yaml) を照合しています。Silverの優先順位、隔離理由、Goldの業務式は本リポジトリ固有のSQLであり、これらの製品の標準メダリオン設定ではありません。
+
+最初は [初回ガイド](START-HERE.md) のGUIでclean投入→変換→プレビューを確認します。固定期待値を照合する `verify` は **業務SQL10検査＋画像1検査の11項目**です。会社データの受入は別の期待値・同一範囲で行います。[全バージョンの根拠](REFERENCES.md)

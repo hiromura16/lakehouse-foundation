@@ -1,162 +1,207 @@
-# Dokployでの配置と運用
+# Dokploy 0.31.0でGitから配置する
 
-更新日: 2026-11-09。会社への新規導入では、一つのレイクハウスを一つのProjectにまとめ、`development` と `production` のEnvironmentを分ける運用を推奨します。この文書は汎用の手順で、特定の導入先の設定や稼働状態を示すものではありません。
+確認日: 2026-11-10。この手順の画面名と動作は、採用imageの **Dokploy v0.31.0** と[同じ公式tagのソース](https://github.com/Dokploy/dokploy/tree/v0.31.0)（commit `3ac1c8f2e025d7db7696542eb2770e08f598214c`）で確認しました。更新されるWeb版の[公式Compose説明](https://docs.dokploy.com/docs/core/docker-compose)は補助資料です。別バージョンの画面を0.31.0の仕様と読み替えません。
 
-## ProjectとEnvironmentの分け方
+ここでは、会社VMにDokployが導入済みで、管理画面へログインできるところから説明します。未導入の場合は [はじめに](START-HERE.md) と [基盤配置](DEPLOYMENT.md) でホスト・Docker・Dokploy・Sambaを先に準備します。既存DokployやSwarmを作り直す手順ではありません。
+
+## 作業場所と最初に控えるもの
+
+| 場所・担当 | 行うこと |
+| --- | --- |
+| 作業PCのブラウザー／Dokploy管理者 | Project・Compose作成、Git・Environment・Commandの保存、Deploy、ログ確認 |
+| **実際の配置先VM**の端末／Dockerを利用できる通常ユーザー | Git取得、private `site.env`の生成・確認、landing等の権限、plan、配置後verify |
+| 同VMの管理者 | 必要時だけDocker daemonのproxy・CA・ホスト権限を設定 |
+
+Dokployとアプリの配置先が別サーバーの場合、privateディレクトリ・landing・Dockerの確認は**アプリ配置先**で行います。画面の `Select a Server` の選択先と一致させます。初心者向けの以下の例は、Dokployとアプリが同じVMの構成です。
+
+private記録へ、Project名、Environment名、サービスの表示名、**作成後のappName**、配置先サーバー、Git branchとcommit、private envの保管先を控えます。URL・認証・CA実path・生ログを公開Gitへ書きません。
+
+## 1. ProjectとEnvironmentを作る
+
+ブラウザーでProject一覧の **Create Project** を押し、Nameに `lakehouse-foundation`、Descriptionに用途を入力して作成します。0.31.0では **production Environmentが自動作成**されます。最初の検証用にはEnvironment選択のメニューから **Create Environment** を押し、Nameを `development` として **Create** します。作業前に選択中のEnvironmentを毎回確認します。[Project作成実装](https://github.com/Dokploy/dokploy/blob/v0.31.0/packages/server/src/services/project.ts)、[Environment選択画面](https://github.com/Dokploy/dokploy/blob/v0.31.0/apps/dokploy/components/dashboard/project/advanced-environment-selector.tsx)
 
 ```text
 lakehouse-foundation          Project
-├── development               Environment
-│   └── platform              Docker Compose service
-└── production                Environment
-    └── platform              Docker Compose service
+├── development               初回の検証先
+│   └── platform              Composeサービスの表示名
+└── production                自動作成される。受入後に別設定で導入
 ```
 
-coreのPostgreSQL、S3、RESTカタログ、Trino、workerを一つのComposeサービスとして扱います。コンテナごとのログ・正常性・資源設定はCompose内で管理できます。現段階では、DB、ストレージ、カタログを別々のDokployサービスへ分割するより、マイグレーションと依存関係を同じComposeで管理する方が簡潔です。
+これは管理画面の所属です。Environmentを変えるだけで、ホストのport・保存先・DB・volumeが自動分離されるわけではありません。各環境のappName、port、landing、privateディレクトリ、暗号鍵を別々にします。
 
-n8nと監視はcore内の任意プロファイルで追加します。SparkとAirflowは別のComposeファイルを重ねますが、同じEnvironmentの同じComposeプロジェクトとして配置します。更新周期や運用責任、障害時の扱いが分かれる段階で、役割ごとの配置分割を検討します。
+**期待結果:** `development` が選択された、まだアプリのない画面になります。`production` しか見えない場合は選択メニューへ戻ります。作成ボタンがない場合は、管理者にProject／Environment／サービス作成権限を確認してもらいます。
 
-DokployのProject／Environmentは、画面上の所属・設定・権限の整理単位です。**Environment名を変えるだけで、同じホストのネットワーク・ボリューム・ディレクトリ・ポートが自動的に別物になるわけではありません。** 実際の分離は次の項目で確認します。[Dokployの構成階層と変数継承](https://docs.dokploy.com/docs/core/multi-tenancy)
+## 2. Composeを作り、生成後のappNameを控える
 
-| 項目 | 環境ごとの扱い |
+選択中のEnvironmentで **Create Service → Compose** を選びます。ダイアログ名は **Create Compose** です。
+
+| 作成画面の欄 | 入力例・選択 |
 | --- | --- |
-| Dokploy `appName` | developmentとproductionで独立した固定名にする |
-| `COMPOSE_PROJECT_NAME` | そのEnvironmentの `appName` と一致させる |
-| Dockerネットワーク | Composeプロジェクトごとに生成。共有external networkは意図した場合だけ利用 |
-| 名前付きvolume | 通常はプロジェクト名から生成。`DATA_VOLUME_PREFIX` は空欄にし、他環境と共有しない |
-| `LANDING_DIR` | 環境ごとに別の専用ディレクトリを指定 |
-| ホストポート | 同じホスト・bind先で重ならない値にする |
-| パスワード・暗号鍵・workerトークン | 環境ごとに生成し、その環境のprivate設定で保持 |
-| 外部SQL接続 | 環境と用途に合う接続先・権限を指定 |
-| 外部S3を共有する場合 | bucket・prefix・Warehouse・資格情報の境界を別途設定 |
+| Name | `platform`。画面の表示名 |
+| App Name | `lakehouse-development-platform`。生成名の元になる文字列 |
+| Compose Type | **Docker Compose** |
+| Select a Server (Optional) | 同VMなら **Dokploy**。登録サーバーがない場合、欄自体が表示されない |
+| Description | 環境の用途。秘密値は入力しない |
 
-Dokployの既定Composeコマンドは `-p <appName>` を指定します。この指定はCompose内の `name` やenvのプロジェクト名より優先されるため、CLIの設定も同じ名前へ合わせます。`appName` は初回配置前に決め、永続データを使い始めた後の変更は移行作業として扱います。[v0.31.0のコマンド生成](https://github.com/Dokploy/dokploy/blob/v0.31.0/packages/server/src/utils/builders/compose.ts)
+**Create** を押してサービスを開きます。サービス名の下の小さな文字列が、作成後の実際の **appName** です。例えば入力が `lakehouse-development-platform` でも、結果は `lakehouse-development-platform-a1b2c3` のようにランダム6文字が付きます。これは説明用の名前で、実際の末尾は画面から控えます。[作成フォーム](https://github.com/Dokploy/dokploy/blob/v0.31.0/apps/dokploy/components/dashboard/project/add-compose.tsx)、[生成規則](https://github.com/Dokploy/dokploy/blob/v0.31.0/packages/server/src/db/schema/utils.ts)
 
-`production` は環境の名前です。閉域検証用coreをその名前で配置しただけで、本番用の利用者認証、冗長化、バックアップ、復旧試験が完成するわけではありません。運用要件は [ARCHITECTURE.md](ARCHITECTURE.md) を参照してください。
+作成後の鉛筆アイコン **Modify Compose** で変更できるのはNameとDescriptionです。appNameを変更する欄ではありません。更新APIもappNameをDB更新から除外します。入力した元の名前へ戻そうとせず、**確定したappNameをこの先の設定へ合わせます**。[変更画面](https://github.com/Dokploy/dokploy/blob/v0.31.0/apps/dokploy/components/dashboard/compose/update-compose.tsx)、[更新実装](https://github.com/Dokploy/dokploy/blob/v0.31.0/packages/server/src/services/compose.ts#L212)
 
-## GitとRawの正本
+**期待結果:** Generalタブの **Deploy Settings** に `Compose` と表示されます。`Stack` は選びません。本構成はローカルbuild、Compose依存条件、inline configsを使用します。Dokploy自身がSwarmで動くことと、アプリをStackで配置することは別です。[0.31.0のCompose Type定義](https://github.com/Dokploy/dokploy/blob/v0.31.0/packages/server/src/db/schema/compose.ts)
 
-会社用の推奨は **公開Gitソース** です。Compose、Dockerfile、Python、SQL、依存lockを同じcommitから取得し、Git上のファイルを配置の正本にします。接続先と秘密値はDokployの非公開Environment設定で管理します。
+## 3. General → Provider → Gitへ公開URLを登録する
 
-| Source | 用途と扱い |
+Generalタブの **Provider** カードで **Git** タブを選びます。GitHubのURLを直接入力する場合も、選ぶのはこの **Git** です。
+
+| Gitタブの欄 | 入力 |
 | --- | --- |
-| Git / GitHub | 通常の配置。確認したbranchとcommitをデプロイ記録へ残す |
-| Raw | 単独Composeの試験や移行中の構成に使用。内容の版と所有者を記録する |
+| Repository URL | `https://github.com/hiromura16/lakehouse-foundation.git` |
+| Branch | `main`。配布を固定する運用では、管理者が確認したbranch／tag |
+| Compose Path | `infra/lakehouse/compose.yaml` |
+| SSH Key | 公開HTTPS URLには不要。欄があれば **None**。**Add SSH Key** は押さなくてよい |
+| Watch Paths | 最初は空欄 |
+| Enable Submodules | OFF |
 
-このリポジトリはDockerfileやSQL等も使うため、Compose本文をRawエディターへ貼るだけでは関連ファイルが揃いません。Rawを使う場合は、必要なイメージを事前にビルド・配布する等の条件を別に用意します。GitとRawの両方を同じ構成の独立した正本として更新しません。[公式Providerの説明](https://docs.dokploy.com/docs/core/providers)
+**Save** を押します。`Git Provider Saved` が成功通知です。保存だけではcloneや起動は行われません。[Git入力フォームと保存処理](https://github.com/Dokploy/dokploy/blob/v0.31.0/apps/dokploy/components/dashboard/compose/general/generic/save-git-provider-compose.tsx)
 
-Dokployから一時的に変更した設定は、公開可能なコード変更とprivate設定を分けて回収します。コードはGitへ戻して検証し、次の配置でUI上の変更が消えたり、別の構成へ戻ったりしないようにします。Dockerイメージと依存の固定値はリポジトリ内のlockを正とします。
+**GitHubタブ**は、Settingsで接続済みのGitHub Providerからアカウントやリポジトリを選ぶ別方式です。未接続の場合はSettingsへの案内が出ます。今回の公開HTTPS cloneにGitHub AppやPATを用意する必要はありません。**Raw**はCompose本文用で、Dockerfile・Python・SQLが揃う方式ではないため本手順では使用しません。[Providerタブ実装](https://github.com/Dokploy/dokploy/blob/v0.31.0/apps/dokploy/components/dashboard/compose/general/generic/show.tsx)
 
-## 公開Gitから会社へ配置する
+**失敗時:** URL・Branch・Compose Pathを見直します。GitHubタブの接続案内で止まった場合はGitタブへ戻ります。cloneは後のDeploy時なので、Save成功だけを取得成功とは扱いません。
 
-### 1. サイト設定を準備する
+## 4. 配置先VMでprivate設定とディレクトリを準備する
 
-会社の配置先へリポジトリをcloneし、リポジトリ外にprivate設定を生成します。clone URLはREADMEを参照します。
+VMの通常ユーザーで、独立して保持するcloneのルートへ移動します。Dokployが再取得する作業コピーへprivate設定を作りません。
 
 ```bash
-python3 scripts/configure.py --output /absolute/private/site.env
+export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
+python3 scripts/configure.py --output "$LAKEHOUSE_ENV_FILE"
 ```
 
-配置先に合わせて、`appName` と同じ `COMPOSE_PROJECT_NAME`、bind先、ポート、ランディング先、workerのUID/GID、必要なプロファイルを設定します。Sambaの実体と `LANDING_DIR` を一致させ、実行ユーザーのアクセス権も確認します。値を公開Composeへ書き戻しません。
+既存ファイルがある場合は新規生成せず、[更新手順](COMPANY-UPDATE.md)のbackupと `--upgrade` を使います。エディターで次を確認します。秘密値を確認するためにファイル全文を端末へ表示しません。
 
-Docker daemonのプロキシ、企業CA、Sambaの設定はDokployのアプリ配置とは別に準備します。詳細は [DEPLOYMENT.md](DEPLOYMENT.md) と [PROXY.md](PROXY.md) を参照します。
+| private設定 | 合わせるもの |
+| --- | --- |
+| `COMPOSE_PROJECT_NAME` | **手順2の生成後appName**。入力元のslugとは違う |
+| `DATA_VOLUME_PREFIX` | 新規導入は空欄。既存データ移行は後述 |
+| `LANDING_DIR` | 配置先VMの外部絶対パス。Sambaと同じ実体 |
+| `WORKER_UID` / `WORKER_GID` | landing等を使用する非rootユーザーの数値ID |
+| `CONTROL_SETTINGS_DIR` / `CONTROL_SETTINGS_NAME` | GUIが保存するprivate envの専用ディレクトリ／file名 |
+| `COMPOSE_PROFILES` | 最初のcore受入は空欄 |
+| portとbind | VM内の他環境と重複しない値。初回はloopback |
+| proxyとCA | `LAKEHOUSE_NO_PROXY`、HTTP(S)両case、必要時だけ `CORPORATE_CA_FILE` |
+| パスワード・暗号鍵・token | 生成値を保持。既存環境は作り直さない |
+
+`LANDING_DIR`は事前作成し、指定UID/GIDにアクセス権を与えます。`demo` profileで使うprivateディレクトリは0700、envは0600にし、API実行UIDと所有者を合わせます。`notebooks`には別の `NOTEBOOKS_DIR` が必要です。proxy／CA／daemon設定と準備コマンドは [会社導入](COMPANY-ROLLOUT.md)・[会社proxy](COMPANY-PROXY.md)・[設定一覧](CONFIGURATION.md)を参照します。
 
 ```bash
-./scripts/lakehouse.sh --env-file /absolute/private/site.env plan
+./scripts/lakehouse.sh plan
+python3 scripts/proxy-doctor.py --env-file "$LAKEHOUSE_ENV_FILE"
 ```
 
-この段階は設定の確認だけです。同じアプリをCLIとDokployから別々の名前で二重起動しません。
+**期待結果:** 設定検証が成功します。planは起動しません。ここでCLIの `up` を実行して、Dokployと二つのwriterを作らないようにします。既存CLIからの切替は [会社VM更新](COMPANY-UPDATE.md) を先に読みます。
 
-### 2. ProjectとComposeサービスを作る
+## 5. Compose自身のEnvironmentタブへ登録する
 
-DokployでProjectを作り、まず `development` を用意します。そのEnvironmentの中にDocker Composeサービスを一つ作り、配置先サーバーと環境ごとに独立した `appName` を設定します。CLIからも使う名前は小文字・数字・ハイフン／アンダースコアで揃えます。
+ブラウザーで **対象Composeサービス → Environment** を開きます。カード名は **Environment Settings** です。ここへ手順4のprivate envをローカルのエディターから転記し、**Create Environment FileをON → Save** とします。秘密値を扱う画面なのでスクリーンショットを共有しません。[0.31.0のEnvironment画面](https://github.com/Dokploy/dokploy/blob/v0.31.0/apps/dokploy/components/dashboard/application/environment/show-environment.tsx)
 
-| 設定欄 | 指定内容 |
+同名の「Environment」は、Project配下の所属とサービスの変数タブで別の意味です。**所属EnvironmentやProjectの変数欄へsite.envを貼るだけでは、Composeの変数になりません。** 0.31.0はサービス変数の値から、次の明示参照を解決します。
+
+```dotenv
+EXAMPLE_REGION=${{project.EXAMPLE_REGION}}
+EXAMPLE_TEAM=${{environment.EXAMPLE_TEAM}}
+EXAMPLE_COPY=${{EXAMPLE_LOCAL}}
+```
+
+これは参照構文の例で、本基盤へ追加する設定ではありません。初回は全てComposeサービス自身の変数欄に置き、参照先の登録漏れを避けます。共通値を分離するときだけ明示参照へ変更します。[変数解決の実装](https://github.com/Dokploy/dokploy/blob/v0.31.0/packages/server/src/utils/docker/utils.ts#L471)
+
+ONの場合、次のDeployで指定Composeと同じディレクトリに `.env` が作られます。本構成では作業コピー内の `infra/lakehouse/.env` です。Composeコマンドはこのfileを補間に使い、必要な値だけを各serviceへ渡します。UIの全変数が全containerへ自動注入されるわけではありません。OFFではUIの変数はこのCompose配置へ反映されません。[env作成・実行処理](https://github.com/Dokploy/dokploy/blob/v0.31.0/packages/server/src/utils/builders/compose.ts)
+
+GUI操作ハブが保存する外部 `site.env` と、Dokploy Environmentは別の保存先です。一方のSaveで他方まで同期しません。変更後は管理者が両方を一致させてDeployします。生成された作業コピー内 `.env` はDokployが管理するため、手編集しません。
+
+**期待結果:** Save後に同じタブを開き直して値とON状態が残ります。Create Environment Fileが見えない場合は、GeneralのProviderがGitで保存済みか、アカウントの変数編集権限があるかを確認します。設定保存だけでは稼働中containerは更新されません。
+
+## 6. 初回はcoreだけをDeployする
+
+[初回ガイド](START-HERE.md) と同じ標準ルートでは、profileは空欄のまま、下の「任意Composeを重ねる」の**7ファイルのCommandを初回から登録**します。未選択profileのサービスは起動しません。
+
+coreだけを最小設定で確認する別の方法もあります。coreのみ・追加File Mountsなしで既定コマンドを使う場合は、**Advanced → Run Command → Commandを空欄**にしてSaveします。表示される **Default Command** の `-p` が実appName、`--env-file` が `infra/lakehouse/.env`、`-f` が指定Composeであることを読み取ります。なお、カスタムCommandが設定済みのときはDefault Command欄もその内容を表示します。確定名はヘッダーを正とし、手入力の `-p` を無条件に信用しません。初回は **Pull latest images on deploy** をOFFにします。tagを任意更新する指示ではなく、公開lockを使います。[Run Command画面](https://github.com/Dokploy/dokploy/blob/v0.31.0/apps/dokploy/components/dashboard/compose/advanced/add-command.tsx)
+
+Generalへ戻り、初回は **Auto DeployをOFF**のまま **Deploy → Deploy Composeの確認**を実行します。Deploymentsタブへ移り、今回の実行ログを開きます。**Deployはsourceを取得し直します。Rebuildはsourceを取得し直しません。** Gitの修正を取り込むときにRebuildだけを押しても更新されません。[Deploy／Rebuild画面](https://github.com/Dokploy/dokploy/blob/v0.31.0/apps/dokploy/components/dashboard/compose/general/actions.tsx)、[Git clone実装](https://github.com/Dokploy/dokploy/blob/v0.31.0/packages/server/src/utils/providers/git.ts)
+
+ログの `App Name`、`Source Type: docker git`、`Compose Type: docker-compose`、実行Commandを確認します。Git取得 → worker build → Compose起動が進みます。7ファイルの標準Commandは `--wait` を指定します。空欄時の既定コマンドは `--wait` を含まないため、**Deploy成功と全serviceのhealthyは別々に確認**します。[0.31.0のコマンド生成](https://github.com/Dokploy/dokploy/blob/v0.31.0/packages/server/src/utils/builders/compose.ts#L125)
+
+## 7. Containers・Logs・往復試験で受け入れる
+
+ブラウザーの **Containers** タブでStateとStatusを確認し、更新アイコンで再取得します。対象container行の三点メニューには **View Logs** と **Terminal** があります。失敗したserviceは **Logs** タブまたはView Logsから確認します。[Containers画面](https://github.com/Dokploy/dokploy/blob/v0.31.0/apps/dokploy/components/dashboard/compose/containers/show-compose-containers.tsx)
+
+| 対象 | 期待する状態 |
 | --- | --- |
-| Compose type | `Docker Compose` |
-| Source | `Git` の公開HTTPS URL、または接続済みGitHub Provider |
-| Repository | READMEに記載された公開リポジトリ |
-| Branch | 配置する内容を確認したbranch |
-| Compose path | `infra/lakehouse/compose.yaml` |
-| Environment | 用意したサイト設定のうち、この環境で必要な値 |
-| `.env`生成 | Environment設定からの生成を有効にする |
-| AutoDeploy | 初回の起動と再配置の確認後に必要なら有効化 |
+| `catalog-db` / `catalog` / `trino` / `worker` | 起動後にhealthy |
+| `storage` | running。認証なしS3ルートの403は認証拒否であり、停止の証拠ではない |
+| `catalog-migrate` | **Exited (0)**。catalogのschema準備が終わった正常one-shot |
+| 追加profileの `spark-volumes-init` / `superset-init` / `cdc-register` | 成功時はExited (0)。常駐させる対象ではない |
+| `spark-check` | 明示実行しない限りcontainerなし。通常upで起動しない |
 
-`Stack` は選びません。この構成はローカルbuild、Composeの依存条件、inline configsを使うDocker Compose方式です。Dokploy自身がSwarmを使うことと、各アプリをStack方式で動かすことは別です。[公式のComposeとStackの説明](https://docs.dokploy.com/docs/core/docker-compose)
+workerはimageのCMDで `admin.py serve` を実行し、起動時にbucket・Warehouse等のbootstrapを再試行してからreadyになります。初回Dokploy Deployに別途手動bootstrapは不要です。正本は [worker Dockerfile](../infra/lakehouse/Dockerfile) と [serve実装](../scripts/admin.py)です。
 
-### 3. private設定と初回配置を確認する
+one-shotを緑色のrunningにするため手動Startを繰り返しません。非ゼロ終了ならそのserviceのログを確認します。配置先VMでは、同じソース版・外部private env・実appNameで次を実行します。
 
-Environment設定を保存し、`.env`生成が有効なことを確認します。v0.31.0では、上記Compose pathに対する生成先はDokployの作業コピー内の `infra/lakehouse/.env` です。これはDokployが保持する非公開の実行用ファイルで、公開リポジトリへコミットするファイルではありません。
+```bash
+./scripts/lakehouse.sh status
+./scripts/lakehouse.sh verify
+```
 
-UIの環境変数は、Composeの `${VAR_NAME}` 補間と `environment` から必要なコンテナへ渡します。UIへ登録した全変数が自動で全コンテナへ入る構成ではありません。Project共通設定へ各環境固有の秘密値やプロジェクト名を置くと、継承先を取り違えやすいため、環境またはサービスの設定へ分けます。[Composeの環境変数の扱い](https://docs.dokploy.com/docs/core/docker-compose)
-
-Deployを実行し、build、PostgreSQL、カタログmigration、S3、カタログ、Trino、workerの順で結果を確認します。workerは起動時に初期化を行います。失敗時はログの対象コンテナを選んで原因を確認し、DBやvolumeの削除を初期対応にしません。
-
-GitHubのclone成功は、会社proxy経由のimage取得や依存ダウンロードの成功を保証しません。daemon、build、実行コンテナの通信を分けて確認します。
+verifyは既存workerへexecする往復試験です。別名でCLIの `up` を追加しません。成功後、使用commit・profile・正常終了one-shotを私有運用記録へ残します。会社の実SQL／proxy／CA／IdPやバックアップ復元の受入は、別の確認です。
 
 ## 任意Composeを重ねる
 
-`infra/lakehouse/compose.yaml` だけを指定する既定配置では、coreとその中にある `automation`／`monitoring` を扱います。`compute`、`orchestration`、`demo`、`cdc`、PoCツール、`mcp` は追加ファイルに定義があるため、複数の `-f` を指定します。
+coreのファイルだけで扱える追加profileは `automation`／`monitoring` です。GUI/API、Spark、Airflow、CDC、PoC、MCPを使うときは7ファイルを同じCompose projectへ重ねます。**Advanced → Run Commandカード → Command欄**へ、次を**一行**で入力してSaveします。見出しに「Custom Command」というタブを探す必要はありません。
 
-CLIでは `scripts/lakehouse.sh` が7つのファイルをまとめて扱います。DokployではAdvancedのCustom Commandへ同じ組み合わせを指定できます。Custom Commandは既定コマンド全体を置き換え、Dokploy側が先頭へ `docker` を付けます。
-
-次は `appName` が説明用の `lakehouse-development` と一致する場合の入力例です。実際のEnvironmentの `appName` に合わせ、UIの欄へ一つのコマンドとして設定します。
+以下の `lakehouse-development-platform-a1b2c3` は、**手順2で控えた実appNameに置き換えます**。元の入力slugや別環境の名前を使いません。
 
 ```text
-compose -p lakehouse-development --env-file infra/lakehouse/.env -f infra/lakehouse/compose.yaml -f infra/compute/compose.yaml -f infra/orchestration/compose.yaml -f infra/demo/compose.yaml -f infra/cdc/compose.yaml -f infra/poc/compose.yaml -f infra/mcp/compose.yaml up -d --build --remove-orphans --wait --wait-timeout 600
+compose -p lakehouse-development-platform-a1b2c3 --env-file infra/lakehouse/.env -f infra/lakehouse/compose.yaml -f infra/compute/compose.yaml -f infra/orchestration/compose.yaml -f infra/demo/compose.yaml -f infra/cdc/compose.yaml -f infra/poc/compose.yaml -f infra/mcp/compose.yaml up -d --build --remove-orphans --wait --wait-timeout 600
 ```
 
-`COMPOSE_PROFILES` には必要なものだけを指定します。`compute` を有効にするとSpark Master/Worker/Historyが常駐します。`spark-check` は別の明示スモークで、通常のupでは起動しません。Jupyterのremote実行は `notebooks,compute` を組み合わせます。Airflowの接続トークンはAirflowのConnection画面へ登録します。[COMPATIBILITY.md](COMPATIBILITY.md) に追加要件と実行方法があります。
+0.31.0は先頭に `docker` を付けるので、入力の先頭は `compose` です。カスタム指定は既定コマンド全体を置換します。`$VAR`、改行、`;`、pipe、shell置換等は拒否されるため、`-p`へ変数を埋め込まず実名を入力します。`Pull latest images on deploy` はカスタム指定時には効きません。[入力検査と実行実装](https://github.com/Dokploy/dokploy/blob/v0.31.0/packages/server/src/utils/builders/compose.ts#L78)
 
-Custom Commandを使うと、pull、build、待機、削除対象等のflagも自分で保持する必要があります。UIが表示する既定値と比較し、別アプリの `appName`、共有volumeを消す操作、意図しないプロファイルを含めません。Preview等で別の `appName` を使う場合も、その名前へ合わせた構成を別に用意します。
+次にprivate envとComposeのEnvironmentタブの両方で必要な `COMPOSE_PROFILES` を保存します。例えばGUIと監視は `demo,monitoring`、Jupyterから常駐Sparkを使う場合は `notebooks,compute` を含めます。**設定を保存 → Deploy → 全serviceと正常one-shotを再確認**します。追加キー・必要ディレクトリ・メモリの条件は [設定一覧](CONFIGURATION.md) と [PoCツール](POC-TOOLS.md)を読みます。
 
-## 永続データと配置元のパス
+Sparkのbuild正本は `spark-volumes-init` 一つです。`spark-check` はCLIの専用操作で共通imageをbuildしてから明示実行します。Airflow Connection、Grafana dashboardのGUI保存、n8n credential等はそれぞれの文書に従います。[互換性](COMPATIBILITY.md)、[Grafana](GRAFANA.md)、[GUI操作](GUI-WALKTHROUGHS.md)
 
-原本・DB・カタログ等は名前付きvolume、ランディングはリポジトリ外の絶対パスを使います。コードはDockerfileでイメージへコピーし、小さな設定はinline configsで渡します。clone先の相対ディレクトリをDBや原本の保存先にしません。
+## 既存volume名を引き継ぐ場合
 
-Gitソースの作業コピーはDokployが管理するため、clone先をホスト固有の設定として入力する必要はありません。ホスト側のランディング先は `LANDING_DIR` で指定し、コンテナ内では `/landing` として参照します。イメージ内の `/opt/lakehouse` や公式イメージの `/home/node` はホストのパスと別です。詳しくは [DEPLOYMENT.md のパスの説明](DEPLOYMENT.md#ホストのパスとコンテナ内のパス) を参照してください。
+**新規は `DATA_VOLUME_PREFIX` を空欄**にします。既定の物理名は `<実appName>_<volumeキー>` です。移行の場合だけ、旧volumeの接頭辞をprivate設定へ指定します。`COMPOSE_PROJECT_NAME` は現在の実appName、`DATA_VOLUME_PREFIX` は引き継ぐ物理データの名前と区別します。
 
-CLIで単発操作する際は、リポジトリ外のprivate設定を `LAKEHOUSE_ENV_FILE` へ設定すれば、毎回の `--env-file` を省略できます。明示したflagが優先されます。旧Rawの導入先固有パスは公開Gitへコピーせず、必要な値をその環境のprivate設定として管理します。
+| 定義ファイル | 名前付きvolumeキー |
+| --- | --- |
+| core | `catalog-db`, `storage`, `trino`, `n8n-db`, `n8n`, `prometheus`, `grafana` |
+| compute | `spark-events`, `spark-work` |
+| orchestration | `airflow-db`, `airflow-state` |
+| CDC | `cdc-kafka`, `cdc-state` |
+| PoC | `superset-db`, `qdrant`, `marquez-db` |
 
-Dokployの再cloneやAutoDeployで作業コピーが更新されても、永続データを別に保持できる構成です。UIのFile Mounts等を追加すると `--project-directory` やパス解決が変わる場合があるため、必要時はbuild contextと全mount先を再確認します。通常の構成では、コードや設定を渡すための追加File Mountsは不要です。[公式のmountと再配置の説明](https://docs.dokploy.com/docs/core/docker-compose)
+使用するprofileの解決名を、VM上の既存volume実名と一つずつ照合します。bind mountのlanding・private設定・notebook workspaceは別に確認します。prefixはrename・コピー・復元を実行しません。違うprefixを入力すると空の別volumeが作られるため、**旧writerを停止してから**一つの配置へ切り替えます。移行手順は [会社VM更新](COMPANY-UPDATE.md)、控えと復元は [運用](OPERATIONS.md) を使います。
 
-UIで生成した `.env` に対し、サイト設定の外部保存を前提とするCLIへ直接パスを渡しません。CLIから単発処理を行う場合は、同じ設定を保持するリポジトリ外のprivate env、同じ `appName`／プロジェクト名、同じソース版を使います。
+Project／Environment／Preview間で同じprefixや保存先を共有しません。DB・S3のvolume、各暗号鍵・資格情報を保持します。通常更新では **Fresh Volumes**、volume削除、prune、Swarm再初期化を使用しません。[0.31.0のFresh Volumes実装](https://github.com/Dokploy/dokploy/blob/v0.31.0/apps/dokploy/components/dashboard/compose/advanced/fresh-volumes.tsx)
 
-### 既存volume名を引き継ぐ場合
+## パス・保存元・更新元の関係
 
-`DATA_VOLUME_PREFIX` は通常空欄です。空欄または未設定なら、名前付きvolumeは従来どおり `<Composeプロジェクト名>_<volumeキー>` になります。core側のComposeに7個、Airflowに2個の計9個を定義し、CDCの `cdc-kafka`／`cdc-state` を含めると計11個です。bind mountはこの数に含めません。Dokployの `-p <appName>` もこの既定名に反映されます。
+Gitの作業コピーはDokployが管理し、Deployで再取得します。`LANDING_DIR`と `CONTROL_SETTINGS_DIR` はそのcodeディレクトリの外へ作ります。名前付きvolumeはDockerが管理します。コードは公開Git、秘密値は外部private envとCompose自身のEnvironment、Grafana等のGUI状態は各volumeに保持する構成です。
 
-既存構成でvolumeの接頭辞だけが現在の `appName` と異なる場合は、移行先の非公開Environment設定へ既存の接頭辞を指定できます。`appName` と `COMPOSE_PROJECT_NAME` は実行するコンテナ・ネットワークの識別子として一致させ、`DATA_VOLUME_PREFIX` は既存データの物理名を選ぶために使います。公開Composeへ導入先の値を埋め込みません。
+Git Sourceのclone先を固定して入力する必要はありません。`/landing`、`/opt/lakehouse`、公式imageの `/home/node` は**container内のpath**で、VMのユーザー名やclone先ではありません。追加のFile Mounts／Domains／Isolated Deployment／Patchesは、この初回手順では設定しません。後で追加する場合はコマンド・network・path解決の変更を別途確認します。[pathの説明](DEPLOYMENT.md#ホストのパスとコンテナ内のパス)
 
-この設定はvolumeを自動rename・コピー・復元しません。接頭辞を誤ると別の空volumeが作られるため、配置前に使用する全volumeの解決名を既存volume名と照合し、CDCの追加2個も対象にします。DB・S3等の旧コンテナを全て停止し、バックアップと既存の暗号鍵・資格情報を保持してから、同じvolumeを使う新配置を一つだけ起動します。移行後も同じ接頭辞を保持します。
+## 迷ったときの戻り先
 
-`development` と `production`、Preview、移行試験等で同じ接頭辞を共有しません。同じvolumeへ二つのDBやS3プロセスを書き込ませないことが条件です。通常の停止・移行では `down --volumes`、volume削除、pruneを実行しません。[Composeのvolume名と既存volumeの扱い](https://docs.docker.com/reference/compose-file/volumes/)
+| 症状 | 戻って確認する場所 |
+| --- | --- |
+| GitHub接続画面でURL入力できない | 手順3のProvider → **Git** |
+| `.env`に変数がない／必須変数エラー | 手順5の**サービス自身のEnvironment**、Create Environment File、Save |
+| `$`や改行を含むCommandで失敗 | 任意Composeの一行コマンド。`docker`は書かず、`-p`は確定名 |
+| 更新したはずのGit修正がない | Generalの**Deploy**を使ったか。Rebuildだけでは再取得しない |
+| 画面で操作欄が見つからない | 0.31.0か、対象serviceか、管理者の権限かを確認 |
+| 別の空データ／同じportの競合 | appName・prefix・配置先・旧writer・private envを照合 |
+| 一部containerがExited (0) | 手順7のone-shot一覧。失敗なら非ゼロとログで判断 |
+| clone／pull／buildのproxy失敗 | [会社proxy](COMPANY-PROXY.md)。サービスenvはGit clone・daemon pullの設定を代替しない |
 
-## 旧構成から移行する間の扱い
-
-既存データソースの検証環境や旧自動化は、移行中だけ用途別のEnvironmentに残せます。画面上の所属変更と、実際のコンテナ・ネットワーク・volumeの移動は別作業として記録します。
-
-旧自動化のDB、暗号鍵、volumeを保持し、新構成で復元・接続・実行を確認してから切り替えます。同じ定期処理やWebhookを二重に有効化しません。停止中の旧試験も、保存データと復元の要否を確認してから廃止します。Projectを整理するためだけに既存データを削除しません。
-
-移行が終わった後は、通常運用を `development` と `production` に戻します。残す検証用構成には用途と停止条件を付け、所有者と正本を明確にします。
-
-## 配置後と更新時の確認
-
-1. Environment、`appName`、CLIのプロジェクト名を確認し、volumeが意図した環境専用の実体へ解決されることを確認します。
-2. サービスの正常性と、原本・メダリオンの検証結果を確認します。
-3. 再配置してもデータが保持されることを確かめます。
-4. コード版とイメージのlock、private設定の管理先、バックアップ対象を記録します。
-
-通常の配置管理はDokployへ揃え、単発の取り込み・検証等をCLIから実行する場合も同じ環境へ向けます。複数の正本から同じアプリを同時に再配置しません。会社のproxy、外部SQL、利用者認証、バックアップからの復元は、それぞれ実環境で確認した結果を記録します。
-
-
-## PoC操作とAI連携の追加
-
-`bi`（Superset）、`notebooks`（Spark/Jupyter）、`vector`（Qdrant）、`lineage`（Marquez）、`mcp` は同じComposeプロジェクトの任意profileです。新規設定には個別の秘密値を生成します。既存環境はprofileを追加する前に `python3 scripts/configure.py --output /absolute/private/site.env --upgrade` を実行し、既存値を保持して追加キーを用意します。
-
-`NOTEBOOKS_DIR` はリポジトリ外の既存ディレクトリを指定し、非rootの `WORKER_UID/GID` に書込権を与えます。全profileを無条件に有効化せず資源を確認し、[POC-TOOLS.md](POC-TOOLS.md) の手順で必要な機能を追加します。[POC-PORTAL.md](POC-PORTAL.md) の画面から入口・データ契約・品質・説明を辿れます。AI向けMCPの専用認証と参照優先の設定は [MCP.md](MCP.md) を参照します。
-
-proxyやCAを変えるときは、Dokploy EnvironmentとGUIが保存するprivate envを管理者が一致させ、build時のCA反映には再buildを行います。内部サービス名は新profile分も `NO_PROXY` / `no_proxy` の両方へ追記します。詳細は [COMPANY-PROXY.md](COMPANY-PROXY.md) にまとめています。
-
-
-Docker 29／Buildx Bake／社内proxyで判明した互換性修正の取り込みと、`LAKEHOUSE_NO_PROXY` の生成・Dokployへの登録は [会社VMの更新手順](COMPANY-UPDATE.md) を参照してください。
+通常の更新は [会社VM更新](COMPANY-UPDATE.md)、日常の操作・backup・復元は [運用](OPERATIONS.md)、原因調査は [障害対応](TROUBLESHOOTING.md)へ進みます。

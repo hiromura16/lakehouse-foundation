@@ -1,10 +1,12 @@
 # バージョンと連携互換性
 
-調査日: 2026-11-09。公開リリース、配布パッケージ、実在するMaven座標とイメージmanifestを照合しました。以下は依存関係を固定した採用構成です。配布物の実在確認、ビルド成功、コンテナ起動、システム間の読み書きは別の検証として扱い、実機の成功結果は検証記録を正とします。
+照合日: 2026-11-10。対象は、このcheckoutのDockerfile・Compose・hash lockで固定した版です。公式の版付き文書・release tagと実装を照合しました。配布物の実在確認、ビルド成功、コンテナ起動、システム間の読み書きは別の検証として扱い、実機の成功結果は [検証記録](VALIDATION.md) を正とします。
 
-## 最新安定版と採用版
+## 採用版を確認する
 
-| 部品 | 確認した最新安定版 | 採用・判断 |
+表の版は自動追従する `latest` ではありません。上流に新しい版が出ても、lockの変更、依存解決、実ビルド、読み書き・保存の検証を経てから更新します。
+
+| 部品 | 比較・確認した版 | 採用・判断 |
 | --- | --- | --- |
 | Apache Spark | 4.3.0（2026-10-30） | Icebergの公開runtimeがある4.1系の保守版 **4.1.4** を採用 |
 | Apache Iceberg Java | 1.12.0（2026-09-29） | Spark runtimeとAWS bundleを **1.12.0** に統一 |
@@ -15,8 +17,13 @@
 | core worker | Python 3.14 / PyIceberg 0.12 / PyArrow 26.0.1 | 実機確認した依存をlockへ固定 |
 | 自動化・監視 | n8n 2.46.7 / Grafana 13.3.0 / Prometheus 3.16.0 | 専用DB・永続volume、dashboardのGUI保存を実機確認 |
 | core | Trino 484 / Lakekeeper 0.14.3 / SeaweedFS 4.53 / PostgreSQL 18.6 | 採用digestは `infra/lakehouse/images.lock.json` を参照 |
+| BI | Superset 6.1.0 / SQLAlchemy 1.4.54 / Trino Python 0.340.0 | `bi`。接続→SQL Lab→Dataset→Chart→Dashboardは [POC-TOOLS.md](POC-TOOLS.md) |
+| Notebook | JupyterLab 4.6.6 / ipykernel 7.3.0 | `notebooks`。Sparkと同じPython 3.10、Pandas 2.3.3 / Arrow 25.0.0 / NumPy 2.2.6 |
+| ベクトル・系統 | Qdrant 1.20.0 / Marquez 0.50.0 | `vector` / `lineage`。MarquezはLinux x86-64で検証 |
+| MCP | Python SDK 2.3.0 / httpx2 2.16.0 | `mcp`。v2の `Client` とStreamable HTTPを使用。v1のクライアント例は流用しない |
+| AI例 | langchain-core 1.7.6 / langchain-ollama 1.1.0 / LangSmith 0.14.17 | `examples/ai/requirements.lock`。独立venvでDocument化、任意のローカル推論 |
 
-Spark 4.3.0が最新であることと、IcebergのSpark 4.3向けruntimeが公開されていることは別です。調査時点で `iceberg-spark-runtime-4.2_2.13` と `4.3_2.13` のMaven metadataは404でした。4.1用JARを4.3へ流用せず、今回の連携プロファイルは4.1.4へ固定します。[Spark公式リリース](https://spark.apache.org/news/) / [Iceberg公式リリース](https://iceberg.apache.org/releases/) / [4.1用Maven metadata](https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-4.1_2.13/maven-metadata.xml)
+当初比較したSpark 4.3.0の公開と、IcebergのSpark 4.3向けruntimeの公開は別です。4.1用JARを別のSpark minorへ流用せず、今回の連携プロファイルは4.1.4へ固定します。[Spark 4.1.4文書](https://spark.apache.org/docs/4.1.4/) / [Iceberg 1.12.0のSpark設定](https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/docs/docs/spark-configuration.md)
 
 AirflowはGitHubの正式リリースとPyPIの安定版を照合しました。開発中の `/stable` 文書やrc版だけを見て採用版を決めません。[3.4.0正式リリース](https://github.com/apache/airflow/releases/tag/3.4.0) / [PyPI配布](https://pypi.org/project/apache-airflow/3.4.0/) / [standard provider](https://pypi.org/project/apache-airflow-providers-standard/1.21.0/)
 
@@ -104,7 +111,8 @@ Sparkを使える利用者はexecutor上でコードを動かせます。会社�
 coreが正常に起動し、バケットとWarehouseが初期化済みの状態で実行します。
 
 ```bash
-./scripts/lakehouse.sh --env-file /absolute/private/site.env spark-check
+export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
+./scripts/lakehouse.sh --env-file "$LAKEHOUSE_ENV_FILE" spark-check
 ```
 
 この操作は `compute` プロファイルの `spark-check` を一時コンテナとして起動し、local[2]で既存の相互参照を確認します。通常の `up` ではこの一時serviceだけをreplicas 0にし、上記Master・Worker・Historyを常駐させます。Docker Composeを直接使う場合は同じ追加Composeを全て指定し、`--profile compute build spark-volumes-init` を実行した後、`--profile compute run --rm --no-deps spark-check` を実行します。
@@ -112,6 +120,29 @@ coreが正常に起動し、バケットとWarehouseが初期化済みの状態�
 `infra/compute/smoke.sql` は専用の `compatibility.spark_roundtrip` 表を作成・置換します。固定の3行に日本語・decimalを含め、Sparkで書いた表をSparkで読み、その後Trinoの `iceberg.compatibility.spark_roundtrip` から同じ行を読みます。再実行でも追記による二重化をせず、業務表は対象にしません。成功時は版と行数だけを出力し、鍵や接続文字列を表示しません。
 
 この一時スモークは小さなlocal実行の読み書き確認です。常駐clusterの受入では、別途Jupyterから分散task・Python UDF・Arrow処理を実行し、Masterの完了アプリ、Workerのexecutor、Historyのevent logを照合します。大量データ、複数writerの競合、複数ホスト、認証付きOIDC、Iceberg v3の機能は別の確認です。
+
+### Composeを直接操作する場合の省略しない例
+
+以下はリポジトリのrootでBashを使う場合です。以後の `dc` は7本を結合する関数で、コンテナを起動するものではありません。private envのprofileを使い、公開ソースへ秘密値を展開しません。
+
+```bash
+export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
+dc() {
+  docker compose --env-file "$LAKEHOUSE_ENV_FILE" \
+    -f infra/lakehouse/compose.yaml \
+    -f infra/compute/compose.yaml \
+    -f infra/orchestration/compose.yaml \
+    -f infra/demo/compose.yaml \
+    -f infra/cdc/compose.yaml \
+    -f infra/poc/compose.yaml \
+    -f infra/mcp/compose.yaml "$@"
+}
+dc config --quiet
+dc --profile compute build spark-volumes-init
+dc --profile compute run --rm --no-deps spark-check
+```
+
+`spark-check` はlocalでの相互読み書き試験です。常駐Workerを使う試験はJupyterの `02-spark-cluster.ipynb` で行います。Dokploy配下のサイトでは、同じprojectを手元のCLIで別管理せず、[Dokploy操作手順](DOKPLOY.md) の対象Container Terminalと [Notebook手順](POC-TOOLS.md) を使用します。
 
 ## Airflow・Python・Providerの組み合わせ
 
@@ -148,7 +179,7 @@ DAGは `airflow.providers.standard.operators.python.PythonOperator` と `airflow
 private envの `COMPOSE_PROFILES` に `orchestration` を追加し、通常の `up` で起動します。新しい設定項目は `AIRFLOW_PORT`（既定8081）、`AIRFLOW_DB_PASSWORD`、`AIRFLOW_FERNET_KEY`、`AIRFLOW_JWT_SECRET` です。Fernet鍵は32バイトをURL-safe Base64にした値で、通常のhex乱数とは異なります。
 
 ```bash
-./scripts/lakehouse.sh --env-file /absolute/private/site.env up
+./scripts/lakehouse.sh --env-file "$LAKEHOUSE_ENV_FILE" up
 ```
 
 既定では `http://localhost:8081/` から開きます。初回のSimple Auth管理者名は `admin` です。ランダムな初期パスワードはAirflowの名前付きstateボリューム内にある `/opt/airflow/simple_auth_manager_passwords.json.generated` へ生成されます。導入先のローカル端末でのみ確認し、ファイル内容や認証情報を公開ログ・Git・チャットへコピーしません。`standalone` の起動ログにも初期認証情報が出る場合があるため、生ログを共有しません。
@@ -159,7 +190,8 @@ Connection画面で次を設定します。
 | --- | --- |
 | Connection ID | `lakehouse_worker` |
 | Connection Type | `HTTP` |
-| Host | `http://worker` |
+| Host | `worker` |
+| Schema | `http` |
 | Port | `8000` |
 | Password | private envの `WORKER_TOKEN` の値 |
 
@@ -175,7 +207,9 @@ PostgreSQL 18のデータボリュームはイメージの規約に合わせて 
 
 ## プロキシと確認状態
 
-各任意イメージのビルドは6つのHTTP(S)/NO_PROXY変数を受け取り、JAR・constraints・Python依存の取得に使用します。実行コンテナにも必要な変数を渡します。Javaの外向き接続は環境変数だけで対応すると仮定せず、[PROXY.md](PROXY.md) のJVM/SDK設定と企業CAを必要に応じて適用します。coreの `catalog`、`storage`、`trino`、`worker`、`airflow`、`airflow-db` 等は内部接続としてNO_PROXYに追加します。
+各任意イメージのbuildへ渡す変数は、`HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` とその小文字の **6項目** です。一方、private `site.env` の生成・upgradeでは **7項目目の `LAKEHOUSE_NO_PROXY`** も保存します。この専用キーへ必須内部名と利用者の追加先をまとめ、大小文字のNO_PROXYと同期します。CLIは選択したprivate設定から正規化し、Dokployのraw配置では生成・upgrade済みの専用キーをサービスEnvironmentにも転記します。
+
+JAR・constraints・Python依存の取得はbuild側、必要な外向きHTTP接続はruntime側でこの設定を使います。内部の `storage` / `catalog` / `trino` / `worker` 等を会社proxyへ送らないよう、必須内部名を標準化しています。Javaの外向き接続が環境変数だけで対応すると仮定せず、[PROXY.md](PROXY.md) のJVM/SDK設定と企業CAを必要に応じて適用します。
 
 配布物の版・digest・checksum照合とPython構文検査、Compose結合検査は実施済みです。SparkのREST/S3書き込みとTrino相互参照、およびAirflowコンテナからのDAG実行は実機で成功しました。詳細は [検証記録](VALIDATION.md) を参照してください。会社proxyと外部SQL Serverは、その環境で別途確認します。
 
@@ -187,3 +221,18 @@ PyIcebergは `header.X-Iceberg-Access-Delegation=client-managed` を指定し、
 
 
 Sparkの共通imageは `spark-volumes-init` だけがbuildし、Master/Worker/Historyと明示smokeは同じimageを参照します。`spark-check` CLIも先に共通imageをbuildします。`up --build` を含む配置更新ではdaemonが再作成される場合があるため、実行中ジョブの完了を確認してから更新します。履歴volumeの保持は無停止の保証とは別です。
+
+## 今回照合した公式資料と実装
+
+公式サイトに版選択がない場合は、release tagと同梱コードも確認しています。`latest` のURLだけから採用版の互換性を推定しません。
+
+| 確認対象 | 一次資料 | このリポジトリの正本 |
+| --- | --- | --- |
+| Spark RPC・UI・event log | [4.1.4 Standalone](https://spark.apache.org/docs/4.1.4/spark-standalone.html)、[4.1.4 Monitoring](https://spark.apache.org/docs/4.1.4/monitoring.html) | `infra/compute/`、`infra/poc/lakehouse_session.py` |
+| Iceberg catalog設定 | [1.12.0 tagの設定文書](https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/docs/docs/spark-configuration.md) | 固定JAR・checksum、SparkSession設定 |
+| Airflow GUI接続とrun | [3.4.0 Connections](https://airflow.apache.org/docs/apache-airflow/3.4.0/howto/connection.html)、[3.4.0 Dag Runs](https://airflow.apache.org/docs/apache-airflow/3.4.0/core-concepts/dag-run.html) | `infra/orchestration/Dockerfile` とDAG |
+| Superset dataset・chart | [6.1.0 Dashboard tutorial](https://superset.apache.org/user-docs/6.1.0/using-superset/creating-your-first-dashboard/) | `infra/poc/superset_init.py` とSuperset lock |
+| MCP v2 transport | [SDK v2.3.0のClient transports](https://github.com/modelcontextprotocol/python-sdk/blob/v2.3.0/docs/client/transports.md) | `infra/mcp/server.py` とlock |
+| AI固定package | [langchain-core 1.7.6](https://pypi.org/project/langchain-core/1.7.6/)、[langchain-ollama 1.1.0](https://pypi.org/project/langchain-ollama/1.1.0/) | `examples/ai/requirements.lock` |
+
+詳細なGUI・認証・保存の照合先は [GUI-WALKTHROUGHS.md](GUI-WALKTHROUGHS.md)、[GRAFANA.md](GRAFANA.md)、[POC-TOOLS.md](POC-TOOLS.md)、[MCP.md](MCP.md) の末尾にあります。

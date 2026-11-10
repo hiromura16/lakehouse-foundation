@@ -1,5 +1,8 @@
 # GUI操作APIとSwagger
 
+確認日: 2026-11-10（JST）。初回配置・作業端末・権限は [START-HERE.md](START-HERE.md) で準備します。以下の `up` はCLI管理の環境だけで使います。Dokploy管理では同じprivate設定とComposeサービスのEnvironmentを揃え、7ファイルを使ってDeployします。[0.31.0の配置手順](DOKPLOY.md)
+
+
 このAPIは、設定の保存、合成素材の投入、明示した後続処理、Goldの参照を担当します。FastAPIのSwagger UIから入力項目と応答形式を確認できます。初めて操作する場合は [DEMO-GUI.md](DEMO-GUI.md)、会社導入は [COMPANY-ROLLOUT.md](COMPANY-ROLLOUT.md) を先に読みます。
 
 ## 起動と認証
@@ -26,6 +29,32 @@ Swaggerの **Authorize** にprivate設定の `CONTROL_API_TOKEN` を入力しま
 SwaggerのJavaScript・CSS・faviconはimage内から配信します。ブラウザーから外部CDNや外部schema validatorへ接続せず、認証tokenの永続保存も無効にしています。依存ファイルの取得とchecksum確認はimage build時に行うため、閉域環境では許可したbuild経路を用意します。
 
 このAPIはDocker socket、sudo権限、Dokployの全体管理鍵を使用しません。host設定の反映やコンテナ再配置は管理者の操作として残します。
+
+## Swaggerで最初の1ジョブを完了する
+
+1. `/docs` → `Authorize` にCONTROL_API_TOKEN本体を入力します。`GET /capabilities` を開き `Try it out` → `Execute`。200と固定のAPI一覧が成功条件です。
+2. `POST /jobs` を開き、次の本文で `Execute` します。これはランディングへの素材投入だけです。
+
+```json
+{
+  "mode": "batch",
+  "batches": 1,
+  "seed": 42,
+  "orders": 20,
+  "days": 7,
+  "scenario": "clean",
+  "destination": "landing",
+  "images": true,
+  "allow_sql_write": false
+}
+```
+
+3. 202応答の `id` を控え、`GET /jobs/{identifier}` の入力欄に入れて実行します。OpenAPI上の実パラメーター名を使い、`queued` / `running` なら少し待って再度GETします。`succeeded` と結果manifestが成功条件です。POSTの繰り返しは別ジョブを作るので使いません。
+4. 次に `POST /pipeline/{action}` の `action` へ `medallion` を選んで実行し、返された別IDをGETして完了を待ちます。入力素材と派生表の更新は別ジョブです。
+5. `GET /catalog/preview` と `GET /quality` でGoldと品質件数を確認します。verify fixtureの固定155行は、通常GUI/APIで累積した素材件数と比較しません。
+6. 終了時はAuthorizeの `Logout` を押します。認証保持は無効ですが、tokenやレスポンスを社外共有する画面へ残さないでください。
+
+401なら認証、409なら実行中/未準備、422なら入力を下表で確認します。API再起動でジョブ履歴は失われます。SQLの書込み先やpipelineを切り替える前に、対象環境と未反映設定を確認します。
 
 ## 操作の対応
 
@@ -236,3 +265,7 @@ APIからworkerへの応答待ちがタイムアウトすると、ジョブは `
 | ジョブ内のその他の `WORKER_*` / `PIPELINE_FAILED` | workerのhealthと処理中状態を確認してから再試行を判断 |
 
 APIのOpenAPI生成と単体試験は、認証、秘密値非表示、設定保存、source-only境界、取消、重複拒否、固定接続先、AI参照上限を対象にしています。会社DB・proxy・CA・共有クライアントでの成功は導入先の受入で別途記録します。
+
+## 採用版の根拠
+
+API実装は [api.py](../infra/demo/api.py)、状態・上限は [jobs.py](../infra/demo/job_manager.py) と [requirements](../infra/demo/requirements.txt) が正本です。FastAPI **0.162.2** の [HTTP Bearer実装](https://github.com/fastapi/fastapi/blob/0.162.2/fastapi/security/http.py) と [Swaggerのself-host手順](https://github.com/fastapi/fastapi/blob/0.162.2/docs/en/docs/how-to/custom-docs-ui-assets.md) を照合しています。Swagger UI **5.34.1** はbuild時のarchive hashを検証し、ローカルassetを配信します。frameworkの標準認証機構と、本基盤の共有token・mutex・入力allowlistは別の実装です。[版一覧と文書監査](REFERENCES.md)

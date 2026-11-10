@@ -87,3 +87,11 @@ n8nのSSRF保護を有効化し、同梱workflow用のhostname例外を `worker`
 公開作業ブランチの原本workerを、通常サービスを起動しない一時アプリでキャッシュなしBake buildし、空CA helperのskipとビルド成功を確認しました。既存workerとTrinoの一時プロセスには到達不能proxyを設定し、内部S3への直接通信、Trinoへの依頼、隔離verify11項目を確認しました。稼働プロセスの設定やSwarmは変更していません。
 
 既存Swarmの取得・pool検証は、Docker 29互換の厳密CLI stubと実config.pyを接続して正常・不一致・不正JSONを確認しました。ホスト直接のDocker socket権限がないため、実Swarmへのdocker infoは未実行です。会社の実proxy・DNS・認証方式の受入は引き続き現地で行います。[会社VMの更新手順](COMPANY-UPDATE.md) に、ローカル一時修正の退避、private設定更新、Dokploy Environmentへの転記、再配置と確認を記載しています。
+
+## 文書の採用版監査と公開前検査
+
+2026-11-10の文書監査は [REFERENCES.md](REFERENCES.md) に、固定版の公式tag/画面実装・設定・操作ガイドと全Markdownの照合対象を記録しています。Dokployの生成appName、Provider、サービスEnvironment、Run Commandと、初心者のcore→GUI→追加profileの順序を修正しました。会社の実データは合成runと別環境へ分離します。
+
+35件のMarkdownのローカルリンク/anchor、shell/Python/JSON例、主要CLI引数、掲載したAPI入力schema、core/各profile/組合せ15ケースのCompose展開を確認しました。外部リンク201件は公式tagのraw文書を含むHTTP到達確認が成功し、既存260テスト、Python/SQLの品質検査も成功しました。shell構文の成功を、sudo・実ネットワーク・会社DB変更の実行成功とは扱いません。今回の文書改訂ではサービスの再配置や依存版更新は行いません。
+
+公開前の機密検査は、作業ファイル・index・全ローカルGit参照の履歴へ実施します。提供された会社情報と実秘密値をGit外で照合し、秘密鍵、実CA、データ/DB/バックアップ、生ログ等も規則で確認します。社内添付資料そのもの、実値、検査用deny listを公開しません。既知情報・検査規則の範囲の結果として扱い、会社で新たに入力した情報はその都度別に確認します。

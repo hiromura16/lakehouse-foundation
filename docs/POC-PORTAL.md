@@ -1,5 +1,8 @@
 # PoC操作ポータル
 
+確認日: 2026-11-10（JST）。初回配置・作業端末・権限は [START-HERE.md](START-HERE.md) で準備します。以下の `up` はCLI管理の環境だけで使います。Dokploy管理では同じprivate設定とComposeサービスのEnvironmentを揃え、7ファイルを使ってDeployします。[0.31.0の配置手順](DOKPLOY.md)
+
+
 操作画面を、素材投入だけでなく、サービスの入口、データの意味、読み取り確認、接続診断、履歴、同梱ヘルプから使えるようにしています。既定URLは `http://localhost:8501/`、操作APIとSwaggerは `http://localhost:8502/docs` です。実行する操作と、その結果を確認する操作を分けます。
 
 ## 最初に開く
@@ -91,3 +94,9 @@ imageにdocsを同梱していない版ではヘルプが未準備になりま�
 `GET /capabilities` は固定APIのmethod、path、read/write、必要profile、目的を返します。これは操作の分類であり、実行権限の付与ではありません。実際のBearer認証・入力検査・書込み同意はAPIが行います。AIへ任意SQL、shell、任意URL、任意ファイル読取を提供しません。
 
 MCP等のクライアントは、まずcapabilities、catalog、status、scenarios、既知ジョブ、helpから根拠を得て、明示的に許可された操作だけを呼びます。素材投入・設定保存・後続処理を読み取りと取り違えません。ルートとschemaの詳細は [API.md](API.md) とSwaggerを参照してください。
+
+## 初回の確認順と実装の正本
+
+初回は「状態」でworker、「素材の投入」で1batch、「処理・検証」でmedallion、「データ」でGold/品質、「履歴」で同じID、「ヘルプ」で文書・図の順に確認します。サービス入口カードのhealthyだけでは、この往復は検証できません。設定画面の `保存済み・再配置待ち` が出たら対象変更を整理し、配置担当が反映してから次のSQL投入を行います。
+
+入口・catalog・helpの公開allowlistは [poc_catalog.py](../infra/demo/poc_catalog.py)、APIは [portal_api.py](../infra/demo/poc_api.py) が正本です。Streamlit **1.67.0** のfragmentとFastAPI **0.162.2** のローカルSwagger配信を使います。[公式版への参照](REFERENCES.md) と [API仕様・試し方](API.md) を併せて確認してください。新しい文書をGitへ追加しても、help allowlistへ加えてimageを再buildするまではポータル内の一覧へ自動追加されません。
