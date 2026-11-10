@@ -1,5 +1,19 @@
 # BI・Notebook・ベクトル検索・データ系統を追加する
 
+<!-- doc-purpose:start -->
+> **役割:** Superset・Jupyter・Qdrant・MarquezのGUIと合成デモを追加して用途別に検証する。
+>
+> **対象読者:** データ利用担当 / 開発・設計担当
+>
+> **読むタイミング:** coreの検証後にBI、Notebook、数値vector、手動lineageを試すとき。
+>
+> **前提となる資料:** [初めて構築する人の一本道ガイド](<START-HERE.md>) / [MES・ERPデータをBronzeからGoldへ整える](<MEDALLION.md>)
+>
+> **次に読む資料:** [AIへ渡せるデータとLangChain連携](<AI-READINESS.md>) / [ソース・指標・API・計算基盤を拡張する](<CUSTOMIZATION.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 照合日: 2026-11-10。対象はSuperset 6.1.0、JupyterLab 4.6.6、Spark 4.1.4 / Iceberg 1.12.0、Qdrant 1.20.0、Marquez 0.50.0です。版を上げる手順と、今の版を使う手順は分けてください。
 
 データを入れるだけでなく、GUI で調べ、SQL を試し、Notebook で加工し、API から
@@ -38,6 +52,17 @@ flowchart LR
 Qdrant への埋め込み生成や、実際のジョブからの OpenLineage 自動送信は、この profile
 だけで有効になりません。下記の小さな seed と、業務データを処理する連携を区別します。
 
+## 目的を一つ選んで、小さい実験として完了する
+
+最初から全GUIを起動する必要はありません。下の「操作→保存→再表示」が一組になれば、その機能の使い方をチームへ説明できます。投入は合成データ用の別環境で行います。
+
+| 今回の問い | 最初のprofile | 最小の操作 | 終了時に残すもの |
+| --- | --- | --- | --- |
+| Goldを業務担当が使えるか | demo,bi | 素材→medallion→GoldのChartを一つ保存 | 粒度・式・対象期間を記したDashboardと受入結果 |
+| Pythonをremote executorで動かせるか | notebooks,compute | cluster notebookのPython/Arrow/Icebergセル | application ID、実行先表示、History、Notebook |
+| vectorの認証と検索を扱えるか | vector | 合成3点を投入しread-only検索 | collection設定、検索条件、書込拒否の確認 |
+| 系統をどの粒度で追いたいか | lineage | 手動seedのjobと入出力を開く | 表/ジョブ/実行を区別した系統図と未自動化の記録 |
+
 ## 1. private 設定と起動
 
 [導入手順](DEPLOYMENT.md) で生成した外部 `site.env` に、必要な profile を追加します。
@@ -64,6 +89,8 @@ Qdrant への埋め込み生成や、実際のジョブからの OpenLineage 自
 しないでください。Notebook の workspace は起動前に用意し、`WORKER_UID/GID` が
 読み書きできるようにします。Compose が勝手に別所有者の directory を作らないよう、
 `create_host_path: false` にしています。
+
+以下の `up` は**CLI管理の場合だけ**実行します。Dokploy管理ではprivate設定とComposeサービス自身のEnvironmentを揃え、7ファイルのCommandでDeployします。[DOKPLOY](DOKPLOY.md) に沿って配置し、同じ環境へCLIの起動を重ねません。`plan` は両方式で確認できます。
 
 ```sh
 export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
@@ -102,18 +129,28 @@ URLのportはprivate envの実値を使います。別PCのブラウザーで `l
 
 ```bash
 dc() {
-  docker compose --env-file "$LAKEHOUSE_ENV_FILE" \
-    -f infra/lakehouse/compose.yaml \
-    -f infra/compute/compose.yaml \
-    -f infra/orchestration/compose.yaml \
-    -f infra/demo/compose.yaml \
-    -f infra/cdc/compose.yaml \
-    -f infra/poc/compose.yaml \
-    -f infra/mcp/compose.yaml "$@"
+  python3 -c '
+import subprocess
+import sys
+from pathlib import Path
+
+from scripts.settings import environment, load
+
+root = Path.cwd()
+values = load(sys.argv[1])
+command = ["docker", "compose", "--env-file", sys.argv[1]]
+for name in (
+    "lakehouse", "compute", "orchestration", "demo", "cdc", "poc", "mcp"
+):
+    command.extend(["-f", str(root / "infra" / name / "compose.yaml")])
+subprocess.run(command + sys.argv[2:], env=environment(values), check=True)
+' "$LAKEHOUSE_ENV_FILE" "$@"
 }
 dc config --quiet
 dc ps
 ```
+
+共通loaderでprivate設定を検査・正規化して子プロセスへ渡すため、shellに残る別projectや古いproxyを優先しません。`python3 -c` でコードを渡すので、標準入力も保守コマンドへ引き継げます。対象は設定と同じ既存projectです。
 
 Dokploy管理のサイトは [DOKPLOY.md](DOKPLOY.md) に従い、対象の稼働Container Terminalから下記の単一コマンドを使えます。新しいCompose projectを別途起動する必要はありません。
 
@@ -486,3 +523,33 @@ Trino driver 0.340.0 を追加し、既存アプリの依存一式を uv sync �
 - [Spark 4.1.4 Monitoring](https://spark.apache.org/docs/4.1.4/monitoring.html)。UI・event logの公式仕様と `lakehouse_session.py` を照合。
 - [Qdrant v1.20.0の設定](https://github.com/qdrant/qdrant/blob/v1.20.0/config/config.yaml)、[Security](https://qdrant.tech/documentation/security/)、[Web UI](https://qdrant.tech/documentation/interfaces/web-ui/)。認証の2 keyはComposeで明示設定。
 - [Marquez 0.50.0 README](https://github.com/MarquezProject/marquez/blob/0.50.0/README.md)、[同tagのCompose](https://github.com/MarquezProject/marquez/blob/0.50.0/docker-compose.yml)、[Lineage API](https://marquezproject.ai/docs/api/get-lineage/)。上流のPG例は14で、このキットの18.6との小規模実機確認とは別の根拠。
+
+## BIの数値が合わないときは表示より粒度を確認する
+
+例えば2工場の歩留まりをまとめたい場合、工場ごとの `yield_pct` の平均と、全良品数を全生産数で割った比率は別の値です。SQL Labで同じ範囲の分子・分母を先に確認します。
+
+```sql
+SELECT
+    SUM(good_qty) AS good_qty,
+    SUM(total_qty) AS total_qty,
+    100.0 * SUM(good_qty) / NULLIF(SUM(total_qty), 0) AS yield_pct
+FROM iceberg.gold.factory_daily_production;
+```
+
+この例は読み取りだけです。Chart側の時間・工場filterも同じにして比較します。標準の歩留まりは良品/生産、計画達成率は良品/計画で、どちらも分母0はNULLです。NULLを自動的に0%と扱う表示変更は、業務上の意味を決めてから行います。
+
+### Notebookの「保存」を三つに分ける
+
+| 保存対象 | 何が残るか | 何が残らないか |
+| --- | --- | --- |
+| Notebook保存 | セル、説明、保存時のoutput | kernelのPython変数・開いているSparkSession |
+| Iceberg書込み | catalogとS3が指すtable/snapshot | Notebook編集の理由や未保存コード |
+| Spark event log | application/job/stage/taskの履歴 | 全入力原本やNotebook全文の代わりにはならない |
+
+実験の再現用には、Notebookの説明セルへGit版・使ったprofile・対象table・実行目的を記録し、機密値をoutputへ出しません。設定を変えた後は旧SparkSessionを止めて新kernelで実行します。既存sessionが違うmasterを使う場合、helperは成功に見せずエラーにします。
+
+### 初期化の再実行が「修復」とは限らない
+
+Superset initは既存GUI編集を保持し、Qdrant seedは同名collectionがあれば点の内容を上書きしません。従ってseedが `existing: true` を返しても、以前の途中失敗を自動で埋め直した保証はありません。collectionの次元・件数・IDを見て、再作成が必要なら利用者がいない専用デモで別途判断します。
+
+Marquez seedは固定run IDの手動デモです。新しい実業務runの採取処理ではありません。これらの起動・seed・再起動試験は [seed_tools.py](../infra/poc/seed_tools.py) と [PoC tool tests](../tests/test_poc_tools.py) で追えます。AIへNotebookの実行APIを渡す段階では、固定read-only MCPとは異なる強い実行権限として設計します。

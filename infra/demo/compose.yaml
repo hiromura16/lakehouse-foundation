@@ -1,7 +1,14 @@
+# 役割: Streamlit画面と認証付きFastAPI/Swaggerを追加する操作面。
+# coreの後に同じprojectへ結合する。素材生成と後続の取込/変換は別の明示操作。
+# 読む順序: demo-apiの書込境界 → landing/private bind → 画面のAPI接続。
+# demoはAPIと画面、mcpはAPIだけを起動対象にする。GUIはmcpから暗黙起動しない。
+# 公開先はBIND_IPの既定loopback。外部公開の認証/TLSは別に準備する。
+
+# 内部service名をproxy対象から除外し、社内proxyへ内部要求を送らない。
+# 同じ除外値を大文字/小文字の両方へ渡し、利用libraryの違いを吸収する。
 x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
 
-# Optional GUI and authenticated API. Merge after the core Compose file.
-# The API alone writes synthetic sources and the dedicated private settings.
+# API/画面のログ保存量を揃える共通定義。APIのaccess logは別途無効化する。
 x-demo-logging: &demo_logging
   driver: json-file
   options:
@@ -9,6 +16,9 @@ x-demo-logging: &demo_logging
     max-file: '3'
 
 services:
+  # 素材と専用private設定へ書き込む唯一の操作コンテナ。Swaggerもここから提供する。
+  # UI/MCPの認証を検査し、非同期jobと固定された操作を管理する。
+  # APIの起動成功はworkerや任意profileの処理成功とは別に確認する。
   demo-api:
     profiles: [demo, mcp]
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-demo:local
@@ -43,8 +53,9 @@ services:
       http_proxy: ${http_proxy:-}
       https_proxy: ${https_proxy:-}
       no_proxy: *effective_no_proxy
-    # Mount the private directory so an atomic settings replace is possible.
-    # It must be dedicated to this environment and owned by WORKER_UID/GID.
+    # 設定をatomic replaceするため、ファイル単体ではなく専用ディレクトリをmountする。
+    # WORKER_UID/GIDが書き込める環境専用の領域を用意し、他の秘密を同居させない。
+    # 保存は再配置と別の操作。コンテナ起動値の反映はCLI/Dokploy側で行う。
     volumes:
       - type: bind
         source: ${LANDING_DIR:?Set an external landing directory}
@@ -76,7 +87,8 @@ services:
       timeout: 5s
       retries: 30
 
-  # The browser UI holds no host mounts; only its server calls the API.
+  # Streamlit serverから内部APIを呼ぶ。hostのディレクトリを直接mountしない。
+  # demo-apiのhealthyを待つため、画面と書込処理の起動条件を分離できる。
   demo:
     profiles: [demo]
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-demo:local

@@ -1,5 +1,19 @@
 # プロキシ設定の場所と反映方法
 
+<!-- doc-purpose:start -->
+> **役割:** 通信主体別のproxy設定ファイル、CA受渡しと反映方法を参照する。
+>
+> **対象読者:** 基盤構築担当 / 開発・設計担当
+>
+> **読むタイミング:** 会社向け手順を読んだ後に、個別の設定場所や再起動対象を調べるとき。
+>
+> **前提となる資料:** [会社のプロキシ・CAを設定する](<COMPANY-PROXY.md>)
+>
+> **次に読む資料:** [サイト設定リファレンス](<CONFIGURATION.md>) / [SSRF対策と内部接続の設定](<SSRF.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 2026-11-10監査。会社で初めて設定する場合は、順番と診断をまとめた [COMPANY-PROXY.md](COMPANY-PROXY.md) を先に読みます。本書は設定ファイルの役割を調べるための参照です。操作はレイクハウスを動かすLinuxホストのclone済みリポジトリで行い、`sudo` の付いた箇所だけホスト管理者が実施します。
 
 ## どの通信を設定するか
@@ -109,3 +123,56 @@ hostの `proxy-doctor.py`、操作画面のネットワーク診断、daemonのp
 直接接続へ戻すときはHTTP(S)4項目を空にし、daemonはapply後の明示restart、コンテナは既存アプリの再配置を行います。canonical3項目は残します。CA削除には空欄からのcacheなしbuildが必要です。
 
 監査対象はDocker Engine29系／[Compose5.6.1](https://github.com/docker/compose/releases/tag/v5.6.1)、uv0.13.7、n8n2.46.7です。版は各Compose/Dockerfile/lockを正本とし、hostのEngineとComposeは管理者が記録します。会社proxyの受入は導入先で別途実施します。
+
+## 設定を調べる時の3つの層
+
+| 層 | 問い | 正本 |
+| --- | --- | --- |
+| 保存値 | 次の配置に何を使いたいか | 専用private `site.env` と管理対象のdaemonファイル |
+| 配置値 | 現在のコンテナやdaemonが何を読んで起動したか | 同じアプリの配置記録・起動時環境・image |
+| 実通信 | どのclientがどの経路で成功/失敗したか | 当該clientでの許可された接続試験 |
+
+保存値の変更、構文検査、実通信の試験は別の操作です。GUIに保存済みの値で診断して成功しても、既存コンテナがその値を使っているとは限りません。逆に、稼働中コンテナが古いproxyで通信できても、新しい保存値が正しいとは判断できません。
+
+一般の `env` / `printenv` / `docker inspect` / `docker compose config --environment` をそのまま共有するとproxy認証を含み得ます。まず `proxy-doctor.py` の値を返さない診断を使い、必要な詳細だけ管理者が私有端末で確認します。
+
+## canonical bypassを変更する具体例
+
+会社の承認済み内部APIが増えた場面を想定します。以下のDNS名は説明用であり、そのまま疎通するサーバーではありません。
+
+1. privateの現在のbypass一覧へ `mes-api.example.invalid` を加えます。host編集ではcanonical/大小caseの3項目を同じ一覧にします。
+2. `configure.py --upgrade` で必須名と重複除去を確認し、同じprivate設定でplanします。
+3. Dokploy管理ではサービス自身のEnvironmentへ同じ設定を登録し、同じアプリでDeployします。CLI管理だけが `up` を使います。
+4. 当該APIを利用するclientから、会社の承認した方法で実接続を確認します。固定4先の診断へ任意URLを追加する機能はありません。
+5. 不要になった追加先を削除する際、GUIでは希望の一覧を1項目へ明示編集します。host編集では3項目すべてから削除します。片方へ残すとupgradeで戻ります。
+
+内部名 `worker` を削除して外部proxyへ送る試験と、SSRFの許可を外して拒否を確かめる試験は違います。通常構成で必要な内部名は必須リストへ戻ります。保護の受入は [SSRF.md](SSRF.md) の試験を使います。
+
+## 接続が成立するまでの分解
+
+| 段階 | 観測例 | 修正する場所 |
+| --- | --- | --- |
+| 実行主体の選択 | hostだけ成功、buildだけ失敗 | 成功した主体の設定を他へ適用済みと仮定しない |
+| DNS/route | proxyまたは直接宛先を解決できない | 会社DNS・route・VPN・FW |
+| proxy認証 | CONNECTで407 | 正式な認証方式とURL userinfo |
+| 宛先の許可 | CONNECT拒否、HTTP拒否 | proxy側のdomain/port許可 |
+| TLS chain | certificate verify失敗 | そのclientが実際に使うtrust bundle |
+| hostname | 証明書の照合名と接続名が不一致 | 正式な接続DNS名とサーバー証明書 |
+| 業務認証 | HTTPS自体は成功、アプリが401/403 | API/SQLの用途別資格情報・権限 |
+
+proxyのBasic認証と、接続先APIのBasic/Bearer認証は別です。片方へ正しいpasswordを入れても、他方の401/407は解決しません。HTTP statusだけでなく、どの段階で返された応答かを区別します。
+
+## 新しいサービスを追加する設計者へ
+
+追加サービスは [compose.proxy.yaml.example](../infra/proxy/compose.proxy.yaml.example) を読むだけでは反映されません。build argsとruntime environmentの参照を実サービスへ記述し、内部bypassの必須名、CAの反映方法、private設定の検査を一緒に更新します。公開imageへ企業CAや認証を埋め込まない構成を選びます。
+
+| 確認 | 設計判断 |
+| --- | --- |
+| base imageの取得者 | Docker daemonかremote builderか。image内CA処理より先に通信する |
+| 依存を取得するclient | uv、curl、Maven/JVM等の独自proxy/CA解釈を確認 |
+| runtimeの外部通信 | 起動時ダウンロードを必要とするか。固定lockとoffline起動を優先して評価 |
+| 内部通信 | service名を固定し、外部入力のURLを無制限にfetchしない |
+| CAの撤去 | cacheなしbuildで元baseのtrustへ戻せるか |
+| 証跡 | 接続先・認証を隠した成否と、未検証clientを記録できるか |
+
+OS bundleを更新しても、Javaのcacertsや独自のHTTP Sessionがそのbundleを使うとは限りません。実装を変更した時は、同じ固定先の「許可」「拒否」「CA不足」「内部直接通信」をそのclientで試します。上流の仕様変更は、同じtagのsourceとlockを見直して取り込みます。

@@ -1,5 +1,19 @@
 # サイト設定リファレンス
 
+<!-- doc-purpose:start -->
+> **役割:** 生成器・Compose・CLIが使う設定項目と、保存先・認証・反映先を照合する。
+>
+> **対象読者:** 基盤構築担当 / 運用担当 / 開発・設計担当
+>
+> **読むタイミング:** private設定を作成・変更し、何に使われる値かを調べるとき。
+>
+> **前提となる資料:** [初めて構築する人の一本道ガイド](<START-HERE.md>)
+>
+> **次に読む資料:** [プロキシ設定の場所と反映方法](<PROXY.md>) / [SSRF対策と内部接続の設定](<SSRF.md>) / [平時・更新・復旧の運用手順](<OPERATIONS.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 この文書は `scripts/configure.py` が生成する設定と、現在のCompose・各CLIが読む項目を説明します。監査日: 2026-11-10。会社への導入順序は [COMPANY-ROLLOUT.md](COMPANY-ROLLOUT.md)、通常の操作は [DEPLOYMENT.md](DEPLOYMENT.md) を参照してください。
 
 ## まず決めること
@@ -328,3 +342,65 @@ Docker 29／Buildx Bake／社内proxyで判明した互換性修正の取り込�
 設定名・既定・検査の正本は [configure.py](../scripts/configure.py)、[settings.py](../scripts/settings.py)、各Compose、GUIの [control_settings.py](../infra/demo/control_settings.py) です。表にある生成既定と第三者製品の上流既定を区別します。
 
 監査対象はDocker Engine29系／[Compose5.6.1](https://github.com/docker/compose/releases/tag/v5.6.1)、n8n2.46.7、Debezium3.7.1.Final、Kafka4.4.0です。SQL ServerとSambaは外部ホストの既存版を使い、リポジトリでserver版を固定していません。DBA／ホスト管理者が導入先の版・editionを記録します。[Debezium3.7](https://debezium.io/documentation/reference/3.7/connectors/sqlserver.html)、[Microsoft SQL権限](https://learn.microsoft.com/en-us/sql/relational-databases/security/permissions-database-engine?view=sql-server-ver17)
+
+## 初学者向け: 設定とデータの位置を結び付ける
+
+| 編集したいもの | 編集する場所 | 保存だけで変わるか |
+| --- | --- | --- |
+| 画面port・profile・接続先 | 外部private `site.env`、または設定GUI | 変わらない。管理者が同じアプリへ反映 |
+| Dokployが次に配置する値 | Composeサービス自身のEnvironment | Save後のDeployが必要 |
+| CSV/JSONの列・型・Goldの式 | 公開契約と `medallion/` のSQL | envでは変更できない。レビュー・試験・配置が必要 |
+| Grafanaのdashboard | Grafana GUI | SaveするとGrafana DBへ保存。Composeの再編集は不要 |
+| 会社の表/列名の対応 | Git外のmapping JSON | 次のextractor/CDCで利用。既存stateとの互換も確認 |
+| ホストの共有・proxy | Samba/daemonの個別管理設定 | GUIのSaveでは変更されない |
+
+`site.env` の `#` コメントは独立した行に置きます。`export KEY=...` はこのファイルの構文ではありません。`KEY=value # 説明` のようなinline commentを、各literal parserが同じ意味で解釈するとは限りません。生成された単一行ASCIIの形式を維持します。
+
+生成された基盤用の鍵は英数字等の共通に扱える形式です。手入力した秘密値に `$`・引用符・空白等がある場合、Composeのdotenv補間と、SQLツールのliteral読込を同じものと仮定しません。SOURCE/DEMO専用のhost用ファイルは値を文字どおり読み、引用符も値の一部になる箇所があります。proxyのuserinfoはURLエンコードします。既存の会社資格情報を勝手に変更せず、**実際にその値を読むclientで照合**してから共有設定を使います。[Composeの補間・dotenv構文](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/)
+
+## 変更の種類から反映手順を選ぶ
+
+| 変更する設定群 | 変更前に記録するもの | 反映・変更後の確認 |
+| --- | --- | --- |
+| host port | 現在のURL、空port、接続元 | 同じアプリ再配置。新URL/SSH転送を確認。内部URLは維持 |
+| profile追加 | 既存一覧、必要secret、空port、容量 | 既存profileへ追加。新serviceとone-shot、各GUIの初期化を確認 |
+| LANDING_DIR / NOTEBOOKS_DIR | 旧実体、UID/GID、保管するデータ | 新dirの準備と必要なデータ移行後にmount変更。envだけでコピーしない |
+| WORKER_UID/GID | 既存file/volume所有者と共有利用者 | 非root条件・ACLを確認して移行。同じデータを別UIDで無計画に起動しない |
+| CONTROL_SETTINGS_DIR/NAME | 旧private fileとAPI mount | host側で専用dir/fileを準備。GUIからの移動は使わない |
+| project名 / data prefix | 全volume実名、writer、暗号鍵 | 旧writerを停止し、同じデータの引継ぎか新環境かを明示 |
+| HTTP(S) proxy / CA | daemon/build/runtimeごとの旧設定 | 主体ごとに反映。CA内容の変更はcacheなしbuildも必要 |
+| CONTROL_API_TOKEN | 現API/GUIの利用者 | APIとStreamlit、関連clientを一組で切替。旧tokenの失効と401拒否も確認 |
+| WORKER_TOKEN | n8n credential、Airflow Connection | worker/clientの同期。旧資格情報をworkflow JSONへ書かない |
+| DB password / 暗号鍵 | DB側の状態と復元点 | 製品の正式な資格情報/鍵更新を実施。env変更だけではDBを更新しない |
+| SOURCE/DEMO接続 | 用途・対象DB・TLS名・権限 | 反映待ち中の投入を止め、新しい接続で目的別受入 |
+| CDC識別子 / mapping | source identity、state、topic、offset | 同名登録の自動上書きなし。DBAと移行・再構築の計画を確認 |
+
+### 例: Trinoのhost portだけを変更する
+
+1. 配置先で新portが空いていることを管理者が確認します。ここでは説明用に `TRINO_PORT=8090` とします。
+2. private fileまたは設定GUIでこの1項目だけ変更します。Trino内部の8080やSuperset内部接続を8090へ置換しません。
+3. `plan` で有効serviceのport競合を検査します。Dokploy管理ではサービスEnvironmentにも同じ変更を保存しDeployします。
+4. 既定8080のURLではなく新しいhost portで開き、SQL/workerの疎通を確認します。遠隔利用のSSH転送も右側のportを更新します。
+5. volume名・bucket・暗号鍵の変更を伴わないことを確認します。画面が開かない時にデータ再生成を始めません。
+
+### 例: notebooksを追加する
+
+既存の `COMPOSE_PROFILES` へ `notebooks` を追記し、`NOTEBOOKS_DIR` とJupyter tokenを確認します。新しいworkspaceはGit外に作り、実行UID/GIDで読み書き可能にします。`compute` も有効ならremote Spark、無効なら明示local[2]です。profile追加だけで会社全利用者のkernelや資格情報を分離する構成にはなりません。[PoCツール](POC-TOOLS.md)
+
+## 保存から適用までの状態を読む
+
+| 観測 | 意味 | 次に行うこと |
+| --- | --- | --- |
+| `saved: true` | private fileへの書込みが成功 | 変更した項目を確認する |
+| `applied: false` | 保存APIが再配置をしていない | 配置担当がCLI/Dokployで反映 |
+| `pending_restart: true` | API起動時設定と保存値に差がある | 特にSQL接続・token変更時は新規投入を待つ |
+| `pending_mount_change: true` | path/ID等に配置確認が必要な差がある | host実体・所有者・mountを確認 |
+| 再配置後の表示が一致 | APIがその設定で読み直された | 他serviceのhealth/認証と業務往復は別に確認 |
+
+既存の秘密欄を空のままGUI保存しても値は保持されます。秘密値を空にする作業と、入力し忘れた作業を同じ操作へまとめません。DB passwordや暗号鍵を「反映待ちを消すため」に再生成しないでください。
+
+## 設定を変更する開発者の確認範囲
+
+設定を一つ増やす時は生成器だけを更新して終わりにしません。[configure.py](../scripts/configure.py) の新規/upgrade、[settings.py](../scripts/settings.py) の形式・profile条件、各Composeの補間とsecret/mount、[GUI保存](../infra/demo/control_settings.py) のallowlistと秘密分類、native clientの反映方法を一組で確認します。
+
+受入では、新規生成、古いprivate fileのupgrade、既存backupがある更新、変更不要のno-op、GUI保存/秘密非表示、選択profile/未選択profile、CLI/raw Compose/Dokploy、再配置後の実通信を区別します。社内の実値はtest fixtureへコピーせず、合成値で境界を試験します。

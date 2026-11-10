@@ -1,5 +1,19 @@
 # n8n・Airflow・Grafanaを画面から使う
 
+<!-- doc-purpose:start -->
+> **役割:** n8n・Airflow・Grafanaで接続、認証、手動実行、履歴、保存を順に確かめる。
+>
+> **対象読者:** データ利用担当 / 運用担当
+>
+> **読むタイミング:** 対応profileを配置した後、同梱ジョブを画面から1回実行して確認するとき。
+>
+> **前提となる資料:** [初めて構築する人の一本道ガイド](<START-HERE.md>) / [MES・ERPデータをBronzeからGoldへ整える](<MEDALLION.md>)
+>
+> **次に読む資料:** [GrafanaのGUI編集と保存](<GRAFANA.md>) / [平時・更新・復旧の運用手順](<OPERATIONS.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 照合日: 2026-11-10。n8n **2.46.7**、Airflow **3.4.0**（standard provider 1.21.0 / HTTP provider 6.3.0）、Grafana **13.3.0**、Prometheus **3.16.0** が対象です。英語UIの表記を示します。接続→認証→1回の手動実行→履歴→保存の順で確認します。
 
 この文書は、同梱設定を起動した後の画面操作を説明します。n8nとAirflowは登録済みのworkerジョブを呼び、Grafanaは実行状態を表示します。業務上の列変換・採用ルール・集計の正本は [medallion/](../medallion/) のSQLです。画面で任意のSQLをworkerへ送る機能はありません。
@@ -322,3 +336,37 @@ SQLを書く画面が必要な場合は [SupersetのSQL Lab](POC-TOOLS.md) を�
 - Airflow: [3.4.0 Connections](https://airflow.apache.org/docs/apache-airflow/3.4.0/howto/connection.html)、[3.4.0 Dag Runs](https://airflow.apache.org/docs/apache-airflow/3.4.0/core-concepts/dag-run.html)、[3.4.0の初期password設定](https://airflow.apache.org/docs/apache-airflow/3.4.0/configurations-ref.html#simple-auth-manager-passwords-file)。同梱DAGの `BaseHook`、HTTP待機300秒、再試行0と照合しました。
 - Grafana: [13.3.0 tagのDashboard APIコード](https://github.com/grafana/grafana/blob/v13.3.0/pkg/api/dashboard.go)、[公式Dashboard API](https://grafana.com/docs/grafana/latest/developer-resources/api-reference/http-api/dashboard/)。実装は `/apis/dashboard.grafana.app/v1/` を使用します。
 - 保存と指標: `infra/monitoring/prometheus.yml`、`foundation.json`、`scripts/grafana_setup.py`、`scripts/admin.py` が本キットの正本です。一般の製品マニュアルにある自動通知等を、同梱済みと読み替えません。
+
+## 入口を変えても、同じ処理を一度ずつ確かめる
+
+GUI/API/CLI/n8n/Airflowは、同じworkerの登録済み処理へ至る別の入口です。入口ごとに同じ素材を作り直す必要はありません。合成データ専用環境で、次のように切り分けます。
+
+| 段階 | 操作 | 確認する結果 |
+| --- | --- | --- |
+| 素材 | Streamlitで1batchを生成する | manifestとready、素材jobの完了。Goldはまだ更新しない |
+| 取込 | n8nのingestを一度実行する | 完成した原本だけがimportされる |
+| 変換 | n8nまたはAirflowのmedallionを一度実行する | 同じ原本はskipし、14SQLの終了とGoldを確認 |
+| 再実行 | ほかの入口から同じmedallionを一度実行する | 追記二重計上がなく、意味のある同じ結果になる |
+| 履歴 | 各製品の履歴を開く | それぞれの実行IDを、同じ対象素材・Git版へ対応付ける |
+
+二つの入口を同時に押して性能を測る試験ではありません。workerは同時処理を拒否し、クライアントの失敗表示だけでは処理がどこまで進んだか判断できない場合があります。ファイル取込がskipでも、表置換では新しいsnapshotができることがあります。
+
+### 三つの「保存」を混同しない
+
+| 保存するもの | 保存先と意味 | 保存だけでは行わないこと |
+| --- | --- | --- |
+| credentials/Connection | n8nまたはAirflowのDBと暗号鍵 | 稼働workerのtoken変更、DBパスワードの変更 |
+| workflow/DAG定義 | n8n DB、またはGitで配置するAirflow DAG | 同梱Manual Triggerを自動scheduleへ変えること |
+| 実行結果/履歴 | 各製品のrun/task/ノード出力 | Goldの数値が正しいという業務照合 |
+| ポータルのsite設定 | 外部private env | DokployサービスEnvironmentとの同期、再Deploy |
+
+パスワードを変更したら、資格情報を使うノード/Connectionと実行先の両方を確認します。トークンをworkflow本文やDAGへ複製して直す方法は、保存と配布の境界を崩します。
+
+### Timeout後の再実行を決める
+
+1. まずworkerがbusy/blockedかを確認します。ブラウザーやHTTPノードが待ち切れなかっただけなら、処理は続いている可能性があります。
+2. Trinoの実行状態と、対象のBronze/Goldが更新されたかを確認します。途中成功の表は自動で全体rollbackされません。
+3. 結果が確認できるまで、n8nの再ExecuteとAirflowの再runを並行して起動しません。
+4. 原因を直し、同じ入力・同じ環境で再実行します。別の素材を追加してからやり直すと、比較対象まで変わります。
+
+定期運用へ進む場合は、実行担当をn8nかAirflowの一つに決めます。開始時刻、入力完成の判定、再試行上限、二重起動時の扱い、通知、成功後に利用者へ公開するタイミングを先に定義します。同梱の手動フロー/DAGに定期実行や通知が実装済みと説明しないでください。

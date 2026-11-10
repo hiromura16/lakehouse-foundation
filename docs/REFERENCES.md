@@ -1,5 +1,19 @@
 # 採用版の公式リファレンスと文書監査
 
+<!-- doc-purpose:start -->
+> **役割:** 採用版の公式仕様・tag・公開実装・検証記録の根拠を照合する。
+>
+> **対象読者:** 基盤構築担当 / 開発・設計担当 / 評価・報告担当
+>
+> **読むタイミング:** 画面名や設定の仕様を確認するときや、依存更新の調査を始めるとき。
+>
+> **前提となる資料:** [バージョンと連携互換性](<COMPATIBILITY.md>)
+>
+> **次に読む資料:** [検証記録](<VALIDATION.md>) / [ソース・指標・API・計算基盤を拡張する](<CUSTOMIZATION.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 監査日: **2026-11-10（JST）**。初回の操作順は [START-HERE.md](START-HERE.md) です。このページは、各手順がどの版・公式資料・リポジトリ内実装を根拠にしているかを示します。文書監査のためにimageや依存版を更新していません。
 
 ## 参照するときのルール
@@ -41,6 +55,8 @@ Docker/Nginx等のホスト・基盤imageはminor/patch表記だけでなく、l
 
 公開MarkdownはREADME、samples、docs、図版出典を対象に確認しました。各行は本文・コマンド・導線・参照の照合対象です。実機試験の結果を新たに捏造せず、過去の結果と今回の文書検証を分けています。
 
+最新の全件索引は [DOCUMENTATION-MANIFEST](DOCUMENTATION-MANIFEST.md) です。後続で追加したホスト準備・学習・拡張・開発/レビュー・報告書素材も登録し、各MDの目的・読者・前後の導線を機械照合します。下表は製品仕様を確認した主要文書の対応で、全ファイルの列挙はマニフェストを正本にします。
+
 | 文書 | 今回そろえた内容 |
 | --- | --- |
 | [README](../README.md) | 最初の入口、install.sh、0.31.0の実画面・変数・appName |
@@ -64,6 +80,17 @@ Docker/Nginx等のホスト・基盤imageはminor/patch表記だけでなく、l
 | [図版出典](assets/README.md)・[samples](../samples/README.md) | 公式出典と同梱/offline、合成素材の作成と実データ非同梱 |
 | このREFERENCES | 版・一次資料・全体の照合範囲。上流変更時は再監査 |
 
+### 入門・拡張・報告文書の補足資料
+
+| 文書群 | 公式の確認元・公開実装 | 照合すること |
+| --- | --- | --- |
+| [HOST-SETUP](HOST-SETUP.md) | [Docker Ubuntu](https://docs.docker.com/engine/install/ubuntu/)・[導入後設定](https://docs.docker.com/engine/install/linux-postinstall/)・[uv導入](https://docs.astral.sh/uv/getting-started/installation/) | apt repositoryと実package版、Docker権限、proxy/CAの先行準備、固定uv |
+| [GLOSSARY](GLOSSARY.md)・[LEARNING-PATH](LEARNING-PATH.md) | この表の採用版公式資料と本repoの構成 | 製品の役割、素材/変換、保存/反映、読者別の到達点 |
+| [CUSTOMIZATION](CUSTOMIZATION.md) | 03_gold.sql、sources.json、API/MCP、版lock、Trino484のIceberg仕様 | 現在の列と粒度、固定allowlist、表単位commit、変更と移行の区別 |
+| [報告素材](reports/README.md) | figures.json、実装一覧、VALIDATION、verification.json | 14図の根拠、過去試験と今回受入、未評価、可搬export |
+| [開発規約](../CONTRIBUTING.md)・[レビュー手順](REVIEW-WORKFLOW.md) | 固定lock、公開CI、回帰テスト、issueの最小再現 | 読みやすさ、意味のあるテスト、例外の境界、機密非表示 |
+| [文書マニフェスト](DOCUMENTATION-MANIFEST.md) | [GFM仕様](https://github.github.com/gfm/)・[GitHubの基本記法](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax) | 全件登録、冒頭役割、相対リンク、見出し、生成物の一致 |
+
 ## 機密情報と検証の境界
 
 公開前に現ファイル・Git index・全ローカル参照の履歴を検査します。一般的な秘密値/鍵/証明書/実データの規則に加え、提供資料内の実会社ホスト・IP・proxy・識別名と既存秘密値を**Git外の照合入力**として使います。検査結果に照合文字列そのものは出しません。社内添付資料や非公開のdeny listは公開しません。
@@ -75,3 +102,37 @@ Docker/Nginx等のホスト・基盤imageはminor/patch表記だけでなく、l
 [報告書素材集](reports/README.md)へ、詳細・用途別SVG14種、Mermaid、キャプション・根拠台帳、オフラインHTML、報告書/評価計画/根拠対応表/スライド構成/意思決定/画面撮影の雛形と実装一覧を追加しています。根拠は公開Compose・SQL・コード・既存verificationで、実会社の情報や新しい性能・費用の推定を図へ持ち込みません。
 
 SVG生成は標準Pythonだけ、PNG/PDF/PPTX出力は [専用hash lock](reports/requirements-export.lock) をuvで同期します。CairoSVG2.9.1、Pillow13.0.0、pypdf7.0.1、python-pptx1.0.2の公式PyPI配布を確認して固定しました。生成元一致はCIでも検査し、日本語fontの埋込と出力の閲覧は別途確認します。
+
+## 仕様・採用設定・実行結果を別の根拠で確認する
+
+| 確かめたいこと | 第一の根拠 | それだけでは分からないこと |
+| --- | --- | --- |
+| 製品がその機能を持つか | 採用版の公式文書・release tag | このrepoで有効にしたか、会社で動くか |
+| この基盤がどう設定したか | Compose/Dockerfile/lock/コード | image取得・実行時の成功、実データの妥当性 |
+| GUIの欄名や保存動作 | 同版のUI/サーバー実装と公式手順 | 別版や別権限の画面で同じに見えるか |
+| 合成実機で成功したか | 日付・Git版・入力範囲付き検証記録 | 会社ネットワーク/実DB/業務例外の受入 |
+| 数値・業務式が正しいか | source契約、実SQL、独立期待値、同じ母集団 | 別の粒度・期間・単位での正しさ |
+
+例えば「Trinoがatomic replaceを持つ」は公式仕様、「14SQLを表ごとに置換する」は本コード、「固定fixtureで合計が一致した」は検証記録です。三つをまとめて「全パイプラインが一つのtransactionで安全」と要約しません。
+
+### 採用版の調査をやり直す手順
+
+1. 変更する実体を特定します。imageのdigest、Python lock、JAR/constraints、hostの未固定ソフトを区別します。
+2. 既存の固定tag/版付きURLと、変更候補の同じ種類の資料を比較します。latestの説明を古い版へ逆適用しません。
+3. 変更点が入力・認証・保存・schema・起動順へ影響するか、対応するコードとテストへ辿ります。
+4. 互換性の小さい往復と既存保存物の読戻しを確認し、未確認のOS/CPU/外部接続を残します。
+5. 文書の版、操作例、構成図の表示、caption根拠、受入記録を更新します。
+
+URLのHTTP到達はリンク検査であり、本文精読や実機互換性の代わりではありません。同じ内容を参照した複数文書も、独立した性能試験が増えたという意味にはしません。
+
+### このrepo固有の判断はコードへ戻る
+
+| 判断 | 対応する正本 |
+| --- | --- |
+| private envをどこへ置き、何を保存できるか | [settings.py](../scripts/settings.py)、[control_settings.py](../infra/demo/control_settings.py) |
+| backup衝突時に何を保持するか | [configure.py](../scripts/configure.py)、[回帰テスト](../tests/test_company_compatibility.py) |
+| 古い正常行へ戻すか、最新不正行を隔離するか | [Silver SQL](../medallion/01_silver.sql)、[Quarantine SQL](../medallion/02_quarantine.sql) |
+| MCPがどの操作を公開するか | [MCP server](../infra/mcp/server.py)、[API catalog](../infra/demo/poc_catalog.py) |
+| 既存Dashboardやcollectionを上書きするか | [Grafana init](../scripts/grafana_setup.py)、[seed_tools](../infra/poc/seed_tools.py) |
+
+これらは上流製品の標準動作ではなく、本基盤が選んだ境界です。変更する場合は、その境界が必要な理由と回帰テストを同じ差分へ残してください。

@@ -1,5 +1,19 @@
 # PoC操作ポータル
 
+<!-- doc-purpose:start -->
+> **役割:** 操作ポータルの各ページから、サービス入口・データ・診断・履歴へ移動する。
+>
+> **対象読者:** 初めて使う人 / データ利用担当 / 運用担当
+>
+> **読むタイミング:** GUIを開いた後、目的の操作と結果確認の画面を探すとき。
+>
+> **前提となる資料:** [初めて構築する人の一本道ガイド](<START-HERE.md>)
+>
+> **次に読む資料:** [GUIからダミーデータを投入する](<DEMO-GUI.md>) / [GUI操作APIとSwagger](<API.md>) / [AIへ渡せるデータとLangChain連携](<AI-READINESS.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 確認日: 2026-11-10（JST）。初回配置・作業端末・権限は [START-HERE.md](START-HERE.md) で準備します。以下の `up` はCLI管理の環境だけで使います。Dokploy管理では同じprivate設定とComposeサービスのEnvironmentを揃え、7ファイルを使ってDeployします。[0.31.0の配置手順](DOKPLOY.md)
 
 
@@ -99,4 +113,39 @@ MCP等のクライアントは、まずcapabilities、catalog、status、scenari
 
 初回は「状態」でworker、「素材の投入」で1batch、「処理・検証」でmedallion、「データ」でGold/品質、「履歴」で同じID、「ヘルプ」で文書・図の順に確認します。サービス入口カードのhealthyだけでは、この往復は検証できません。設定画面の `保存済み・再配置待ち` が出たら対象変更を整理し、配置担当が反映してから次のSQL投入を行います。
 
-入口・catalog・helpの公開allowlistは [poc_catalog.py](../infra/demo/poc_catalog.py)、APIは [portal_api.py](../infra/demo/poc_api.py) が正本です。Streamlit **1.67.0** のfragmentとFastAPI **0.162.2** のローカルSwagger配信を使います。[公式版への参照](REFERENCES.md) と [API仕様・試し方](API.md) を併せて確認してください。新しい文書をGitへ追加しても、help allowlistへ加えてimageを再buildするまではポータル内の一覧へ自動追加されません。
+入口・catalog・helpの公開allowlistは [poc_catalog.py](../infra/demo/poc_catalog.py)、APIは [poc_api.py](../infra/demo/poc_api.py) が正本です。Streamlit **1.67.0** のfragmentとFastAPI **0.162.2** のローカルSwagger配信を使います。[公式版への参照](REFERENCES.md) と [API仕様・試し方](API.md) を併せて確認してください。新しい文書をGitへ追加しても、help allowlistへ加えてimageを再buildするまではポータル内の一覧へ自動追加されません。
+
+## 目的別に画面を選ぶ練習
+
+初めて利用する人は、同じ操作用PCでStreamlitとSwaggerを開き、画面操作とAPIの対応を確認すると仕組みを理解できます。nativeサービスのログインはそれぞれ別で、ポータルを開いたことが全サービスへのログインを意味するわけではありません。
+
+| やりたいこと | 最初に選ぶ場所 | 成功を確認する場所 |
+| --- | --- | --- |
+| 素材を1回作る | 素材の投入 | 共通job結果とmanifest。Goldの表示ではない |
+| 最新の業務集計を作る | 処理・検証のmedallion | 別jobの成功→データのGold/品質 |
+| 表の意味を知る | データのcatalog | 粒度、列、主キー、由来。実会社のmapは非公開 |
+| 未起動の機能を追加する | 管理者のprivate設定/Dokploy | profile保存→Deploy→入口カード。カード自体はinstallしない |
+| SQLを自由に試す | 許可されたSuperset/Jupyter/Trinoクライアント | 各nativeツール。ポータルの固定read APIとは別権限 |
+| 手順や図を読む | ヘルプ、またはリポジトリ文書 | allowlist内の本文/図と、別提供の報告書素材 |
+
+たとえばSupersetのカードが「profile未選択」なら、APIの再起動を繰り返す前に `bi` を有効にしたか確認します。「必要設定が未完了」なら表示keyをprivate設定で確認し、「停止・起動待ち・未到達」なら該当コンテナとnative healthを調べます。どの状態でも、そのまま業務データの再投入へ進みません。
+
+## 運用時に混同しやすい3つの時点
+
+1. **保存した時点:** 設定フォームがprivateファイルを書き換えた時点です。
+2. **適用した時点:** 管理者がDokployのサービスenvと同期し、再配置した時点です。
+3. **参照した時点:** 品質SQLやGold previewを実行した時点です。Goldは表ごとにsnapshotを選びます。
+
+portを保存した直後でも、現在の入口カードとAPIは起動時の設定を使います。画面の値を変更してから古いタブのリンクを開くと、新設定へ到達したと誤解しやすくなります。再配置後に状態を更新し、対象環境・port・job IDと確認結果を対応付けてください。
+
+## ポータルに新しい入口やヘルプを加える
+
+| 追加対象 | 変更する場所 | 守る契約 |
+| --- | --- | --- |
+| serviceカード | [poc_catalog.py](../infra/demo/poc_catalog.py) のServiceDefinition/SERVICES | 固定ID・profile・port key・health・必要設定。URLへ秘密を入れない |
+| healthの取得 | [poc_services.py](../infra/demo/poc_services.py) | 既知の内部宛先だけ、timeout、redirect拒否、必要最小限の資格情報 |
+| データ契約の説明 | [poc_catalog.py](../infra/demo/poc_catalog.py) とsources.json | SQLの実列・型・粒度と一致。会社private mapを返さない |
+| 公開ヘルプ/図 | 同catalogのallowlistとimage内のdocs | 任意pathを受け取らず、サイズ・symlinkを検査 |
+| 操作APIの一覧 | capabilitiesとOpenAPI | read/write、必要profile、入力型と同意を一致させる |
+
+図版集の14図を追加したことと、稼働中ヘルプの2SVG allowlistを変更したことは別です。新しいページを表示したければallowlistとimage再buildも更新します。画面の状態判定、秘密なしURL、無効profile、未設定、未到達、保存/未反映をテストし、nativeサービスの操作試験とは分けて記録します。[変更手順](CUSTOMIZATION.md)

@@ -1,8 +1,22 @@
 # 検証記録
 
+<!-- doc-purpose:start -->
+> **役割:** 既存の合成環境・公開clone・CI・互換性修正で確認した条件と限界を読む。
+>
+> **対象読者:** 開発・設計担当 / 運用担当 / 評価・報告担当
+>
+> **読むタイミング:** 報告に結果を引用するときや、変更後の回帰と会社受入を分けるとき。
+>
+> **前提となる資料:** [実装・配置・検証の追跡表](<IMPLEMENTATION-STATUS.md>)
+>
+> **次に読む資料:** [報告する主張と根拠の対応表](<reports/EVIDENCE-MATRIX.md>) / [PoCの評価計画と受入条件](<reports/EVALUATION-PLAN.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 検証日: 2026-11-10（JST）。Linux x86-64の単一ホスト上に、既存アプリと別のネットワーク・DB・S3・資格情報・ランディング先を持つ環境を作成しました。公開用の機械可読結果は [verification.json](verification.json) に保存しています。接続先、管理APIの記録、認証情報、生ログは公開しません。
 
-公開HTTPS URLからの認証不要clone、原本Compose、原本Dockerfileの `uv pip sync --require-hashes` ビルドが成功しました。この別環境でも画像保存・メダリオンの全期待値・再投入を検証済みです。[公開CI](https://github.com/hiromura16/lakehouse-foundation/actions) にもPython書式、SQL、全profileのCompose検査を定義しています。現在のローカル同等検査では260テストが成功しています。
+公開HTTPS URLからの認証不要clone、原本Compose、原本Dockerfileの `uv pip sync --require-hashes` ビルドが成功しました。この別環境でも画像保存・メダリオンの全期待値・再投入を検証済みです。[公開CI](https://github.com/hiromura16/lakehouse-foundation/actions) にもPython書式、SQL、全profileのCompose検査を定義しています。初回機能検証段階のローカル同等検査では260テストが成功しました。後続の素材・説明・修正の段階は末尾へ追記しています。
 
 ## 実機で成功した経路
 
@@ -104,6 +118,56 @@ SVGの648ラベルは、実ブラウザーで図外/文字重なり0、PNGで矢
 
 専用uv hash lockから実exportし、PDF/PPTX/PNGの本文・notes・metadata、ZIPの全memberを既知社内情報/実秘密値へ照合して検出0でした。binaryはGit外へ置き、公開ソースの検査規則を変更していません。CIには生成元とSVG/HTML/台帳の一致検査を追加しました。
 
-新exportの境界3テストを加え、全263テストとPython/SQL/Compose検査が成功しています。既存24Pythonファイルのコメント・docstring・help説明も補い、説明部分を除くASTが変更前と一致することを確認しました。公開Pythonの関数/class/初期化docstringとargparse引数helpの欠落は0です。可読性規約は [CONTRIBUTING](../CONTRIBUTING.md) に記録しています。
+`d71221d` までの段階では、新exportの境界3テストを加えた全263テストとPython/SQL/Compose検査が成功しました。既存24Pythonファイルのコメント・docstring・help説明も補い、説明部分を除くASTが変更前と一致することを確認しました。公開Pythonの関数/class/初期化docstringとargparse引数helpの欠落は0です。可読性規約は [CONTRIBUTING](../CONTRIBUTING.md) に記録しています。
 
 今回の図の作成・ソース検査は、会社DB/実proxy/復元/性能/推論の追加実機成功を意味しません。これらは報告書雛形の未実施欄へ残し、次の受入で確認します。
+
+## 設定エラーの案内を改善した後続段階
+
+`d71221d` の説明追加後、設定更新時の2つのエラー経路を明示的な機能修正として扱いました。コメントだけの変更という記録へ混ぜません。
+
+| 修正 | 回帰で確認した境界 |
+| --- | --- |
+| upgradeの既存backup衝突 | O_EXCLによる非上書きを維持し、退避/再実行をSystemExitで案内。env/backupのbyte・0600・file数を保持し、traceback/実path/秘密値を出さない |
+| 外部env不在とGit内拒否 | 外部not-fileは `Private env file not found.`、Git内の既存/不在pathは従来の方針拒否。CLI planは不在時に起動へ進まない |
+| 無変更upgrade | backupがあっても変更不要なら成功し、両ファイルを保持 |
+
+[company compatibility tests](../tests/test_company_compatibility.py) に4回帰を追加し、この修正範囲の13テスト、Python書式・79文字・構文・差分検査を確認しました。この機能修正に加えて、テスト内runpyのsys.argvを実CLIに合わせた修正を統合し、`c450329` で全267テストとCIの全工程が成功しました。これは文書拡充前のソース修正段階の結果です。DB・Swarm・稼働serviceの変更を伴う検証ではありません。
+
+## 検証を再現する人の入口と記録範囲
+
+| 確認したいこと | 実行する場所・入口 | 結果の意味 |
+| --- | --- | --- |
+| 公開コードの品質 | checkoutの専用uv venv、unittest/ruff/SQL/Compose検査 | 秘密や会社DBなしで再現するソース検証 |
+| 素材の形式と異常 | 合成専用dir/DB、generator/GUI | source-only境界とmanifest。Goldまでの成功ではない |
+| S3/REST/SQLの往復 | 起動済み対象環境のworker verify | 隔離namespaceで11検査・再投入skip。会社業務の期待値ではない |
+| remote Spark | Jupyterのcluster notebookとMaster/History | driver以外のexecutorでPython/Arrowが動くこと |
+| 保存・再起動 | 検証対象serviceだけ、同じvolume/鍵を保持 | GUI/Notebook/point/履歴の保持。復元試験とは別 |
+| 会社への接続 | DBA/ネットワーク担当の受入 | 実認証・CA・権限・業務内容の照合 |
+
+再現手順は [CONTRIBUTING](../CONTRIBUTING.md)、[初回ガイド](START-HERE.md)、[評価計画](reports/EVALUATION-PLAN.md) から選びます。未起動の環境へ `verify` だけを実行しても、host/Dockerの導入を代わりに行うものではありません。
+
+### 報告書へ転記する最小の受入記録
+
+Git版、実施日とtimezone、platform、選択profile、合成/会社データの区分、入力manifestまたは抽出範囲、実行した操作、期待値の根拠、結果、再実行/停止後の状態、未実施を残します。実測がない欄は未実施とし、構成のメモリ上限を実使用量、固定fixtureを全業務の集計、既存記録を今回の追加実測として書きません。
+
+失敗結果も、発生段階と復旧の確認があれば次の改善に使えます。rawログ・添付原本・会社ホスト・接続文字列を公開する代わりに、非秘密のerror code/相対箇所/対象機能と結果を記録します。
+
+## 全MDの役割・導線とレビュー第2周の検証
+
+2026-11-10に公開Markdown53件を拡充し、各冒頭の役割・対象読者・読む時点・前提/次の資料と、[目的別マニフェスト](DOCUMENTATION-MANIFEST.md)を整備しました。初学者向けホスト/用語/学習手順、専門家向け入力契約・指標・API・計算基盤の拡張、報告書の記入/照合手順を追加しています。
+
+| 対象 | 今回の結果 | 検証の範囲 |
+| --- | --- | --- |
+| 全体の回帰 | 303テスト成功、skipなし | 固定開発uv環境。うち文書21件、レポート18件 |
+| Python/SQL | Ruff、format、PEP8、Trino SQL lint成功 | コメント・型・書式とソース上のSQL |
+| 文書 | 全53MD登録、生成一致、ローカルリンク/anchorの不備0 | READMEから全53件へ到達、53件の固有目的 |
+| 文書の例 | 155 shell・12 JSON・2 Python例の構文確認 | 実ホストのsudo/SSH等は実行しない。新Gold SELECT2例もTrino構文検査 |
+| 配置例 | core/全11profileと組合せの15構成、core6/全34service | Compose configとREADME/START/Dokployの7ファイルCommand、API入力2例 |
+| レビュー #7/#8 | UTF-8、30必須キー/型/日付、fence内保持、cache/重複処理 | [対応内容](REVIEW-FOLLOWUP.md)。不正定義はexport先作成前に拒否 |
+| コード説明 | 主要Python4ファイルの75関数/class、SQL3本、7Composeを補強 | docstring除外AST、SQL実行token、YAML構造が変更前と一致 |
+| 報告export | SVG/PNG/個別PDF各14が前回とbyte一致、14slide、ZIP89項目 | 文書189ローカルリンク、hash、metadata、既知私有情報の非混入を確認 |
+
+レポート出力のPDF集は14ページです。個別14PDFとPDF集を合わせて28ページを検査しています。PPTXの構造・画像・caption/notesは確認しましたが、今回もMicrosoft Officeでの描画を実施済みとは扱いません。
+
+この段階は文書・コメント・ソース上の回帰と報告出力の確認です。過去の会社外での実機記録を書き換えず、会社SQL/実proxy/認証/負荷/復元/モデル推論の受入は[評価計画](reports/EVALUATION-PLAN.md)に沿って別途記録します。

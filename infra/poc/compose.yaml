@@ -1,15 +1,24 @@
+# 役割: bi/notebooks/vector/lineageを選び、分析・実験・系統表示のGUIを追加する。
+# coreとcomputeを含む7ファイルを同じprojectへ結合する。Docker socketは渡さない。
+# 読む順序: 共通anchor → BI初期化と画面 → Notebook → vector → lineage。
+# 通常の素材取込や業務変換へ自動接続する追加機能ではなく、用途ごとに明示操作する。
+# hostのportはloopback固定。任意profileの秘密値は有効化する前に生成する。
+
+# 内部service名をproxy対象から除外し、社内proxyへ内部要求を送らない。
+# 同じ除外値を大文字/小文字の両方へ渡し、利用libraryの違いを吸収する。
 x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
 
-# Independent operator tools. Merge after the core Compose; no Docker socket.
-# Empty secrets are accepted when profiles are off and rejected on startup.
+# 任意ツールも所有者を揃え、Traefikによる暗黙の外部公開を避ける。
 x-poc-labels: &poc_labels
   app.owner: lakehouse-foundation
   traefik.enable: 'false'
+# profileを追加しても、各コンテナの標準ログ保持を同じ上限で制限する。
 x-poc-logging: &poc_logging
   driver: json-file
   options:
     max-size: 10m
     max-file: '3'
+# build/runtimeのHTTP通信に共通適用する。内部のTrino等はNO_PROXYへ含める。
 x-poc-proxy: &poc_proxy
   HTTP_PROXY: ${HTTP_PROXY:-}
   HTTPS_PROXY: ${HTTPS_PROXY:-}
@@ -17,6 +26,7 @@ x-poc-proxy: &poc_proxy
   http_proxy: ${http_proxy:-}
   https_proxy: ${https_proxy:-}
   no_proxy: *effective_no_proxy
+# one-shotとWebで同じmetadata DB・署名鍵・初期管理者の設定を使う。
 x-superset-env: &superset_env
   <<: *poc_proxy
   SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:-}
@@ -27,6 +37,8 @@ x-superset-env: &superset_env
   SUPERSET_ADMIN_EMAIL: ${SUPERSET_ADMIN_EMAIL:-admin@example.invalid}
 
 services:
+  # BIの利用者・接続・Dataset・Chart・Dashboardを保存するmetadata DB。
+  # Iceberg業務表はこのDBへコピーせず、Trino経由で参照する。
   superset-db:
     profiles: [bi]
     image: docker.io/library/postgres:18.6-alpine@sha256:300ebd02c6d4de9ee27ad7f6855d5d21b4d3a4a5117767c1197d284c635d9736
@@ -46,6 +58,8 @@ services:
       timeout: 3s
       retries: 30
 
+  # BIのcacheを担当する。容量上限とLRUを設定し、永続保存は行わない。
+  # 再起動後も残すGUI編集内容はsuperset-dbへ保存する。
   superset-redis:
     profiles: [bi]
     image: docker.io/library/redis:8.10.3-alpine@sha256:71885d8cc6e42f2bc0aa2eb853bfc4be200b5108a46ac50e117ae1df0531fb80
@@ -70,7 +84,8 @@ services:
       timeout: 3s
       retries: 30
 
-  # Rerunnable initializer preserves existing users, connections and GUI edits.
+  # DB migrationと初回管理者/Trino接続/存在するGold Datasetの登録を行う。
+  # 再実行で既存利用者・接続・GUI編集を置き換えず、Gold未作成時もBIを起動可能にする。
   superset-init:
     profiles: [bi]
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-superset:local
@@ -85,7 +100,7 @@ services:
     mem_limit: 1536m
     environment: *superset_env
     command: [/app/.venv/bin/python, /opt/lakehouse/superset_init.py]
-    # The inherited web-server probe does not apply to this one-shot.
+    # Web待受けを持たないone-shotなので、image既定のWeb用probeは適用しない。
     healthcheck:
       disable: true
     depends_on:
@@ -98,6 +113,7 @@ services:
       trino:
         condition: service_healthy
 
+  # 初期化の終了0を待ってBI画面を開く。新しい素材を生成する役割は持たない。
   superset:
     profiles: [bi]
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-superset:local
@@ -125,6 +141,9 @@ services:
       retries: 30
       start_period: 60s
 
+  # 保存先/workspaceでNotebookを編集し、Trino参照とSpark実験を行う。
+  # notebooksだけならlocal[2]、compute併用ならremote masterへ接続する。
+  # remote障害をlocal実行へ自動で切り替えないため、実際の実行先を確認できる。
   jupyter:
     profiles: [notebooks]
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-jupyter:local
@@ -191,6 +210,8 @@ services:
       retries: 30
       start_period: 30s
 
+  # vector profileの検索API/GUI。合成数値vectorのデモで、画像/文書RAGは別実装。
+  # 管理keyと読取keyが空または同値なら起動を拒否し、用途別の権限を分ける。
   qdrant:
     profiles: [vector]
     image: docker.io/qdrant/qdrant:v1.20.0@sha256:9bfc89f9914fc14876a88c05270685921a55b8877b254a98bcc1cc2f0a424cd2
@@ -227,6 +248,7 @@ services:
       timeout: 5s
       retries: 30
 
+  # lineageのnamespace/job/dataset情報を永続化し、業務データ本体から分ける。
   marquez-db:
     profiles: [lineage]
     image: docker.io/library/postgres:18.6-alpine@sha256:300ebd02c6d4de9ee27ad7f6855d5d21b4d3a4a5117767c1197d284c635d9736
@@ -246,9 +268,11 @@ services:
       timeout: 3s
       retries: 30
 
+  # OpenLineageイベントを受けるAPI。現状の同梱デモは明示送信で、自動採取ではない。
+  # DBのhealthyを待ち、公開APIと内部healthcheckのportを分ける。
   marquez:
     profiles: [lineage]
-    # Upstream publishes this release for x86-64. No emulation is configured.
+    # この採用版はx86-64向け。別CPUを動かすemulation設定は含めない。
     image: docker.io/marquezproject/marquez:0.50.0@sha256:6d8a2c2cdb28a4f6d13f9ca6f8cc055d8312c4dee204ebeb848efdd76e6ab30e
     restart: unless-stopped
     labels: *poc_labels
@@ -279,6 +303,7 @@ services:
       retries: 30
       start_period: 30s
 
+  # 保存済みlineageをGraph等で見る画面。データ処理を実行するengineではない。
   marquez-web:
     profiles: [lineage]
     image: docker.io/marquezproject/marquez-web:0.50.0@sha256:e8d53e10ab141cde1b121b01ff47776a58b407813fb6e10f490842d20c184346
@@ -309,10 +334,12 @@ services:
       timeout: 5s
       retries: 30
 
+# Marquezの設定は公開ファイル、DB passwordの実値はruntimeの変数から受け取る。
 configs:
   poc-marquez:
     file: ../poc/marquez.yaml
 
+# GUI編集・vector・lineageの永続状態。cacheやNotebookのhost保存先とは別の領域。
 volumes:
   superset-db:
     name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_superset-db

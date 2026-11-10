@@ -1,16 +1,27 @@
+# 役割: compute profileでSpark master/worker/historyを常駐させる追加構成。
+# coreの後に同じprojectへ結合する。ファイル取込・Silver/Goldの通常処理はcore側。
+# 読む順序: 共通image/daemon → volume初期化 → master → worker → history。
+# notebooksだけでもvolume初期化は使える。spark-checkは明示実行用で常駐しない。
+# UIのhost公開はloopback固定、実行RPCはCompose内にとどめる。
+
+# 内部service名をproxy対象から除外し、社内proxyへ内部要求を送らない。
+# 同じ除外値を大文字/小文字の両方へ渡し、利用libraryの違いを吸収する。
 x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
 
-# Merge after the core. All services reuse one pinned Spark/Iceberg image.
+# master/worker/history/smokeを同じ固定Spark/Iceberg imageへ揃える共通定義。
 x-spark-image: &spark_image
   image: ${COMPOSE_PROJECT_NAME:-lakehouse}-spark-check:local
+# Dokploy等の所有者識別とTraefikの自動公開を分ける共通label。
 x-spark-labels: &spark_labels
   app.owner: lakehouse-foundation
   traefik.enable: 'false'
+# JVMのログも回転させ、event log用volumeと標準出力ログの保管を分ける。
 x-spark-logging: &spark_logging
   driver: json-file
   options:
     max-size: 10m
     max-file: '3'
+# 外向きHTTPのproxyと内部通信の除外を揃え、daemonのJVMメモリも明示する。
 x-spark-environment: &spark_environment
   HTTP_PROXY: ${HTTP_PROXY:-}
   HTTPS_PROXY: ${HTTPS_PROXY:-}
@@ -20,6 +31,8 @@ x-spark-environment: &spark_environment
   no_proxy: *effective_no_proxy
   SPARK_DAEMON_MEMORY: 512m
   SPARK_LOG_DIR: /opt/spark/work/logs
+# 常駐3roleの非root権限・終了処理・共有volumeを揃えるanchor。
+# execでJVMを前面起動し、コンテナ停止をdaemon停止へ伝える。
 x-spark-daemon: &spark_daemon
   <<: *spark_image
   profiles: [compute]
@@ -30,7 +43,7 @@ x-spark-daemon: &spark_daemon
   logging: *spark_logging
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
-  # Override the Kubernetes-oriented image entrypoint; keep the JVM foreground.
+  # image既定のKubernetes向け入口を置き換え、JVMを前面で動かして停止通知を受ける。
   entrypoint: [python3, /opt/lakehouse/spark_cluster.py]
   stop_grace_period: 30s
   volumes:
@@ -38,11 +51,11 @@ x-spark-daemon: &spark_daemon
     - spark-work:/opt/spark/work
 
 services:
-  # Root is limited to the two dedicated volume roots, with no data traversal.
-  # notebooks can record local events even when the cluster profile is off.
+  # 2つの専用volumeルートだけの所有者とmodeを準備するone-shot。
+  # root権限はこの処理に限定し、既存ファイルへの再帰chownは行わない。
+  # 同じbuild tagをdaemonとsmokeへ渡し、Spark/Icebergの組合せを揃える。
   spark-volumes-init:
     <<: *spark_image
-    # Build once; all daemon and smoke services consume this same tag.
     build:
       secrets: [corporate_ca]
       context: ../..
@@ -76,7 +89,8 @@ services:
     healthcheck:
       disable: true
 
-  # RPC 7077 and worker 7078 stay inside the Compose network.
+  # workerの登録と実行資源を管理する。volume初期化の終了0を待って起動する。
+  # 7077(RPC)は内部だけ、Web UIだけをhostのloopbackへ公開する。
   spark-master:
     <<: *spark_daemon
     hostname: spark-master
@@ -104,7 +118,8 @@ services:
       retries: 30
       start_period: 20s
 
-  # Two executor cores and 2 GiB advertised RAM fit within the container cap.
+  # 実際のexecutorを動かす。masterのhealthyとvolume初期化完了の両方を待つ。
+  # 実行用2core/2GiBに加え、daemon等の余裕を含めたコンテナ上限を設ける。
   spark-worker:
     <<: *spark_daemon
     hostname: spark-worker
@@ -131,7 +146,8 @@ services:
       retries: 30
       start_period: 20s
 
-  # Preserve event logs across restarts; do not auto-delete historical evidence.
+  # 保存済みevent logを再起動後も読み、終了したSpark処理の履歴を表示する。
+  # eventの自動削除は無効。保存容量と保管期間は運用側で管理する。
   spark-history:
     <<: *spark_daemon
     hostname: spark-history
@@ -159,7 +175,8 @@ services:
       retries: 30
       start_period: 20s
 
-  # Explicit temporary local smoke remains independent of cluster availability.
+  # local[2]の明示smoke。常駐clusterへ投入するテストとは区別する。
+  # replicas=0なので通常upでは起動せず、必要時だけrunで読み書きを確かめる。
   spark-check:
     <<: *spark_image
     profiles: [compute]
@@ -183,6 +200,7 @@ services:
       - /opt/lakehouse/spark_smoke.py
     logging: *spark_logging
 
+# eventsは処理履歴、workは作業/索引の保存。初期化と各roleで同じvolume名を共有する。
 volumes:
   spark-events:
     name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_spark-events

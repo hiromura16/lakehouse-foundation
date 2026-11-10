@@ -1,18 +1,25 @@
+# 役割: 単一ホストPoCの保存・catalog・SQL・取込をまとめるcore構成。
+# 入力はGit外のsite設定と完成したlanding素材、保存先はS3互換storageとIceberg。
+# SQL Server本体・Dokploy・Sambaは別の管理領域。このComposeから導入しない。
+# 読む順序: 共通anchor → catalog-db/storage → migrate/catalog → trino/worker。
+# automation(n8n)とmonitoringは必要なprofileだけ有効化する。
+# 公開portの既定はloopback。traefik.enable=falseのためHTTPS入口は別途設計する。
+
+# 内部service名をproxy対象から除外し、社内proxyへ内部要求を送らない。
+# 同じ除外値を大文字/小文字の両方へ渡し、利用libraryの違いを吸収する。
 x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
 
-# Portable single-node foundation. No source database is deployed.
-# Site addresses and secrets are read from an external private env file.
-# Core ports bind to loopback unless BIND_IP is explicitly configured.
 name: ${COMPOSE_PROJECT_NAME:-lakehouse}
-# Shared log rotation for every service. These extension blocks deploy nothing.
 
+# 全serviceに10MiB×3世代のログ回転を共通適用し、ログの際限ない増加を抑える。
+# x-*はYAMLの共通定義で、このブロック自体からコンテナは起動しない。
 x-logging: &service_logging
   driver: json-file
   options:
     max-size: 10m
     max-file: '3'
-# Migration and catalog server must use the same database settings.
 
+# 移行と常駐catalogで同じDB・暗号鍵を使い、別metadataへ接続する食い違いを防ぐ。
 x-catalog-environment: &catalog_environment
   LAKEKEEPER__PG_ENCRYPTION_KEY: ${CATALOG_ENCRYPTION_KEY:?Generate private site settings}
   LAKEKEEPER__PG_DATABASE_URL_READ: postgresql://lakekeeper:${CATALOG_DB_PASSWORD}@catalog-db:5432/lakekeeper
@@ -23,7 +30,8 @@ x-catalog-environment: &catalog_environment
 
 services:
 
-  # Durable catalog metadata; this database is internal only.
+  # catalogのmetadataを永続化するDB。実データ本体はstorage側にある。
+  # DBだけのbackupではIceberg全体は戻らないため、storageと鍵を揃えて保管する。
   catalog-db:
     restart: unless-stopped
     labels:
@@ -46,7 +54,8 @@ services:
       timeout: 3s
       retries: 30
 
-  # S3-compatible raw and Iceberg data. Anonymous identities are absent.
+  # 原本とIcebergデータを保存するS3互換層。認証設定は外部変数から組み立てる。
+  # catalogは表の位置を管理し、このvolumeは表の実ファイルを保持する。
   storage:
     restart: unless-stopped
     labels:
@@ -75,7 +84,8 @@ services:
     ports:
       - ${BIND_IP:-127.0.0.1}:${S3_PORT:-8333}:8333
 
-  # Run schema migrations before the catalog service starts.
+  # DBがhealthyになってからschemaを移行するone-shot。終了0が後段の起動条件。
+  # 常駐サービスではないため、成功後のExited(0)は正常な状態。
   catalog-migrate:
     restart: 'no'
     labels:
@@ -91,7 +101,8 @@ services:
       catalog-db:
         condition: service_healthy
 
-  # Single-company bootstrap mode; add OIDC before broader access.
+  # Iceberg REST catalogを提供し、移行が正常完了してから起動する。
+  # allowallは限定PoCの設定。利用者ごとの認可をこの定義だけで提供するものではない。
   catalog:
     restart: unless-stopped
     labels:
@@ -117,7 +128,8 @@ services:
       timeout: 5s
       retries: 30
 
-  # SQL reads and atomic per-table Silver/Gold replacements.
+  # Silver/GoldのSQL変換と参照を担当し、catalogのhealthyを待つ。
+  # warehouse名・S3認証・catalog設定をworkerと揃え、別の保存先を参照しないようにする。
   trino:
     restart: unless-stopped
     labels:
@@ -158,16 +170,18 @@ services:
       retries: 30
       start_period: 30s
 
-  # Ingest completed files and run versioned medallion SQL.
+  # 完成したlanding素材を読み、原本保存・Bronze取込・登録SQLの実行を担当する。
+  # landingは読取専用bind。素材を作る権限はdemo-api側へ分ける。
+  # 公開host portは設けず、同じprojectのGUI/自動化から認証付き内部APIを呼ぶ。
   worker:
-    # Match the landing directory owner without changing its permissions.
+    # landingの所有者UID/GIDで動かし、既存ディレクトリの権限を勝手に変更しない。
     user: "${WORKER_UID:?Set the landing reader UID}:${WORKER_GID:?Set the landing reader GID}"
     restart: unless-stopped
     labels:
       app.owner: lakehouse-foundation
       traefik.enable: 'false'
     logging: *service_logging
-    # Separate environments keep separate local image tags.
+    # 環境別のtagにし、別projectのbuildで既存imageを取り違えないようにする。
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-worker:local
     build:
       secrets:
@@ -219,7 +233,7 @@ services:
       retries: 30
       start_period: 30s
 
-  # Optional automation database, isolated from catalog metadata.
+  # automation専用DB。workflow/credentialをcatalogのmetadataから分離して保存する。
   n8n-db:
     restart: unless-stopped
     labels:
@@ -243,7 +257,8 @@ services:
       timeout: 3s
       retries: 30
 
-  # Optional visual workflow operations; credentials stay in its database.
+  # 画面でworkerへの実行手順を組む。列変換の正本はGitのSQLに残す。
+  # DBとN8N_ENCRYPTION_KEYを一組で保持し、更新時に鍵だけを作り直さない。
   n8n:
     restart: unless-stopped
     labels:
@@ -265,7 +280,7 @@ services:
       N8N_PORT: '5678'
       N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
       N8N_SECURE_COOKIE: ${N8N_SECURE_COOKIE:-true}
-      # The supplied workflow only needs this exact internal hostname.
+      # 同梱workflowに必要な内部宛先はworkerだけ。許可を広げる前にSSRF.mdを確認する。
       N8N_SSRF_PROTECTION_ENABLED: ${N8N_SSRF_PROTECTION_ENABLED:-true}
       N8N_SSRF_BLOCKED_IP_RANGES: ${N8N_SSRF_BLOCKED_IP_RANGES:-default,100.64.0.0/10}
       N8N_SSRF_ALLOWED_IP_RANGES: ${N8N_SSRF_ALLOWED_IP_RANGES:-}
@@ -280,7 +295,7 @@ services:
       GENERIC_TIMEZONE: Asia/Tokyo
       EXECUTIONS_DATA_PRUNE: 'true'
       EXECUTIONS_DATA_MAX_AGE: '168'
-      # Empty when no CA is configured; Node keeps its default public roots.
+      # CA未設定時は空とし、Node標準の公開root証明書を引き続き使う。
       NODE_EXTRA_CA_CERTS: ${CORPORATE_CA_FILE:+/etc/n8n/corporate-ca.pem}
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
@@ -290,7 +305,7 @@ services:
       no_proxy: *effective_no_proxy
     volumes:
       - n8n:/home/node/.n8n
-      # Public certificates only. Do not mount private keys or settings here.
+      # ここに渡すのはCAの公開証明書だけ。秘密鍵やsite設定ディレクトリはmountしない。
       - type: bind
         source: ${CORPORATE_CA_FILE:-../../infra/proxy/empty-ca.pem}
         target: /etc/n8n/corporate-ca.pem
@@ -312,7 +327,8 @@ services:
       timeout: 5s
       retries: 30
 
-  # Optional pipeline metrics with bounded retention.
+  # monitoringの時系列保存。現在の収集対象はworkerとPrometheus自身の2種。
+  # 15日/2GBの保持設定を設ける。hostや全コンテナを自動収集する構成ではない。
   prometheus:
     restart: unless-stopped
     labels:
@@ -335,7 +351,8 @@ services:
     ports:
       - ${BIND_IP:-127.0.0.1}:${PROMETHEUS_PORT:-9090}:9090
 
-  # Optional Grafana service; dashboards are saved in its database via GUI.
+  # datasourceだけをprovisionし、dashboardの正本はGUIで保存した内容にする。
+  # grafana volumeに編集結果を残すため、再配置とvolume削除は分けて扱う。
   grafana:
     restart: unless-stopped
     labels:
@@ -360,6 +377,7 @@ services:
     ports:
       - ${BIND_IP:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000
 
+# configは起動時の設定配布。S3認証を含む展開結果を公開ログやGitへ保存しない。
 configs:
   s3-credentials:
     content: |-
@@ -401,8 +419,10 @@ configs:
   grafana-datasource:
     file: ../monitoring/grafana-datasource.yml
 
+# 保存先名はprojectを基準に分離する。既存volumeを引き継ぐ場合だけ別prefixを指定する。
+# DB・object・GUI状態を保持するvolumeで、ソース更新だけでは削除しない。
 volumes:
-  # Leave DATA_VOLUME_PREFIX empty unless retaining existing volume names.
+  # 通常は空のまま。既存のvolume名を保持する移行時だけDATA_VOLUME_PREFIXを指定する。
   catalog-db:
     name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_catalog-db
   storage:
@@ -418,7 +438,7 @@ volumes:
   grafana:
     name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_grafana
 
-# Empty/default source preserves builds without a corporate CA.
+# build時の社内CA受渡し。未設定時は空の公開placeholderで、秘密鍵は渡さない。
 secrets:
   corporate_ca:
     file: ${CORPORATE_CA_FILE:-../../infra/proxy/empty-ca.pem}

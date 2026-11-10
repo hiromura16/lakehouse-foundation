@@ -1,10 +1,37 @@
 # MES・ERPのダミーデータ投入
 
+<!-- doc-purpose:start -->
+> **役割:** 6種のMES・ERP素材、画像、SQL投入、有限streamの生成仕様とCLIを確認する。
+>
+> **対象読者:** データ利用担当 / 開発・設計担当
+>
+> **読むタイミング:** ダミー生成の入力・出力・書込範囲を決め、素材だけを準備するとき。
+>
+> **前提となる資料:** [初めて構築する人の一本道ガイド](<START-HERE.md>)
+>
+> **次に読む資料:** [GUIからダミーデータを投入する](<DEMO-GUI.md>) / [異常シナリオを選んで素材を作る](<ANOMALY-SCENARIOS.md>) / [MES・ERPデータをBronzeからGoldへ整える](<MEDALLION.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 確認日: 2026-11-10（JST）。GUIで始める場合は [初回ガイド](START-HERE.md) → [ダミーGUI](DEMO-GUI.md) の順に進めます。以下はCLIから素材だけを作る手順です。
 
 `generate-demo.py` は工場MES・ERPに似た原データを作り、ランディングディレクトリか、専用のSQL Server検証DBへ投入するだけのツールです。取り込み、メダリオン変換、Trino、Dokployは呼び出しません。会社の実データを参照する必要はありません。
 
 1件の製造指図・改訂実績・分割出荷を追う説明は [MEDALLION.md](MEDALLION.md)、n8n等からの手動実行は [GUI-WALKTHROUGHS.md](GUI-WALKTHROUGHS.md) を参照してください。
+
+## 最初に理解する「素材」と「結果」
+
+この文書の対象は、製品・指図・受注・出荷・実績・停止の**入力側**です。初心者は「受注1件から出荷が複数行できる」「原本の数値も文字列で持つ」の2点を先に押さえます。数値として正しいか、どの版を採用するかは下流のSQLが決めます。[用語](GLOSSARY.md) の原本・主キー・manifestも参照してください。
+
+| 知りたいこと | どこを見るか | そこで分かる範囲 |
+| --- | --- | --- |
+| 何を何行作ったか | 生成先のmanifest | 入力件数、seed、hash。Silver/Goldの成功ではない |
+| 全部コピーできたか | 完成名の素材と隣のready | ファイル単位の完成と内容hash |
+| SQLへ何を作ったか | 新規schema名と6表の件数 | 専用DBへのcommit。ファイルとの一括commitではない |
+| 品質や集計が正しいか | 後続のmedallionと独立照合 | 検証した入力範囲に対する変換結果 |
+
+作業は配置先の通常ユーザーで、リポジトリのルートから行います。ファイル生成だけならDBやcoreの起動は不要です。生成物を取り込むときだけ、検証用環境の `LANDING_DIR` と出力先を合わせます。会社の実データ用環境へ合成素材を混ぜません。
 
 ## ランディングへ生成する
 
@@ -148,3 +175,44 @@ python3 scripts/generate-demo.py \
 pymssql **2.4.6** を [requirements-demo.txt](../requirements-demo.txt) に固定し、TLSは [同版の接続API](https://github.com/pymssql/pymssql/blob/v2.4.6/docs/ref/pymssql.rst) と [FreeTDS設定](https://www.freetds.org/userguide/freetdsconf.html) を照合しています。DB管理者が用意する通常生成用writerの具体的な権限は [SOURCE-SQLSERVER.md](SOURCE-SQLSERVER.md) を参照します。CSV/JSONだけの生成には追加Python依存は不要です。
 
 通常のGUI生成は毎回新しいschemaへINSERTします。既存6行のUPDATE/DELETEを試したい場合は [CDC専用DB準備](CDC.md) の別フローを使います。DB作成・CDC有効化・権限付与はGUI投入から実行しません。製品の版と本基盤固有の入力契約の違いは [REFERENCES.md](REFERENCES.md) に記録しています。
+
+## 再現実験: 同じseedでもGUIとCLIの比較対象は異なる
+
+CLIの固定名の生成では、同じ条件なら素材のhashを比較できます。GUI/APIはrun IDを主キーとファイル名へ付けるため、同じseedでも別runのhashや主キーは同じになりません。これは入力の衝突を避けるためです。件数、分布、異常の影響を比較する場合は、run IDを除いた業務条件と対象範囲も揃えます。
+
+| 比較したいこと | 揃える条件 | 比較してよいもの |
+| --- | --- | --- |
+| CLI生成の再現性 | seed/orders/days/scenario/異常集合/率 | 原本のSHA-256、行集合 |
+| GUIの正常と異常 | 基礎条件と1つの追加異常 | 各runのmanifest、対象キーごとの変化 |
+| SQLとlandingの一致 | 同じ生成操作のboth出力 | schemaの行集合と同じrunのファイル |
+| workerの再取り込み | 同じ相対pathと同じ原本hash | imported/skippedと派生表の値 |
+
+確認例として、通常ユーザーの端末で生成済みmanifestの要点だけを表示できます。`DEMO_OUTPUT` は自分の検証用出力先を入力し、秘密のenvファイルを指定しません。
+
+```bash
+read -r -p '生成済み素材の出力ディレクトリ: ' DEMO_OUTPUT
+python3 - "$DEMO_OUTPUT/manifest.json" <<'PYTHON'
+import json
+import sys
+from pathlib import Path
+
+manifest = json.loads(Path(sys.argv[1]).read_text())
+print("条件:", manifest["seed"], manifest["orders"], manifest["scenario"])
+for source in manifest["sources"]:
+    print(source["table"], source["rows"], source["sha256"])
+PYTHON
+```
+
+GUI/APIのmanifestは `manifests/demo__<run_id>_<batch>.json` です。表示された相対pathを選び、CLIの `manifest.json` と取り違えないでください。ここでは素材の行数を見ているだけで、取り込みやSQLを実行しません。
+
+## 独自MES/ERPへ広げるための変更点
+
+| 変更したいこと | 実装で確認する場所 | 必要な回帰確認 |
+| --- | --- | --- |
+| 素材の値や分布 | [build_data](../scripts/generate-demo.py) | 同じseedで再現、6契約と親参照、既存fixtureへの影響 |
+| 列・入力契約 | [sources.json](../medallion/sources.json) とencoded_sources | CSV/JSONの列、SQL staging、抽出map、Bronze型 |
+| 異常を追加 | [source_scenarios.py](../scripts/source_scenarios.py) | 選択検査、競合、影響率、GUI表示、manifest診断 |
+| GUIのrun/stream | [service.py](../infra/demo/service.py) と [job_manager.py](../infra/demo/job_manager.py) | 主キー分離、既存path拒否、取消と途中成功の扱い |
+| 生成した値を業務指標へ使う | Silver/Quarantine/GoldのSQL | 型、最新版、参照、集計粒度と独立期待値 |
+
+上流の素材を変えただけで、Silver/Goldの契約は自動更新されません。列を増やす変更は [カスタマイズ手順](CUSTOMIZATION.md) に従い、生成・抽出・取込・変換・検証を一組で更新します。`--orders 100000` を許可できることと、標準workerの1原本16MiB/100000行へ全明細が収まることは別です。

@@ -1,4 +1,11 @@
-"""Publish isolated synthetic sources without starting downstream services."""
+"""GUI/APIから、検証用のMES・ERP素材だけを生成・公開する。
+
+読む順序は generate_batch → _publish_batch → publish_source。
+値の生成・SQLの検証はCLIと共通化し、各run/batchの業務キーを分離する。
+出力はCSV/JSON/人工画像、必要時の専用SQL schema、秘密を含まないmanifest。
+Iceberg取込・メダリオン・workflowはここから呼ばず、別操作に分ける。
+ファイル公開とSQL commitをまとめるtransactionは提供しない。
+"""
 
 import fcntl
 import importlib.util
@@ -43,7 +50,11 @@ SQL_KEYS = {
 
 
 def validate_options(run_id, batch, seed, orders, days, scenario, destination):
-    """Bound source size and require an unambiguous incremental filename."""
+    """run/batchの識別子、件数、期間、出力先を副作用なしで検査する。
+
+    正式な増分名を作れる12桁IDと4桁batchに限定する。boolを整数として
+    通さず、GUI外から呼ばれても同じ件数境界を維持する。
+    """
     if not isinstance(run_id, str) or not re.fullmatch(
         r"[0-9a-f]{12}", run_id
     ):
@@ -65,11 +76,15 @@ def validate_options(run_id, batch, seed, orders, days, scenario, destination):
 
 
 def namespaced_data(run_id, batch, seed, orders, days, scenario):
-    """Keep references and revisions while isolating every generated batch."""
+    """生成済み6契約の主キー・参照をrun/batch単位で分離して返す。
+
+    同じprefixを親子のIDへ付け、改訂順と異常な参照も保持する。
+    業務日の意味は変えず、更新時刻へbatch差分だけを付ける。
+    """
     data = GENERATOR.build_data(seed, orders, days, scenario)
     namespace = f"G{run_id}B{batch:04d}-"
-    # Preserve historical business dates and relative revision ordering.
-    # A distinct key namespace prevents cross-run or cross-batch conflicts.
+    # 同じID変換を主キーと参照へ適用し、別run/batchとの偶発的な結合を防ぐ。
+    # 過去の業務日や改訂順は保持し、追加生成を同じ業務行の更新にしない。
     offset = timedelta(seconds=batch - 1)
     for rows in data.values():
         for row in rows:
@@ -83,10 +98,14 @@ def namespaced_data(run_id, batch, seed, orders, days, scenario):
 
 
 def synthetic_png(seed, size=96):
-    """Render a deterministic artificial inspection pattern as RGB PNG."""
+    """seedから再現できる人工検査模様のRGB PNGバイト列を返す。
+
+    実写真や画像理解の結果は使わず、標準ライブラリーだけで組み立てる。
+    入力画像の読込み・ネットワーク接続・ファイル保存は行わない。
+    """
 
     def chunk(kind, payload):
-        """Add the length and CRC required by the PNG chunk format."""
+        """PNG chunkの長さ・種類・payload・CRCを規格の順に並べて返す。"""
         checksum = zlib.crc32(kind + payload) & 0xFFFFFFFF
         return (
             struct.pack("!I", len(payload))
@@ -97,6 +116,7 @@ def synthetic_png(seed, size=96):
 
     pixels = io.BytesIO()
     for y in range(size):
+        # PNGの各走査線へ「フィルターなし」のbyteを付け、RGBを続ける。
         pixels.write(b"\x00")
         for x in range(size):
             tile = (x // 12 + y // 12 + seed) % 2
@@ -111,7 +131,11 @@ def synthetic_png(seed, size=96):
 
 
 def sql_settings(settings):
-    """Reuse the CLI's private settings validator without exposing values."""
+    """DEMO接続値だけを選び、CLIと同じprivate設定検査を通す。
+
+    一時的な0600ファイルを介してliteral parserを再利用し、処理後は削除する。
+    返す辞書はSQL実行内部用であり、APIやmanifestへ返さない。
+    """
     values = {
         key: str(value)
         for key, value in (
@@ -133,7 +157,11 @@ def sql_settings(settings):
 
 
 def publish_source(path, payload, policy=None):
-    """Publish immutable bytes first, then the atomic SHA-256 ready marker."""
+    """原本を新規公開し、選択policyのreadyを公開して内容hashを返す。
+
+    標準policyでは正しいSHA-256 markerを使う。意図したfile faultの試験では
+    marker欠落や不一致もあり得るため、素材成功と後続取込成功を区別する。
+    """
     GENERATOR.publish_file(path, payload)
     digest = sha256(payload).hexdigest()
     marker = SCENARIOS.ready_payload(payload, policy)
@@ -159,7 +187,12 @@ def generate_batch(
     anomaly_rate=10,
     allow_file_faults=False,
 ):
-    """Create one source-only batch; return metadata containing no secrets."""
+    """1batchの入力を検査し、同じ出力dirのsource writerを排他する。
+
+    SQL指定には明示同意と専用接続の検査が必要。検査後に出力dirを準備し、
+    file lockを取って公開する。返すmanifestは件数・hash等の非秘密情報だけ。
+    lockはこのdirを使う素材生成間のもので、全分析writerの排他ではない。
+    """
     validate_options(run_id, batch, seed, orders, days, scenario, destination)
     anomalies = SCENARIOS.validate_selection(
         anomalies, destination, images, allow_file_faults, anomaly_rate
@@ -171,7 +204,7 @@ def generate_batch(
         raise ValueError("Explicit SQL write consent is required.")
     if destination == "sqlserver" and images:
         raise ValueError("Synthetic images require a landing destination.")
-    # Validate credentials before creating output files or opening SQL.
+    # 工程1: 出力先を作る前に入力/同意/専用SQL設定を検査する。
     values = sql_settings(settings) if sql else None
     output = GENERATOR.output_directory(Path(output))
     for name in ["csv", "json", "images", "manifests"]:
@@ -179,6 +212,7 @@ def generate_batch(
         if child.is_symlink() or (child.exists() and not child.is_dir()):
             raise ValueError("Source output paths must be real directories.")
     output.mkdir(parents=True, exist_ok=True)
+    # 工程2: sessionを跨ぐfile lockで、同じlandingの素材公開を直列化する。
     lock_path = output / ".demo-gui.lock"
     descriptor = os.open(
         lock_path, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600
@@ -220,7 +254,12 @@ def _publish_batch(
     anomalies,
     anomaly_rate,
 ):
-    """Publish after acquiring the cross-session source writer lock."""
+    """入力検査・lock取得済みの1batchを生成し、manifestを最後に公開する。
+
+    生成→行異常→serialize→file異常→名前の重複検査→SQL→fileの順に進む。
+    既存runの上書きはしない。bothではSQL commit後のfile公開失敗があり得て、
+    manifestがないことだけからSQLも未実行だったとは判断できない。
+    """
     suffix = f"__{run_id}_{batch:04d}"
     manifest_path = output / "manifests" / ("demo" + suffix + ".json")
     if manifest_path.exists() or manifest_path.is_symlink():
@@ -228,6 +267,7 @@ def _publish_batch(
     data = namespaced_data(run_id, batch, seed, orders, days, scenario)
     changes = []
     if anomalies:
+        # 行の異常はserialize前、転送/file異常はserialize後に適用する。
         data, changes = SCENARIOS.apply_rows(
             data, anomalies, anomaly_rate, seed, batch
         )
@@ -268,7 +308,7 @@ def _publish_batch(
         targets.append(
             (output / relative, payload, policies.get("images/inspection.png"))
         )
-    # Reject reused filenames before any SQL writes. No overwrite is offered.
+    # 工程3: SQL commitの前に同名出力を拒否し、既存runを上書きしない。
     if destination != "sqlserver" and any(
         path.exists() or path.with_name(path.name + ".ready").exists()
         for path, _, _ in targets
@@ -276,6 +316,7 @@ def _publish_batch(
         raise ValueError("Batch filenames already exist; choose a new run.")
     schema = GENERATOR.write_sql(data, values) if values is not None else None
     if destination != "sqlserver":
+        # SQLとfileは別の確定点。bothの片側失敗を一括rollbackとは扱わない。
         for path, payload, policy in targets:
             publish_source(path, payload, policy)
     result = {
@@ -302,6 +343,8 @@ def _publish_batch(
             ],
             "intentional_file_faults": bool(faults),
         }
+    # 工程4: 全対象を公開できた後にだけ、非秘密の最終manifestを公開する。
+    # source-onlyなので、ここからworkerやschedulerを呼び出さない。
     GENERATOR.publish_file(
         manifest_path, (json.dumps(result, indent=2) + "\n").encode()
     )

@@ -1,5 +1,19 @@
 # PoC報告書・発表に使う図版と雛形
 
+<!-- doc-purpose:start -->
+> **役割:** 用途別14図・キャプション・雛形を選び、PNG・PDF・PPTXへ書き出す。
+>
+> **対象読者:** 評価・報告担当 / 開発・設計担当
+>
+> **読むタイミング:** PoC報告書や説明スライドを準備し、必要な図と根拠を選ぶとき。
+>
+> **前提となる資料:** [Lakehouse Foundation アーキテクチャ](<../ARCHITECTURE.md>)
+>
+> **次に読む資料:** [図キャプションと根拠の台帳](<CAPTIONS.md>) / [データレイクハウスPoC 報告書テンプレート](<POC-REPORT-TEMPLATE.md>) / [PoC説明用のスライド構成](<PRESENTATION-OUTLINE.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<../DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 **詳細図14種、編集用Mermaid、図キャプション、報告書・評価計画・スライド構成をまとめた素材集です。** 図を一枚選んでWord/PowerPointへ貼り、同じ図のキャプションと根拠を添えて使えます。実装の照合基点は `b63b9d00d664d3e547679d0da4dd63f76fe1f45f`、照合日は2026-11-10（JST）です。図の作成日は全機能の再試験日を意味しません。
 
 [全図のHTMLギャラリー](gallery.html) / [キャプション・根拠](CAPTIONS.md) / [CSV索引](figure-index.csv) / [実装の技術付録](IMPLEMENTATION-INVENTORY.md)
@@ -114,3 +128,17 @@ python3 scripts/render_report_assets.py --check
 生成はPython標準ライブラリだけで動きます。`--check` は図仕様と生成済みSVG/Mermaid/HTML/台帳の一致、参照ファイル、文字領域を確認します。実サービスの起動確認ではありません。図で構成を変更したら、Compose・固定版・根拠・文書も同じ変更として確認します。
 
 公式ロゴの権利・取得元は [図版出典](../assets/README.md)、採用版の公式資料は [REFERENCES.md](../REFERENCES.md)、機能の実機記録は [VALIDATION.md](../VALIDATION.md) を参照します。ロゴを新たな製品の商標として再利用したり、各上流による認定と説明したりしません。
+
+## 初めて報告書を作るときの一本道
+
+1. [評価計画](EVALUATION-PLAN.md)で答える問い、対象環境、必須項目、判定者を決めます。
+2. [報告書雛形](POC-REPORT-TEMPLATE.md)を社内の保存先へcopyし、目的・範囲・採用commitから埋めます。
+3. 対象の図を選び、[キャプション](CAPTIONS.md)の制約まで本文へ反映します。
+4. 実施した評価だけを[証跡台帳](EVIDENCE-MATRIX.md)へ記録し、失敗・未実施も同じ基準で残します。
+5. [意思決定記録](DECISION-RECORD-TEMPLATE.md)で次段階へ進む条件を示し、必要なら[発表構成](PRESENTATION-OUTLINE.md)へ要点を移します。
+
+## 専門家が差分と根拠を追うとき
+
+構成の数値は [実装一覧](IMPLEMENTATION-INVENTORY.md)、結果は [検証記録](../VALIDATION.md) と [verification.json](../verification.json)、図の生成元は [figures.json](figures.json) へ遡ります。ソース定義、過去の合成実行、今回の会社受入を同じ「確認済み」へ混ぜません。
+
+報告書を更新するときは、基点commitの変更が図・入力契約・期待値・採用版のどれに影響するかを判定します。出力日時だけを更新して古い試験を再実施済みに見せず、再利用する根拠と追加で試す条件を明記します。全MDの位置付けは [文書マニフェスト](../DOCUMENTATION-MANIFEST.md) から探せます。

@@ -1,4 +1,12 @@
-"""Run bounded landing imports and SQL medallion jobs on one node."""
+"""完成済み原本を取り込み、登録済みのメダリオンSQLを実行する。
+
+読む順序は bootstrap → ingest → medallion → run → Handler/main。
+ingestはreadyとhashを照合し、原本・Bronze・完了台帳の順に保存する。
+medallionは最新版の採用・隔離・Gold集計を管理SQLへ委ねる。
+各表のcommitは独立しており、実行全体のrollbackは提供しない。
+GUI・CLI等の処理依頼は常駐workerの固定HTTP入口へ集約する。
+取消の完了を確認できない場合は、新規処理を止めて管理者の確認を待つ。
+"""
 
 import argparse
 import csv
@@ -54,7 +62,11 @@ MAX_BYTES = 16 * 1024 * 1024
 
 
 def request(method, url, payload=None, accepted=(200, 201, 204)):
-    """Call a catalog endpoint without including sensitive bodies in errors."""
+    """カタログ管理APIへJSONを送り、許可したHTTP成功時の本文を返す。
+
+    作成系の呼出しには副作用がある。異常時はstatusだけを例外へ含め、
+    資格情報を含み得る要求・応答本文は利用者へ返さない。
+    """
     response = HTTP.request(method, url, json=payload, timeout=30)
     if response.status_code not in accepted:
         raise RuntimeError(
@@ -64,15 +76,18 @@ def request(method, url, payload=None, accepted=(200, 201, 204)):
 
 
 def catalog():
-    """Open the shared Iceberg REST catalog using private S3 credentials."""
+    """privateなS3資格情報で、共有のIceberg REST catalogを開く。
+
+    表の操作先を返すだけで、ここでは表を作成しない。FileIOはclient側の
+    鍵を使い、カタログ側の署名サービスへ暗黙に切り替えない。
+    """
     return load_catalog(
         "lakehouse",
         type="rest",
         uri="http://catalog:8181/catalog",
         warehouse=os.environ["WAREHOUSE_NAME"],
         **{
-            # This single-team foundation uses the supplied storage keys.
-            # Avoid silently switching to catalog-side remote signing.
+            # 共通設定の鍵をFileIOへ渡し、catalog側署名へ暗黙移行しない。
             "header.X-Iceberg-Access-Delegation": "client-managed",
             "py-io-impl": "pyiceberg.io.pyarrow.PyArrowFileIO",
             "s3.endpoint": "http://storage:8333",
@@ -85,7 +100,11 @@ def catalog():
 
 
 def bootstrap():
-    """Create missing buckets, a warehouse, and empty source tables."""
+    """不足するbucket・warehouse・空の契約表を準備する。
+
+    既存warehouseはbucketとendpointが一致する場合に再利用する。
+    既存データや鍵を再生成せず、既存表のschema移行も行わない。
+    """
     for bucket in [
         os.environ["S3_BUCKET_RAW"],
         os.environ["S3_BUCKET_WAREHOUSE"],
@@ -156,7 +175,11 @@ def bootstrap():
 
 
 def schema(prefix, layer):
-    """Separate batch, persistent CDC, and temporary verification layers."""
+    """許可した用途のprefixと層名を結び、namespace名を返す。
+
+    通常処理、CDC、実行ごとの隔離検証だけを受け付ける。任意prefixを
+    許してしまうと、検証の後片付けが通常表へ及ぶため入力を制限する。
+    """
     if prefix not in {"", "cdc_"} and not re.fullmatch(
         r"verify_[0-9a-f]+_", prefix
     ):
@@ -165,7 +188,11 @@ def schema(prefix, layer):
 
 
 def ensure_tables(prefix=""):
-    """Create only declared source tables, preserving their existing data."""
+    """選択namespaceに不足する契約表と原本台帳を作成する。
+
+    Bronzeは業務値と由来を文字列として保存する。既存表は保持するため、
+    契約の列を変更しても既存schemaが自動で移行するわけではない。
+    """
     cat = catalog()
     for layer in ["bronze", "silver", "gold", "quarantine"]:
         namespace = schema(prefix, layer)
@@ -201,16 +228,24 @@ def ensure_tables(prefix=""):
 
 
 def overwrite(table, rows, column, value):
-    """Replace one source file atomically so interrupted jobs can replay."""
+    """指定列の値に一致する範囲を、渡された行集合へ置き換える。
+
+    Arrowの型は対象Iceberg表へ合わせる。1表の置換を確定する操作であり、
+    原本保存や別表の更新をまとめたtransactionではない。
+    """
     arrow = pa.Table.from_pylist(rows, schema=table.schema().as_arrow())
     table.overwrite(arrow, overwrite_filter=EqualTo(column, value))
 
 
 def completion_hash(marker):
-    """Read one bounded SHA-256 marker, including its required newline."""
+    """改行付きのSHA-256完了markerを検査してhash文字列を返す。
+
+    サイズ確認の後も読取量を制限し、読取前後のfile成長に備える。
+    原本との一致は呼出元のingestが別に検査する。
+    """
     if marker.stat().st_size > 66:
         raise ValueError("Invalid completion marker.")
-    # A file can grow after stat, so cap the read independently as well.
+    # stat後の成長にも備え、読取量そのものにも上限を設ける。
     with marker.open("rb") as stream:
         content = stream.read(67)
     if not re.fullmatch(rb"[a-f0-9]{64}\r?\n", content):
@@ -219,7 +254,11 @@ def completion_hash(marker):
 
 
 def resolve_source(relative):
-    """Match declared files and bounded GUI microbatch names explicitly."""
+    """相対pathから、固定6契約または正式なGUI増分名を照合する。
+
+    一致した契約を返し、未知の名前はNoneを返す。未知ファイルは原本保存の
+    対象にはなるが、任意の業務表として自動認識しない。
+    """
     for source in CONTRACT:
         canonical = source["path"]
         if relative == canonical:
@@ -236,11 +275,19 @@ def resolve_source(relative):
 
 
 def ingest(directory=Path("/landing"), prefix=""):
-    """Import hash-marked files while preserving raw objects and provenance."""
+    """ready付き原本を照合し、原本・業務文字列・完了台帳を保存する。
+
+    directoryは読取元、prefixは通常または隔離検証のnamespaceを選ぶ。
+    同じ相対pathと内容hashが完了済みならskipし、件数を辞書で返す。
+    更新素材はそのpath由来のBronze行だけを置換する。原本は内容hash別に
+    保存し、landingの削除を分析表のDELETEとしては扱わない。
+    途中失敗では一部の原本・表が残るため、完了台帳を最後に確定する。
+    """
     ensure_tables(prefix)
     cat = catalog()
     files = cat.load_table(schema(prefix, "bronze") + ".files")
     imported = skipped = 0
+    # 工程1: readyがある原本だけを対象にし、転送途中のfileを扱わない。
     for marker in sorted(directory.rglob("*.ready")):
         path = marker.with_name(marker.name[:-6])
         if marker.is_symlink() or path.is_symlink() or not path.is_file():
@@ -249,6 +296,7 @@ def ingest(directory=Path("/landing"), prefix=""):
         if path.stat().st_size > MAX_BYTES:
             raise ValueError("Landing file exceeds the bounded import limit.")
         expected = completion_hash(marker)
+        # 内容hashと読取前後の属性で、marker作成後や読取中の変更を拒否する。
         before = path.stat()
         data = path.read_bytes()
         after = path.stat()
@@ -265,14 +313,16 @@ def ingest(directory=Path("/landing"), prefix=""):
             .to_arrow()
             .to_pylist()
         )
-        # The manifest is updated last, after each source table commits.
-        # A completed hash skips work; an interrupted import replays safely.
+        # 工程2: 完了台帳のpath/hashが一致する時だけskipする。
+        # 台帳未完了なら後段を再実行できるよう、台帳は最後に更新する。
         if previous and previous[0]["sha256"] == digest:
             skipped += 1
             continue
         source = resolve_source(relative)
         rows = []
         if source:
+            # 業務契約へ一致する素材だけを解釈し、型の妥当性はSilverへ委ねる。
+            # 未知のCSV等は任意表へせず、下段の原本保存と台帳登録だけを行う。
             if path.suffix == ".csv":
                 rows = list(csv.DictReader(StringIO(data.decode("utf-8-sig"))))
             else:
@@ -313,12 +363,14 @@ def ingest(directory=Path("/landing"), prefix=""):
         mime = "application/octet-stream"
         image = None
         if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+            # verify後のdecoderは再利用せず、寸法取得は別に開き直す。
             with Image.open(BytesIO(data)) as decoded:
                 decoded.verify()
             with Image.open(BytesIO(data)) as decoded:
                 image = (decoded.width, decoded.height)
                 mime = Image.MIME.get(decoded.format, mime)
-        # Hash-based object keys preserve raw bytes across file revisions.
+        # 工程3: 内容とpathのhashで原本を識別し、同名fileの旧版もS3へ残す。
+        # 以降で失敗しても原本は残り得るが、完了台帳を先に進めない。
         S3.put_object(Bucket=bucket, Key=key, Body=data, ContentType=mime)
         if source:
             table = cat.load_table(
@@ -340,8 +392,8 @@ def ingest(directory=Path("/landing"), prefix=""):
                 "path",
                 relative,
             )
-        # Publish completion only after all file-specific writes succeed.
-        # Each table commit is atomic; these writes are not one transaction.
+        # 工程4: 業務行/画像metadataのcommit後、最後にfile完了を確定する。
+        # 1表ずつはatomicでも、S3と複数表をまとめたtransactionではない。
         overwrite(files, [meta], "path", relative)
         imported += 1
     STATE["imported_files"] += imported
@@ -349,11 +401,15 @@ def ingest(directory=Path("/landing"), prefix=""):
 
 
 class WorkerBlockedError(RuntimeError):
-    """Require operator review after a query could not be cancelled."""
+    """取消未確定のqueryが残り得るため、管理者確認まで新規処理を拒否する。"""
 
 
 def internal_query_uri(uri):
-    """Accept result and cancellation URLs only on the internal Trino host."""
+    """継続・取消URLが許可した内部Trinoのoriginかを判定する。
+
+    scheme・host・port・userinfo・fragmentを検査する。外部originへの
+    redirectやtoken転送を許す判定ではなく、path別のallowlistでもない。
+    """
     try:
         target = urlsplit(uri)
         return (
@@ -369,7 +425,11 @@ def internal_query_uri(uri):
 
 
 def cancel_query(next_uri):
-    """Confirm cancellation without forwarding service or network errors."""
+    """既知の内部URLへ取消を送り、完了を確認できたかを真偽値で返す。
+
+    204または404だけを取消済みと判断する。URL不明・通信失敗を成功へ
+    読み替えず、下流例外の接続情報も呼出元へ返さない。
+    """
     if not next_uri or not internal_query_uri(next_uri):
         return False
     try:
@@ -380,8 +440,13 @@ def cancel_query(next_uri):
 
 
 def query(sql):
-    """Finish a Trino query or cancel it before another job can start."""
-    # The HTTP protocol expects one statement without a CLI terminator.
+    """1文のTrino SQLを完了まで追い、結果行を返す。
+
+    HTTP 200は受付・途中結果の場合があるため、nextUriを最後まで追う。
+    異常時は残存queryを取り消し、取消未確認ならSTATEをblockedにする。
+    失敗時にSQL・接続先・応答本文を含む例外を利用者へ転送しない。
+    """
+    # HTTP protocolへは、CLI用の終端記号を除いた1文を送る。
     sql = sql.strip().removesuffix(";").rstrip()
     pending_uri = None
     terminal = False
@@ -400,10 +465,10 @@ def query(sql):
         deadline = time.monotonic() + 180
         while True:
             if value.get("error"):
-                # Trino has terminated the query; no cancellation is needed.
+                # 明示的なSQL失敗は終端なので、残存queryの取消は不要。
                 terminal = True
                 raise RuntimeError("Trino query failed.")
-            # HTTP 200 acknowledges a response, not a finished query.
+            # HTTP 200だけでは完了でない。nextUriがなくなるまで結果を追う。
             next_uri = value.get("nextUri")
             if not next_uri:
                 terminal = True
@@ -420,26 +485,32 @@ def query(sql):
             value = response.json()
             rows.extend(value.get("data", []))
     except Exception:
-        # Even an initial POST failure can leave server-side work running.
-        # Keep the process blocked when cancellation cannot be confirmed.
+        # 最初のPOSTの応答不明でも、Trinoで実行中の可能性は残る。
+        # 取消を確認できないまま次のwriterを開始しない。
         if not terminal and not cancel_query(pending_uri):
             STATE["blocked"] = True
-        # HTTP exceptions may contain SQL, addresses, or private responses.
+        # 下流例外はSQL/接続先/応答本文を含み得るため、固定例外へ置き換える。
         raise RuntimeError("Trino query failed.") from None
 
 
 def medallion(prefix=""):
-    """Execute readable, versioned SQL in dependency order."""
+    """管理されたSQLを依存順で実行し、完了した文数を返す。
+
+    Silverで最新候補を選び、妥当性・親参照を判定してから隔離とGoldへ進む。
+    prefixは同じSQLを通常・CDC・隔離検証の各層へ向けるために使う。
+    1文ずつ表を置換するため、失敗時に全表を旧版へ巻き戻すことはない。
+    """
     ensure_tables(prefix)
     count = 0
-    # Filename order enforces Silver/Quarantine/Gold dependencies. Each
-    # CREATE OR REPLACE commits one table; the full run is not atomic.
+    # ファイル順で最新版採用・隔離・集計の依存を守る。業務規則の正本はSQL。
+    # CREATE OR REPLACEは1表ずつcommitし、14文全体の一括commitではない。
     for path in sorted((ROOT / "medallion").glob("*.sql")):
         statements = "\n".join(
             line
             for line in path.read_text().splitlines()
             if not line.lstrip().startswith("--")
         )
+        # 管理SQL用の単純な分割であり、任意SQLを受ける汎用parserではない。
         for statement in statements.split(";"):
             if not statement.strip():
                 continue
@@ -454,9 +525,13 @@ def medallion(prefix=""):
 
 
 def verify():
-    """Check factory fixtures in isolated namespaces, then remove them."""
-    # Every verification run owns its namespaces and raw-object prefix.
-    # Production Bronze/Silver/Gold tables are never cleanup targets.
+    """専用namespaceで固定合成素材・画像・再実行の期待値を照合する。
+
+    取込→変換→独立期待値→同一素材の再取込→再変換の順に検査する。
+    結果は成功した検査名と取込件数。通常の業務表は変更対象にしない。
+    後片付けもこの実行の表・原本だけへ限定し、取消未確定なら保全する。
+    """
+    # 実行ごとの隔離先を使い、通常業務表を検証・削除の対象にしない。
     prefix = "verify_" + secrets.token_hex(5) + "_"
     cat = catalog()
     result = {"checks": []}
@@ -479,8 +554,7 @@ def verify():
                 "edge",
             ]
             subprocess.run(command, check=True)
-            # Image fixtures exercise original-byte preservation separately
-            # from the MES/ERP generator, which only creates source records.
+            # 業務行の期待値とは別に、画像原本のバイト列保存も検査する。
             image_path = Path(directory) / "images" / "inspection.png"
             image_path.parent.mkdir()
             Image.new("RGB", (4, 4), color="gray").save(image_path)
@@ -504,7 +578,7 @@ def verify():
                 (ROOT / "medallion/expected-demo.json").read_text()
             )["checks"]
             for check in checks:
-                # Checks are versioned SQL files or inline factory fixtures.
+                # 版管理した検査SQLと独立期待値を使い、生成件数で代用しない。
                 sql = (
                     check.get("sql")
                     or (ROOT / "medallion" / check["sql_file"]).read_text()
@@ -525,7 +599,7 @@ def verify():
                 raise AssertionError("Unchanged inputs imported twice.")
             medallion(prefix)
             for check in checks:
-                # Checks are versioned SQL files or inline factory fixtures.
+                # 再実行後にも同じ期待値を照合し、追記二重計上を検出する。
                 sql = (
                     check.get("sql")
                     or (ROOT / "medallion" / check["sql_file"]).read_text()
@@ -544,17 +618,19 @@ def verify():
                 ok=True,
             )
     finally:
-        # Clean up even after a failed assertion, using only this run's
-        # isolated prefix. Never sweep shared operational namespaces.
-        # If cancellation failed, leave the isolated data intact because
-        # the server-side query may still be using it.
+        # 検査失敗でも自分の隔離先だけを掃除し、共有namespaceは消さない。
+        # 取消未確定時はqueryが使用中かもしれないため、隔離先も保全する。
         if not STATE["blocked"]:
             cleanup_verification(cat, prefix)
     return result
 
 
 def cleanup_verification(cat, prefix):
-    """Remove only one completed verification run's tables and raw files."""
+    """完了した1回の隔離検証に属する表・namespace・原本を削除する。
+
+    専用prefixの形式を検査してからpurgeする破壊的な後片付けである。
+    通常業務表や他の検証runを掃除する汎用処理として使わない。
+    """
     if not re.fullmatch(r"verify_[0-9a-f]+_", prefix):
         raise ValueError("Cleanup requires a temporary verification prefix.")
     for layer in ["gold", "silver", "quarantine", "bronze"]:
@@ -573,11 +649,15 @@ def cleanup_verification(cat, prefix):
 
 
 def run(action):
-    """Serialize jobs inside the worker so GUI and CLI cannot race."""
+    """固定actionを同じworkerプロセス内で排他実行し、結果を返す。
+
+    処理成功後にメモリー内の件数と最終成功時刻を更新する。blocked中は
+    新規処理を拒否する。外部Sparkや別プロセスまでの分散lockではない。
+    """
     if not LOCK.acquire(blocking=False):
         raise RuntimeError("Another ingestion/medallion job is running.")
     try:
-        # The flag survives lock release and is reset only on worker restart.
+        # lock解放後もblockedは維持する。query確認後の再起動まで解除しない。
         if STATE["blocked"]:
             raise WorkerBlockedError(
                 "Confirm Trino query completion, then restart the worker."
@@ -604,14 +684,14 @@ def run(action):
 
 
 class Handler(BaseHTTPRequestHandler):
-    """Expose fixed jobs without accepting arbitrary SQL or shell input."""
+    """固定job・health・集計metricsを提供するworkerのHTTP入口。"""
 
     def log_message(self, *_):
-        """Suppress HTTP access logs that could expose request details."""
+        """接続情報を残さないよう、既定のaccess logを抑止する。"""
         pass
 
     def respond(self, status, value, content_type="application/json"):
-        """Send a bounded job result or metrics response with its length."""
+        """HTTP statusと、JSONまたはmetrics本文を明示した長さで返す。"""
         body = (
             json.dumps(value).encode()
             if content_type == "application/json"
@@ -624,7 +704,11 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        """Expose readiness and aggregate counters without job inputs."""
+        """healthまたは集計metricsを返し、設定値や業務payloadは返さない。
+
+        healthのreadyは初期化済みかつ取消確認待ちでないことを表す。
+        metricsの値はプロセスメモリー上にあり、永続監査台帳ではない。
+        """
         if self.path == "/health":
             self.respond(
                 200 if STATE["ready"] and not STATE["blocked"] else 503,
@@ -650,7 +734,12 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(404, {"error": "not found"})
 
     def do_POST(self):
-        """Authenticate a fixed action and execute it under the job lock."""
+        """Bearer認証した固定actionを同期実行し、安全な結果だけを返す。
+
+        要求bodyのサイズとactionを制限してからrunへ渡す。成功応答は処理の
+        完了後であり、受付だけの202ではない。失敗ログは例外型と実装内の
+        位置へ限定し、SQL・接続先・driverの生メッセージを出力しない。
+        """
         if self.path != "/run":
             return self.respond(404, {"error": "not found"})
         expected = "Bearer " + os.environ["WORKER_TOKEN"]
@@ -679,13 +768,12 @@ class Handler(BaseHTTPRequestHandler):
                 },
             )
         except Exception as error:
-            # Only application-owned error codes are safe to return.
-            # Driver details can contain private source values or endpoints.
+            # 公開可能と決めた文言だけを返し、driverの生例外を転送しない。
             message = "Job failed; check source contract and service health."
             controlled = ("Trino query failed:", "MES/ERP check failed:")
             if str(error).startswith(controlled):
                 message = str(error)
-            # Keep diagnostic locations while excluding values and SQL text.
+            # 診断には実装内の関数/行を残し、業務値やSQL本文は記録しない。
             frames = [
                 {"function": frame.name, "line": frame.lineno}
                 for frame in traceback.extract_tb(error.__traceback__)
@@ -711,7 +799,12 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    """Start the job service or submit a command to its serialized API."""
+    """常駐workerを起動するか、固定actionを既存workerへ依頼する。
+
+    serveは基盤の準備完了後にHTTPを開始する。ingest等のCLIは同じ常駐
+    プロセスの/runを使い、HTTP利用者と排他する。bootstrapだけは不足分の
+    準備として直接実行する。CLIの待機切れはサーバー側の停止を意味しない。
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "action",
@@ -744,7 +837,7 @@ def main():
     elif args.action == "bootstrap":
         print(json.dumps(run(args.action), ensure_ascii=False), flush=True)
     else:
-        # The CLI uses the same process-level lock as n8n's HTTP requests.
+        # 別プロセスで直接取込せず、n8n等と同じ常駐workerのlockを使う。
         response = HTTP.post(
             "http://127.0.0.1:8000/run",
             headers={"Authorization": "Bearer " + os.environ["WORKER_TOKEN"]},

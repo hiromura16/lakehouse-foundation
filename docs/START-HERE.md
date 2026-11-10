@@ -1,5 +1,19 @@
 # 初めて構築する人の一本道ガイド
 
+<!-- doc-purpose:start -->
+> **役割:** 新規Linux環境の準備からcore配置と合成データ検証までを順に進める。
+>
+> **対象読者:** 初めて使う人 / 基盤構築担当
+>
+> **読むタイミング:** 初めてこのリポジトリを配置し、段階ごとの成功条件を確認するとき。
+>
+> **前提となる資料:** [Lakehouse Foundation](<../README.md>)
+>
+> **次に読む資料:** [Linuxサーバーを最初に準備する](<HOST-SETUP.md>) / [Dokploy 0.31.0でGitから配置する](<DOKPLOY.md>) / [GUIからダミーデータを投入する](<DEMO-GUI.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 確認日: 2026-11-10（JST）。**このページを上から進め、各段階の成功条件を確認してから次へ進みます。** 新規のLinux x86-64サーバーと、操作用PCを想定します。採用版は [公式リファレンスと文書監査表](REFERENCES.md)、仕組みは [構成図](ARCHITECTURE.md) にあります。会社で一時修正した既存環境の更新は [COMPANY-UPDATE.md](COMPANY-UPDATE.md) を使います。
 
 ## 0. 作業場所と管理方法を決める
@@ -18,6 +32,8 @@
 初回はcoreだけを確認し、その後 `demo,monitoring` を追加します。全機能は11profile・34service定義で、全コンテナの上限メモリを同時に確保すると20GiBを超えます。Docker/Dokploy/OS/build用メモリも必要です。小さいVMでは段階ごとに使用量を確認し、全機能の同時起動を前提にしません。[容量と永続化](DEPLOYMENT.md)
 
 ## 1. ホストを準備する
+
+空のVMでDocker・Git・uvを導入するところから必要な場合は、先に [HOST-SETUP](HOST-SETUP.md) を実行し、この章の確認へ戻ります。用語に迷ったときは [GLOSSARY](GLOSSARY.md) を参照します。
 
 通常ユーザーで実行します。
 
@@ -235,3 +251,20 @@ Dokploy管理はGUIのStop、CLI管理は次を使います。
 ## PoCの結果を説明する
 
 [報告書用素材集](reports/README.md)から、構成・処理・検証結果の図と報告書雛形を選べます。会社で記入する結果と既存の合成試験は分け、性能・費用・復元・推論などの未評価を成果値で埋めません。
+
+## 初回作業の引継ぎと次の学習
+
+以下は社内の導入記録へ残します。公開Gitには実値を入れず、秘密そのものを記録せずに保管担当と参照先を管理します。
+
+| 記録すること | 引継ぎで確認すること |
+| --- | --- |
+| cloneしたcommit、配置方法、選択profile | 実際にDeployしたcommitと一致するか |
+| Compose project / Dokploy appNameの管理担当 | 再配置で別のvolumeを作らないか |
+| private設定・鍵・CAの社内保管方法 | 復旧担当が必要な版を取得できるか |
+| core・GUI・固定verifyの成功/失敗 | どの段階まで受け入れたか |
+| 設定変更と再配置の担当、停止方法 | 保存だけで反映済みと判断しないか |
+| 未実施項目と次の作業 | 会社SQL/CDC・proxy・認証・復元の担当は決まっているか |
+
+GUI操作だけを続ける人は [LEARNING-PATH](LEARNING-PATH.md) の操作担当向け経路、指標や入力元を追加する人は [CUSTOMIZATION](CUSTOMIZATION.md) へ進みます。各資料の意味と読む順序を探す場合は [全MDマニフェスト](DOCUMENTATION-MANIFEST.md) を使います。
+
+途中で止まったら、最後に成功した段階へ戻り、対象profile・commit・job種別・期待結果を揃えます。ログ全文を公開へ貼らず、[障害対応](TROUBLESHOOTING.md) に沿って機密を含まない最小再現を作ります。起動が通った段階で、会社の業務受入や復元まで完了したとは記録しません。

@@ -1,5 +1,19 @@
 # バージョンと連携互換性
 
+<!-- doc-purpose:start -->
+> **役割:** 固定image・Python環境・Spark/Iceberg等の組合せと互換性の確認方法を調べる。
+>
+> **対象読者:** 基盤構築担当 / 開発・設計担当
+>
+> **読むタイミング:** 依存更新を計画するときや、build・起動・連携のどこで失敗したかを分けるとき。
+>
+> **前提となる資料:** [Lakehouse Foundation アーキテクチャ](<ARCHITECTURE.md>)
+>
+> **次に読む資料:** [採用版の公式リファレンスと文書監査](<REFERENCES.md>) / [ソース・指標・API・計算基盤を拡張する](<CUSTOMIZATION.md>) / [検証記録](<VALIDATION.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 照合日: 2026-11-10。対象は、このcheckoutのDockerfile・Compose・hash lockで固定した版です。公式の版付き文書・release tagと実装を照合しました。配布物の実在確認、ビルド成功、コンテナ起動、システム間の読み書きは別の検証として扱い、実機の成功結果は [検証記録](VALIDATION.md) を正とします。
 
 ## 採用版を確認する
@@ -28,6 +42,21 @@
 AirflowはGitHubの正式リリースとPyPIの安定版を照合しました。開発中の `/stable` 文書やrc版だけを見て採用版を決めません。[3.4.0正式リリース](https://github.com/apache/airflow/releases/tag/3.4.0) / [PyPI配布](https://pypi.org/project/apache-airflow/3.4.0/) / [standard provider](https://pypi.org/project/apache-airflow-providers-standard/1.21.0/)
 
 core workerはPython 3.14を採用します。Python 3.15は依存互換性を確認していないため採用しません。CIのホストPython 3.12、AirflowのPython 3.12、Sparkの同梱Pythonは独立した環境で、workerのPythonへ合わせて一括更新するものではありません。
+
+## Python環境を一つへ揃えない理由
+
+初心者が追加packageを試すときも、先に「どのプロセスのPythonか」を確かめます。hostのvenvへ入れたpackageがSpark executorへ届くことはありません。
+
+| 実行する処理 | 環境の正本 | 揃える相手 |
+| --- | --- | --- |
+| ファイル取込・メダリオン制御 | worker Python3.14とcore lock | PyIceberg/FileIO/Arrow、REST/S3接続 |
+| Jupyterからremote Python task | Notebookのdriver venv | Spark WorkerのPython minor、共有Pandas/Arrow/NumPy等 |
+| Airflowのtask | 公式Python3.12 venvとconstraints | Airflow本体・標準/HTTP Provider・DB driver |
+| hostのSQL抽出 | uvで作った専用reader venv | pymssql/FreeTDS、会社DBのTLSと入力契約 |
+| AI Document化・任意推論 | examples/aiの独立lock | LangChain連携とexport JSONの契約 |
+| 図のSVG生成 / binary出力 | 標準Python / 専用export venv | 日本語font、CairoSVG/PDF/PPTX依存。アプリへ追加しない |
+
+Notebookにだけ新しいArrowを入れてremote UDFが失敗した場合、Trinoの版を変える前にdriverとexecutorの実版を比較します。逆に、カタログへ接続できてもS3への書込みが失敗する場合は、Python minorよりFileIO・endpoint・資格情報を調べます。
 
 ## Spark・Iceberg・Java・S3の組み合わせ
 
@@ -123,24 +152,34 @@ export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 
 ### Composeを直接操作する場合の省略しない例
 
-以下はリポジトリのrootでBashを使う場合です。以後の `dc` は7本を結合する関数で、コンテナを起動するものではありません。private envのprofileを使い、公開ソースへ秘密値を展開しません。
+以下はリポジトリのrootでBashを使う場合です。以後の `dc` は7本を結合する関数で、コンテナを起動するものではありません。private envのprofileを使い、公開ソースへ秘密値を展開しません。共通loaderで検査・正規化して子プロセスへ渡すため、shellに残った別projectや古いproxyで対象を取り違えません。
 
 ```bash
 export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 dc() {
-  docker compose --env-file "$LAKEHOUSE_ENV_FILE" \
-    -f infra/lakehouse/compose.yaml \
-    -f infra/compute/compose.yaml \
-    -f infra/orchestration/compose.yaml \
-    -f infra/demo/compose.yaml \
-    -f infra/cdc/compose.yaml \
-    -f infra/poc/compose.yaml \
-    -f infra/mcp/compose.yaml "$@"
+  python3 -c '
+import subprocess
+import sys
+from pathlib import Path
+
+from scripts.settings import environment, load
+
+root = Path.cwd()
+values = load(sys.argv[1])
+command = ["docker", "compose", "--env-file", sys.argv[1]]
+for name in (
+    "lakehouse", "compute", "orchestration", "demo", "cdc", "poc", "mcp"
+):
+    command.extend(["-f", str(root / "infra" / name / "compose.yaml")])
+subprocess.run(command + sys.argv[2:], env=environment(values), check=True)
+' "$LAKEHOUSE_ENV_FILE" "$@"
 }
 dc config --quiet
 dc --profile compute build spark-volumes-init
 dc --profile compute run --rm --no-deps spark-check
 ```
+
+関数内のPythonコードは `-c` で渡し、標準入力を消費しません。`dc exec -T ...` へファイルやpipeを渡す保守でも同じ入力が子プロセスへ届きます。対話操作が必要な場合は、その製品のTerminalを使ってください。
 
 `spark-check` はlocalでの相互読み書き試験です。常駐Workerを使う試験はJupyterの `02-spark-cluster.ipynb` で行います。Dokploy配下のサイトでは、同じprojectを手元のCLIで別管理せず、[Dokploy操作手順](DOKPLOY.md) の対象Container Terminalと [Notebook手順](POC-TOOLS.md) を使用します。
 
@@ -176,7 +215,7 @@ DAGは `airflow.providers.standard.operators.python.PythonOperator` と `airflow
 
 ### Airflowの起動と接続設定
 
-private envの `COMPOSE_PROFILES` に `orchestration` を追加し、通常の `up` で起動します。新しい設定項目は `AIRFLOW_PORT`（既定8081）、`AIRFLOW_DB_PASSWORD`、`AIRFLOW_FERNET_KEY`、`AIRFLOW_JWT_SECRET` です。Fernet鍵は32バイトをURL-safe Base64にした値で、通常のhex乱数とは異なります。
+private envの `COMPOSE_PROFILES` に既存の選択を残して `orchestration` を追加します。CLI管理の場合だけ通常の `up` で起動し、Dokploy管理では同じサービスEnvironmentを更新してDeployします。新しい設定項目は `AIRFLOW_PORT`（既定8081）、`AIRFLOW_DB_PASSWORD`、`AIRFLOW_FERNET_KEY`、`AIRFLOW_JWT_SECRET` です。Fernet鍵は32バイトをURL-safe Base64にした値で、通常のhex乱数とは異なります。
 
 ```bash
 ./scripts/lakehouse.sh --env-file "$LAKEHOUSE_ENV_FILE" up
@@ -236,3 +275,26 @@ Sparkの共通imageは `spark-volumes-init` だけがbuildし、Master/Worker/Hi
 | AI固定package | [langchain-core 1.7.6](https://pypi.org/project/langchain-core/1.7.6/)、[langchain-ollama 1.1.0](https://pypi.org/project/langchain-ollama/1.1.0/) | `examples/ai/requirements.lock` |
 
 詳細なGUI・認証・保存の照合先は [GUI-WALKTHROUGHS.md](GUI-WALKTHROUGHS.md)、[GRAFANA.md](GRAFANA.md)、[POC-TOOLS.md](POC-TOOLS.md)、[MCP.md](MCP.md) の末尾にあります。
+
+## 更新候補を採用版へ変えるための確認順
+
+1. **配布物を固定する。** image tagとdigest、JAR coordinateとchecksum、Python requirementsとlock、公式constraintsを一つの変更へまとめます。
+2. **依存を検査する。** 専用uv環境/imageで解決し、既存venvを意図せず別環境へ置き換えていないことを確認します。
+3. **小さい往復で確認する。** Spark→Iceberg→Trino、worker→REST→S3、Airflow→workerの各境界を別々に確認します。
+4. **更新後の状態を確認する。** 既存tableの読戻し、新規書込み、再実行、再起動後の履歴/GUI保存を照合します。新規の空環境での成功だけで既存データ互換を判定しません。
+5. **採用記録を更新する。** 結果のcommit、platform、入力範囲、未確認事項を記録し、lock・文書・図の版表示を同時に更新します。
+
+Sparkの受入ではlocal smokeとremote実行を両方記録します。local smokeが成功してもexecutorのPython環境やdriver callbackは検証できません。AirflowではDAGのimport成功とtaskの実HTTP成功を分けます。
+
+### 症状から版・設定の調査先を絞る
+
+| 症状 | 最初に比較するもの | 避ける変更 |
+| --- | --- | --- |
+| Sparkのclassが見つからない/同名methodがない | Spark minor、Scala suffix、Iceberg runtimeとAWS bundle | 不足しそうなJARを別版で追加する |
+| Python taskだけremoteで失敗 | driver/executorのPython minorと実行path、共有依存 | 接続失敗をlocalへ自動fallbackさせる |
+| Arrow処理だけ失敗 | 両側のPandas/Arrow/NumPy、schemaと型 | Notebookだけ最新版へ更新する |
+| Airflow UIは開くがDAGが読めない | SDK/Operator import、Provider、constraintsのPython版 | Airflow2系の手順を混在させる |
+| RESTは通るがmanifest/Parquetを読めない | FileIO、S3 endpoint/region/path-style、access方式 | TLS検証や認証を外す |
+| PostgreSQL更新後に起動しない | 既存data directoryのmajor版と移行手順 | 旧volumeを新majorへそのまま接続する |
+
+実装の対応先は [SparkSession helper](../infra/poc/lakehouse_session.py)、[Spark daemon](../infra/compute/spark_cluster.py)、[Airflow Dockerfile](../infra/orchestration/Dockerfile)、[worker FileIO](../scripts/admin.py) です。障害の切分けは [TROUBLESHOOTING.md](TROUBLESHOOTING.md) を使います。

@@ -1,5 +1,19 @@
 # ファイルの場所と変更のしかた
 
+<!-- doc-purpose:start -->
+> **役割:** 目的に対応するファイル、実行経路、公開コードとprivate状態の置き場を探す。
+>
+> **対象読者:** 開発・設計担当 / 基盤構築担当
+>
+> **読むタイミング:** 実装を読み始めるときや、変更対象と関連する確認箇所を絞るとき。
+>
+> **前提となる資料:** [Lakehouse Foundation アーキテクチャ](<ARCHITECTURE.md>)
+>
+> **次に読む資料:** [変更する人のための読みやすさと検証規約](<../CONTRIBUTING.md>) / [ソース・指標・API・計算基盤を拡張する](<CUSTOMIZATION.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 確認日: 2026-11-10（JST）。新規導入は [START-HERE.md](START-HERE.md)、採用版の根拠は [REFERENCES.md](REFERENCES.md) を参照します。公開するコード、配置先の設定、保存データを分離しています。リポジトリへ追加する前に、導入先のアドレス・個人のパス・認証情報がコードへ紛れていないことを確認します。
 
 ## ディレクトリの役割
@@ -26,6 +40,7 @@
 | `tests/` | 入出力境界、誤接続の拒否、再実行、認証等の試験 | 実装を変更し、期待する境界を検証するとき |
 | `.github/workflows/` | 秘密値を使わない公開CI | ソース品質の検査を変更するとき |
 | `docs/` | 設計、操作、検証、図版 | 仕様・操作・検証結果が変わったとき |
+| `docs/reports/` | 14図のSVG/Mermaid、台帳、報告/評価の雛形、独立export lock | 説明図・caption・受入記録を更新するとき |
 
 ## 主なコマンド
 
@@ -44,8 +59,42 @@
 | `scripts/mark-ready.py` | コピー済み素材の完了ハッシュを作成 | 対象ファイルの隣へmarkerを作る |
 | `scripts/grafana_setup.py` | 初期dashboard作成・private export | 既存dashboardを上書きしない |
 | `scripts/check-source.py` | 公開ファイルとGit履歴の検査 | ローカル読み取りのみ |
+| `scripts/documentation.py` | 全MDの目的欄とマニフェストを生成 | 公開MDを更新。`--check` は読取りだけ |
 
 引数の正本は各スクリプトの `--help` です。ホスト設定のSamba、Docker proxy、Dokployは、アプリ起動とは別に管理します。ルート権限が必要な作業をアプリのGUIへ隠して実行しません。
+
+文書の入口は [全MDマニフェスト](DOCUMENTATION-MANIFEST.md) です。[LEARNING-PATH](LEARNING-PATH.md) は習熟度別の読む順、[HOST-SETUP](HOST-SETUP.md) は空のVMの準備、[GLOSSARY](GLOSSARY.md) は用語、[CUSTOMIZATION](CUSTOMIZATION.md) は入力契約・指標・API・計算基盤の拡張を扱います。manifestのJSONは文書の登録正本で、site.envのような環境設定ではありません。
+
+## 「何を変えるか」から、最初に開くファイルを選ぶ
+
+同じ機能でも、画面、API、業務ルール、保存、配置は別のファイルが受け持ちます。症状を見て一番上の画面だけを直すのではなく、その値を決める正本まで辿ります。
+
+| 相談・変更 | 最初に読む実装 | 一緒に読むもの |
+| --- | --- | --- |
+| 設定項目や初期値 | [configure.py](../scripts/configure.py)、[settings.py](../scripts/settings.py) | GUI SettingsStore、CONFIGURATION、company compatibility tests |
+| CLI起動/検証の入口 | [control.py](../scripts/control.py) | 7Compose、private設定の読み方 |
+| 取込・原本・SQL実行 | [admin.py](../scripts/admin.py) | sources.json、Silver/隔離/Gold SQL、worker protocol tests |
+| GUIボタンや非同期進捗 | [app.py](../infra/demo/app.py)、[api.py](../infra/demo/api.py) | client、job_manager、API/UI tests |
+| 異常素材を増やす | [source_scenarios.py](../scripts/source_scenarios.py) | 生成器、GUI catalog、独立した期待値 |
+| CDC再開や追加mapping | [consumer.py](../infra/cdc/consumer.py)、[state.py](../infra/cdc/state.py) | connector/config、CDC state/registration tests |
+| Notebookのremote接続 | [lakehouse_session.py](../infra/poc/lakehouse_session.py) | Spark cluster script、compute/notebookの同じ依存版 |
+| AIクライアントへ公開する操作 | [server.py](../infra/mcp/server.py) | 固定APIのcapabilities、確認同意、MCP tests |
+| 報告書の箱・矢印・caption | [render_report_assets.py](../scripts/render_report_assets.py) | reports/figures.json、生成物の一致検査 |
+| PDF/PNG/PPTXの出力方法 | [report_export.py](../scripts/report_export.py) | 独立export lock、日本語font、export tests |
+
+### CLIから処理本体までを追う例
+
+`lakehouse.sh medallion` はshell内で業務SQLを実装していません。shell wrapper→control.py→同じCompose projectのworkerへexec→workerの固定 `/run` →取込と版管理SQL、の順に辿れます。n8n/Airflow/APIの入口も同じworkerの固定actionへ依頼します。HTTP 200だけを見る箇所、SQLの完了まで追跡する箇所、表置換の境界を分けて読んでください。
+
+### 最初の変更を小さくレビューする
+
+1. 文書や `--help` の修正なら、処理・flag・既定値を変えず、説明と入力例が実装に一致するか確認します。
+2. 入力制約の変更なら、許すケースだけでなく拒否するケース・既存の秘密値非表示もテストします。
+3. 保存や再開の変更なら、成功時だけでなく途中失敗・再実行・既存byte保持を確かめます。
+4. GUI追加なら、表示だけでなくAPI側の型/範囲/認証/同意も揃えます。
+5. 生成物を変えたら、生成元とSVG/台帳/HTMLの差分を同じ変更へ含めます。binaryの実exportはGit外で確認します。
+
+担当外の画像tag、SQL書式、認証設定を同じ修正でまとめて更新すると、何が効いたか切り分けにくくなります。関係するコード・テスト・説明・検証結果を一つの単位としてレビューし、別の改善は別の差分へ分けます。
 
 ## 変更例: Goldの指標を追加する
 

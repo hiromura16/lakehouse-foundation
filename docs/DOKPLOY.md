@@ -1,8 +1,35 @@
 # Dokploy 0.31.0でGitから配置する
 
+<!-- doc-purpose:start -->
+> **役割:** Dokploy 0.31.0の画面で、生成appName・個別Environment・7つのComposeを揃えて配置する。
+>
+> **対象読者:** 基盤構築担当 / 運用担当
+>
+> **読むタイミング:** Dokployへログインできた後、同じComposeアプリを初回配置・再配置するとき。
+>
+> **前提となる資料:** [初めて構築する人の一本道ガイド](<START-HERE.md>) / [導入・検証・停止](<DEPLOYMENT.md>)
+>
+> **次に読む資料:** [会社VMの修正を取り込み、Dokployへ再配置する](<COMPANY-UPDATE.md>) / [n8n・Airflow・Grafanaを画面から使う](<GUI-WALKTHROUGHS.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 確認日: 2026-11-10。この手順の画面名と動作は、採用imageの **Dokploy v0.31.0** と[同じ公式tagのソース](https://github.com/Dokploy/dokploy/tree/v0.31.0)（commit `3ac1c8f2e025d7db7696542eb2770e08f598214c`）で確認しました。更新されるWeb版の[公式Compose説明](https://docs.dokploy.com/docs/core/docker-compose)は補助資料です。別バージョンの画面を0.31.0の仕様と読み替えません。
 
 ここでは、会社VMにDokployが導入済みで、管理画面へログインできるところから説明します。未導入の場合は [はじめに](START-HERE.md) と [基盤配置](DEPLOYMENT.md) でホスト・Docker・Dokploy・Sambaを先に準備します。既存DokployやSwarmを作り直す手順ではありません。
+
+## 初めての人が混同しやすい名前を分ける
+
+| 名前 | 何を識別するか | 変更するときの判断 |
+| --- | --- | --- |
+| Project | Dokployの管理上のまとまり | 同じ基盤の検証/受入をまとめる入口。データの保存名ではない |
+| Environment | Project内の所属 | development/production等の用途。別port・別保存先・別鍵の準備は別に必要 |
+| ComposeのName | 画面上の表示名 | 見やすい名称へ変更できる。実appNameとは別 |
+| 作成後のappName | Dokployが `docker compose -p` へ渡す実行名 | ヘッダーを正とし、CLIのCOMPOSE_PROJECT_NAMEへ合わせる |
+| service | Compose内のworker、trino等の定義 | 公開コードの責務。表示名の変更に合わせて書き換えない |
+| container | その配置で実行する実体 | 更新で作り直され得る。DBの永続データ自体ではない |
+
+用語が初めてなら [用語集](GLOSSARY.md)、host準備が未完了なら [HOST-SETUP.md](HOST-SETUP.md) で分担を確認します。まずブラウザーで対象EnvironmentとappNameを読み、次に同じ環境のprivate設定を端末で選びます。名前を一つ変えてエラーが消えるか試す操作より、実行名・保存先・鍵が一組で合っているか確認する方が、空のDBを作る原因を見つけやすくなります。
 
 ## 作業場所と最初に控えるもの
 
@@ -205,3 +232,27 @@ Git Sourceのclone先を固定して入力する必要はありません。`/lan
 | clone／pull／buildのproxy失敗 | [会社proxy](COMPANY-PROXY.md)。サービスenvはGit clone・daemon pullの設定を代替しない |
 
 通常の更新は [会社VM更新](COMPANY-UPDATE.md)、日常の操作・backup・復元は [運用](OPERATIONS.md)、原因調査は [障害対応](TROUBLESHOOTING.md)へ進みます。
+
+## 保存したのに反映されないときの追い方
+
+例としてGUIのportを変える場合、次の順で確認します。画面の変更を複数箇所へ一度に広げず、一つの差分で確認してください。
+
+1. 配置先VMのprivate envで対象のportだけを変更し、`plan` を実行します。port競合や未設定を先に解消します。
+2. Composeサービス自身のEnvironmentへ同じ変更を保存します。Create Environment FileがONであることを確認します。
+3. GeneralからDeployし、Deploymentが使用したappName・Command・取得したGit版を確認します。RebuildはGit更新の代わりにしません。
+4. Containersで対象serviceを確認します。元portへ開いたブラウザーを更新するだけでは、新portの受入になりません。
+5. SSH転送等を使っている場合は転送先portも揃え、新しい入口と認証を確認します。操作ハブの反映待ち表示だけで他serviceの設定一致を証明しません。
+
+外部private env、Dokployのサービス変数、生成される作業コピー内 `.env` は三つの別の保存場所です。GUIのSave先を追う図は [配置ライフサイクル](reports/figures/11-deployment-lifecycle.svg)、実装の入口は [control_settings.py](../infra/demo/control_settings.py) です。
+
+## 上級者が配置変更をレビューする単位
+
+| 変更 | Deploy前に比較するもの | 配置後の受入 |
+| --- | --- | --- |
+| profile追加 | 既存profileの保持、必要なprivateキー、host bind、メモリ枠 | one-shotの完了、追加GUI認証、既存データの保持 |
+| image/依存更新 | Dockerfile、tag/digest、Python/JAR/constraints、migration有無 | buildだけでなく実読書き・再起動・GUI保存 |
+| path/UID/GID | 元と新しいmount、所有者、既存ファイルの権限 | workerの読取、API/Notebookの書込、既存ファイルの非破壊 |
+| appName/volume prefix | 全物理volumeの対応、旧writer停止、暗号鍵 | 空DBになっていないこと、既存raw/表/GUI状態の読戻し |
+| credentials/暗号鍵 | 対象DBや製品側の変更手順、復元可能な控え | 新認証と旧保存内容の復号。env変更だけで完了しない |
+
+Deployの失敗時は、Git取得、build、container起動、アプリ初期化のどこまで進んだかを分けます。前段が成功したから後段を一括で巻き戻せるとは限りません。旧コードへの切替も、既に進んだDB migrationとデータ形式に互換性があることを確かめてから行います。

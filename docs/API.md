@@ -1,5 +1,19 @@
 # GUI操作APIとSwagger
 
+<!-- doc-purpose:start -->
+> **役割:** Swaggerの認証と固定APIを使い、設定保存・素材生成・非同期job・参照を行う。
+>
+> **対象読者:** データ利用担当 / 開発・設計担当
+>
+> **読むタイミング:** GUIと同じ操作をAPIクライアントや自動化から呼び出すとき。
+>
+> **前提となる資料:** [初めて構築する人の一本道ガイド](<START-HERE.md>) / [GUIからダミーデータを投入する](<DEMO-GUI.md>)
+>
+> **次に読む資料:** [AIクライアントからMCPで操作する](<MCP.md>) / [n8n・Airflow・Grafanaを画面から使う](<GUI-WALKTHROUGHS.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 確認日: 2026-11-10（JST）。初回配置・作業端末・権限は [START-HERE.md](START-HERE.md) で準備します。以下の `up` はCLI管理の環境だけで使います。Dokploy管理では同じprivate設定とComposeサービスのEnvironmentを揃え、7ファイルを使ってDeployします。[0.31.0の配置手順](DOKPLOY.md)
 
 
@@ -269,3 +283,40 @@ APIのOpenAPI生成と単体試験は、認証、秘密値非表示、設定保�
 ## 採用版の根拠
 
 API実装は [api.py](../infra/demo/api.py)、状態・上限は [jobs.py](../infra/demo/job_manager.py) と [requirements](../infra/demo/requirements.txt) が正本です。FastAPI **0.162.2** の [HTTP Bearer実装](https://github.com/fastapi/fastapi/blob/0.162.2/fastapi/security/http.py) と [Swaggerのself-host手順](https://github.com/fastapi/fastapi/blob/0.162.2/docs/en/docs/how-to/custom-docs-ui-assets.md) を照合しています。Swagger UI **5.34.1** はbuild時のarchive hashを検証し、ローカルassetを配信します。frameworkの標準認証機構と、本基盤の共有token・mutex・入力allowlistは別の実装です。[版一覧と文書監査](REFERENCES.md)
+
+## API利用者の実務上の判断: 受付と完了を分ける
+
+APIを初めて使う人は、Swaggerからread操作を試してからsource jobへ進みます。連携プログラムの担当者は、HTTPの受付・jobの終了・データの照合を3つの段階として記録してください。操作用PCでAPIへ到達する経路と、API内部からworkerへ接続する経路も別です。
+
+| 確認した事実 | 判断できること | まだ判断できないこと |
+| --- | --- | --- |
+| `/health` が200 | APIが起動時設定を読み込めた | worker、Trino、会社DBが正常か |
+| POSTが202とidを返した | jobを受け付けた | 素材の完成や変換の成功 |
+| `status=succeeded` | その種類のjobが完了した | source jobならGoldは未更新。会社数値の妥当性も別 |
+| `pending_restart=false` | API起動時と保存設定が一致する | Dokployや全container設定の一致 |
+| Gold previewが返った | 指定表の固定snapshotを参照できた | 全行・全表を同時点で集計したか |
+
+### 自動連携が保持する最小情報
+
+受付時刻、操作名、返されたjob ID、入力の非秘密条件、完了status、manifestまたは結果の参照を保持します。token、SQL password、private env全文をjobログへ書きません。GETのpoll間隔を決め、同じPOSTを結果確認の代わりに繰り返さないでください。
+
+HTTP timeoutでjob IDを受け取れなかった場合、既に受付/commitされている可能性があります。現在のAPIに、任意の業務キーを使ったidempotency-keyや永続的な受付照会を実装しているわけではありません。直近履歴、対象manifest、worker状態から実体を確認し、再POSTの要否を判断します。
+
+| 種類 | 取消・再試行の考え方 |
+| --- | --- |
+| sourceの有限stream | 次のbatch境界で取消。完了済み素材は残る |
+| CDC固定DML | 開始済みtransactionは取消しない。結果と固定行の状態を確認 |
+| pipeline | workerへ依頼済みなら停止を推測しない。busy/blockedと実体を確認 |
+| read API | 表が未作成、認証、接続、上限のどれかを調べる。書込み操作で修復しない |
+
+## 新しいAPIを足すときの変更箇所
+
+| 責務 | 実装の場所 | 変更時の確認 |
+| --- | --- | --- |
+| 入力型・認証・受付 | [api.py](../infra/demo/api.py) | 余分なkey、上限、秘密を返さないvalidation |
+| job排他・履歴・取消 | [job_manager.py](../infra/demo/job_manager.py) | 受付競合、途中成功、再起動、結果不明 |
+| 素材の生成 | [service.py](../infra/demo/service.py) | source-only境界、専用SQL、原子的なファイル公開 |
+| catalog/状態/ヘルプ | [poc_api.py](../infra/demo/poc_api.py) | 固定allowlist、サイズ上限、symlink拒否、反映前後 |
+| workerの実操作 | [admin.py](../scripts/admin.py) | 対応action、Trino失敗/取消、blocked、再実行 |
+
+API仕様は `openapi.json` をクライアント生成の入力にできますが、認証や意味上の境界を自動解決するものではありません。変更後は認証なし、未知入力、409競合、成功、timeout/不明結果、秘密値非表示を試し、Swaggerと [capabilities](../infra/demo/poc_catalog.py) のread/write分類も揃えます。現在の1worker/メモリ内履歴を複数workerや永続queueへ広げる場合は、排他・永続化・再開契約を先に設計します。[変更手順](CUSTOMIZATION.md)

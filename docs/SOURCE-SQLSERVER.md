@@ -1,5 +1,19 @@
 # 既存SQL Serverからランディングへ抽出する
 
+<!-- doc-purpose:start -->
+> **役割:** 既存SQL Serverを読取専用SELECTで抽出し、6契約のlanding素材を作成する。
+>
+> **対象読者:** 基盤構築担当 / データ利用担当 / 開発・設計担当
+>
+> **読むタイミング:** 実ソースDBの列対応・権限・上限を決め、全件snapshotのbridgeを試すとき。
+>
+> **前提となる資料:** [会社への導入・受入ガイド](<COMPANY-ROLLOUT.md>) / [MES・ERPデータをBronzeからGoldへ整える](<MEDALLION.md>)
+>
+> **次に読む資料:** [SQL Server の変更を Iceberg へ反映する](<CDC.md>) / [PoCの評価計画と受入条件](<reports/EVALUATION-PLAN.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 `extract-sqlserver.py` は会社の既存DBを読み取り、MES・ERPの6つの入力契約に対応するCSV・JSON Linesを作ります。SQLは列を明示した `SELECT TOP (上限+1)` だけです。DB・表の作成、UPDATE・DELETE・DROP、CDCや権限の設定は行いません。ダミー投入用 `generate-demo.py` とは別のツールです。
 
 このbridgeは全件スナップショット用です。差分watermark・CDC・ストリーミングは実装していません。SQL認証や読み取りの実行を伴わない `source-check` のTCP到達確認とは用途が異なります。
@@ -139,3 +153,81 @@ fi
 | ファイル公開 | landingの所有者・親の通過権限・空容量、既存素材の有無 |
 
 仕様の正本は [extract-sqlserver.py](../scripts/extract-sqlserver.py)、[sources.json](../medallion/sources.json)、`pymssql==2.4.6` の固定依存です。公式の [pymssql2.4.6 API source](https://github.com/pymssql/pymssql/blob/v2.4.6/docs/ref/pymssql.rst) と [FreeTDS TLS設定](https://www.freetds.org/userguide/freetdsconf.html) を採用版に照合します。SQL ServerのCDC有効化やAgent権限はこの読取bridgeに不要で、継続取り込みを選ぶ場合だけ [CDC.md](CDC.md) へ進みます。
+
+## 初めての抽出を業務担当と一緒に確認する
+
+| 用語 | 意味 | このツールでの扱い |
+| --- | --- | --- |
+| snapshot抽出 | 対象の現在の行を全件素材にする | 6表を順にSELECT。前回以降だけの差分ではない |
+| mapping | 会社の表/列と公開契約の対応 | SQL式やWHEREを入れず、列名を一対一に指定 |
+| business key | 同じ業務レコードを識別する列 | Silverの最新版採用に使う |
+| updated_at | 業務レコードの版を比較する時刻 | 到着時刻や抽出時刻の代わりにはしない |
+| ready | fileのコピー・生成が完了した印 | そのfileのSHA-256と改行を保持 |
+
+最初は合成データの専用SQL環境で、6表のmapと一往復を確認します。会社側は別の空の分析環境を用意し、DBAが承認した表/ビューで受け入れます。小さい `--max-rows` は先頭の何件かだけを許す指定ではありません。上限を超えたら拒否するため、試験範囲を絞る場合はDBAが承認した読み取り用ビュー等を用意します。
+
+### DB側と分析側で同じ母数を照合する
+
+1. DBAが対象6表/ビュー、会社の列名、抽出時刻帯、日時の保存方式、主キーと更新時刻を確認します。
+2. 配置担当がSOURCE専用資格情報とmappingを私有fileへ設定し、必要なSELECTだけの権限で抽出します。
+3. `source-extract.json` の公開論理表名と件数を、DBAの同じ対象の集計と照合します。抽出中に変わる表では、差の理由を先に特定します。
+4. 原本の件数とBronze、最新版の重複排除とSilver/隔離、業務指標とGoldを順に照合します。全層を同じ件数にすることが目的ではありません。
+5. 同じ入力を再抽出した時に内容hashが変わらなければ、後続ingestのskipを確認します。日時などの値が本当に変わった場合のhash変化と区別します。
+
+## 型・日時・件数に関する実務上の判断
+
+| 入力条件 | 現在の動作 | 導入時の判断 |
+| --- | --- | --- |
+| SQL NULLと空文字 | どちらも空文字の原本になる | 区別が必要なら契約と処理を拡張する |
+| timezoneなしdatetime | SOURCE_SQLSERVER_TIMEZONEを付けてUTC化 | DBに記録された現地時刻の意味を確認 |
+| オフセット付きdatetime | そのオフセットからUTC化 | 会社の表示時刻とUTC集計日を区別 |
+| 日時を持つ文字列 | 元の文字列を保持 | Silverが解釈できるISO形式をビュー側で用意 |
+| Decimal | 指数表記なしの文字列 | 単位・小数桁・業務上の精度を照合 |
+| binary/複雑な値 | 契約外として失敗 | blob等を無条件にCSV列へ埋め込まない |
+| 1表がmax-rows超過 | 切捨てず、公開前に失敗 | 対象ビュー/抽出方式/容量を見直す |
+| 1fileが16MiB超過 | 抽出件数内でもworkerが拒否し得る | 行数だけでなくfile byte数も事前に確認 |
+
+夏時間の重複・欠落する現地日時を、タイムゾーン名だけで一意に修復するツールではありません。厳密な時刻が必要なら、上流でUTCまたはオフセットを持つ値を用意します。大きい表は6表分をhostメモリへ取得・整列してから素材化するため、Sparkの分散抽出やページングの代わりとは扱いません。
+
+### 原本とmarkerを独立に確認する
+
+通常利用者が、抽出完了後のlandingで実行する読み取り例です。pathは会社用のprivate LANDING_DIRへ合わせます。内容自体は表示しません。
+
+```bash
+python3 - <<'PY'
+from hashlib import sha256
+from pathlib import Path
+
+source = Path("/srv/lakehouse/landing/csv/erp_products.csv")
+marker = Path(str(source) + ".ready")
+file_exists = source.is_file()
+marker_exists = marker.is_file()
+hash_matches = False
+if file_exists and marker_exists:
+    digest = sha256(source.read_bytes()).hexdigest()
+    hash_matches = marker.read_text().strip() == digest
+
+print({
+    "file_exists": file_exists,
+    "marker_exists": marker_exists,
+    "hash_matches": hash_matches,
+})
+PY
+```
+
+これは1fileの例で、6表全体の成功判定ではありません。抽出manifestと全6file、各readyを揃えてから次工程を開始します。markerだけを新しくして、コピー途中の原本を確定素材と扱いません。
+
+## 定期運用・失敗後の再実行・CDCへの移行
+
+| 状況 | 再実行前の判断 |
+| --- | --- |
+| SELECT/型変換で失敗 | その実行は公開前に停止。既存fileがあっても前回分の可能性を確認 |
+| 完成fileへの切替中にhost I/O失敗 | file公開は個別atomic。新旧が混在し得るので、下流開始を止める |
+| 2回目の正常snapshot | 既存出力の置換を意図した時だけ `--force` を付ける |
+| ソースから行が消えた | 同じ固定fileを置換してその由来のBronzeを更新。別pathの旧素材までは消さない |
+| GUI増分素材が同居 | 別pathからの行が残る。会社側は空環境で受け入れる |
+| 差分・低遅延・DELETE履歴が必要 | full snapshotの繰返しとCDCを比較し、DBA前提と別namespaceを準備 |
+
+extractorには全取り込みサービスを止める分散lockや、6表をまとめるtransactionはありません。定期運用は抽出成功→marker/manifest確認→明示medallion→業務照合の一つの実行責任者に揃えます。n8n/Airflowへ接続する場合も、extractor成功の判定前にworkerを同時起動しません。
+
+開発者が対象を増やす場合は、[入力契約](../medallion/sources.json)、mapping検査、型/日時のserialize、Bronze取り込み、Silver/隔離/Gold、独立期待値を一緒に変更します。任意SQLをGUIへ通すことで列対応を回避する設計にはしません。現在の抽出制御は [read_mapping / extract_tables / main](../scripts/extract-sqlserver.py)、TLSと素材公開の試験は [source extractor tests](../tests/test_extract_sqlserver.py) が入口です。

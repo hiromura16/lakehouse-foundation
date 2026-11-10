@@ -1,5 +1,19 @@
 # 会社のプロキシ・CAを設定する
 
+<!-- doc-purpose:start -->
+> **役割:** Git・uv・Docker・build・runtimeごとに社内proxyとCAを準備し、通信を診断する。
+>
+> **対象読者:** 基盤構築担当 / 運用担当
+>
+> **読むタイミング:** 会社ネットワークへ初めて配置する前や、取得経路の失敗を切り分けるとき。
+>
+> **前提となる資料:** [Linuxサーバーを最初に準備する](<HOST-SETUP.md>)
+>
+> **次に読む資料:** [プロキシ設定の場所と反映方法](<PROXY.md>) / [SSRF対策と内部接続の設定](<SSRF.md>) / [導入・検証・停止](<DEPLOYMENT.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 この手順は、会社のサーバーへ初めて配置する担当者向けです。ブラウザーで閲覧できること、Gitでcloneできること、Dockerがimageを取得できること、コンテナが外部へ通信できることを分けて確認します。実際の会社proxy・CA・認証方式では未検証です。ローカルの模擬認証proxyとTLS証明書で試験した範囲は末尾に示します。
 
 本書は2026-11-10に公開コードと公式資料を監査しました。通信経路ごとの作業を、レイクハウスを動かすLinuxホストで行います。通常利用者がprivate設定を編集し、`sudo` の付いたホスト設定だけを管理者が実施します。全コマンドの作業ディレクトリはcloneしたリポジトリのルートです。Dokploy管理の場合は、最後の反映先を既存の同じアプリに統一します。
@@ -98,24 +112,16 @@ CAは公開証明書ですが、**追加した信頼は完成imageに残りま�
 
 CAを初めて追加・更新・削除するときは、secretの内容変更だけではbuild cacheが無効にならないため、`--no-cache` で作り直します。[Dockerのsecretとcache](https://docs.docker.com/build/cache/invalidation/#build-secrets)
 
+CLI管理では、repoルートの同じ端末で [OPERATIONS.mdの7Compose補助関数](OPERATIONS.md#postgresqlの論理dump例) `lakehouse_compose` を定義してから、次を実行します。関数はprivate値で子プロセス環境を揃えるため、古いshellのproxyに加え、project・profile・port等の補間差も防ぎます。
+
 ```bash
+export LAKEHOUSE_ENV_FILE="/absolute/private/site.env"
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env plan
-
-env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy \
-  -u NO_PROXY -u no_proxy -u LAKEHOUSE_NO_PROXY \
-  docker compose --env-file /absolute/private/site.env \
-  -f infra/lakehouse/compose.yaml \
-  -f infra/compute/compose.yaml \
-  -f infra/orchestration/compose.yaml \
-  -f infra/demo/compose.yaml \
-  -f infra/cdc/compose.yaml \
-  -f infra/poc/compose.yaml \
-  -f infra/mcp/compose.yaml build --no-cache
-
+lakehouse_compose build --no-cache
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env up
 ```
 
-上は全7Composeを指定した例で、有効profileの対象をbuildします。`env -u` はこのコマンドに限って古いshell値の補間を除き、privateファイルを採用します。CLI管理なら同じ配置利用者が `up` まで行います。Dokploy管理ならCLIの `up` を追加実行せず、同じ7ファイル・secret参照・private設定を使う既存アプリでcacheなしの再build／再配置を行います。両方を別名で起動しません。
+上は全7Composeを指定した補助関数で、有効profileの対象をbuildする例です。CLI管理なら同じ配置利用者が `up` まで行います。Dokploy管理ならCLIの `up` を追加実行せず、同じ7ファイル・secret参照・private設定を使う既存アプリでcacheなしの再build／再配置を行います。両方を別名で起動しません。
 
 base imageやuv image自体の取得は、このCA処理より先です。その通信にはdaemon／remote builder側のproxyとCAが必要です。image内のCA追加で、まだpullできないbase imageを取得できるようにはなりません。
 
@@ -292,3 +298,66 @@ SSRFの設定値、内部workerの例外、NO_PROXYとの違い、GUI保存と�
 | [n8n2.46.7](https://github.com/n8n-io/n8n/releases/tag/n8n%402.46.7) | 採用するn8n版 |
 
 公式のlatest文書は更新されるので、更新時は固定した版のsourceと新しい挙動を再照合します。
+
+## 初学者のための用語と、最初の一往復
+
+| 用語 | この手順での意味 | 混同しやすいもの |
+| --- | --- | --- |
+| proxy | 外向き通信を中継する会社のサーバー | 接続先のWeb APIそのもの |
+| HTTP CONNECT | proxyへ「このHTTPS先までトンネルを作る」と依頼する方式 | proxy自体へHTTPSで接続する方式 |
+| CA / trust | 接続相手の証明書を検証する信頼元 | ログインpasswordや、通信許可のリスト |
+| NO_PROXY / bypass | 指定した宛先へproxyを通さず直接接続する条件 | n8nのSSRF許可、FWの通信許可 |
+| build | image内へPython依存・JAR等を組み込む段階 | 完成したコンテナを起動して使う段階 |
+
+初回の成功条件は、**一つのブラウザーで開けることではなく、実際に通信する各主体で期待した経路を通ること**です。通常利用者は下記のオフライン確認を行い、結果のbooleanと終了コードだけを私有の導入記録へ残します。まだ配置していない環境でも使えます。
+
+```bash
+export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
+python3 scripts/proxy-doctor.py --env-file "$LAKEHOUSE_ENV_FILE"
+./scripts/lakehouse.sh plan
+```
+
+`case_matches: true` はそのファイル内の大小caseが一致する意味です。`all_internal_bypassed: true` は**必須名を補ったPythonの判定**であり、現在稼働中の全コンテナやJVMを観測した結果ではありません。`plan` も通信試験ではありません。ここが通った後、許可済みの固定先だけを `--check` で試します。
+
+会社でGit clone自体ができない場合、まだこのスクリプトは使えません。Gitを実行する端末の会社標準proxy/CA設定を先に整えます。GitHubからの取得成功後も、registry・PyPI・Maven等は別の許可先なので、取得ログの**失敗した段階**を記録します。
+
+## 導入先で埋める通信の受入表
+
+実際のURL・認証・CA fingerprintは私有台帳へ記入します。公開報告には主体・成否・試験日・未確認範囲だけを転記します。
+
+| 試験 | 誰がどこで行うか | 成功と判断するもの | 成功だけでは分からないこと |
+| --- | --- | --- | --- |
+| Git取得 | 通常利用者・配置先host | 公開Gitの期待commitを取得 | Docker daemonの経路 |
+| 固定image取得 | Docker管理者・実際のdaemon/builder | lockで指定するimageを取得 | image内部のCA・JVM trust |
+| 自作image build | 配置担当・同じ配置元 | hash照合を含めbuild終了0 | 完成コンテナの外向き経路 |
+| 内部往復 | 配置済み環境・同じprivate設定 | worker/Trino/S3と隔離verify成功 | 外部HTTPS・会社SQLの権限 |
+| 固定HTTPS診断 | hostまたは操作GUI | `OK`、期待した `via_proxy` | n8n・Javaのclient独自設定 |
+| n8n HTTP Request | n8nの試験workflow | 承認したHTTPS成功、内部worker成功 | 独自nodeやtask runnerの全通信 |
+| 会社SQL/CDC | DBA＋配置担当・対象環境 | 通常TLS・用途別権限・各層の結果 | HTTP proxyの設定だけでは実現しない |
+
+`via_proxy: false` が異常かどうかは宛先で判断します。内部serviceでは直接通信が期待されます。外部先を会社がproxy経由必須にしている場合は、直接成功を受入成功にせず、bypassの追加が広すぎないか確認します。
+
+## 運用中にproxy資格情報を更新する
+
+資格情報の更新はDBやIcebergの再初期化ではありません。保守担当が既存private設定を控え、変更対象をHTTP(S)4項目に限定します。
+
+1. 会社の正式なproxy資格情報を取得し、userinfoの予約文字だけをURLエンコードします。秘密値をshell引数へ書きません。
+2. daemon用6項目とアプリ用site設定の両方を編集します。canonical3項目の会社内部宛先は保持します。
+3. オフライン診断とplanを行います。これらの成功は認証先へのログイン成功ではありません。
+4. daemonは管理者がapplyし、合意した保守時間にrestartします。アプリは同じCLIまたは同じDokployアプリから再配置します。
+5. image取得・build・実行時HTTP・内部bypassを再確認します。旧proxy資格情報の失効は、会社の手順に従い全利用主体の切替後に行います。
+
+Dokploy自身のGit取得やremote builderが別hostなら、そのhostの更新も別途必要です。n8nノード個別のProxy欄が設定されている場合、共通envだけを変更してもそのノードは切り替わりません。
+
+## 企業CAを更新・撤去する時の確認順
+
+| 変更 | 反映対象 | 確認するもの |
+| --- | --- | --- |
+| 新しいCAを追加 | host trust、対象build、Node、SQL用truststore | 正式fingerprint、期限、必要な公開rootの保持 |
+| CAを置換 | 同じ対象をcacheなしで再構築・再起動 | 古いCAだけに依存する接続が残っていないか |
+| 追加CAを撤去 | privateのCA指定を空へ戻し、元baseから再build | 古いCA入りimageが残っていることと、今使うimageを区別 |
+| SQL用CAだけ更新 | JDBC truststoreまたはFreeTDSの指定先 | HTTP診断の成功をSQLの通常TLS成功と扱わない |
+
+CA fileの内容だけを更新してもBuildKit cacheは自動失効しません。同じsecretを指定したcache済みbuildの成功だけで、CAの切替完了と判断しません。n8nは起動時に追加CAを読むため、fileを置き換えた後の再起動も必要です。
+
+上級者は、変更前後のimage digest、CAの公開fingerprint、各clientの接続結果を同じ変更記録へ残します。認証URL、秘密鍵、実データ、生ログは添付しません。失敗時は、会社の許可を維持できる以前の経路へ戻すか、対象処理を停止して原因を直します。TLS検証の無効化や、bypassへの全宛先追加で切替成功を作りません。

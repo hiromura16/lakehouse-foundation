@@ -1,5 +1,19 @@
 # Lakehouse Foundation アーキテクチャ
 
+<!-- doc-purpose:start -->
+> **役割:** 保存・変換・操作の構成とprofileの責務を、データと制御の経路から把握する。
+>
+> **対象読者:** 初めて使う人 / 基盤構築担当 / 開発・設計担当
+>
+> **読むタイミング:** 構築前の全体理解や、構成変更時の影響範囲を調べるとき。
+>
+> **前提となる資料:** [用語を役割と実際の操作へ結び付ける](<GLOSSARY.md>)
+>
+> **次に読む資料:** [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) / [バージョンと連携互換性](<COMPATIBILITY.md>) / [ソース・指標・API・計算基盤を拡張する](<CUSTOMIZATION.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 確認日: 2026-11-10（JST）。会社MES/ERPのファイル・SQLを受け、Icebergで保持し、SQL・GUI・API・AIクライアントから利用する単一ホストPoC基盤です。新規構築は [START-HERE.md](START-HERE.md) を使います。以下は採用中の構成で、各製品の最新版一般を意味しません。[版と一次資料](REFERENCES.md)
 
 [報告書用の詳細・用途別14図](reports/README.md)には、service配置・各データ経路・認証/通信・運用・検証結果を分けたSVGと編集元、キャプション、PNG/PDF/PPTX出力手順があります。
@@ -93,3 +107,37 @@ Compose7ファイルは同じprojectへ結合し、clone先に依存しない相
 初期のIceberg形式はv2/Parquetです。v3はTrino 484でexperimentalであり、全エンジンでの読書き確認なしに切り替えません。原本、Iceberg metadata/data、カタログDB、暗号鍵、各GUI状態DBを整合した時点で保存し、別環境へ復元して確認します。通常停止はvolumeを保持します。[運用・復元](OPERATIONS.md)
 
 PoCは単一ホスト・一部内部サービス共通資格情報の構成です。企業IdP、利用者別テーブル認可、HA、会社の実proxy/SQL、並列負荷、復元・RPO/RTOは導入先で受入します。実装と実機結果は [追跡表](IMPLEMENTATION-STATUS.md)・[検証記録](VALIDATION.md) を参照してください。
+
+## 設計を読む順序: 役割と境界から理解する
+
+この構成を初めて見る人は、コンテナ数を覚えるより、何がどこへ書き込むかを先に追うと理解しやすくなります。構築の前提は [ホスト準備](HOST-SETUP.md)、用語は [GLOSSARY.md](GLOSSARY.md)、実務までの読み順は [LEARNING-PATH.md](LEARNING-PATH.md) を使います。
+
+| 観点 | 主に読むもの | 分かること |
+| --- | --- | --- |
+| データの流れ | 受領原本→Bronze→Silver/隔離→Gold | どの値を残し、どの規則で採用/集計するか |
+| 制御の流れ | GUI/API、n8n/Airflow→worker | 誰が、どの操作を明示的に開始するか |
+| 配置の流れ | 公開Git→private設定→Dokploy | ソース版、秘密、profile、保存先をどう一致させるか |
+| 参照の流れ | Trino、BI、Notebook、AI context | どの表・版・行数範囲を使って判断するか |
+| 継続の流れ | 原本/Iceberg/DB/鍵/状態→backup/復元 | 再起動保持と別環境復旧の違い |
+
+たとえばStreamlitで素材を作っても、workerへの制御線を通す操作はまだしていません。n8nとAirflowの同梱例はworkerへ直接HTTPで依頼します。GrafanaはPrometheusへ問い合わせる画面で、FastAPIを経由して指標を読む構成ではありません。すべてのWeb画面を1本のAPIの後ろへ描かないようにします。
+
+## エンジンを分ける理由と追加時の判断
+
+| 要件 | まず使う実装 | 追加/変更前に確認すること |
+| --- | --- | --- |
+| 小さい合成データを繰り返し整備 | Python worker＋Trino SQL | fixture、再実行、SQLの業務規則 |
+| Notebookから分散計算 | 常駐Spark＋Jupyter | driver/executor依存、共有catalog/S3、履歴、空き資源 |
+| 業務担当へ集計を見せる | SupersetのGold dataset | 粒度、利用者認可、鮮度、保存したchartの管理 |
+| DB変更を継続反映 | Debezium/Kafka/consumer | DBA前提、保持、単一主キー、専用namespace、再開状態 |
+| 根拠をAIへ渡す | 固定Gold context＋MCP | snapshot、上限、送信範囲、参照と変更の権限 |
+
+この表は最大性能の優劣ではなく、既存実装の責務による使い分けです。Sparkを常駐させたから全メダリオンが自動的にSparkへ移るわけではなく、現在の業務変換はTrino SQLが正本です。ClickHouse等を追加する場合も、元の表・catalog・writerの正本を先に決めます。
+
+## 1つの変更が及ぶ範囲を追う
+
+例として、MESイベントへ新しい設備識別子を追加するなら、入力契約だけでは完了しません。生成器/抽出map、Bronze列、Silverと隔離、Goldの粒度、catalog説明、API/AI contextの公開範囲、独立期待値まで影響を追います。実会社の識別子は公開例へ入れず、合成値で回帰を用意します。
+
+実行の境界も別々です。raw保存、Bronze置換、台帳更新、14SQL、CDCのSQLite checkpoint、Kafka offset、設定ファイル保存、コンテナ再配置は1つのtransactionにまとまりません。失敗箇所と再実行の単位を説明できる形にしてから自動化します。
+
+本番化の未実装事項は、利用者別認可/IdP、HA、同時writer、長期保持と清掃、実行世代の一括公開、復元・RPO/RTO、会社負荷、モデル評価等です。要件から選び、機能を追加しただけで達成済みとはしません。[カスタマイズ](CUSTOMIZATION.md)・[評価計画](reports/EVALUATION-PLAN.md)
