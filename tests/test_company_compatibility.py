@@ -1,0 +1,396 @@
+"""Check private proxy migration and Compose paths without starting Docker."""
+
+import contextlib
+import importlib.util
+import io
+import json
+import os
+import runpy
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+ROOT = Path(__file__).resolve().parents[1]
+COMPOSE_FILES = [
+    ROOT / "infra" / name / "compose.yaml"
+    for name in (
+        "lakehouse",
+        "compute",
+        "orchestration",
+        "demo",
+        "cdc",
+        "poc",
+        "mcp",
+    )
+]
+ALL_PROFILES = (
+    "automation,monitoring,compute,orchestration,demo,cdc,bi,notebooks,"
+    "vector,lineage,mcp"
+)
+CORE_SERVICES = {
+    "catalog-db",
+    "storage",
+    "catalog-migrate",
+    "catalog",
+    "trino",
+    "worker",
+}
+
+
+def load_module(name, path):
+    """Load the real file so tests exercise CLI and GUI implementations."""
+    specification = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return module
+
+
+SETTINGS = load_module("company_settings", ROOT / "scripts/settings.py")
+GUI_SETTINGS = load_module(
+    "company_gui_settings", ROOT / "infra/demo/control_settings.py"
+)
+
+
+class PrivateSettingsFixture:
+    """Create realistic private settings without touching a deployed site."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="company-settings-")
+        self.addCleanup(temporary.cleanup)
+        self.directory = Path(temporary.name)
+        self.env_file = self.directory / "site.env"
+        self.configure()
+
+    def configure(self, *arguments):
+        """Generate or upgrade a synthetic external private settings file."""
+        return subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts/configure.py"),
+                "--output",
+                str(self.env_file),
+                *arguments,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    def read_literal(self):
+        """Inspect physical assignments separately from loader defaults."""
+        return {
+            line.partition("=")[0]: line.partition("=")[2]
+            for line in self.env_file.read_text().splitlines()
+            if line and not line.startswith("#")
+        }
+
+    def write_literal(self, values):
+        """Write literal synthetic values while retaining private file mode."""
+        self.env_file.write_text(
+            "\n".join(key + "=" + value for key, value in values.items())
+            + "\n"
+        )
+        self.env_file.chmod(0o600)
+
+    def legacy_values(self):
+        """Model an old site with different user additions in each case."""
+        values = self.read_literal()
+        values.pop("LAKEHOUSE_NO_PROXY", None)
+        values["NO_PROXY"] = "localhost,upper.example.invalid"
+        values["no_proxy"] = "localhost,lower.example.invalid"
+        return values
+
+    def assert_canonical(self, values, extras=()):
+        """Check required destinations and both client naming conventions."""
+        canonical = values["LAKEHOUSE_NO_PROXY"]
+        self.assertEqual(values["NO_PROXY"], canonical)
+        self.assertEqual(values["no_proxy"], canonical)
+        tokens = canonical.split(",")
+        lowered = [token.lower() for token in tokens]
+        self.assertEqual(len(lowered), len(set(lowered)))
+        self.assertTrue(set(SETTINGS.REQUIRED_NO_PROXY) <= set(tokens))
+        self.assertTrue(set(extras) <= set(tokens))
+        return tokens
+
+
+class PrivateSettingsCompatibilityTests(
+    PrivateSettingsFixture, unittest.TestCase
+):
+    """Keep deployment choices and credentials through proxy normalization."""
+
+    def test_cli_ignores_stale_shell_bypass_and_merges_private_variants(self):
+        """The selected file determines CLI routing, including legacy sites."""
+        self.write_literal(self.legacy_values())
+        with (
+            mock.patch.dict(
+                os.environ,
+                {
+                    "NO_PROXY": "shell-upper.example.invalid",
+                    "no_proxy": "shell-lower.example.invalid",
+                    "LAKEHOUSE_NO_PROXY": "shell-canonical.example.invalid",
+                },
+            ),
+            mock.patch.dict(sys.modules, {"settings": SETTINGS}),
+            mock.patch.object(
+                sys,
+                "argv",
+                [
+                    "control.py",
+                    "--env-file",
+                    str(self.env_file),
+                    "plan",
+                ],
+            ),
+            mock.patch("subprocess.run") as process,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            runpy.run_path(
+                str(ROOT / "scripts/control.py"), run_name="__main__"
+            )
+        process.assert_called_once()
+        selected = process.call_args.kwargs["env"]
+        tokens = self.assert_canonical(
+            selected, ("upper.example.invalid", "lower.example.invalid")
+        )
+        self.assertFalse(any(token.startswith("shell-") for token in tokens))
+        self.assertEqual(selected["COMPOSE_PROFILES"], "")
+
+    def test_upgrade_saves_legacy_additions_without_rotating_keys(self):
+        """Persist the canonical key for direct Dokploy Compose rendering."""
+        before = self.legacy_values()
+        self.write_literal(before)
+        original = self.env_file.read_bytes()
+        self.configure("--upgrade")
+        after = self.read_literal()
+        self.assert_canonical(
+            after, ("upper.example.invalid", "lower.example.invalid")
+        )
+        for key in before.keys() - {"NO_PROXY", "no_proxy"}:
+            self.assertEqual(after[key], before[key], "Changed key: " + key)
+        backup = self.env_file.with_name("site.env.before-upgrade")
+        self.assertEqual(backup.read_bytes(), original)
+        self.assertEqual(backup.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.env_file.stat().st_mode & 0o777, 0o600)
+        saved = self.env_file.read_bytes()
+        self.configure("--upgrade")
+        self.assertEqual(self.env_file.read_bytes(), saved)
+        self.assertEqual(backup.read_bytes(), original)
+
+    def test_gui_case_edits_preserve_removal_intent_and_required_hosts(self):
+        """Editing one field replaces custom additions in all three fields."""
+        original = self.read_literal()
+        for edited in ("NO_PROXY", "no_proxy", "LAKEHOUSE_NO_PROXY"):
+            with self.subTest(edited=edited):
+                self.write_literal(original)
+                store = GUI_SETTINGS.SettingsStore(self.env_file)
+                store.save({edited: "old.example.invalid"})
+                saved = store.save({edited: "new.example.invalid"})
+                values = self.read_literal()
+                tokens = self.assert_canonical(
+                    values, ("new.example.invalid",)
+                )
+                self.assertNotIn("old.example.invalid", tokens)
+                self.assertFalse(saved["applied"])
+                self.assertEqual(values["COMPOSE_PROFILES"], "")
+                self.assertEqual(
+                    values["WORKER_TOKEN"], original["WORKER_TOKEN"]
+                )
+                store.save({edited: ""})
+                self.assertEqual(
+                    self.read_literal()["LAKEHOUSE_NO_PROXY"],
+                    ",".join(SETTINGS.REQUIRED_NO_PROXY),
+                )
+
+
+class ComposeCompatibilityTests(PrivateSettingsFixture, unittest.TestCase):
+    """Render real Compose/Bake plans without a daemon or network calls."""
+
+    @classmethod
+    def setUpClass(cls):
+        if shutil.which("docker") is None:
+            raise unittest.SkipTest("Static Compose checks need Docker CLI.")
+        result = subprocess.run(
+            ["docker", "compose", "version"],
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode:
+            raise unittest.SkipTest("Static checks need Compose plugin.")
+
+    def compose(self, *, profiles="", legacy=False, cwd=None, files=None):
+        """Render all files with explicit profiles and stale ambient values."""
+        values = self.read_literal()
+        values["COMPOSE_PROFILES"] = profiles
+        if legacy:
+            values.pop("LAKEHOUSE_NO_PROXY", None)
+        self.write_literal(values)
+        environment = dict(os.environ)
+        for key in (
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "LAKEHOUSE_NO_PROXY",
+        ):
+            environment.pop(key, None)
+        environment.update(
+            NO_PROXY="shell-upper.example.invalid",
+            no_proxy="shell-lower.example.invalid",
+            COMPOSE_PROFILES=profiles,
+        )
+        command = ["docker", "compose", "--env-file", str(self.env_file)]
+        for path in files or COMPOSE_FILES:
+            command.extend(["-f", str(path)])
+        result = subprocess.run(
+            command + ["config", "--format", "json"],
+            cwd=cwd or ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return json.loads(result.stdout)
+
+    def assert_service_bypass(self, config, expected=None):
+        """Verify every declared proxy consumer uses the same bypass value."""
+        consumers = 0
+        for name, service in config["services"].items():
+            sections = [service.get("environment", {})]
+            sections.append(service.get("build", {}).get("args", {}))
+            for section in sections:
+                if "NO_PROXY" not in section and "no_proxy" not in section:
+                    continue
+                with self.subTest(service=name):
+                    consumers += 1
+                    self.assertEqual(section["NO_PROXY"], section["no_proxy"])
+                    tokens = section["NO_PROXY"].split(",")
+                    self.assertTrue(
+                        set(SETTINGS.REQUIRED_NO_PROXY) <= set(tokens)
+                    )
+                    if expected is not None:
+                        self.assertEqual(section["NO_PROXY"], expected)
+        self.assertGreater(consumers, 0)
+
+    def test_raw_dokploy_uses_upgraded_key_despite_stale_shell(self):
+        """Dedicated settings bypass Compose's legacy shell-key collision."""
+        self.write_literal(self.legacy_values())
+        self.configure("--upgrade")
+        expected = self.read_literal()["LAKEHOUSE_NO_PROXY"]
+        config = self.compose(profiles=ALL_PROFILES)
+        self.assert_service_bypass(config, expected)
+        self.assertTrue(
+            set(config["services"]) <= set(SETTINGS.REQUIRED_NO_PROXY)
+        )
+        for name in ("worker", "trino", "n8n", "jupyter", "demo-api"):
+            self.assertIn("NO_PROXY", config["services"][name]["environment"])
+
+    def test_unupgraded_raw_compose_still_bypasses_internal_hosts(self):
+        """Fallback protects service routing before private-file migration."""
+        self.assert_service_bypass(self.compose(legacy=True))
+
+    def test_empty_profiles_keep_six_core_services(self):
+        """Generated optional secrets and ports never activate profiles."""
+        for files in ((COMPOSE_FILES[0],), COMPOSE_FILES):
+            with self.subTest(file_count=len(files)):
+                config = self.compose(files=files)
+                self.assertEqual(set(config["services"]), CORE_SERVICES)
+
+    def test_empty_ca_resolves_inside_checkout_from_any_working_directory(
+        self,
+    ):
+        """Compose resolves secret and n8n mount from the first file."""
+        expected = ROOT / "infra/proxy/empty-ca.pem"
+        self.assertTrue(expected.is_file())
+        self.assertEqual(expected.stat().st_size, 0)
+        for cwd in (ROOT, self.directory):
+            with self.subTest(cwd_kind="repo" if cwd == ROOT else "external"):
+                config = self.compose(profiles="automation", cwd=cwd)
+                self.assertEqual(
+                    Path(config["secrets"]["corporate_ca"]["file"]), expected
+                )
+                n8n = config["services"]["n8n"]
+                mounts = [
+                    mount
+                    for mount in n8n["volumes"]
+                    if mount["target"] == "/etc/n8n/corporate-ca.pem"
+                ]
+                self.assertEqual(len(mounts), 1)
+                self.assertEqual(Path(mounts[0]["source"]), expected)
+                self.assertEqual(n8n["environment"]["NODE_EXTRA_CA_CERTS"], "")
+
+    def test_explicit_ca_keeps_external_path_and_node_certificate_setting(
+        self,
+    ):
+        """An operator-selected bundle still overrides the empty default."""
+        certificate = self.directory / "corporate-ca.crt"
+        # This test renders paths only; no TLS or build reads the contents.
+        certificate.write_text("Synthetic public fixture for path checks.\n")
+        values = self.read_literal()
+        values["CORPORATE_CA_FILE"] = str(certificate)
+        self.write_literal(values)
+        config = self.compose(profiles="automation")
+        self.assertEqual(
+            Path(config["secrets"]["corporate_ca"]["file"]), certificate
+        )
+        n8n = config["services"]["n8n"]
+        self.assertEqual(
+            n8n["environment"]["NODE_EXTRA_CA_CERTS"],
+            "/etc/n8n/corporate-ca.pem",
+        )
+        mounted = [
+            item["source"]
+            for item in n8n["volumes"]
+            if item["target"] == "/etc/n8n/corporate-ca.pem"
+        ]
+        self.assertEqual(mounted, [str(certificate)])
+
+    def test_compose_resolved_bake_plan_keeps_ca_inside_build_context(self):
+        """Inspect Bake's build inputs without building or daemon access."""
+        available = subprocess.run(
+            ["docker", "buildx", "version"],
+            capture_output=True,
+            check=False,
+        )
+        if available.returncode:
+            self.skipTest("Bake plan check needs the buildx plugin.")
+        config = self.compose(profiles=ALL_PROFILES)
+        selected = self.directory / "resolved.compose.yaml"
+        selected.write_text(json.dumps(config))
+        selected.chmod(0o600)
+        result = subprocess.run(
+            [
+                "docker",
+                "buildx",
+                "bake",
+                "-f",
+                str(selected),
+                "--print",
+            ],
+            cwd=self.directory,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        targets = json.loads(result.stdout)["target"]
+        self.assertIn("worker", targets)
+        for name, target in targets.items():
+            with self.subTest(target=name):
+                context = Path(target["context"])
+                self.assertEqual(context, ROOT)
+                ca_secrets = [
+                    item
+                    for item in target.get("secret", [])
+                    if item["id"] == "corporate_ca"
+                ]
+                self.assertEqual(len(ca_secrets), 1)
+                source = Path(ca_secrets[0]["src"])
+                self.assertTrue(source.is_relative_to(context))
+                self.assertEqual(source.stat().st_size, 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

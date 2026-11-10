@@ -292,3 +292,6 @@ SSRFの設定値、内部workerの例外、NO_PROXYとの違い、GUI保存と�
 `compute` はMaster/Worker/Historyを常駐させます。`SPARK_MASTER_UI_PORT`（8082）、`SPARK_WORKER_UI_PORT`（8085）、`SPARK_HISTORY_UI_PORT`（18080）は他のhostportと重ならない値へ変更できます。cluster RPCとNotebook driver portはDocker内部だけです。`NO_PROXY` / `no_proxy` に `spark-master,spark-worker,spark-history,spark-volumes-init` を含めます。Notebookはcomputeの有無でremote/localを選びます。
 
 `WORKER_UID/GID` はNotebookとSparkのshared volumeを使う非rootの同じ実行IDにします。再配置でデータを消す構成にはせず、運用開始後の実行ID変更は既存ファイル所有権の移行として扱います。SSRF設定6項目と値の意味は [SSRF.md](SSRF.md) を参照してください。
+
+
+Docker 29／Buildx Bake／社内proxyで判明した互換性修正の取り込みと、`LAKEHOUSE_NO_PROXY` の生成・Dokployへの登録は [会社VMの更新手順](COMPANY-UPDATE.md) を参照してください。

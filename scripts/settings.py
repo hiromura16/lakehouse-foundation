@@ -9,6 +9,76 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# Keep this list aligned with actual Compose services and installer services.
+# Short internal names are explicit because client CIDR semantics differ.
+REQUIRED_NO_PROXY = (
+    "localhost",
+    "127.0.0.1",
+    "::1",
+    "storage",
+    "catalog",
+    "catalog-db",
+    "trino",
+    "worker",
+    "catalog-migrate",
+    "n8n-db",
+    "n8n",
+    "prometheus",
+    "grafana",
+    "spark-volumes-init",
+    "spark-master",
+    "spark-worker",
+    "spark-history",
+    "spark-check",
+    "airflow-db",
+    "airflow",
+    "demo-api",
+    "demo",
+    "cdc-kafka",
+    "cdc-connect",
+    "cdc-ui",
+    "cdc-register",
+    "cdc-consumer",
+    "superset-db",
+    "superset-redis",
+    "superset-init",
+    "superset",
+    "jupyter",
+    "qdrant",
+    "marquez-db",
+    "marquez",
+    "marquez-web",
+    "mcp",
+    "dokploy",
+    "dokploy-postgres",
+    "dokploy-traefik",
+)
+BYPASS_KEYS = ("LAKEHOUSE_NO_PROXY", "NO_PROXY", "no_proxy")
+
+
+def normalize_no_proxy(values):
+    """Merge private bypass values without consulting the host environment."""
+    result = list(REQUIRED_NO_PROXY)
+    seen = {entry.casefold() for entry in result}
+    for key in BYPASS_KEYS:
+        value = values.get(key, "")
+        if not isinstance(value, str):
+            raise ValueError("Proxy bypass values must be strings.")
+        for entry in value.split(","):
+            entry = entry.strip()
+            if entry and entry.casefold() not in seen:
+                result.append(entry)
+                seen.add(entry.casefold())
+    return ",".join(result)
+
+
+def synchronize_no_proxy(values):
+    """Return a copy with canonical and both legacy names kept identical."""
+    result = dict(values)
+    canonical = normalize_no_proxy(values)
+    result.update({key: canonical for key in BYPASS_KEYS})
+    return result
+
 
 def validate_ssrf(values):
     """Reject malformed rules before n8n could ignore a CIDR typo."""
@@ -260,11 +330,13 @@ def load(path):
     if ca_file and not Path(ca_file).is_absolute():
         raise ValueError("CORPORATE_CA_FILE must be absolute when configured.")
     validate_ssrf(values)
-    return values
+    return synchronize_no_proxy(values)
 
 
 def environment(values):
     """Overlay validated site settings on the subprocess environment."""
     result = dict(os.environ)
-    result.update(values)
+    # Compose interpolation prefers shell variables over --env-file. Always
+    # replace all bypass names with the normalized selected private values.
+    result.update(synchronize_no_proxy(values))
     return result

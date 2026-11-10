@@ -51,6 +51,8 @@ for extension in ("compute", "orchestration", "demo", "cdc", "poc", "mcp"):
     extra_compose = ROOT / "infra" / extension / "compose.yaml"
     if extra_compose.is_file():
         compose.extend(["-f", str(extra_compose)])
+# Override inherited shell interpolation, including old case variants.
+# This also exports the dedicated key for raw Compose's canonical branch.
 env = environment(values)
 
 

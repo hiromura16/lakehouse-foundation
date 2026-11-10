@@ -62,7 +62,12 @@ class ConnectHandler(socketserver.StreamRequestHandler):
                 b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n"
             )
             return
-        if line != f"CONNECT localhost:{self.server.origin_port} HTTP/1.1":
+        allowed = {
+            f"CONNECT localhost:{self.server.origin_port} HTTP/1.1",
+            "CONNECT connect-fixture.example.invalid:"
+            f"{self.server.origin_port} HTTP/1.1",
+        }
+        if line not in allowed:
             self.wfile.write(b"HTTP/1.1 403 Forbidden\r\n\r\n")
             return
         with socket.create_connection(
@@ -125,7 +130,8 @@ class ProxyDiagnosticsTests(unittest.TestCase):
                 "-subj",
                 "/CN=localhost",
                 "-addext",
-                "subjectAltName=DNS:localhost",
+                "subjectAltName=DNS:localhost,"
+                "DNS:connect-fixture.example.invalid",
             ],
             check=True,
             stdout=subprocess.DEVNULL,
@@ -176,15 +182,21 @@ class ProxyDiagnosticsTests(unittest.TestCase):
             "SSL_CERT_FILE": str(self.cert),
         }
 
-    def probe(self, values=None, path="/"):
-        target = f"https://localhost:{self.origin.server_port}" + path
+    def probe(self, values=None, path="/", proxy_fixture=False):
+        # CONNECT still goes only to this loopback fixture. The reserved DNS
+        # name represents an external target, so required localhost bypass
+        # does not prevent testing authenticated proxy/TLS behavior.
+        host = (
+            "connect-fixture.example.invalid" if proxy_fixture else "localhost"
+        )
+        target = f"https://{host}:{self.origin.server_port}" + path
         with mock.patch.dict(CHECKS.TARGETS, {"pypi": target}):
             return CHECKS.run_checks(
                 values or self.values, ["pypi"], timeout=2
             )
 
     def test_authenticated_proxy_and_ca_succeed_without_secret_output(self):
-        report = self.probe()
+        report = self.probe(proxy_fixture=True)
         self.assertTrue(report["checks"][0]["ok"])
         self.assertTrue(report["checks"][0]["via_proxy"])
         self.assertEqual(len(self.proxy.calls), 1)
@@ -200,7 +212,8 @@ class ProxyDiagnosticsTests(unittest.TestCase):
             ),
         }
         self.assertEqual(
-            self.probe(wrong)["checks"][0]["code"], "PROXY_AUTH_REQUIRED"
+            self.probe(wrong, proxy_fixture=True)["checks"][0]["code"],
+            "PROXY_AUTH_REQUIRED",
         )
         without_ca = {
             key: value
@@ -208,7 +221,8 @@ class ProxyDiagnosticsTests(unittest.TestCase):
             if key != "SSL_CERT_FILE"
         }
         self.assertEqual(
-            self.probe(without_ca)["checks"][0]["code"], "TLS_VERIFY_FAILED"
+            self.probe(without_ca, proxy_fixture=True)["checks"][0]["code"],
+            "TLS_VERIFY_FAILED",
         )
 
     def test_no_proxy_bypasses_auth_proxy_and_redirect_is_not_followed(self):

@@ -1,3 +1,5 @@
+x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
+
 # Independent operator tools. Merge after the core Compose; no Docker socket.
 # Empty secrets are accepted when profiles are off and rejected on startup.
 x-poc-labels: &poc_labels
@@ -11,10 +13,10 @@ x-poc-logging: &poc_logging
 x-poc-proxy: &poc_proxy
   HTTP_PROXY: ${HTTP_PROXY:-}
   HTTPS_PROXY: ${HTTPS_PROXY:-}
-  NO_PROXY: ${NO_PROXY:-}
+  NO_PROXY: *effective_no_proxy
   http_proxy: ${http_proxy:-}
   https_proxy: ${https_proxy:-}
-  no_proxy: ${no_proxy:-}
+  no_proxy: *effective_no_proxy
 x-superset-env: &superset_env
   <<: *poc_proxy
   SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:-}

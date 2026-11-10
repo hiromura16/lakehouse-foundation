@@ -157,3 +157,6 @@ UIで生成した `.env` に対し、サイト設定の外部保存を前提と�
 `NOTEBOOKS_DIR` はリポジトリ外の既存ディレクトリを指定し、非rootの `WORKER_UID/GID` に書込権を与えます。全profileを無条件に有効化せず資源を確認し、[POC-TOOLS.md](POC-TOOLS.md) の手順で必要な機能を追加します。[POC-PORTAL.md](POC-PORTAL.md) の画面から入口・データ契約・品質・説明を辿れます。AI向けMCPの専用認証と参照優先の設定は [MCP.md](MCP.md) を参照します。
 
 proxyやCAを変えるときは、Dokploy EnvironmentとGUIが保存するprivate envを管理者が一致させ、build時のCA反映には再buildを行います。内部サービス名は新profile分も `NO_PROXY` / `no_proxy` の両方へ追記します。詳細は [COMPANY-PROXY.md](COMPANY-PROXY.md) にまとめています。
+
+
+Docker 29／Buildx Bake／社内proxyで判明した互換性修正の取り込みと、`LAKEHOUSE_NO_PROXY` の生成・Dokployへの登録は [会社VMの更新手順](COMPANY-UPDATE.md) を参照してください。

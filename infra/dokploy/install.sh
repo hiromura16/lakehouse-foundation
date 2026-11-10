@@ -88,7 +88,7 @@ if [[ $swarm_state == active ]]; then
   [[ -f "$CONFIG/managed-swarm" ]] || die 'An unrelated Swarm is active; it will not be joined or reset.'
   [[ $(cat "$CONFIG/managed-swarm") == "$(docker info --format '{{.Swarm.NodeID}}')" ]] || die 'Swarm identity differs from the installation record.'
   [[ $(docker info --format '{{.Swarm.ControlAvailable}}') == true ]] || die 'Run on the recorded Swarm manager.'
-  docker swarm inspect --format '{{json .}}' |
+  docker info --format '{{json .Swarm.Cluster}}' |
     python3 "$SCRIPT_DIR/config.py" swarm "$ADDRESS_POOL" "$SUBNET_SIZE"
 elif [[ $swarm_state == inactive ]]; then
   [[ ! -e "$CONFIG/managed-swarm" ]] || die 'A previous Swarm identity exists; inspect it before reinitializing.'

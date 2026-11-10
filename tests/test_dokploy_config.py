@@ -1,8 +1,10 @@
 """Test Dokploy configuration without Docker access or host changes."""
 
 import importlib.util
+import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -200,6 +202,95 @@ class DokployConfigurationTests(unittest.TestCase):
                 "172.20.0.0/16",
                 "24",
             )
+
+    def test_docker_info_cluster_json_preserves_allocation_validation(self):
+        """Accept manager Cluster JSON and reject drift or the outer Swarm."""
+        cluster = {
+            "ID": "synthetic-cluster",
+            "DefaultAddrPool": ["172.30.0.0/16"],
+            "SubnetSize": 24,
+            "Spec": {"Name": "synthetic-swarm"},
+        }
+        payloads = [
+            ("matching cluster", cluster, True),
+            ("missing cluster", None, False),
+            (
+                "different pool",
+                {**cluster, "DefaultAddrPool": ["172.20.0.0/16"]},
+                False,
+            ),
+            ("different subnet", {**cluster, "SubnetSize": 25}, False),
+            (
+                "outer Swarm object",
+                {"LocalNodeState": "active", "Cluster": cluster},
+                False,
+            ),
+            ("missing allocation", {"ID": "synthetic-cluster"}, False),
+        ]
+        for name, payload, succeeds in payloads:
+            with self.subTest(name=name):
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(ROOT / "infra/dokploy/config.py"),
+                        "swarm",
+                        "172.30.0.0/16",
+                        "24",
+                    ],
+                    input=json.dumps(payload),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(result.returncode == 0, succeeds)
+                if not succeeds:
+                    self.assertIn("Existing Swarm pool differs", result.stderr)
+
+    def test_installer_cluster_pipeline_uses_only_docker_info(self):
+        """Run the real read-only pipeline against a strict Docker 29 stub."""
+        lines = SCRIPT.read_text().splitlines()
+        index = next(
+            number
+            for number, line in enumerate(lines)
+            if 'config.py" swarm' in line
+        )
+        start = index - 1
+        stop = index + 1
+        pipeline = "\n".join(lines[start:stop])
+        with tempfile.TemporaryDirectory() as directory:
+            command = Path(directory) / "docker"
+            command.write_text(
+                "#!" + sys.executable + "\n"
+                "import os, sys\n"
+                "if sys.argv[1:] != "
+                "['info', '--format', '{{json .Swarm.Cluster}}']:\n"
+                "    raise SystemExit(91)\n"
+                "print(os.environ['TEST_CLUSTER_JSON'])\n"
+            )
+            command.chmod(0o700)
+            environment = dict(os.environ)
+            environment.update(
+                PATH=directory + os.pathsep + os.environ["PATH"],
+                SCRIPT_DIR=str(SCRIPT.parent),
+                ADDRESS_POOL="172.30.0.0/16",
+                SUBNET_SIZE="24",
+            )
+            for subnet, succeeds in ((24, True), (25, False)):
+                with self.subTest(subnet=subnet):
+                    environment["TEST_CLUSTER_JSON"] = json.dumps(
+                        {
+                            "DefaultAddrPool": ["172.30.0.0/16"],
+                            "SubnetSize": subnet,
+                        }
+                    )
+                    result = subprocess.run(
+                        ["bash", "-o", "pipefail", "-c", pipeline],
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode == 0, succeeds)
 
     def test_host_network_overlap_is_rejected(self):
         interfaces = [

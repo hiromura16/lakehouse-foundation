@@ -107,7 +107,7 @@
       "original_dockerfile_hash_locked_build": true
     },
     "source_quality": {
-      "unit_tests": 238,
+      "unit_tests": 260,
       "ruff": true,
       "pycodestyle_max_length": 79,
       "sqlfluff_trino": true,
@@ -314,6 +314,24 @@
       "test_workflow_removed": true,
       "allowed_workflow_succeeded": true,
       "no_proxy_is_separate_from_allowlist": true
+    },
+    "company_compatibility": {
+      "ok": true,
+      "unit_tests": 260,
+      "docker29_swarm_pipeline_stub": true,
+      "actual_host_swarm_info_executed": false,
+      "uncached_original_worker_bake_build": true,
+      "empty_ca_skipped": true,
+      "filesystem_entitlement_override": false,
+      "required_and_private_bypass_merged": true,
+      "stale_legacy_shell_ignored_after_canonical_upgrade": true,
+      "cli_and_gui_and_raw_compose_checked": true,
+      "core_services": 6,
+      "all_profile_services": 34,
+      "non_proxy_deployment_model_preserved": true,
+      "existing_runtime_child_proxy_probe": true,
+      "isolated_verify_checks": 11,
+      "company_actual_proxy_tested": false
     }
   },
   "limits": [
