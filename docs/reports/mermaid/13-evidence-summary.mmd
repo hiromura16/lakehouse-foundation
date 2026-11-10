@@ -1,0 +1,7 @@
+flowchart TB
+  Evidence["2026-11-10の既存検証記録"] --> M["メダリオン11検査 / 7原本skip"]
+  Evidence --> C["CDC raw168 / 再開後distinct168"]
+  Evidence --> S["Spark/Trino3行 / GUI保存"]
+  Evidence --> A["Document34 / 推論未実施"]
+  Evidence --> P["模擬proxy / source品質"]
+  Next["別受入: 実会社・負荷・復元・推論・費用"] -.-> Decision["導入判断"]

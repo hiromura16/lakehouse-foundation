@@ -52,6 +52,8 @@ jobs:
         pycodestyle --max-line-length=79 scripts tests infra
     - name: Test source-only generation and publication checks
       run: python -m unittest discover -s tests
+    - name: Check generated report figures and offline gallery
+      run: python scripts/render_report_assets.py --check
     - name: Check Trino SQL
       run: sqlfluff lint --dialect trino medallion
     - name: Validate all Compose profiles without starting services

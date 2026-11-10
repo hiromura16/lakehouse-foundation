@@ -56,6 +56,7 @@ class Backend:
     """Use only fixed paths on the operator-selected internal controller."""
 
     def __init__(self, base_url, token):
+        """Validate one controller origin and disable credential redirects."""
         self.base_url = base_url.rstrip("/")
         target = urlsplit(self.base_url)
         if (
@@ -270,6 +271,7 @@ class BearerGate:
     """Authenticate HTTP before SDK routing; preserve ASGI lifespan events."""
 
     def __init__(self, application, token, ready, mutations=False):
+        """Keep transport authentication separate from tool registration."""
         self.application = application
         self.token = token
         self.ready = ready

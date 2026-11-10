@@ -21,6 +21,11 @@ def probe_services(values: dict[str, str]) -> dict[str, bool]:
     ) as client:
 
         def check(item):
+            """Probe a catalogued health URL and return its ID/HTTP-200 flag.
+
+            Send only the credential needed by that known service. This
+            reachability result does not validate business data or recovery.
+            """
             headers = {}
             if item.id == "jupyter":
                 headers["Authorization"] = "token " + values["JUPYTER_TOKEN"]

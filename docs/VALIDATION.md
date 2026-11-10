@@ -95,3 +95,15 @@ n8nのSSRF保護を有効化し、同梱workflow用のhostname例外を `worker`
 35件のMarkdownのローカルリンク/anchor、shell/Python/JSON例、主要CLI引数、掲載したAPI入力schema、core/各profile/組合せ15ケースのCompose展開を確認しました。外部リンク201件は公式tagのraw文書を含むHTTP到達確認が成功し、既存260テスト、Python/SQLの品質検査も成功しました。shell構文の成功を、sudo・実ネットワーク・会社DB変更の実行成功とは扱いません。今回の文書改訂ではサービスの再配置や依存版更新は行いません。
 
 公開前の機密検査は、作業ファイル・index・全ローカルGit参照の履歴へ実施します。提供された会社情報と実秘密値をGit外で照合し、秘密鍵、実CA、データ/DB/バックアップ、生ログ等も規則で確認します。社内添付資料そのもの、実値、検査用deny listを公開しません。既知情報・検査規則の範囲の結果として扱い、会社で新たに入力した情報はその都度別に確認します。
+
+## PoC報告書用素材とコメント・CLI説明の追加検証
+
+[素材集](reports/README.md)のSVG14図とMermaid、キャプション/根拠台帳、報告書・評価計画・発表構成を追加しました。実装・既存合成試験・会社受入・未評価を区別し、図01は全34service/11profile、図04はCDC確定順、図06はdriver/worker/履歴、図10は実監視2targetを示します。
+
+SVGの648ラベルは、実ブラウザーで図外/文字重なり0、PNGで矢印と本文の干渉・欠字なしを確認しました。オフラインHTMLは14図/14caption、PC/小画面でoverflowなし・外部HTTP(S)取得0です。PNG14枚は公開SVGからの再生成画素と一致します。PDF集14頁は全648ラベルを日本語検索/抽出でき、fontを埋め込みます。詳細図はA3横、他13図はA4横です。PPTX14枚は図画像、編集可能title/captionと根拠notes、一般化したmetadataを確認し、Officeでの実描画は未実施です。
+
+専用uv hash lockから実exportし、PDF/PPTX/PNGの本文・notes・metadata、ZIPの全memberを既知社内情報/実秘密値へ照合して検出0でした。binaryはGit外へ置き、公開ソースの検査規則を変更していません。CIには生成元とSVG/HTML/台帳の一致検査を追加しました。
+
+新exportの境界3テストを加え、全263テストとPython/SQL/Compose検査が成功しています。既存24Pythonファイルのコメント・docstring・help説明も補い、説明部分を除くASTが変更前と一致することを確認しました。公開Pythonの関数/class/初期化docstringとargparse引数helpの欠落は0です。可読性規約は [CONTRIBUTING](../CONTRIBUTING.md) に記録しています。
+
+今回の図の作成・ソース検査は、会社DB/実proxy/復元/性能/推論の追加実機成功を意味しません。これらは報告書雛形の未実施欄へ残し、次の受入で確認します。

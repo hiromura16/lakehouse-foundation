@@ -1,4 +1,11 @@
-"""Create small, explicit vector and lineage demonstrations through APIs."""
+"""Create explicit synthetic vector or manual lineage examples through APIs.
+
+vector uses the private Qdrant write key to create a four-dimensional demo
+collection with three points, leaving any existing collection untouched.
+lineage submits a stable demo run ID to Marquez with the current event time.
+Neither action creates embeddings, runs medallion SQL, or proves that a real
+pipeline executed. Normal service startup does not invoke this script.
+"""
 
 import argparse
 import json
@@ -37,7 +44,12 @@ def request(method, url, body=None, headers=None, accepted=(200,)):
 
 
 def seed_vector(values):
-    """Create three demo vectors while preserving existing collections."""
+    """Create three numeric vectors only when the demo collection is absent.
+
+    An existing collection is returned as-is, without checking or repairing
+    its points. Operators should inspect its contents after a partial prior
+    run instead of assuming this seed restored a complete demonstration.
+    """
     key = values.get("QDRANT_API_KEY", "")
     if len(key) < 16:
         raise ValueError("Configure a private Qdrant write key.")
@@ -125,7 +137,14 @@ def seed_lineage():
 def main():
     """Require an explicit action; never seed tools from ordinary startup."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["vector", "lineage"])
+    parser.add_argument(
+        "action",
+        choices=["vector", "lineage"],
+        help=(
+            "vectorは合成3点のcollection作成、lineageは手動デモ系統の登録。"
+            "どちらも内部APIへの明示的な書込みです"
+        ),
+    )
     args = parser.parse_args()
     result = (
         seed_vector(os.environ) if args.action == "vector" else seed_lineage()

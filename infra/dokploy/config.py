@@ -2,7 +2,10 @@
 """Validate and render portable Dokploy settings without evaluating shell code.
 
 The installer calls these small commands for configuration and JSON checks.
+JSON-based checks read standard input and do not invoke Docker themselves.
 Only render-nginx writes a file, at the installer-selected configuration path.
+read-env emits the seven validated site values for the shell installer; its
+output may contain private addresses and should stay out of public logs.
 """
 
 import argparse
@@ -226,7 +229,11 @@ def inspect_bridge(configuration, pool, expected):
 
 
 def render_nginx(path, allowed, pool, bridge):
-    """Render only the configured client, overlay and detected bridge ACLs."""
+    """Write the selected Nginx file with client, overlay and bridge ACLs.
+
+    The file is replaced with mode 0644. This helper does not start Nginx,
+    reload services, alter Docker networks, or create parent directories.
+    """
     networks = list(
         dict.fromkeys(["127.0.0.0/8", *allowed.split(","), pool, bridge])
     )
@@ -239,27 +246,84 @@ def render_nginx(path, allowed, pool, bridge):
 def arguments(argv=None):
     """Describe the installer's small validation/rendering subcommands."""
     parser = argparse.ArgumentParser(description=__doc__)
-    commands = parser.add_subparsers(dest="command", required=True)
-    read = commands.add_parser("read-env")
-    read.add_argument("path", type=Path)
-    swarm = commands.add_parser("swarm")
-    swarm.add_argument("pool")
-    swarm.add_argument("subnet")
-    ports = commands.add_parser("ports")
-    ports.add_argument("kind", choices=["gateway", "traefik"])
-    ports.add_argument("admin_port")
-    ports.add_argument("bind_ip")
-    ports.add_argument("ui_ips", nargs="*")
-    host = commands.add_parser("host-networks")
-    host.add_argument("pool")
-    bridge = commands.add_parser("bridge")
-    bridge.add_argument("pool")
-    bridge.add_argument("expected", nargs="?", default="")
-    nginx = commands.add_parser("render-nginx")
-    nginx.add_argument("path", type=Path)
-    nginx.add_argument("allowed")
-    nginx.add_argument("pool")
-    nginx.add_argument("bridge")
+    commands = parser.add_subparsers(
+        dest="command", required=True, help="実施する検査・設定生成を選択"
+    )
+    read = commands.add_parser(
+        "read-env",
+        help="private envを検査し、installer用の7項目を出力",
+        description=(
+            "Git外の設定を検査します。標準出力には設定値が含まれます。"
+            "ファイルやDockerの状態は変更しません。"
+        ),
+    )
+    read.add_argument(
+        "path", type=Path, help="Git外の通常envファイル。権限0600以下"
+    )
+    swarm = commands.add_parser(
+        "swarm",
+        help="標準入力のSwarm Cluster JSONと既定poolを照合",
+        description=(
+            "docker infoのSwarm.Cluster JSONを標準入力で受け取り、"
+            "既存pool/subnetの一致だけを検査します。変更はしません。"
+        ),
+    )
+    swarm.add_argument("pool", help="設定済みSwarmアドレスpoolのCIDR")
+    swarm.add_argument("subnet", help="設定済みsubnetのprefix長")
+    ports = commands.add_parser(
+        "ports",
+        help="標準入力のPortBindingsを期待するbindと照合",
+        description=(
+            "containerのPortBindings JSONを標準入力で読み、"
+            "gateway/Traefikの公開先・portが完全一致するか検査します。"
+        ),
+    )
+    ports.add_argument(
+        "kind", choices=["gateway", "traefik"], help="検査する公開入口"
+    )
+    ports.add_argument("admin_port", help="設定済みの管理画面host port")
+    ports.add_argument("bind_ip", help="Traefikで期待するhost側IPv4")
+    ports.add_argument(
+        "ui_ips", nargs="*", help="gatewayで許す管理画面のbind先IPv4一覧"
+    )
+    host = commands.add_parser(
+        "host-networks",
+        help="標準入力のhost network JSONとSwarm poolの重複を検査",
+        description=(
+            "ip -j addr相当のJSONを標準入力で読みます。"
+            "loopback以外のhost networkとpoolの重複を拒否します。"
+        ),
+    )
+    host.add_argument("pool", help="導入予定のSwarmアドレスpool CIDR")
+    bridge = commands.add_parser(
+        "bridge",
+        help="標準入力のDocker IPAM JSONからgateway subnetを確認",
+        description=(
+            "docker_gwbridgeのIPAM.Configを標準入力で読みます。"
+            "単一IPv4 subnet・poolとの非重複を検査し、subnetを出力します。"
+        ),
+    )
+    bridge.add_argument("pool", help="Swarmアドレスpool CIDR")
+    bridge.add_argument(
+        "expected",
+        nargs="?",
+        default="",
+        help="指定時だけ一致を要求するbridge CIDR。省略時は検出値を使用",
+    )
+    nginx = commands.add_parser(
+        "render-nginx",
+        help="指定先へNginx allowlist設定を書き出す",
+        description=(
+            "許可CIDR・Swarm pool・bridgeをNginx設定へ出力します。"
+            "指定ファイルを上書きしますが、serviceの起動/reloadはしません。"
+        ),
+    )
+    nginx.add_argument("path", type=Path, help="書込先の設定ファイル")
+    nginx.add_argument(
+        "allowed", help="許可するclient CIDR。複数はカンマ区切り"
+    )
+    nginx.add_argument("pool", help="Swarmのoverlayアドレスpool CIDR")
+    nginx.add_argument("bridge", help="検出・検査済みDocker bridge CIDR")
     return parser.parse_args(argv)
 
 

@@ -1,0 +1,9 @@
+flowchart LR
+  SQL["会社SQL / SELECT"] --> Landing["landing / 原本完成→ready"]
+  SMB["Samba / GUI合成素材"] --> Landing
+  Landing --> Check["worker: hash・契約・上限"]
+  Check --> Raw["S3受領原本"]
+  Check --> Bronze["Bronze文字列 + 由来"]
+  Bronze --> Explicit["明示medallion"]
+  Explicit --> Silver["Silver / Quarantine"]
+  Silver --> Gold["Gold2表"]

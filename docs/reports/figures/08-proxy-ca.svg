@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="08-proxy-ca-title 08-proxy-ca-description" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
+<title id="08-proxy-ca-title">企業プロキシとCAを設定する場所</title>
+<desc id="08-proxy-ca-description">daemon、BuildKit、稼働中client、Java/SDKの設定を分ける。private canonicalへ必須内部名と会社追加先をまとめ、企業CAをホスト・image・JVMへ必要な範囲で適用する。 根拠: scripts/configure-proxy.sh, scripts/settings.py, infra/proxy, docs/COMPANY-PROXY.md</desc>
+<defs>
+<marker id="08-proxy-ca-data" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#2469a8"/></marker>
+<marker id="08-proxy-ca-control" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#70608e"/></marker>
+<marker id="08-proxy-ca-optional" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#78818c"/></marker>
+</defs>
+<rect x="0" y="0" width="1920" height="1080" rx="0" fill="#fff" stroke="none"/>
+<rect x="0" y="0" width="14" height="1080" rx="0" fill="#152a43" stroke="none"/>
+<text x="56" y="43" fill="#536780" font-size="18" font-weight="600">LAKEHOUSE FOUNDATION  /  PoC REPORT ASSETS</text>
+<text x="56" y="104" fill="#152a43" font-size="42" font-weight="700">08  企業プロキシとCAを設定する場所</text>
+<path d="M1270,35 L1320,35" stroke="#2469a8" stroke-width="3"/>
+<text x="1332" y="41" fill="#536780" font-size="17" font-weight="400">データ</text>
+<path d="M1475,35 L1525,35" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5"/>
+<text x="1537" y="41" fill="#536780" font-size="17" font-weight="400">制御・設定</text>
+<path d="M1680,35 L1730,35" stroke="#78818c" stroke-width="3" stroke-dasharray="3 7"/>
+<text x="1742" y="41" fill="#536780" font-size="17" font-weight="400">任意・計画</text>
+<text x="56" y="148" fill="#536780" font-size="23" font-weight="400">Git取得・daemon pull・build・runtime・Javaは別の通信主体。内部通信はbypassする。</text>
+<rect x="56" y="230" width="420" height="290" rx="16" fill="#edf4ff" stroke="#b8cee8"/>
+<rect x="56" y="248" width="5" height="254" rx="2" fill="#245fa6" stroke="none"/>
+<text x="80" y="272" fill="#152a43" font-size="27" font-weight="700">ホスト / daemon</text>
+<text x="80" y="317" fill="#152a43" font-size="23" font-weight="400">Git・apt・uv：会社標準設定</text>
+<text x="80" y="349" fill="#152a43" font-size="23" font-weight="400">daemon：image pull / push</text>
+<text x="80" y="381" fill="#152a43" font-size="23" font-weight="400">daemon用はlegacy6変数</text>
+<text x="80" y="413" fill="#152a43" font-size="23" font-weight="400">設定配置と再起動は別操作</text>
+<text x="80" y="452" fill="#245fa6" font-size="20" font-weight="600">ホスト管理者</text>
+<rect x="562" y="230" width="420" height="290" rx="16" fill="#f1edfc" stroke="#c6b9e9"/>
+<rect x="562" y="248" width="5" height="254" rx="2" fill="#63449b" stroke="none"/>
+<text x="586" y="272" fill="#152a43" font-size="27" font-weight="700">BuildKit / build</text>
+<text x="586" y="317" fill="#152a43" font-size="23" font-weight="400">HTTP(S)_PROXYのargs</text>
+<text x="586" y="349" fill="#152a43" font-size="23" font-weight="400">CA：BuildKit secret</text>
+<text x="586" y="381" fill="#152a43" font-size="23" font-weight="400">OS / Java trustへ追加</text>
+<text x="586" y="413" fill="#152a43" font-size="23" font-weight="400">認証URLをCOPYしない</text>
+<text x="586" y="452" fill="#63449b" font-size="20" font-weight="600">固定lock・JAR取得</text>
+<rect x="1068" y="230" width="420" height="290" rx="16" fill="#eaf7f3" stroke="#a4d1c1"/>
+<rect x="1068" y="248" width="5" height="254" rx="2" fill="#126c59" stroke="none"/>
+<text x="1092" y="272" fill="#152a43" font-size="27" font-weight="700">runtime / client</text>
+<text x="1092" y="317" fill="#152a43" font-size="23" font-weight="400">HTTP(S)の大小case</text>
+<text x="1092" y="349" fill="#152a43" font-size="23" font-weight="400">Python / Node / curl等</text>
+<text x="1092" y="381" fill="#152a43" font-size="23" font-weight="400">client別のbypass解釈</text>
+<text x="1092" y="413" fill="#152a43" font-size="23" font-weight="400">n8n追加CAは任意</text>
+<text x="1092" y="452" fill="#126c59" font-size="20" font-weight="600">実通信で確認</text>
+<rect x="1574" y="230" width="290" height="290" rx="16" fill="#f5f6f8" stroke="#c8cdd5"/>
+<rect x="1574" y="248" width="5" height="254" rx="2" fill="#586271" stroke="none"/>
+<text x="1598" y="272" fill="#152a43" font-size="27" font-weight="700">企業proxy</text>
+<text x="1598" y="317" fill="#152a43" font-size="23" font-weight="400">外部宛先の許可</text>
+<text x="1598" y="349" fill="#152a43" font-size="23" font-weight="400">CONNECT / 認証</text>
+<text x="1598" y="381" fill="#152a43" font-size="23" font-weight="400">TLS検査時のCA</text>
+<text x="1598" y="413" fill="#152a43" font-size="23" font-weight="400">実URLはprivate</text>
+<text x="1598" y="452" fill="#586271" font-size="20" font-weight="600">会社で受入</text>
+<rect x="56" y="640" width="926" height="220" rx="16" fill="#edf4ff" stroke="#b8cee8"/>
+<rect x="56" y="658" width="5" height="184" rx="2" fill="#245fa6" stroke="none"/>
+<text x="80" y="682" fill="#152a43" font-size="27" font-weight="700">内部通信｜LAKEHOUSE_NO_PROXY</text>
+<text x="80" y="727" fill="#152a43" font-size="23" font-weight="400">必須Compose名＋loopback＋会社の内部宛先を正規化</text>
+<text x="80" y="759" fill="#152a43" font-size="23" font-weight="400">NO_PROXY / no_proxyへ同期。raw Composeはcanonicalを優先</text>
+<text x="80" y="791" fill="#152a43" font-size="23" font-weight="400">古い設定はconfigure --upgradeで保存値を更新</text>
+<text x="80" y="830" fill="#245fa6" font-size="20" font-weight="600">大小case / stale shellを整理</text>
+<rect x="1068" y="640" width="796" height="220" rx="16" fill="#fff7dd" stroke="#dfca85"/>
+<rect x="1068" y="658" width="5" height="184" rx="2" fill="#806000" stroke="none"/>
+<text x="1092" y="682" fill="#152a43" font-size="27" font-weight="700">証明書の信頼は主体ごとに確認</text>
+<text x="1092" y="727" fill="#152a43" font-size="23" font-weight="400">企業CAはGit外。未指定は0バイトplaceholder</text>
+<text x="1092" y="759" fill="#152a43" font-size="23" font-weight="400">build済みimageには追加した信頼が残る</text>
+<text x="1092" y="791" fill="#152a43" font-size="23" font-weight="400">SQL Server TCP・Java・各SDKは別に疎通確認</text>
+<text x="1092" y="830" fill="#806000" font-size="20" font-weight="600">TLS検証を無効化して回避しない</text>
+<path d="M 1488,375 L 1574,375" fill="none" stroke="#2469a8" stroke-width="3" marker-end="url(#08-proxy-ca-data)"/>
+<rect x="1481.8" y="341" width="98.4" height="27" rx="3" fill="#fff" stroke="none"/>
+<g text-anchor="middle"><text x="1531" y="360" fill="#2469a8" font-size="18" font-weight="600">外部HTTPS</text></g>
+<path d="M 982,375 L 1068,375" fill="none" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5" marker-end="url(#08-proxy-ca-control)"/>
+<rect x="975.8" y="341" width="98.4" height="27" rx="3" fill="#fff" stroke="none"/>
+<g text-anchor="middle"><text x="1025" y="360" fill="#70608e" font-size="18" font-weight="600">完成image</text></g>
+<path d="M 476,375 L 562,375" fill="none" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5" marker-end="url(#08-proxy-ca-control)"/>
+<rect x="469.8" y="341" width="98.4" height="27" rx="3" fill="#fff" stroke="none"/>
+<g text-anchor="middle"><text x="519" y="360" fill="#70608e" font-size="18" font-weight="600">build依頼</text></g>
+<rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
+<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">NO_PROXYは経路選択。n8nのSSRF許可は別の保護。内部bypassがあってもSSRF許可にはならない。</text>
+<text x="56" y="977" fill="#536780" font-size="20" font-weight="400">GUI診断は固定HTTPS4先だけ。成功してもdaemon・Java・実会社proxy全経路の受入完了ではない。</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+</svg>

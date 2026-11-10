@@ -326,16 +326,50 @@ def extract_tables(
 
 def main(argv=None):
     """Fetch a read-only snapshot and publish six completed source files."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--env-file", required=True, type=Path)
-    parser.add_argument("--table-map", required=True, type=Path)
-    parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--max-rows", type=int, default=MAX_ROWS)
-    parser.add_argument("--force", action="store_true")
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog=(
+            "許可された6表/列をSELECTし、CSV/JSON・ready・manifestを保存します。"
+            "DB変更、CDC有効化、取り込み・変換は行いません。"
+            "6表のSELECTは同一時点transactionではありません。"
+        ),
+    )
+    parser.add_argument(
+        "--env-file",
+        required=True,
+        type=Path,
+        help="SOURCE用read-only資格情報とTLS設定を持つGit外のprivate env",
+    )
+    parser.add_argument(
+        "--table-map",
+        required=True,
+        type=Path,
+        help="実表・列を6ソース契約へ対応付けるGit外のJSON。任意SQLは指定不可",
+    )
+    parser.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        help="Git外のlanding絶対パス。全6表の取得・変換成功後に完成素材を公開",
+    )
+    parser.add_argument(
+        "--max-rows",
+        type=int,
+        default=MAX_ROWS,
+        help="1表の上限行数。1〜100000（既定: 100000）。超過は切捨てず拒否",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="出力済み素材・ready・抽出manifestの意図した置換を許可する",
+    )
     parser.add_argument(
         "--test-trust-server-certificate",
         action="store_true",
-        help="Loopback-only test exception, with encryption still required.",
+        help=(
+            "loopback試験専用の証明書検証例外。"
+            "暗号化は維持し、会社接続には使わない"
+        ),
     )
     args = parser.parse_args(argv)
     helper = source_io()

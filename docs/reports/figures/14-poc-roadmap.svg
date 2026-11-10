@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="14-poc-roadmap-title 14-poc-roadmap-description" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
+<title id="14-poc-roadmap-title">PoCから会社導入へ進む評価の順番</title>
+<desc id="14-poc-roadmap-description">機能往復の確認を起点に、会社ネットワーク/DB受入、業務整合、負荷と復元、AI評価へ段階を分ける。未評価を完了扱いせず、次へ進む条件と証跡を合意する。 根拠: docs/START-HERE.md, docs/COMPANY-ROLLOUT.md, docs/OPERATIONS.md, docs/AI-READINESS.md</desc>
+<defs>
+<marker id="14-poc-roadmap-data" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#2469a8"/></marker>
+<marker id="14-poc-roadmap-control" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#70608e"/></marker>
+<marker id="14-poc-roadmap-optional" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#78818c"/></marker>
+</defs>
+<rect x="0" y="0" width="1920" height="1080" rx="0" fill="#fff" stroke="none"/>
+<rect x="0" y="0" width="14" height="1080" rx="0" fill="#152a43" stroke="none"/>
+<text x="56" y="43" fill="#536780" font-size="18" font-weight="600">LAKEHOUSE FOUNDATION  /  PoC REPORT ASSETS</text>
+<text x="56" y="104" fill="#152a43" font-size="42" font-weight="700">14  PoCから会社導入へ進む評価の順番</text>
+<path d="M1270,35 L1320,35" stroke="#2469a8" stroke-width="3"/>
+<text x="1332" y="41" fill="#536780" font-size="17" font-weight="400">データ</text>
+<path d="M1475,35 L1525,35" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5"/>
+<text x="1537" y="41" fill="#536780" font-size="17" font-weight="400">制御・設定</text>
+<path d="M1680,35 L1730,35" stroke="#78818c" stroke-width="3" stroke-dasharray="3 7"/>
+<text x="1742" y="41" fill="#536780" font-size="17" font-weight="400">任意・計画</text>
+<text x="56" y="148" fill="#536780" font-size="23" font-weight="400">日程や成果値を仮定しない。段階ごとの成功条件を満たしてから次へ進む。</text>
+<rect x="56" y="230" width="400" height="270" rx="16" fill="#edf4ff" stroke="#b8cee8"/>
+<rect x="56" y="248" width="5" height="234" rx="2" fill="#245fa6" stroke="none"/>
+<text x="80" y="272" fill="#152a43" font-size="27" font-weight="700">段階1｜機能の往復</text>
+<text x="80" y="317" fill="#152a43" font-size="23" font-weight="400">core / GUI / 合成素材</text>
+<text x="80" y="349" fill="#152a43" font-size="23" font-weight="400">11検査・再投入skip</text>
+<text x="80" y="381" fill="#152a43" font-size="23" font-weight="400">選択profileの初期化と保存</text>
+<text x="80" y="413" fill="#152a43" font-size="23" font-weight="400">既存記録を再現して確かめる</text>
+<text x="80" y="452" fill="#245fa6" font-size="20" font-weight="600">検証記録あり / 導入先で再確認</text>
+<rect x="520" y="230" width="400" height="270" rx="16" fill="#f5f6f8" stroke="#c8cdd5"/>
+<rect x="520" y="248" width="5" height="234" rx="2" fill="#586271" stroke="none"/>
+<text x="544" y="272" fill="#152a43" font-size="27" font-weight="700">段階2｜会社接続</text>
+<text x="544" y="317" fill="#152a43" font-size="23" font-weight="400">proxy・CA・DNS・TLS</text>
+<text x="544" y="349" fill="#152a43" font-size="23" font-weight="400">SOURCE読取権限・6表map</text>
+<text x="544" y="381" fill="#152a43" font-size="23" font-weight="400">必要ならDBAとCDC準備</text>
+<text x="544" y="413" fill="#152a43" font-size="23" font-weight="400">合成環境と別の空環境</text>
+<text x="544" y="452" fill="#586271" font-size="20" font-weight="600">会社の現地受入</text>
+<rect x="984" y="230" width="400" height="270" rx="16" fill="#f5f6f8" stroke="#c8cdd5"/>
+<rect x="984" y="248" width="5" height="234" rx="2" fill="#586271" stroke="none"/>
+<text x="1008" y="272" fill="#152a43" font-size="27" font-weight="700">段階3｜業務整合</text>
+<text x="1008" y="317" fill="#152a43" font-size="23" font-weight="400">粒度・時刻・更新優先</text>
+<text x="1008" y="349" fill="#152a43" font-size="23" font-weight="400">Goldを会社側集計と照合</text>
+<text x="1008" y="381" fill="#152a43" font-size="23" font-weight="400">隔離・遅延・訂正・削除</text>
+<text x="1008" y="413" fill="#152a43" font-size="23" font-weight="400">担当者の確認と証跡</text>
+<text x="1008" y="452" fill="#586271" font-size="20" font-weight="600">実業務の受入</text>
+<rect x="1448" y="230" width="416" height="270" rx="16" fill="#f5f6f8" stroke="#c8cdd5"/>
+<rect x="1448" y="248" width="5" height="234" rx="2" fill="#586271" stroke="none"/>
+<text x="1472" y="272" fill="#152a43" font-size="27" font-weight="700">段階4｜継続運用</text>
+<text x="1472" y="317" fill="#152a43" font-size="23" font-weight="400">実測の負荷・容量・費用</text>
+<text x="1472" y="349" fill="#152a43" font-size="23" font-weight="400">backup→別環境復元</text>
+<text x="1472" y="381" fill="#152a43" font-size="23" font-weight="400">認可・通知・監査・障害</text>
+<text x="1472" y="413" fill="#152a43" font-size="23" font-weight="400">RPO/RTOを試験で決める</text>
+<text x="1472" y="452" fill="#586271" font-size="20" font-weight="600">性能・復旧の受入</text>
+<rect x="56" y="650" width="864" height="190" rx="16" fill="#f5f6f8" stroke="#c8cdd5"/>
+<rect x="56" y="668" width="5" height="154" rx="2" fill="#586271" stroke="none"/>
+<text x="80" y="692" fill="#152a43" font-size="27" font-weight="700">任意のAI評価｜根拠contextを起点にする</text>
+<text x="80" y="737" fill="#152a43" font-size="23" font-weight="400">モデル・評価セット・権限・削除同期・外部送信を定義</text>
+<text x="80" y="769" fill="#152a43" font-size="23" font-weight="400">回答の根拠・鮮度・精度・遅延・費用を実測する</text>
+<text x="80" y="808" fill="#586271" font-size="20" font-weight="600">推論・RAGは別の追加実装</text>
+<rect x="1014" y="650" width="850" height="190" rx="16" fill="#fff7dd" stroke="#dfca85"/>
+<rect x="1014" y="668" width="5" height="154" rx="2" fill="#806000" stroke="none"/>
+<text x="1038" y="692" fill="#152a43" font-size="27" font-weight="700">各段階の判断｜進む / 条件付き / 再試験</text>
+<text x="1038" y="737" fill="#152a43" font-size="23" font-weight="400">目的・対象・期間・母数・期待値・結果・残課題を記録</text>
+<text x="1038" y="769" fill="#152a43" font-size="23" font-weight="400">責任者と次段階の成功条件は会社で記入する</text>
+<text x="1038" y="808" fill="#806000" font-size="20" font-weight="600">日付・担当者・達成値は空欄から合意</text>
+<path d="M 456,365 L 520,365" fill="none" stroke="#78818c" stroke-width="3" stroke-dasharray="3 7" marker-end="url(#14-poc-roadmap-optional)"/>
+<rect x="446" y="331" width="84" height="27" rx="3" fill="#fff" stroke="none"/>
+<g text-anchor="middle"><text x="488" y="350" fill="#78818c" font-size="18" font-weight="600">次の受入</text></g>
+<path d="M 920,365 L 984,365" fill="none" stroke="#78818c" stroke-width="3" stroke-dasharray="3 7" marker-end="url(#14-poc-roadmap-optional)"/>
+<path d="M 1384,365 L 1448,365" fill="none" stroke="#78818c" stroke-width="3" stroke-dasharray="3 7" marker-end="url(#14-poc-roadmap-optional)"/>
+<path d="M 920,745 L 1014,745" fill="none" stroke="#78818c" stroke-width="3" stroke-dasharray="3 7" marker-end="url(#14-poc-roadmap-optional)"/>
+<rect x="907" y="711" width="120" height="27" rx="3" fill="#fff" stroke="none"/>
+<g text-anchor="middle"><text x="967" y="730" fill="#78818c" font-size="18" font-weight="600">評価を判断へ</text></g>
+<rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
+<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">Cloudflare・ClickHouse・LLM基盤・全ログ監視等は採用判断が必要な候補。自動導入済みとはしない。</text>
+<text x="56" y="977" fill="#536780" font-size="20" font-weight="400">具体的な評価項目・結果記入欄はEVALUATION-PLANとPOC-REPORT-TEMPLATEを使用する。</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+</svg>

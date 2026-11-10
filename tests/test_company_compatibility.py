@@ -180,6 +180,86 @@ class PrivateSettingsCompatibilityTests(
         self.assertEqual(self.env_file.read_bytes(), saved)
         self.assertEqual(backup.read_bytes(), original)
 
+    def test_upgrade_refuses_backup_collision_without_touching_files(self):
+        """Explain an occupied backup while retaining both private files."""
+        self.write_literal(self.legacy_values())
+        original = self.env_file.read_bytes()
+        backup = self.env_file.with_name("site.env.before-upgrade")
+        saved_backup = b"previous private backup; keep these bytes\n"
+        backup.write_bytes(saved_backup)
+        backup.chmod(0o600)
+        files_before = set(self.directory.iterdir())
+
+        with self.assertRaises(subprocess.CalledProcessError) as failure:
+            self.configure("--upgrade")
+
+        result = failure.exception
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("backup already exists", result.stderr)
+        self.assertIn("Move the .before-upgrade backup", result.stderr)
+        self.assertIn("rerun --upgrade", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertNotIn("FileExistsError", result.stderr)
+        self.assertNotIn(str(self.directory), result.stderr)
+        self.assertNotIn(self.read_literal()["WORKER_TOKEN"], result.stderr)
+        self.assertEqual(self.env_file.read_bytes(), original)
+        self.assertEqual(backup.read_bytes(), saved_backup)
+        self.assertEqual(self.env_file.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(backup.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(set(self.directory.iterdir()), files_before)
+
+    def test_upgrade_noop_preserves_an_existing_backup(self):
+        """A current env needs no new backup and still exits successfully."""
+        original = self.env_file.read_bytes()
+        backup = self.env_file.with_name("site.env.before-upgrade")
+        saved_backup = b"retained backup from an earlier upgrade\n"
+        backup.write_bytes(saved_backup)
+        backup.chmod(0o600)
+
+        result = self.configure("--upgrade")
+
+        self.assertIn("no changes made", result.stdout)
+        self.assertEqual(result.stderr, "")
+        self.assertEqual(self.env_file.read_bytes(), original)
+        self.assertEqual(backup.read_bytes(), saved_backup)
+
+    def test_missing_external_env_has_a_distinct_private_error(self):
+        """Report a missing external file without a traceback or its path."""
+        missing = self.directory / "missing.env"
+        with self.assertRaisesRegex(
+            ValueError, r"^Private env file not found\.$"
+        ):
+            SETTINGS.load(missing)
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts/control.py"),
+                "--env-file",
+                str(missing),
+                "plan",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stderr.strip(), "Private env file not found.")
+        self.assertEqual(result.stdout, "")
+        self.assertFalse(missing.exists())
+
+    def test_repository_env_paths_remain_rejected_before_file_lookup(self):
+        """Both existing and missing Git-local paths keep the policy error."""
+        for path in (
+            ROOT / "scripts/settings.py",
+            ROOT / "missing-private-settings.env",
+        ):
+            with self.subTest(existing=path.is_file()):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    r"^Use a private env file outside the repository\.$",
+                ):
+                    SETTINGS.load(path)
+
     def test_gui_case_edits_preserve_removal_intent_and_required_hosts(self):
         """Editing one field replaces custom additions in all three fields."""
         original = self.read_literal()

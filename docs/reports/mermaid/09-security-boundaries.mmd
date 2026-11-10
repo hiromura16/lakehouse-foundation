@@ -1,0 +1,8 @@
+flowchart LR
+  User["利用者 / 限定入口"] --> App["GUI / Bearer API・MCP"]
+  App --> Worker["固定worker経路"]
+  Admin["管理者"] --> Host["Dokploy / Docker / host"]
+  Host --> Worker
+  N8N["n8n SSRF enabled"] -->|許可worker| Worker
+  SQL["SOURCE読取 / DEMO専用writer / TLS"] --> Worker
+  Secret["private設定 / Git外"] --> Host

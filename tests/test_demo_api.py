@@ -15,7 +15,20 @@ from decimal import Decimal
 from pathlib import Path
 from unittest import mock
 
-from fastapi.testclient import TestClient
+# Only a genuinely absent optional package skips this test module. A broken
+# installed package or any application import failure must remain an error.
+try:
+    from fastapi.testclient import TestClient
+except ModuleNotFoundError as error:
+    if (
+        error.name != "fastapi"
+        or importlib.util.find_spec("fastapi") is not None
+    ):
+        raise
+    raise unittest.SkipTest(
+        "Optional tests need fastapi. In a uv virtual environment, run "
+        "uv pip sync --require-hashes requirements-dev.lock."
+    ) from error
 
 ROOT = Path(__file__).resolve().parents[1]
 DEMO = ROOT / "infra/demo"

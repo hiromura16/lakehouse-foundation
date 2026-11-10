@@ -65,3 +65,7 @@ Composeのタグだけでなく、digest、対応する依存lock、`COMPATIBILI
 CLIの保守・追加機能では7ファイルを同じ順で結合します。Dokployの初回core-only既定Commandはcore1ファイルだけでも動きますが、標準ガイドは初回から7ファイルを指定します。標準CLIは自動で結合します。[7ファイルのコマンド](DOKPLOY.md) を部分的に削らないでください。
 
 実際の `site.env`、企業CA、管理APIキー、実データ、volume、バックアップ、GUI exportの未レビュー原本を公開しません。これらはGit外の専用ディレクトリに保存します。過去の非公開環境のGit履歴を、この公開リポジトリへ取り込みません。
+
+## 実装を読みやすく保つ
+
+公開module/関数/class/初期化のdocstringとCLI引数helpを揃えています。[CONTRIBUTING](../CONTRIBUTING.md) にコメントの目的・命名・単位・uv検査、[レビュー手順](REVIEW-WORKFLOW.md) に並行指摘の取り込み方を記録しています。

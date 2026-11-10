@@ -1,0 +1,7 @@
+flowchart LR
+  R["原本 / Iceberg metadata・data"] --> B["整合する停止点のbackup"]
+  C["catalog DB + 暗号鍵"] --> B
+  U["各GUI DB + 暗号鍵"] --> B
+  S["Spark logs / Kafka・SQLite再開状態"] --> B
+  F["landing / workspace / private設定"] --> B
+  B -.-> T["別環境へ復元してSQL・hash・再開位置を確認"]

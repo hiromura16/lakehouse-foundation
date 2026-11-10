@@ -5,8 +5,18 @@ import argparse
 from hashlib import sha256
 from pathlib import Path
 
-parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("file", type=Path)
+parser = argparse.ArgumentParser(
+    description=__doc__,
+    epilog=(
+        "原本をコピーし終えた後に実行します。隣へ<原本名>.readyを作成・更新し、"
+        "SHA-256と改行を保存します。原本の変更や取り込みの起動は行いません。"
+    ),
+)
+parser.add_argument(
+    "file",
+    type=Path,
+    help="コピー完了済みの通常ファイル。symlinkや.part/.ready自体は指定できない",
+)
 args = parser.parse_args()
 path = args.file
 if (

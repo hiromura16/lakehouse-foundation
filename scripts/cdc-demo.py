@@ -430,15 +430,47 @@ def main():
     """Require explicit permission flags for new DB preparation or fixed
     DML.
     """
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "action", choices=["create", "insert", "update", "delete"]
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog=(
+            "専用の合成CDC DBを準備するか、"
+            "所有権を確認して固定6行を変更します。"
+            "会社の業務DBへは書き込まず、Kafkaや下流jobは起動しません。"
+        ),
     )
-    parser.add_argument("--env-file", required=True)
-    parser.add_argument("--output", type=Path)
-    parser.add_argument("--allow-create-demo-database", action="store_true")
-    parser.add_argument("--allow-demo-dml", action="store_true")
-    parser.add_argument("--test-trust-server-certificate", action="store_true")
+    parser.add_argument(
+        "action",
+        choices=["create", "insert", "update", "delete"],
+        help="create=専用DBとCDCを準備。insert/update/delete=固定6行を変更",
+    )
+    parser.add_argument(
+        "--env-file",
+        required=True,
+        help="DEMO接続情報を持つGit外のprivate env。DMLには所有権情報も必要",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help=(
+            "create結果のGit外新規envファイル。0600で保存し、"
+            "同じ親dirへtable-map.jsonも生成する"
+        ),
+    )
+    parser.add_argument(
+        "--allow-create-demo-database",
+        action="store_true",
+        help="新しい専用合成DBの作成・初期投入・CDC準備に明示同意する",
+    )
+    parser.add_argument(
+        "--allow-demo-dml",
+        action="store_true",
+        help="準備済み専用DBの所有権を照合した固定INSERT/UPDATE/DELETEに同意する",
+    )
+    parser.add_argument(
+        "--test-trust-server-certificate",
+        action="store_true",
+        help="loopback試験専用の証明書検証例外。暗号化は維持。会社接続には使わない",
+    )
     args = parser.parse_args()
     values = read_env(args.env_file)
     if args.action == "create":

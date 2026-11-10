@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="04-cdc-sequence-title 04-cdc-sequence-description" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
+<title id="04-cdc-sequence-title">CDCの確定順序と再開位置</title>
+<desc id="04-cdc-sequence-description">SQL Server CDCをDebeziumで読み、Kafkaを経由してrawイベントとSQLite現在値を保存する。consumerはSilver/Goldまで確認してcheckpointを保存し、その後Kafka offsetをcommitする。 根拠: infra/cdc/consumer.py, infra/cdc/connector.py, docs/CDC.md, docs/verification.json</desc>
+<defs>
+<marker id="04-cdc-sequence-data" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#2469a8"/></marker>
+<marker id="04-cdc-sequence-control" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#70608e"/></marker>
+<marker id="04-cdc-sequence-optional" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#78818c"/></marker>
+</defs>
+<rect x="0" y="0" width="1920" height="1080" rx="0" fill="#fff" stroke="none"/>
+<rect x="0" y="0" width="14" height="1080" rx="0" fill="#152a43" stroke="none"/>
+<text x="56" y="43" fill="#536780" font-size="18" font-weight="600">LAKEHOUSE FOUNDATION  /  PoC REPORT ASSETS</text>
+<text x="56" y="104" fill="#152a43" font-size="42" font-weight="700">04  CDCの確定順序と再開位置</text>
+<path d="M1270,35 L1320,35" stroke="#2469a8" stroke-width="3"/>
+<text x="1332" y="41" fill="#536780" font-size="17" font-weight="400">データ</text>
+<path d="M1475,35 L1525,35" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5"/>
+<text x="1537" y="41" fill="#536780" font-size="17" font-weight="400">制御・設定</text>
+<path d="M1680,35 L1730,35" stroke="#78818c" stroke-width="3" stroke-dasharray="3 7"/>
+<text x="1742" y="41" fill="#536780" font-size="17" font-weight="400">任意・計画</text>
+<text x="56" y="148" fill="#536780" font-size="23" font-weight="400">DB commitからKafka、raw、現在値、派生表へ。checkpointとoffsetは別の確定点。</text>
+<rect x="56" y="220" width="400" height="220" rx="16" fill="#edf4ff" stroke="#b8cee8"/>
+<rect x="56" y="238" width="5" height="184" rx="2" fill="#245fa6" stroke="none"/>
+<text x="80" y="262" fill="#152a43" font-size="27" font-weight="700">01｜SQL Server</text>
+<text x="80" y="307" fill="#152a43" font-size="23" font-weight="400">DBA：Agent・DB/表CDC</text>
+<text x="80" y="339" fill="#152a43" font-size="23" font-weight="400">I / U / Dをcommit</text>
+<text x="80" y="371" fill="#152a43" font-size="23" font-weight="400">専用read権限・通常TLS</text>
+<text x="80" y="410" fill="#245fa6" font-size="20" font-weight="600">会社DBAの準備が必要</text>
+<rect x="520" y="220" width="400" height="220" rx="16" fill="#edf4ff" stroke="#b8cee8"/>
+<rect x="520" y="238" width="5" height="184" rx="2" fill="#245fa6" stroke="none"/>
+<text x="544" y="262" fill="#152a43" font-size="27" font-weight="700">02｜Debezium</text>
+<text x="544" y="307" fill="#152a43" font-size="23" font-weight="400">初期snapshot / 変更読取</text>
+<text x="544" y="339" fill="#152a43" font-size="23" font-weight="400">schema historyを保持</text>
+<text x="544" y="371" fill="#152a43" font-size="23" font-weight="400">既存設定一致時は無変更</text>
+<text x="544" y="410" fill="#245fa6" font-size="20" font-weight="600">cdc-connect / register</text>
+<rect x="984" y="220" width="400" height="220" rx="16" fill="#eaf7f3" stroke="#a4d1c1"/>
+<rect x="984" y="238" width="5" height="184" rx="2" fill="#126c59" stroke="none"/>
+<text x="1008" y="262" fill="#152a43" font-size="27" font-weight="700">03｜Kafka</text>
+<text x="1008" y="307" fill="#152a43" font-size="23" font-weight="400">topic / partition / offset</text>
+<text x="1008" y="339" fill="#152a43" font-size="23" font-weight="400">イベントLSNを保持</text>
+<text x="1008" y="371" fill="#152a43" font-size="23" font-weight="400">tombstoneも記録対象</text>
+<text x="1008" y="410" fill="#126c59" font-size="20" font-weight="600">Kafbatで状態・lag</text>
+<rect x="1448" y="220" width="416" height="220" rx="16" fill="#faf0e7" stroke="#d9baa1"/>
+<rect x="1448" y="238" width="5" height="184" rx="2" fill="#85512a" stroke="none"/>
+<text x="1472" y="262" fill="#152a43" font-size="27" font-weight="700">04｜raw CDC</text>
+<text x="1472" y="307" fill="#152a43" font-size="23" font-weight="400">Icebergへイベント保存</text>
+<text x="1472" y="339" fill="#152a43" font-size="23" font-weight="400">再処理の重複を識別</text>
+<text x="1472" y="371" fill="#152a43" font-size="23" font-weight="400">rawと現在値は別の表現</text>
+<text x="1472" y="410" fill="#85512a" font-size="20" font-weight="600">削除イベントも保持</text>
+<rect x="1448" y="570" width="416" height="230" rx="16" fill="#eef2f6" stroke="#bbc8d4"/>
+<rect x="1448" y="588" width="5" height="194" rx="2" fill="#455b71" stroke="none"/>
+<text x="1472" y="612" fill="#152a43" font-size="27" font-weight="700">05｜SQLite現在値</text>
+<text x="1472" y="657" fill="#152a43" font-size="23" font-weight="400">6表の主キー状態を復元</text>
+<text x="1472" y="689" fill="#152a43" font-size="23" font-weight="400">restart後もstateを保持</text>
+<text x="1472" y="721" fill="#152a43" font-size="23" font-weight="400">consumerはrestart:no</text>
+<text x="1472" y="760" fill="#455b71" font-size="20" font-weight="600">cdc-consumer volume</text>
+<rect x="984" y="570" width="400" height="230" rx="16" fill="#fff7dd" stroke="#dfca85"/>
+<rect x="984" y="588" width="5" height="194" rx="2" fill="#806000" stroke="none"/>
+<text x="1008" y="612" fill="#152a43" font-size="27" font-weight="700">06｜派生表を確定</text>
+<text x="1008" y="657" fill="#152a43" font-size="23" font-weight="400">CDC専用Silver / Gold</text>
+<text x="1008" y="689" fill="#152a43" font-size="23" font-weight="400">固定SQLで各表を再構築</text>
+<text x="1008" y="721" fill="#152a43" font-size="23" font-weight="400">表間transactionではない</text>
+<text x="1008" y="760" fill="#806000" font-size="20" font-weight="600">複数確定点を持つ</text>
+<rect x="520" y="570" width="400" height="230" rx="16" fill="#eaf7f3" stroke="#a4d1c1"/>
+<rect x="520" y="588" width="5" height="194" rx="2" fill="#126c59" stroke="none"/>
+<text x="544" y="612" fill="#152a43" font-size="27" font-weight="700">07｜checkpoint</text>
+<text x="544" y="657" fill="#152a43" font-size="23" font-weight="400">成功した処理位置を保存</text>
+<text x="544" y="689" fill="#152a43" font-size="23" font-weight="400">raw/現在値/派生表を確認</text>
+<text x="544" y="721" fill="#152a43" font-size="23" font-weight="400">再開時に既存状態と照合</text>
+<text x="544" y="760" fill="#126c59" font-size="20" font-weight="600">SQLiteに保持</text>
+<rect x="56" y="570" width="400" height="230" rx="16" fill="#eaf7f3" stroke="#a4d1c1"/>
+<rect x="56" y="588" width="5" height="194" rx="2" fill="#126c59" stroke="none"/>
+<text x="80" y="612" fill="#152a43" font-size="27" font-weight="700">08｜offset commit</text>
+<text x="80" y="657" fill="#152a43" font-size="23" font-weight="400">最後にKafkaへ反映</text>
+<text x="80" y="689" fill="#152a43" font-size="23" font-weight="400">lag0だけで業務受入にしない</text>
+<text x="80" y="721" fill="#152a43" font-size="23" font-weight="400">順序・件数・I/U/Dを照合</text>
+<text x="80" y="760" fill="#126c59" font-size="20" font-weight="600">exactly-once一括保証ではない</text>
+<path d="M 456,330 L 520,330" fill="none" stroke="#2469a8" stroke-width="3" marker-end="url(#04-cdc-sequence-data)"/>
+<path d="M 920,330 L 984,330" fill="none" stroke="#2469a8" stroke-width="3" marker-end="url(#04-cdc-sequence-data)"/>
+<path d="M 1384,330 L 1448,330" fill="none" stroke="#2469a8" stroke-width="3" marker-end="url(#04-cdc-sequence-data)"/>
+<path d="M 1656,440 L 1656,570" fill="none" stroke="#2469a8" stroke-width="3" marker-end="url(#04-cdc-sequence-data)"/>
+<path d="M 1448,685 L 1384,685" fill="none" stroke="#2469a8" stroke-width="3" marker-end="url(#04-cdc-sequence-data)"/>
+<path d="M 984,685 L 920,685" fill="none" stroke="#2469a8" stroke-width="3" marker-end="url(#04-cdc-sequence-data)"/>
+<path d="M 520,685 L 456,685" fill="none" stroke="#2469a8" stroke-width="3" marker-end="url(#04-cdc-sequence-data)"/>
+<rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
+<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">過去の合成試験：初期144＋INSERT6＋UPDATE6＋DELETE6＋tombstone6＝raw168。restart後distinct168。</text>
+<text x="56" y="977" fill="#536780" font-size="20" font-weight="400">GUIの固定I/U/Dは専用DBの所有権tokenを検証する素材操作。会社業務DBのDMLは実行しない。</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+</svg>

@@ -47,10 +47,37 @@ def read_values(path):
 
 def main():
     """Default to presence/routing inspection; outbound tests are explicit."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--env-file", required=True, type=Path)
-    parser.add_argument("--check", action="append", default=[])
-    parser.add_argument("--timeout", type=float, default=5)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog=(
+            "--checkなしはproxy/NO_PROXY/CA設定をオフライン確認します。"
+            "診断は設定反映、Docker再起動、DB変更を行いません。"
+            "daemonや全Java clientの疎通を保証する試験ではありません。"
+        ),
+    )
+    parser.add_argument(
+        "--env-file",
+        required=True,
+        type=Path,
+        help="proxy/NO_PROXY/CAを読むGit外のprivate env（0600、最大128KiB）",
+    )
+    parser.add_argument(
+        "--check",
+        action="append",
+        default=[],
+        help=(
+            "通信を試す固定先ID: pypi/maven/npm/github。"
+            "複数指定可。任意URL不可"
+        ),
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=5,
+        help=(
+            "1接続のtimeout秒。0より大きく10以下（既定: 5）。通信診断時に適用"
+        ),
+    )
     args = parser.parse_args()
     try:
         values = read_values(args.env_file)

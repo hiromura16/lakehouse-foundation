@@ -161,29 +161,48 @@ def atomic_write(path, text, mode, uid, gid):
 
 def main():
     """Plan safely, or back up and apply one share with rollback on failure."""
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog=(
+            "既存Unix/Sambaユーザーの資格情報を保持し、専用共有を準備します。"
+            "通常はplanだけで、applyは管理者がbackup・testparm・reloadを行います。"
+            "認証付きSMBコピーの受入は別に確認してください。"
+        ),
+    )
     parser.add_argument(
         "--user",
         required=True,
-        help="Existing Unix and Samba user; password is never changed",
+        help="既存のUnix/Samba両方に登録済みのユーザー。passwordは変更しない",
     )
     parser.add_argument(
         "--allow",
         required=True,
         action="append",
-        help="Explicit IP/CIDR; repeat or use commas",
+        help="許可するIP/CIDR。複数指定・comma区切り可。全許可の/0は拒否",
     )
-    parser.add_argument("--share", default="Lakehouse-Landing")
     parser.add_argument(
-        "--path", type=Path, default=Path("/srv/lakehouse/landing")
+        "--share",
+        default="Lakehouse-Landing",
+        help=(
+            "専用共有の名前。同名の既存共有は置換しない"
+            "（既定: Lakehouse-Landing）"
+        ),
+    )
+    parser.add_argument(
+        "--path",
+        type=Path,
+        default=Path("/srv/lakehouse/landing"),
+        help="空白のない専用landing絶対パス。private設定のLANDING_DIRと揃える",
     )
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="Root only: back up, validate, install and reload smbd",
+        help="管理者専用。backup・検証後に専用共有を配置し、smbdをreloadする",
     )
     parser.add_argument(
-        "--plan", action="store_true", help="Read-only plan (default)"
+        "--plan",
+        action="store_true",
+        help="設定や共有を変更せず計画を表示する（既定の動作）",
     )
     args = parser.parse_args()
     if args.apply and args.plan:

@@ -1,0 +1,7 @@
+# Optional report exports; separate from application/container dependencies.
+# Versions checked against official PyPI metadata on 2026-11-10.
+# Use uv 0.13.7 and Python 3.12 to reproduce requirements-export.lock.
+CairoSVG==2.9.1
+Pillow==13.0.0
+pypdf==7.0.1
+python-pptx==1.0.2

@@ -1,4 +1,10 @@
-"""Run the fixed single-host Spark services without background daemons."""
+"""Run one fixed foreground Spark role, initialize roots, or probe health.
+
+init changes ownership/mode of the two dedicated volume roots only; it never
+walks existing files. master/worker/history replace this process with a JVM.
+health reads a fixed local JSON endpoint without an outbound proxy and exits
+with status 0 or 1. Roles, internal RPC ports and paths are defined below.
+"""
 
 import argparse
 import json
@@ -22,7 +28,11 @@ HEALTH_URLS = {
 
 
 def initialise_volumes(uid, gid, paths=VOLUME_PATHS):
-    """Own only the two mount roots, without traversing stored user files."""
+    """Set the two mount roots to a non-root UID/GID and mode 02770.
+
+    This initialization requires ownership-changing permission. It checks
+    both paths before changing either and does not recursively chown data.
+    """
     if not uid.isdecimal() or int(uid) == 0 or not gid.isdecimal():
         raise ValueError("Use a non-root worker UID and a numeric GID.")
     for path in paths:
@@ -84,8 +94,20 @@ def healthy(role):
 def main():
     """Initialise dedicated roots or replace this process with one daemon."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["init", *CLASSES, "health"])
-    parser.add_argument("role", nargs="?", choices=CLASSES)
+    parser.add_argument(
+        "action",
+        choices=["init", *CLASSES, "health"],
+        help=(
+            "initはvolumeルートの権限準備、各roleは常駐JVM起動、"
+            "healthは固定のローカル疎通検査"
+        ),
+    )
+    parser.add_argument(
+        "role",
+        nargs="?",
+        choices=CLASSES,
+        help="health時に検査するrole。他のactionでは指定不要",
+    )
     args = parser.parse_args()
     if args.action == "init":
         initialise_volumes(

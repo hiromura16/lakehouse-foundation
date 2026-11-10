@@ -501,38 +501,112 @@ def publish_file(path, payload, replace=False):
 
 def main(argv=None):
     """Validate the requested source destination and publish synthetic rows."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--orders", type=int, default=20)
-    parser.add_argument("--days", type=int, default=7)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog=(
+            "6種類のMES/ERP素材とmanifestを生成します。"
+            "取り込み・メダリオン・n8n・Airflowは起動しません。"
+            "SQL投入は別の専用DEMO DBを用意し、明示同意が必要です。"
+        ),
+    )
     parser.add_argument(
-        "--scenario", choices=["clean", "edge"], default="edge"
+        "--output",
+        type=Path,
+        help=(
+            "Git外の出力ディレクトリ。素材とmanifestを保存する。"
+            "SQLのみでもmanifest用に必須。一覧表示時は不要"
+        ),
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="乱数seed。同じ条件の素材を再現する（既定: 42）",
+    )
+    parser.add_argument(
+        "--orders",
+        type=int,
+        default=20,
+        help=(
+            "製造指図・受注それぞれの基準件数。1〜100000（既定: 20）。"
+            "子明細は増えるためworkerの行数・サイズ上限は別に確認"
+        ),
+    )
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=7,
+        help="合成する操業日の範囲。1〜366日（既定: 7）",
+    )
+    parser.add_argument(
+        "--scenario",
+        choices=["clean", "edge"],
+        default="edge",
+        help="基礎データ。clean=正常、edge=不正値・改訂等を含む（既定: edge）",
     )
     parser.add_argument(
         "--destination",
         choices=["landing", "sqlserver", "both"],
         default="landing",
+        help=(
+            "投入先。landing=ファイル、sqlserver=専用DB、both=両方。"
+            "両方への書込みは一括transactionではない（既定: landing）"
+        ),
     )
     parser.add_argument(
         "--force",
         action="store_true",
         help=(
-            "Replace landing files and manifest only. "
-            "Existing SQL schemas are never reused."
+            "出力済みlanding素材とmanifestの置換だけを許可する。"
+            "SQLの既存schemaは再利用しない"
         ),
     )
-    parser.add_argument("--env-file", type=Path)
-    parser.add_argument("--allow-sql-write", action="store_true")
-    parser.add_argument("--anomaly", action="append", default=[])
-    parser.add_argument("--anomaly-rate", type=int, default=10)
-    parser.add_argument("--allow-file-faults", action="store_true")
-    parser.add_argument("--images", action="store_true")
-    parser.add_argument("--list-scenarios", action="store_true")
+    parser.add_argument(
+        "--env-file",
+        type=Path,
+        help=(
+            "SQL投入時のDEMO接続情報を持つGit外のprivate env。SQL投入時は必須"
+        ),
+    )
+    parser.add_argument(
+        "--allow-sql-write",
+        action="store_true",
+        help="専用DEMO DBの新規schemaへのCREATE/INSERTに明示同意する",
+    )
+    parser.add_argument(
+        "--anomaly",
+        action="append",
+        default=[],
+        help="追加する異常ID。複数指定可。IDは--list-scenariosで確認する",
+    )
+    parser.add_argument(
+        "--anomaly-rate",
+        type=int,
+        default=10,
+        help="異常で選ぶ行の割合。1〜100%%（既定: 10）。最終隔離率ではない",
+    )
+    parser.add_argument(
+        "--allow-file-faults",
+        action="store_true",
+        help="転送・文字コード等のファイル異常を意図して生成することに同意する",
+    )
+    parser.add_argument(
+        "--images",
+        action="store_true",
+        help="人工的な検査PNGを1枚生成する。landing/bothだけで使用可能",
+    )
+    parser.add_argument(
+        "--list-scenarios",
+        action="store_true",
+        help="異常ID・説明とpresetをJSON表示して終了。素材やDBを変更しない",
+    )
     parser.add_argument(
         "--test-trust-server-certificate",
         action="store_true",
-        help="Loopback-only test exception. Encryption remains required.",
+        help=(
+            "loopback試験専用の証明書検証例外。"
+            "暗号化は維持し、会社接続には使わない"
+        ),
     )
     args = parser.parse_args(argv)
     if args.list_scenarios:

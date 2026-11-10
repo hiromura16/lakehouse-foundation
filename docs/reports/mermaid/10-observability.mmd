@@ -1,0 +1,8 @@
+flowchart LR
+  W["worker metrics"] --> P["Prometheus / 15s / 2target"]
+  P --> G["Grafana / GUI保存"]
+  P --> P
+  Portal["ポータル"] --> Health["固定health / 到達性"]
+  Portal --> Quality["固定品質SQL / Gold preview"]
+  Portal --> Jobs["最新20job / 非永続"]
+  Native["n8n / Airflow / Spark"] --> Logs["各実行履歴・保存先"]

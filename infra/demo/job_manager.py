@@ -16,6 +16,7 @@ class OperationFailure(RuntimeError):
     """Carry an application-owned safe failure code and message."""
 
     def __init__(self, code: str, message: str):
+        """Retain a safe public error instead of a raw driver exception."""
         self.code = code
         self.message = message
         super().__init__(code)
@@ -25,6 +26,7 @@ class JobManager:
     """Serialize bounded batches and keep a small in-memory job history."""
 
     def __init__(self, output: Path, generator: Callable, settings: dict):
+        """Bind the source writer and retain only its SQL safety settings."""
         self.output = output
         self.generator = generator
         self.settings = {

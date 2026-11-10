@@ -117,15 +117,41 @@ def write_private(output, context):
 
 def main():
     """Export factual context without invoking any model or downstream job."""
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog=(
+            "固定Goldを表ごとのmain snapshotで参照し、"
+            "根拠付きJSONを保存します。"
+            "データは変更せず、モデル推論や外部AI送信も行いません。"
+            "各表の上限付き抜粋であり、全件集計には使えません。"
+        ),
+    )
     parser.add_argument(
         "--env-file",
         type=Path,
         default=os.environ.get("LAKEHOUSE_ENV_FILE") or None,
+        help="Git外のsite.env。省略時はLAKEHOUSE_ENV_FILEを使う",
     )
-    parser.add_argument("--dataset", choices=[*DATASETS, "all"], default="all")
-    parser.add_argument("--limit", type=int, default=100)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--dataset",
+        choices=[*DATASETS, "all"],
+        default="all",
+        help=(
+            "production=工場日別生産、sales=受注別出荷。all=両方（既定: all）"
+        ),
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=100,
+        help="各表の最大行数。1〜500（既定: 100）。all時も表ごとに適用する",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="新規JSONのGit外絶対パス。0600で保存し、既存ファイルは上書きしない",
+    )
     args = parser.parse_args()
     if args.env_file is None:
         parser.error("Provide --env-file or set LAKEHOUSE_ENV_FILE.")

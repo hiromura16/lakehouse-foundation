@@ -716,6 +716,11 @@ def main():
     parser.add_argument(
         "action",
         choices=["serve", "bootstrap", "ingest", "medallion", "verify"],
+        help=(
+            "serve=初期化後にworker APIを常駐。bootstrap=不足する基盤を準備。"
+            "ingest=完成原本を取り込む。medallion=取込と派生表を更新。"
+            "verify=隔離namespaceで合成期待値を検査"
+        ),
     )
     args = parser.parse_args()
     if args.action == "serve":
