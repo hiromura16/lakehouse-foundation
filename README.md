@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="docs/START-HERE.md">はじめに</a> ·
+  <a href="#dokployで管理する場合">Dokployで導入</a> ·
   <a href="docs/COMPANY-ROLLOUT.md">会社へ導入</a> ·
   <a href="docs/POC-PORTAL.md">GUIで操作</a> ·
   <a href="docs/API.md">API / Swagger</a> ·
@@ -38,7 +39,17 @@
 
 ![データレイクハウスの全体構成](docs/assets/architecture.svg)
 
-## cloneから最短で起動する
+## 導入の順番
+
+**会社でDokploy管理にする場合は、レイクハウスをDeployする前にDokployを導入します。** Docker・社内proxy/CAの準備 → cloneとprivate設定 → Dokploy導入 → GUIから公開GitをDeploy、の順です。
+
+| 導入方法 | 共通準備の後に行うこと |
+| --- | --- |
+| Dokployを新規導入して管理 | 下記のインストーラー → DokployのGUIからDeploy |
+| 導入済みのDokployで管理 | 既存GUIへ公開Gitを登録してDeploy |
+| Docker Composeを直接操作 | 下記「CLIで直接起動する場合」の `lakehouse.sh up` |
+
+### 共通準備
 
 Linux x86-64、Docker Engine / BuildKit、Docker Compose **2.23.1以上**、Python **3.12以上**、[uv **0.13.7**](https://docs.astral.sh/uv/getting-started/installation/)を用意します。通常ユーザーがDockerを管理できる環境を前提とします。会社のproxyが必要なら、image取得前に [企業proxy・CA手順](docs/COMPANY-PROXY.md) を済ませます。
 
@@ -58,11 +69,50 @@ sudo install -d -m 0770 -o "$(id -un)" -g "$(id -gn)" \
 
 private設定をエディターで開き、`LANDING_DIR`、`WORKER_UID/GID`、portを確認します。最初に操作画面と監視を使う場合は `COMPOSE_PROFILES=demo,monitoring`、coreだけなら空欄にします。既存環境では生成済みの秘密値・暗号鍵を保持します。
 
+### Dokployで管理する場合
+
+新規導入では、同じprivate設定に次の項目を入力します。配置先サーバーで作業し、実アドレスを公開ファイルへ書き戻しません。
+
+| private設定 | 入力する内容 |
+| --- | --- |
+| `DOKPLOY_BIND_IP` | 管理画面を公開する、配置先の限定IPv4アドレス |
+| `DOKPLOY_ALLOWED_CIDRS` | 管理画面へ接続してよいクライアントのCIDR |
+| `SWARM_ADVERTISE_ADDR` | 配置先サーバーに割り当てられたSwarm通信用IPv4アドレス |
+| `SWARM_ADDRESS_POOL` / `SWARM_SUBNET_SIZE` | 会社LAN・VPNと重ならないDocker用アドレス範囲 |
+| `DOKPLOY_ADMIN_PORT` | 管理画面のport。既定は `3100` |
+
+まず設定内容を表示し、導入時に `--apply` を付けます。一つ目のコマンドはホストを変更しません。既存Dokployを使う場合は、次のGUI設定へ進みます。
+
+```bash
+bash infra/dokploy/install.sh --env-file "$LAKEHOUSE_ENV_FILE"
+sudo bash infra/dokploy/install.sh --env-file "$LAKEHOUSE_ENV_FILE" --apply
+```
+
+導入後、設定した管理画面へ接続して初期管理者を登録し、次の順で配置します。
+
+1. Project → Environment → Docker Composeサービスを作成します。
+2. SourceをGit、Repositoryを `https://github.com/hiromura16/lakehouse-foundation.git`、Branchを `main`、Compose pathを `infra/lakehouse/compose.yaml` にします。
+3. サービスの `appName` を確認し、private設定の `COMPOSE_PROJECT_NAME` を同じ値へ合わせます。Environmentへprivate設定を登録し、`.env`生成を有効にします。
+4. GUI・Spark等の追加profileも使うため、AdvancedのCustom Commandへ下記を設定します。`lakehouse-development` は実際の `appName` へ置き換えます。この欄には `compose` から入力します。
+5. Deployを実行し、サービスの起動とone-shotの正常終了を確認します。
+
+```text
+compose -p lakehouse-development --env-file infra/lakehouse/.env -f infra/lakehouse/compose.yaml -f infra/compute/compose.yaml -f infra/orchestration/compose.yaml -f infra/demo/compose.yaml -f infra/cdc/compose.yaml -f infra/poc/compose.yaml -f infra/mcp/compose.yaml up -d --build --remove-orphans --wait --wait-timeout 600
+```
+
+この方法の初回起動はDokployのDeployで行います。Grafanaを使う場合は、配置後に同じprivate設定で `./scripts/lakehouse.sh grafana-init` を実行すると、標準dashboardを一度だけ投入できます。Projectの分け方、既存Swarm、既存データの移行は [Dokploy手順](docs/DOKPLOY.md) を参照してください。
+
+### CLIで直接起動する場合
+
+Docker Composeを直接管理する場合は、共通準備の後に実行します。
+
 ```bash
 ./scripts/lakehouse.sh plan
 ./scripts/lakehouse.sh up
 ./scripts/lakehouse.sh status
 ```
+
+### 配置後に画面を開く
 
 サーバー自身のブラウザーから **[操作GUI](http://localhost:8501/)** ／ **[Swagger UI](http://localhost:8502/docs)** を開きます（`demo` profile）。最初はloopbackに限定し、遠隔利用はSSHポート転送等を使います。利用者認証・HTTPS・接続制限、別環境の名前・port・volumeは [会社導入](docs/COMPANY-ROLLOUT.md) と [設定一覧](docs/CONFIGURATION.md) に沿って準備します。
 
@@ -126,4 +176,4 @@ uv pip sync --python /absolute/private/lakehouse-dev/bin/python \
 | 監視・更新・復旧を扱う | [Grafana](docs/GRAFANA.md) · [運用](docs/OPERATIONS.md) · [障害対応](docs/TROUBLESHOOTING.md) |
 | AIや外部サービスを検討する | [AI / LangChain](docs/AI-READINESS.md) · [Cloudflare](docs/CLOUDFLARE.md) · [PoCツール](docs/POC-TOOLS.md) |
 
-停止は `./scripts/lakehouse.sh down`。名前付きvolumeを保持します。原本、カタログDB、暗号鍵、GUIの保存内容を一組として保管し、復元は別環境で確認します。
+Dokploy管理ではGUIのStop、CLI管理では `./scripts/lakehouse.sh down` で停止します。名前付きvolumeを保持します。原本、カタログDB、暗号鍵、GUIの保存内容を一組として保管し、復元は別環境で確認します。
