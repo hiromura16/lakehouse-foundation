@@ -1,0 +1,7 @@
+flowchart LR
+  G["Gold2表"] --> S["各表main snapshot固定"]
+  S --> C["最大500行/表 + 根拠JSON"]
+  C --> D["LangChain Document"]
+  D -.-> L["任意Ollama / 推論は別途評価"]
+  M["MCP read tools"] --> C
+  D -.-> R["追加実装: OCR / embedding / 検索 / 権限・削除同期"]

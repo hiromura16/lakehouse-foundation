@@ -1,0 +1,15 @@
+sequenceDiagram
+  participant SQL as SQL Server CDC
+  participant DBZ as Debezium
+  participant K as Kafka
+  participant C as consumer
+  participant I as Iceberg raw/Silver/Gold
+  participant S as SQLite state/checkpoint
+  SQL->>DBZ: commit済みI/U/D
+  DBZ->>K: LSN付きイベント / tombstone
+  K->>C: poll
+  C->>I: raw保存
+  C->>S: 現在値6表の更新
+  C->>I: Silver / Goldの確定
+  C->>S: checkpoint保存
+  C->>K: offset commit

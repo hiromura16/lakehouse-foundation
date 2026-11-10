@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="07-ai-context-title 07-ai-context-description" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
+<title id="07-ai-context-title">AIへ渡す事実と根拠の境界</title>
+<desc id="07-ai-context-description">Trinoが各表のmain snapshotを固定し、上限付きcontext JSONへ表名とsnapshot IDを付ける。LangChain Document化までを同梱し、モデル推論やRAGの完成とは区別する。 根拠: scripts/ai_context.py, examples/ai/context_chain.py, infra/mcp/server.py, docs/verification.json</desc>
+<defs>
+<marker id="07-ai-context-data" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#2469a8"/></marker>
+<marker id="07-ai-context-control" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#70608e"/></marker>
+<marker id="07-ai-context-optional" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#78818c"/></marker>
+</defs>
+<rect x="0" y="0" width="1920" height="1080" rx="0" fill="#fff" stroke="none"/>
+<rect x="0" y="0" width="14" height="1080" rx="0" fill="#152a43" stroke="none"/>
+<text x="56" y="43" fill="#536780" font-size="18" font-weight="600">LAKEHOUSE FOUNDATION  /  PoC REPORT ASSETS</text>
+<text x="56" y="104" fill="#152a43" font-size="42" font-weight="700">07  AIへ渡す事実と根拠の境界</text>
+<path d="M1270,35 L1320,35" stroke="#2469a8" stroke-width="3"/>
+<text x="1332" y="41" fill="#536780" font-size="17" font-weight="400">データ</text>
+<path d="M1475,35 L1525,35" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5"/>
+<text x="1537" y="41" fill="#536780" font-size="17" font-weight="400">制御・設定</text>
+<path d="M1680,35 L1730,35" stroke="#78818c" stroke-width="3" stroke-dasharray="3 7"/>
+<text x="1742" y="41" fill="#536780" font-size="17" font-weight="400">任意・計画</text>
+<text x="56" y="148" fill="#536780" font-size="23" font-weight="400">固定Gold2表をmain snapshotで読む。Document化、モデル推論、索引作成を分ける。</text>
+<rect x="56" y="220" width="400" height="260" rx="16" fill="#fff7dd" stroke="#dfca85"/>
+<rect x="56" y="238" width="5" height="224" rx="2" fill="#806000" stroke="none"/>
+<text x="80" y="262" fill="#152a43" font-size="27" font-weight="700">01｜Gold2表</text>
+<text x="80" y="307" fill="#152a43" font-size="23" font-weight="400">生産：工場・UTC日別</text>
+<text x="80" y="339" fill="#152a43" font-size="23" font-weight="400">出荷：受注別</text>
+<text x="80" y="371" fill="#152a43" font-size="23" font-weight="400">SQLで型と指標を確定</text>
+<text x="80" y="410" fill="#806000" font-size="20" font-weight="600">任意SQL入力は公開しない</text>
+<rect x="520" y="220" width="400" height="260" rx="16" fill="#edf4ff" stroke="#b8cee8"/>
+<rect x="520" y="238" width="5" height="224" rx="2" fill="#245fa6" stroke="none"/>
+<text x="544" y="262" fill="#152a43" font-size="27" font-weight="700">02｜main snapshot</text>
+<image x="855" y="238" width="46" height="46" preserveAspectRatio="xMidYMid meet" href="data:image/svg+xml;base64,PHN2ZyBpZD0iTGF5ZXJfMSIgZGF0YS1uYW1lPSJMYXllciAxIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0Mi4xIDYyLjQ1Ij48ZGVmcz48c3R5bGU+LmNscy0xe2ZpbGw6I2ZmZjt9LmNscy0ye2ZpbGw6I2RkMDBhMTt9LmNscy0ze2ZpbGw6I2Y5ZDhkMjt9LmNscy00e2ZpbGw6IzEwMTEwZTt9LmNscy01e2ZpbGw6I2U1ZTVlNTt9LmNscy02e2ZpbGw6IzhhY2NjZTtvcGFjaXR5OjAuMjtpc29sYXRpb246aXNvbGF0ZTt9LmNscy03e2ZpbGw6IzUxNTE1MTt9PC9zdHlsZT48L2RlZnM+PHBhdGggY2xhc3M9ImNscy0xIiBkPSJNMTQuMjQsNTUuMzZjLjkyLS42MS0xLjQ5LS4zOC0xLjY5LS43OWExNSwxNSwwLDAsMS0yLjgyLS41MUM4LDUzLjYyLDMuOSw1MC44NSwzLjQ3LDQ4LjI1czAtNy42NSwxLjgzLTEwLjYxQTE3LDE3LDAsMCwxLDkuNzMsMzNTNi4xNiwyNC41MSw1Ljg1LDE4LjEsNiwuMjEsMTAuMjQsMHMzLjQ5LDEwLjQ4LDIuODIsMTcuNDNhODkuNDcsODkuNDcsMCwwLDAtLjIxLDEzLjg5LDE5LjQ1LDE5LjQ1LDAsMCwxLDUuNTEtLjkyLDIxLjIsMjEuMiwwLDAsMSw0LjkuNDZTMjQuNTgsMjEsMjksMTQuODYsMzgsMi40LDQxLDQuMTlzLS44MSw4LjE5LTMuNDYsMTEuNTItNy4yNSw4LjMzLTguNzgsMTFhNDcuMjYsNDcuMjYsMCwwLDAtMi42NSw1LjUxLDE1LDE1LDAsMCwxLDYuNCw2LjMyYzIuMDcsNC4yOCwyLjI3LDkuNTksMS4xNSwxMS44M2E4LjEsOC4xLDAsMCwxLTUuNjEsNGMtMS4zMi4xLTYuOTEsMS40OC02LjkxLDEuNDhaIiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgwIDApIi8+PHBhdGggY2xhc3M9ImNscy0yIiBkPSJNMjQsMzAuOTRzMy4zMy04LjcsNi4zMi0xMy42LDctOC41OSw4LjI2LTcuODRTMzYsMTQuODUsMzIuNjYsMTkuMzJhMTEyLjMsMTEyLjMsMCwwLDAtNy40NCwxMi4zN1oiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAgMCkiLz48cGF0aCBjbGFzcz0iY2xzLTIiIGQ9Ik0xMC42NCwzMi40NGwuOTUtLjc1cy0uMTMtOC43LDAtMTRTMTIsNS43OCwxMC4yMyw1Ljg1LDcuMjMsMTEsNy45MiwxOC4yM0E4Ni45Miw4Ni45MiwwLDAsMCwxMC42NCwzMi40NFoiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAgMCkiLz48Y2lyY2xlIGNsYXNzPSJjbHMtMyIgY3g9IjcuNjUiIGN5PSI0OS4xNyIgcj0iMS45NCIvPjxjaXJjbGUgY2xhc3M9ImNscy0zIiBjeD0iMzAuNTciIGN5PSI0OS4xNyIgcj0iMS45NCIvPjxwYXRoIGNsYXNzPSJjbHMtNCIgZD0iTTIyLjMzLDQ5YS4xOS4xOSwwLDAsMC0uMjUsMGgwcy0uNTcsMS0xLjQxLDEuMDZhMi4xMSwyLjExLDAsMCwxLTEuNS0uN1Y0OGMuNTQtLjI5LDEuNDEtMS4xOSwxLjQxLTEuNWExLjQsMS40LDAsMCwwLTEuNS0xLjA5Yy0xLDAtMS43LjY1LTEuNywxLjE5czEuMSwxLjIzLDEuNDEsMS40NHYxLjQ1YTEuNzcsMS43NywwLDAsMS0xLjMuN2MtLjgsMC0xLjQtMS4wOC0xLjQtMS4wOWEuMTkuMTksMCwwLDAtLjI1LS4wOGgwYS4xOC4xOCwwLDAsMC0uMDguMjNoMGMwLC4wNi43MSwxLjI5LDEuNzMsMS4yOWEyLjA3LDIuMDcsMCwwLDAsMS41LS43MiwyLjQ2LDIuNDYsMCwwLDAsMS41OS43M2guMTRhMi40NywyLjQ3LDAsMCwwLDEuNzEtMS4yNS4xOC4xOCwwLDAsMCwwLS4yNUEuMjQuMjQsMCwwLDAsMjIuMzMsNDlaIiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgwIDApIi8+PHBhdGggY2xhc3M9ImNscy01IiBkPSJNOS43MywzM1M3LDI2LDYuNDIsMjIuMjlzLTEtOS43OC0uMy0xMy44NUE0Ni4zLDQ2LjMsMCwwLDEsNy4zMSwyLjg1UzYsMTIuMzQsNi40OSwxNi40OSw5LjczLDMzLDkuNzMsMzNaIiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgwIDApIi8+PHBhdGggY2xhc3M9ImNscy01IiBkPSJNMjMuMjYsMzAuODVzMi0xMC41OSw0LjkxLTE0Ljc2UzM0LjczLDYuOSwzNi41Miw1LjYybDEuODItMS4yOFMzMSwxMiwyOC4xNywxOC4zNCwyMy4yNiwzMC44NSwyMy4yNiwzMC44NVoiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAgMCkiLz48cGF0aCBjbGFzcz0iY2xzLTQiIGQ9Ik0xMS42LDQyLjg1YTEuNTIsMS41MiwwLDEsMCwxLjUyLDEuNTJoMGExLjUyLDEuNTIsMCwwLDAtMS41LTEuNTJabS40LDEuNDFhLjQyLjQyLDAsMSwxLC40Mi0uNDJoMGEuNDIuNDIsMCwwLDEtLjQxLjQzaDBaIiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgwIDApIi8+PHBhdGggY2xhc3M9ImNscy00IiBkPSJNMjYuNTUsNDIuODVhMS41MiwxLjUyLDAsMSwwLDEuNTEsMS41M2gwYTEuNTIsMS41MiwwLDAsMC0xLjUxLTEuNTNaTTI3LDQ0LjI2YS40Mi40MiwwLDAsMS0uNDMtLjQxaDBhLjQzLjQzLDAsMCwxLC40MS0uNDMuNDIuNDIsMCwwLDEsLjQzLjQxaDBhLjQxLjQxLDAsMCwxLS40LjQyaDBaIiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgwIDApIi8+PGVsbGlwc2UgY2xhc3M9ImNscy02IiBjeD0iMTkuMzYiIGN5PSI0NC45NSIgcng9IjE0LjEiIHJ5PSIxMC4xNiIvPjxwYXRoIGNsYXNzPSJjbHMtMSIgZD0iTTM2LjQzLDM5LjNWMzIuNThhMi40NiwyLjQ2LDAsMCwwLDEuOTEtMi4yOSwyLjY1LDIuNjUsMCwwLDAtNS4yNywwQTIuNDgsMi40OCwwLDAsMCwzNSwzMi41OHY2LjU1aC0uMmMtMi02Ljk0LTcuOTEtMTEuMjgtMTUuNjMtMTEuMjhTNS41MSwzMi4xNSwzLjU1LDM5LjEzSDIuODhBMi43NiwyLjc2LDAsMCwwLDAsNDEuNzF2NS4xNGEyLjc1LDIuNzUsMCwwLDAsMi44OCwyLjU5aC45MWExMywxMywwLDAsMCwzLjU5LDUuMTFMNi4wOSw1NS43MkEuNzguNzgsMCwwLDAsNiw1Ni44MmwwLDBINmMyLjkzLDMuNTMsNy43Miw1LjYsMTMuMTMsNS42czEwLjIxLTIsMTMuMTQtNS42YS43OS43OSwwLDAsMC0uMDktMS4xMWgwbC0xLjMtMS4xOWExMywxMywwLDAsMCwzLjU5LTUuMDhoMWEyLjc0LDIuNzQsMCwwLDAsMi44Ny0yLjZWNDEuNzFBMi41OCwyLjU4LDAsMCwwLDM2LjQzLDM5LjNabS0xNy4yNi00YzcuMTQsMCwxMi45NCw0LjcsMTIuOTQsMTAuNDcsMCw2LjI1LTYuNTEsOS0xMi45NCw5UzYuMjMsNTIsNi4yMyw0NS43MkM2LjIzLDQwLDEyLDM1LjI1LDE5LjE3LDM1LjI1WiIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMCAwKSIvPjxwYXRoIGNsYXNzPSJjbHMtNyIgZD0iTTM2LjkxLDQ1LjE2SDM1di0xYTE4LjYxLDE4LjYxLDAsMCwwLS4zOS0zLjc5aC44MmExLjM1LDEuMzUsMCwwLDEsMS40NCwxLjI1aDBaIiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgwIDApIi8+PHBhdGggY2xhc3M9ImNscy03IiBkPSJNMzUuNDcsNDguMThoLTFBMTYuMTMsMTYuMTMsMCwwLDAsMzQuODksNDZoMnYuODVhMS4zNCwxLjM0LDAsMCwxLTEuMzYsMS4zMmgtLjA2WiIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMCAwKSIvPjxwYXRoIGNsYXNzPSJjbHMtNyIgZD0iTTE5LjE3LDYxLjFjLTQuNzksMC05LjA2LTEuNzItMTEuNzQtNC43OGwxLjMtMS4yMWExNy44NywxNy44NywwLDAsMCwxMC40LDMsMTcuNzMsMTcuNzMsMCwwLDAsMTAuNC0zbDEuMzUsMS4yMUMyOC4yMyw1OS4zOCwyNCw2MS4xLDE5LjE3LDYxLjFaIiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgwIDApIi8+PHBhdGggY2xhc3M9ImNscy03IiBkPSJNMi44OCw0MC40MmguODVhMTkuMzMsMTkuMzMsMCwwLDAtLjM4LDMuNzksOC4zNCw4LjM0LDAsMCwwLDAsMUgxLjQ5di0zLjVhMS4yNywxLjI3LDAsMCwxLDEuMjQtMS4yOVoiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAgMCkiLz48cGF0aCBkPSJNMTkuMTcsMzQuMzlhMTcuNjYsMTcuNjYsMCwwLDAtNC43OS42OVYyOS44NWExNy4yMywxNy4yMywwLDAsMSw0Ljc5LS42NCwxNy4zLDE3LjMsMCwwLDEsNC44LjY0djUuMjZBMTUuOTEsMTUuOTEsMCwwLDAsMTkuMTcsMzQuMzlaIiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgwIDApIi8+PHBhdGggY2xhc3M9ImNscy03IiBkPSJNMS40NCw0NmgyYTE3LjU2LDE3LjU2LDAsMCwwLC40MywyLjE2aC0xYTEuMzUsMS4zNSwwLDAsMS0xLjQ0LTEuMjVoMFY0NloiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAgMCkiLz48ZWxsaXBzZSBjbGFzcz0iY2xzLTciIGN4PSIzNS43MSIgY3k9IjMwLjI5IiByeD0iMS4yIiByeT0iMS4wOCIvPjwvc3ZnPg=="/>
+<text x="544" y="307" fill="#152a43" font-size="23" font-weight="400">各表の$refsからmain</text>
+<text x="544" y="339" fill="#152a43" font-size="23" font-weight="400">FOR VERSION AS OF</text>
+<text x="544" y="371" fill="#152a43" font-size="23" font-weight="400">各表最大500行</text>
+<text x="544" y="410" fill="#245fa6" font-size="20" font-weight="600">表間の同時点保証はない</text>
+<rect x="984" y="220" width="400" height="260" rx="16" fill="#edf4ff" stroke="#b8cee8"/>
+<rect x="984" y="238" width="5" height="224" rx="2" fill="#245fa6" stroke="none"/>
+<text x="1008" y="262" fill="#152a43" font-size="27" font-weight="700">03｜context JSON</text>
+<text x="1008" y="307" fill="#152a43" font-size="23" font-weight="400">table / snapshot_id / rows</text>
+<text x="1008" y="339" fill="#152a43" font-size="23" font-weight="400">complete_dataset:false</text>
+<text x="1008" y="371" fill="#152a43" font-size="23" font-weight="400">exporterと参照SQLのhash</text>
+<text x="1008" y="410" fill="#245fa6" font-size="20" font-weight="600">全件集計として扱わない</text>
+<rect x="1448" y="220" width="416" height="260" rx="16" fill="#f1edfc" stroke="#c6b9e9"/>
+<rect x="1448" y="238" width="5" height="224" rx="2" fill="#63449b" stroke="none"/>
+<text x="1472" y="262" fill="#152a43" font-size="27" font-weight="700">04｜LangChain</text>
+<text x="1472" y="307" fill="#152a43" font-size="23" font-weight="400">Documentへ変換</text>
+<text x="1472" y="339" fill="#152a43" font-size="23" font-weight="400">表・snapshotをmetadataへ</text>
+<text x="1472" y="371" fill="#152a43" font-size="23" font-weight="400">推論・embeddingとは別操作</text>
+<text x="1472" y="410" fill="#63449b" font-size="20" font-weight="600">固定lock / tracing無効</text>
+<rect x="56" y="620" width="590" height="220" rx="16" fill="#eaf7f3" stroke="#a4d1c1"/>
+<rect x="56" y="638" width="5" height="184" rx="2" fill="#126c59" stroke="none"/>
+<text x="80" y="662" fill="#152a43" font-size="27" font-weight="700">MCP｜AIクライアントの入口</text>
+<text x="80" y="707" fill="#152a43" font-size="23" font-weight="400">9read tools / 2resourcesが既定</text>
+<text x="80" y="739" fill="#152a43" font-size="23" font-weight="400">3write toolsはopt-in＋呼出ごと同意</text>
+<text x="80" y="771" fill="#152a43" font-size="23" font-weight="400">HTTP Bearer・Host制限・固定API</text>
+<text x="80" y="810" fill="#126c59" font-size="20" font-weight="600">任意SQL・shellは提供しない</text>
+<rect x="740" y="620" width="536" height="220" rx="16" fill="#f5f6f8" stroke="#c8cdd5"/>
+<rect x="740" y="638" width="5" height="184" rx="2" fill="#586271" stroke="none"/>
+<text x="764" y="662" fill="#152a43" font-size="27" font-weight="700">任意のローカル推論</text>
+<text x="764" y="707" fill="#152a43" font-size="23" font-weight="400">Ollama接続例を同梱</text>
+<text x="764" y="739" fill="#152a43" font-size="23" font-weight="400">モデル導入・推論評価は別途</text>
+<text x="764" y="771" fill="#152a43" font-size="23" font-weight="400">原本・snapshotへ戻れる回答を確認</text>
+<text x="764" y="810" fill="#586271" font-size="20" font-weight="600">未実機評価 / 選択肢</text>
+<rect x="1370" y="620" width="494" height="220" rx="16" fill="#f5f6f8" stroke="#c8cdd5"/>
+<rect x="1370" y="638" width="5" height="184" rx="2" fill="#586271" stroke="none"/>
+<text x="1394" y="662" fill="#152a43" font-size="27" font-weight="700">RAG / 外部AIの追加</text>
+<text x="1394" y="707" fill="#152a43" font-size="23" font-weight="400">OCR / chunk / embedding</text>
+<text x="1394" y="739" fill="#152a43" font-size="23" font-weight="400">権限・削除同期・検索評価</text>
+<text x="1394" y="771" fill="#152a43" font-size="23" font-weight="400">外部送信・accountは未設定</text>
+<text x="1394" y="810" fill="#586271" font-size="20" font-weight="600">追加実装の範囲</text>
+<path d="M 456,350 L 520,350" fill="none" stroke="#2469a8" stroke-width="3" marker-end="url(#07-ai-context-data)"/>
+<path d="M 920,350 L 984,350" fill="none" stroke="#2469a8" stroke-width="3" marker-end="url(#07-ai-context-data)"/>
+<path d="M 1384,350 L 1448,350" fill="none" stroke="#2469a8" stroke-width="3" marker-end="url(#07-ai-context-data)"/>
+<path d="M 1656,480 L 1656,550 L 1008,550 L 1008,620" fill="none" stroke="#78818c" stroke-width="3" stroke-dasharray="3 7" marker-end="url(#07-ai-context-optional)"/>
+<rect x="1644" y="481" width="48" height="27" rx="3" fill="#fff" stroke="none"/>
+<g text-anchor="middle"><text x="1668" y="500" fill="#78818c" font-size="18" font-weight="600">任意</text></g>
+<rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
+<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">export時SQLのhashは、過去snapshotを生成したSQL版の証明ではない。実行監査台帳は追加課題。</text>
+<text x="56" y="977" fill="#536780" font-size="20" font-weight="400">Qdrantの合成vector3点とMarquezの手動系統seedは疎通試験。意味検索精度・実系統自動収集を保証しない。</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+</svg>

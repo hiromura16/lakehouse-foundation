@@ -231,3 +231,7 @@ Dokploy管理はGUIのStop、CLI管理は次を使います。
 通常停止では名前付きvolumeを保持します。`down -v` やvolume pruneはこの手順に含めません。再開・更新時も同じappName・volume prefix・暗号鍵・保存先を継続します。更新は [COMPANY-UPDATE.md](COMPANY-UPDATE.md)、整合したバックアップと別環境復元は [OPERATIONS.md](OPERATIONS.md) を使います。
 
 配置commit、profile、各段階の成功条件だけを導入記録へ残します。実接続先・秘密値・実データ・生ログ・画面に映る資格情報は公開リポジトリへ入れません。一般化した記録と [VALIDATION.md](VALIDATION.md) の既存試験を区別します。
+
+## PoCの結果を説明する
+
+[報告書用素材集](reports/README.md)から、構成・処理・検証結果の図と報告書雛形を選べます。会社で記入する結果と既存の合成試験は分け、性能・費用・復元・推論などの未評価を成果値で埋めません。

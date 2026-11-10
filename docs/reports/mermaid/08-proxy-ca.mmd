@@ -1,0 +1,10 @@
+flowchart TB
+  Site["private site.env / canonical"] --> Build["BuildKit args + CA secret"]
+  Site --> Runtime["runtime clients / Java・SDK"]
+  Daemon["daemon専用proxy設定"] --> Pull["image pull/push"]
+  Build --> Proxy["企業proxy"]
+  Runtime --> Proxy
+  Pull --> Proxy
+  Runtime -->|NO_PROXY| Internal["内部S3 / catalog / worker / DB"]
+  CA["企業CA / Git外"] --> Build
+  CA --> Host["host trust / 必要なJVM trust"]

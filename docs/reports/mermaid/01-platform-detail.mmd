@@ -1,0 +1,12 @@
+flowchart TB
+  Host["ホスト: Dokploy / Samba / Docker proxy"] --> Core["core: storage / catalog-db / catalog-migrate / catalog / trino / worker"]
+  GUI["demo: demo / demo-api"] --> Core
+  MCP["mcp + demo-api"] --> Core
+  N8N["automation: n8n / n8n-db"] --> Core
+  AF["orchestration: airflow / airflow-db"] --> Core
+  CDC["cdc: kafka / connect / ui / register / consumer"] --> Core
+  Compute["compute: master / worker / history / init / smoke"] --- Core
+  NB["notebooks: jupyter"] --> Compute
+  BI["bi: superset / db / redis / init"] --> Core
+  Extra["vector: qdrant / lineage: marquez + db + web"] --- Core
+  Mon["monitoring: prometheus / grafana"] --> Core

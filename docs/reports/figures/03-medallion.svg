@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="03-medallion-title 03-medallion-description" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
+<title id="03-medallion-title">メダリオンの採用・隔離・集計ルール</title>
+<desc id="03-medallion-description">Bronzeの版からupdated_at等の固定順序で最新候補を選び、型・数量・親参照を検査する。Silverと隔離を分け、親子明細を事前集約してGoldの多重加算を防ぐ。 根拠: medallion/01_silver.sql, medallion/02_quarantine.sql, medallion/03_gold.sql, medallion/expected-demo.json</desc>
+<defs>
+<marker id="03-medallion-data" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#2469a8"/></marker>
+<marker id="03-medallion-control" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#70608e"/></marker>
+<marker id="03-medallion-optional" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#78818c"/></marker>
+</defs>
+<rect x="0" y="0" width="1920" height="1080" rx="0" fill="#fff" stroke="none"/>
+<rect x="0" y="0" width="14" height="1080" rx="0" fill="#152a43" stroke="none"/>
+<text x="56" y="43" fill="#536780" font-size="18" font-weight="600">LAKEHOUSE FOUNDATION  /  PoC REPORT ASSETS</text>
+<text x="56" y="104" fill="#152a43" font-size="42" font-weight="700">03  メダリオンの採用・隔離・集計ルール</text>
+<path d="M1270,35 L1320,35" stroke="#2469a8" stroke-width="3"/>
+<text x="1332" y="41" fill="#536780" font-size="17" font-weight="400">データ</text>
+<path d="M1475,35 L1525,35" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5"/>
+<text x="1537" y="41" fill="#536780" font-size="17" font-weight="400">制御・設定</text>
+<path d="M1680,35 L1730,35" stroke="#78818c" stroke-width="3" stroke-dasharray="3 7"/>
+<text x="1742" y="41" fill="#536780" font-size="17" font-weight="400">任意・計画</text>
+<text x="56" y="148" fill="#536780" font-size="23" font-weight="400">主キーの最新候補を先に選ぶ。不正な最新版から過去の正常版へ戻さない。</text>
+<rect x="56" y="230" width="392" height="330" rx="16" fill="#faf0e7" stroke="#d9baa1"/>
+<rect x="56" y="248" width="5" height="294" rx="2" fill="#85512a" stroke="none"/>
+<text x="80" y="272" fill="#152a43" font-size="27" font-weight="700">Bronze｜全受領版</text>
+<text x="80" y="317" fill="#152a43" font-size="23" font-weight="400">文字列の業務列を保持</text>
+<text x="80" y="349" fill="#152a43" font-size="23" font-weight="400">source_file / source_hash</text>
+<text x="80" y="381" fill="#152a43" font-size="23" font-weight="400">ingested_atを付加</text>
+<text x="80" y="413" fill="#152a43" font-size="23" font-weight="400">完全重複・過去版も受領</text>
+<text x="80" y="452" fill="#85512a" font-size="20" font-weight="600">合成fixture：155行</text>
+<rect x="510" y="230" width="420" height="330" rx="16" fill="#edf4ff" stroke="#b8cee8"/>
+<rect x="510" y="248" width="5" height="294" rx="2" fill="#245fa6" stroke="none"/>
+<text x="534" y="272" fill="#152a43" font-size="27" font-weight="700">最新候補を選択</text>
+<text x="534" y="317" fill="#152a43" font-size="23" font-weight="400">業務主キーでpartition</text>
+<text x="534" y="349" fill="#152a43" font-size="23" font-weight="400">updated_at DESC</text>
+<text x="534" y="381" fill="#152a43" font-size="23" font-weight="400">同時刻はhash等で固定順</text>
+<text x="534" y="413" fill="#152a43" font-size="23" font-weight="400">最新の1候補を検査する</text>
+<text x="534" y="452" fill="#245fa6" font-size="20" font-weight="600">古い正常版へのfallbackなし</text>
+<rect x="998" y="230" width="400" height="330" rx="16" fill="#eef2f6" stroke="#bbc8d4"/>
+<rect x="998" y="248" width="5" height="294" rx="2" fill="#455b71" stroke="none"/>
+<text x="1022" y="272" fill="#152a43" font-size="27" font-weight="700">Silver｜型付き明細</text>
+<text x="1022" y="317" fill="#152a43" font-size="23" font-weight="400">TRY_CAST / 必須値</text>
+<text x="1022" y="349" fill="#152a43" font-size="23" font-weight="400">数量・時刻・親参照</text>
+<text x="1022" y="381" fill="#152a43" font-size="23" font-weight="400">6表の採用行を保持</text>
+<text x="1022" y="413" fill="#152a43" font-size="23" font-weight="400">合成fixture：145行</text>
+<text x="1022" y="452" fill="#455b71" font-size="20" font-weight="600">主キーごと1行</text>
+<rect x="1460" y="230" width="404" height="330" rx="16" fill="#fff7dd" stroke="#dfca85"/>
+<rect x="1460" y="248" width="5" height="294" rx="2" fill="#806000" stroke="none"/>
+<text x="1484" y="272" fill="#152a43" font-size="27" font-weight="700">Gold｜業務2表</text>
+<text x="1484" y="317" fill="#152a43" font-size="23" font-weight="400">工場・UTC日別の生産</text>
+<text x="1484" y="349" fill="#152a43" font-size="23" font-weight="400">受注別の出荷・残数</text>
+<text x="1484" y="381" fill="#152a43" font-size="23" font-weight="400">親子は集約後に結合</text>
+<text x="1484" y="413" fill="#152a43" font-size="23" font-weight="400">歩留まり / 計画達成率</text>
+<text x="1484" y="452" fill="#806000" font-size="20" font-weight="600">OEEは算出しない</text>
+<rect x="510" y="650" width="888" height="190" rx="16" fill="#fff0ee" stroke="#e7b6af"/>
+<rect x="510" y="668" width="5" height="154" rx="2" fill="#9c3c32" stroke="none"/>
+<text x="534" y="692" fill="#152a43" font-size="27" font-weight="700">Quarantine｜不正な最新候補</text>
+<text x="534" y="737" fill="#152a43" font-size="23" font-weight="400">6表 / raw_record_json / validation_reason / 原本への由来</text>
+<text x="534" y="769" fill="#152a43" font-size="23" font-weight="400">合成fixture：8行。完全重複・過去版2行は異常件数へ加えない</text>
+<text x="534" y="808" fill="#9c3c32" font-size="20" font-weight="600">元ソースを修正して再投入</text>
+<rect x="1460" y="650" width="404" height="190" rx="16" fill="#eaf7f3" stroke="#a4d1c1"/>
+<rect x="1460" y="668" width="5" height="154" rx="2" fill="#126c59" stroke="none"/>
+<text x="1484" y="692" fill="#152a43" font-size="27" font-weight="700">155 = 145 + 8 + 2</text>
+<text x="1484" y="737" fill="#152a43" font-size="23" font-weight="400">Silver＋隔離＋旧版/重複</text>
+<text x="1484" y="769" fill="#152a43" font-size="23" font-weight="400">同じ範囲のfixtureだけで照合</text>
+<text x="1484" y="808" fill="#126c59" font-size="20" font-weight="600">件数の意味を揃える</text>
+<path d="M 448,395 L 510,395" fill="none" stroke="#2469a8" stroke-width="3" marker-end="url(#03-medallion-data)"/>
+<path d="M 930,395 L 998,395" fill="none" stroke="#2469a8" stroke-width="3" marker-end="url(#03-medallion-data)"/>
+<rect x="940" y="361" width="48" height="27" rx="3" fill="#fff" stroke="none"/>
+<g text-anchor="middle"><text x="964" y="380" fill="#2469a8" font-size="18" font-weight="600">有効</text></g>
+<path d="M 1398,395 L 1460,395" fill="none" stroke="#2469a8" stroke-width="3" marker-end="url(#03-medallion-data)"/>
+<path d="M 720,560 L 720,650" fill="none" stroke="#2469a8" stroke-width="3" marker-end="url(#03-medallion-data)"/>
+<rect x="708" y="571" width="48" height="27" rx="3" fill="#fff" stroke="none"/>
+<g text-anchor="middle"><text x="732" y="590" fill="#2469a8" font-size="18" font-weight="600">不正</text></g>
+<rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
+<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">seed42 / orders20 / days7 / edge専用fixture。GUIの複数runの累積値と比較しない。</text>
+<text x="56" y="977" fill="#536780" font-size="20" font-weight="400">置換は1表単位。複数表の読取りでは世代が混在し得る。更新時刻が不正なら版順を保証できない。</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+</svg>

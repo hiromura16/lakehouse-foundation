@@ -1,0 +1,2332 @@
+{
+  "schema_version": 1,
+  "reviewed_on": "2026-11-10",
+  "reviewed_source_commit": "b63b9d00d664d3e547679d0da4dd63f76fe1f45f",
+  "figures": [
+    {
+      "id": "01-platform-detail",
+      "title": "全34サービスの配置と起動条件",
+      "subtitle": "Docker Compose 7ファイルを同じprojectへ結合。coreに必要なprofileを追加する。",
+      "audience": "基盤設計・導入レビュー",
+      "caption": "core6サービスに11種類のprofileを重ねる単一ホストPoC構成。34は定義数であり、常駐・一度だけの初期化・明示スモークを区別する。",
+      "sources": [
+        "infra/lakehouse/compose.yaml",
+        "infra/compute/compose.yaml",
+        "infra/orchestration/compose.yaml",
+        "infra/demo/compose.yaml",
+        "infra/cdc/compose.yaml",
+        "infra/poc/compose.yaml",
+        "infra/mcp/compose.yaml"
+      ],
+      "panels": [
+        {
+          "key": "core",
+          "x": 52,
+          "y": 220,
+          "width": 1124,
+          "height": 330,
+          "title": "core｜保存・カタログ・SQL・取り込み",
+          "lines": [
+            "storage：SeaweedFS S3 / 原本とIceberg",
+            "catalog-db / catalog / catalog-migrate［一度だけ］",
+            "trino：共通SQL / worker：取り込み・変換・API",
+            "必須6service。カタログ・原本・表を一組で管理"
+          ],
+          "tone": "blue",
+          "tag": "常時の基盤",
+          "logo": "iceberg"
+        },
+        {
+          "key": "compute",
+          "x": 1200,
+          "y": 220,
+          "width": 550,
+          "height": 330,
+          "title": "compute｜常駐Spark",
+          "lines": [
+            "spark-master / spark-worker",
+            "spark-history：event log参照",
+            "spark-volumes-init［初期化］",
+            "spark-check［明示smoke / 通常0］"
+          ],
+          "tone": "purple",
+          "tag": "5定義",
+          "logo": "spark"
+        },
+        {
+          "key": "airflow",
+          "x": 1774,
+          "y": 220,
+          "width": 574,
+          "height": 330,
+          "title": "orchestration｜Airflow",
+          "lines": [
+            "airflow / airflow-db",
+            "手動DAG → worker HTTP",
+            "standaloneはPoC用",
+            "定期実行担当はn8nと分担"
+          ],
+          "tone": "purple",
+          "tag": "2定義",
+          "logo": ""
+        },
+        {
+          "key": "cdc",
+          "x": 52,
+          "y": 580,
+          "width": 550,
+          "height": 330,
+          "title": "cdc｜変更データ",
+          "lines": [
+            "cdc-kafka / cdc-connect",
+            "cdc-ui：Kafbat",
+            "cdc-register［一度だけ］",
+            "cdc-consumer：継続poll / 有界batch"
+          ],
+          "tone": "teal",
+          "tag": "5定義",
+          "logo": ""
+        },
+        {
+          "key": "demo",
+          "x": 626,
+          "y": 580,
+          "width": 550,
+          "height": 330,
+          "title": "demo｜操作GUI / API",
+          "lines": [
+            "demo：Streamlit",
+            "demo-api：FastAPI / Swagger",
+            "素材・変換・設定保存を分離",
+            "host設定や再配置は実行しない"
+          ],
+          "tone": "blue",
+          "tag": "2定義",
+          "logo": ""
+        },
+        {
+          "key": "n8n",
+          "x": 1200,
+          "y": 580,
+          "width": 550,
+          "height": 330,
+          "title": "automation｜n8n",
+          "lines": [
+            "n8n / n8n-db",
+            "Manual workflow → worker",
+            "資格情報は専用DBで暗号化",
+            "SSRF例外は既定workerのみ"
+          ],
+          "tone": "teal",
+          "tag": "2定義",
+          "logo": ""
+        },
+        {
+          "key": "monitor",
+          "x": 1774,
+          "y": 580,
+          "width": 574,
+          "height": 330,
+          "title": "monitoring｜監視",
+          "lines": [
+            "prometheus / grafana",
+            "workerとPrometheus自身を収集",
+            "dashboardはGUI保存を保持",
+            "全ホスト監視は別途追加"
+          ],
+          "tone": "teal",
+          "tag": "2定義",
+          "logo": "grafana"
+        },
+        {
+          "key": "bi",
+          "x": 52,
+          "y": 940,
+          "width": 550,
+          "height": 330,
+          "title": "bi｜Superset",
+          "lines": [
+            "superset / superset-db",
+            "superset-redis：cache",
+            "superset-init［一度だけ］",
+            "Trino → Gold2dataset"
+          ],
+          "tone": "gold",
+          "tag": "4定義",
+          "logo": ""
+        },
+        {
+          "key": "notebooks",
+          "x": 626,
+          "y": 940,
+          "width": 550,
+          "height": 330,
+          "title": "notebooks｜Jupyter",
+          "lines": [
+            "jupyter：Notebookとdriver",
+            "compute有効：remote Spark",
+            "無効：明示local[2]",
+            "spark-volumes-initも共用"
+          ],
+          "tone": "purple",
+          "tag": "1定義",
+          "logo": ""
+        },
+        {
+          "key": "poc",
+          "x": 1200,
+          "y": 940,
+          "width": 550,
+          "height": 330,
+          "title": "vector / lineage",
+          "lines": [
+            "qdrant：vector［1定義］",
+            "marquez / marquez-db",
+            "marquez-web［3定義］",
+            "embedding・実系統自動収集は別"
+          ],
+          "tone": "gold",
+          "tag": "2つの独立profile",
+          "logo": ""
+        },
+        {
+          "key": "mcp",
+          "x": 1774,
+          "y": 940,
+          "width": 574,
+          "height": 330,
+          "title": "mcp｜AIクライアント",
+          "lines": [
+            "mcp：専用Bearer / HTTP",
+            "demo-apiもこのprofileで起動",
+            "既定9read / 2resources",
+            "Streamlit画面はdemo選択時のみ"
+          ],
+          "tone": "blue",
+          "tag": "1定義",
+          "logo": ""
+        }
+      ],
+      "edges": [],
+      "notes": [
+        "Dokploy・Samba・daemon proxyはホスト側の別設定。SQL Serverは外部DB。",
+        "一度だけの初期化は4定義。全profileでは33containerの検証記録があり、34全てが常時稼働する構成ではない。"
+      ],
+      "mermaid": "flowchart TB\n  Host[\"ホスト: Dokploy / Samba / Docker proxy\"] --> Core[\"core: storage / catalog-db / catalog-migrate / catalog / trino / worker\"]\n  GUI[\"demo: demo / demo-api\"] --> Core\n  MCP[\"mcp + demo-api\"] --> Core\n  N8N[\"automation: n8n / n8n-db\"] --> Core\n  AF[\"orchestration: airflow / airflow-db\"] --> Core\n  CDC[\"cdc: kafka / connect / ui / register / consumer\"] --> Core\n  Compute[\"compute: master / worker / history / init / smoke\"] --- Core\n  NB[\"notebooks: jupyter\"] --> Compute\n  BI[\"bi: superset / db / redis / init\"] --> Core\n  Extra[\"vector: qdrant / lineage: marquez + db + web\"] --- Core\n  Mon[\"monitoring: prometheus / grafana\"] --> Core\n",
+      "width": 2400,
+      "height": 1500
+    },
+    {
+      "id": "02-batch-flow",
+      "title": "ファイル・SQLのバッチ取り込み経路",
+      "subtitle": "素材投入と後続処理は別操作。コピー完了後のSHA-256 readyを受入境界にする。",
+      "audience": "データ連携・業務担当",
+      "caption": "SQLのread-only抽出とSamba/GUI素材は同じlanding契約へ合流する。workerが原本とBronzeを保存し、明示したmedallion操作でSilver・隔離・Goldへ進む。",
+      "sources": [
+        "scripts/extract-sqlserver.py",
+        "scripts/generate-demo.py",
+        "scripts/admin.py",
+        "medallion/sources.json"
+      ],
+      "panels": [
+        {
+          "key": "source",
+          "x": 56,
+          "y": 220,
+          "width": 400,
+          "height": 250,
+          "title": "01｜素材の入口",
+          "lines": [
+            "会社SQL：6表のSELECT",
+            "Samba：CSV / JSON / 画像",
+            "GUI：合成素材だけを生成"
+          ],
+          "tone": "blue",
+          "tag": "SOURCEとDEMOを分離",
+          "logo": ""
+        },
+        {
+          "key": "landing",
+          "x": 520,
+          "y": 220,
+          "width": 400,
+          "height": 250,
+          "title": "02｜landing完成",
+          "lines": [
+            "CSV4 / JSONL2 / 任意画像",
+            "原本完成 → readyを公開",
+            "ready：原本のSHA-256"
+          ],
+          "tone": "blue",
+          "tag": "外部host bind",
+          "logo": ""
+        },
+        {
+          "key": "worker",
+          "x": 984,
+          "y": 220,
+          "width": 400,
+          "height": 250,
+          "title": "03｜worker検査",
+          "lines": [
+            "hash・サイズ・列契約",
+            "同じpath/hashはskip",
+            "拒否と未完了を区別"
+          ],
+          "tone": "teal",
+          "tag": "明示ingest",
+          "logo": ""
+        },
+        {
+          "key": "bronze",
+          "x": 1448,
+          "y": 220,
+          "width": 416,
+          "height": 250,
+          "title": "04｜原本とBronze",
+          "lines": [
+            "S3：内容hashの原本キー",
+            "Bronze：文字列＋由来",
+            "受領台帳は最後に更新"
+          ],
+          "tone": "bronze",
+          "tag": "各保存は別commit",
+          "logo": ""
+        },
+        {
+          "key": "contract",
+          "x": 56,
+          "y": 570,
+          "width": 670,
+          "height": 260,
+          "title": "業務6ソースの契約",
+          "lines": [
+            "ERP：製品・指図・受注・出荷",
+            "MES：製造実績・設備停止",
+            "主キー / updated_at / UTC時刻",
+            "実表・列mapはprivateで管理"
+          ],
+          "tone": "blue",
+          "tag": "任意CSVから業務表は自動生成しない",
+          "logo": ""
+        },
+        {
+          "key": "medallion",
+          "x": 820,
+          "y": 570,
+          "width": 1044,
+          "height": 250,
+          "title": "05｜明示medallion → Silver / Quarantine / Gold",
+          "lines": [
+            "取り込みを確認 → 最新候補 → 妥当性検査 → 業務集計",
+            "6 Silver＋6 Quarantine＋2 Goldの14 SQL",
+            "表ごとのatomic replace。全14文を束ねたtransactionではない"
+          ],
+          "tone": "gold",
+          "tag": "SQLを版管理",
+          "logo": ""
+        }
+      ],
+      "edges": [
+        {
+          "source": "source",
+          "target": "landing",
+          "label": "",
+          "kind": "data"
+        },
+        {
+          "source": "landing",
+          "target": "worker",
+          "label": "ready/hash",
+          "kind": "data"
+        },
+        {
+          "source": "worker",
+          "target": "bronze",
+          "label": "",
+          "kind": "data"
+        },
+        {
+          "source": "bronze",
+          "target": "medallion",
+          "label": "変換を明示",
+          "kind": "control",
+          "points": [
+            [
+              1656,
+              470
+            ],
+            [
+              1656,
+              520
+            ],
+            [
+              1342,
+              520
+            ],
+            [
+              1342,
+              570
+            ]
+          ]
+        }
+      ],
+      "notes": [
+        "ファイルを消すだけでは取り込み済みBronzeを削除しない。会社データは合成試験と別環境で受入。",
+        "1原本16MiB以下、契約CSV/JSONは100000行以下。SQL抽出の6表は同一時点transactionではない。"
+      ],
+      "mermaid": "flowchart LR\n  SQL[\"会社SQL / SELECT\"] --> Landing[\"landing / 原本完成→ready\"]\n  SMB[\"Samba / GUI合成素材\"] --> Landing\n  Landing --> Check[\"worker: hash・契約・上限\"]\n  Check --> Raw[\"S3受領原本\"]\n  Check --> Bronze[\"Bronze文字列 + 由来\"]\n  Bronze --> Explicit[\"明示medallion\"]\n  Explicit --> Silver[\"Silver / Quarantine\"]\n  Silver --> Gold[\"Gold2表\"]\n",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "03-medallion",
+      "title": "メダリオンの採用・隔離・集計ルール",
+      "subtitle": "主キーの最新候補を先に選ぶ。不正な最新版から過去の正常版へ戻さない。",
+      "audience": "データ品質・業務集計レビュー",
+      "caption": "Bronzeの版からupdated_at等の固定順序で最新候補を選び、型・数量・親参照を検査する。Silverと隔離を分け、親子明細を事前集約してGoldの多重加算を防ぐ。",
+      "sources": [
+        "medallion/01_silver.sql",
+        "medallion/02_quarantine.sql",
+        "medallion/03_gold.sql",
+        "medallion/expected-demo.json"
+      ],
+      "panels": [
+        {
+          "key": "bronze",
+          "x": 56,
+          "y": 230,
+          "width": 392,
+          "height": 330,
+          "title": "Bronze｜全受領版",
+          "lines": [
+            "文字列の業務列を保持",
+            "source_file / source_hash",
+            "ingested_atを付加",
+            "完全重複・過去版も受領"
+          ],
+          "tone": "bronze",
+          "tag": "合成fixture：155行",
+          "logo": ""
+        },
+        {
+          "key": "latest",
+          "x": 510,
+          "y": 230,
+          "width": 420,
+          "height": 330,
+          "title": "最新候補を選択",
+          "lines": [
+            "業務主キーでpartition",
+            "updated_at DESC",
+            "同時刻はhash等で固定順",
+            "最新の1候補を検査する"
+          ],
+          "tone": "blue",
+          "tag": "古い正常版へのfallbackなし",
+          "logo": ""
+        },
+        {
+          "key": "silver",
+          "x": 998,
+          "y": 230,
+          "width": 400,
+          "height": 330,
+          "title": "Silver｜型付き明細",
+          "lines": [
+            "TRY_CAST / 必須値",
+            "数量・時刻・親参照",
+            "6表の採用行を保持",
+            "合成fixture：145行"
+          ],
+          "tone": "silver",
+          "tag": "主キーごと1行",
+          "logo": ""
+        },
+        {
+          "key": "gold",
+          "x": 1460,
+          "y": 230,
+          "width": 404,
+          "height": 330,
+          "title": "Gold｜業務2表",
+          "lines": [
+            "工場・UTC日別の生産",
+            "受注別の出荷・残数",
+            "親子は集約後に結合",
+            "歩留まり / 計画達成率"
+          ],
+          "tone": "gold",
+          "tag": "OEEは算出しない",
+          "logo": ""
+        },
+        {
+          "key": "quarantine",
+          "x": 510,
+          "y": 650,
+          "width": 888,
+          "height": 190,
+          "title": "Quarantine｜不正な最新候補",
+          "lines": [
+            "6表 / raw_record_json / validation_reason / 原本への由来",
+            "合成fixture：8行。完全重複・過去版2行は異常件数へ加えない"
+          ],
+          "tone": "red",
+          "tag": "元ソースを修正して再投入",
+          "logo": ""
+        },
+        {
+          "key": "balance",
+          "x": 1460,
+          "y": 650,
+          "width": 404,
+          "height": 190,
+          "title": "155 = 145 + 8 + 2",
+          "lines": [
+            "Silver＋隔離＋旧版/重複",
+            "同じ範囲のfixtureだけで照合"
+          ],
+          "tone": "teal",
+          "tag": "件数の意味を揃える",
+          "logo": ""
+        }
+      ],
+      "edges": [
+        {
+          "source": "bronze",
+          "target": "latest",
+          "label": "",
+          "kind": "data"
+        },
+        {
+          "source": "latest",
+          "target": "silver",
+          "label": "有効",
+          "kind": "data"
+        },
+        {
+          "source": "silver",
+          "target": "gold",
+          "label": "",
+          "kind": "data"
+        },
+        {
+          "source": "latest",
+          "target": "quarantine",
+          "label": "不正",
+          "kind": "data",
+          "points": [
+            [
+              720,
+              560
+            ],
+            [
+              720,
+              650
+            ]
+          ]
+        }
+      ],
+      "notes": [
+        "seed42 / orders20 / days7 / edge専用fixture。GUIの複数runの累積値と比較しない。",
+        "置換は1表単位。複数表の読取りでは世代が混在し得る。更新時刻が不正なら版順を保証できない。"
+      ],
+      "mermaid": "flowchart LR\n  B[\"Bronze: 155行 / 文字列\"] --> L[\"主キーの最新候補を選ぶ\"]\n  L --> V{\"型・必須・数量・親参照\"}\n  V -->|有効| S[\"Silver: 145行\"]\n  V -->|不正| Q[\"Quarantine: 8行 / 元の文字列と理由\"]\n  L --> O[\"過去版・完全重複: 2行\"]\n  S --> G[\"事前集約→Gold生産/出荷\"]\n",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "04-cdc-sequence",
+      "title": "CDCの確定順序と再開位置",
+      "subtitle": "DB commitからKafka、raw、現在値、派生表へ。checkpointとoffsetは別の確定点。",
+      "audience": "DBA・ストリーミング設計",
+      "caption": "SQL Server CDCをDebeziumで読み、Kafkaを経由してrawイベントとSQLite現在値を保存する。consumerはSilver/Goldまで確認してcheckpointを保存し、その後Kafka offsetをcommitする。",
+      "sources": [
+        "infra/cdc/consumer.py",
+        "infra/cdc/connector.py",
+        "docs/CDC.md",
+        "docs/verification.json"
+      ],
+      "panels": [
+        {
+          "key": "sql",
+          "x": 56,
+          "y": 220,
+          "width": 400,
+          "height": 220,
+          "title": "01｜SQL Server",
+          "lines": [
+            "DBA：Agent・DB/表CDC",
+            "I / U / Dをcommit",
+            "専用read権限・通常TLS"
+          ],
+          "tone": "blue",
+          "tag": "会社DBAの準備が必要",
+          "logo": ""
+        },
+        {
+          "key": "connect",
+          "x": 520,
+          "y": 220,
+          "width": 400,
+          "height": 220,
+          "title": "02｜Debezium",
+          "lines": [
+            "初期snapshot / 変更読取",
+            "schema historyを保持",
+            "既存設定一致時は無変更"
+          ],
+          "tone": "blue",
+          "tag": "cdc-connect / register",
+          "logo": ""
+        },
+        {
+          "key": "kafka",
+          "x": 984,
+          "y": 220,
+          "width": 400,
+          "height": 220,
+          "title": "03｜Kafka",
+          "lines": [
+            "topic / partition / offset",
+            "イベントLSNを保持",
+            "tombstoneも記録対象"
+          ],
+          "tone": "teal",
+          "tag": "Kafbatで状態・lag",
+          "logo": ""
+        },
+        {
+          "key": "raw",
+          "x": 1448,
+          "y": 220,
+          "width": 416,
+          "height": 220,
+          "title": "04｜raw CDC",
+          "lines": [
+            "Icebergへイベント保存",
+            "再処理の重複を識別",
+            "rawと現在値は別の表現"
+          ],
+          "tone": "bronze",
+          "tag": "削除イベントも保持",
+          "logo": ""
+        },
+        {
+          "key": "state",
+          "x": 1448,
+          "y": 570,
+          "width": 416,
+          "height": 230,
+          "title": "05｜SQLite現在値",
+          "lines": [
+            "6表の主キー状態を復元",
+            "restart後もstateを保持",
+            "consumerはrestart:no"
+          ],
+          "tone": "silver",
+          "tag": "cdc-consumer volume",
+          "logo": ""
+        },
+        {
+          "key": "derived",
+          "x": 984,
+          "y": 570,
+          "width": 400,
+          "height": 230,
+          "title": "06｜派生表を確定",
+          "lines": [
+            "CDC専用Silver / Gold",
+            "固定SQLで各表を再構築",
+            "表間transactionではない"
+          ],
+          "tone": "gold",
+          "tag": "複数確定点を持つ",
+          "logo": ""
+        },
+        {
+          "key": "checkpoint",
+          "x": 520,
+          "y": 570,
+          "width": 400,
+          "height": 230,
+          "title": "07｜checkpoint",
+          "lines": [
+            "成功した処理位置を保存",
+            "raw/現在値/派生表を確認",
+            "再開時に既存状態と照合"
+          ],
+          "tone": "teal",
+          "tag": "SQLiteに保持",
+          "logo": ""
+        },
+        {
+          "key": "offset",
+          "x": 56,
+          "y": 570,
+          "width": 400,
+          "height": 230,
+          "title": "08｜offset commit",
+          "lines": [
+            "最後にKafkaへ反映",
+            "lag0だけで業務受入にしない",
+            "順序・件数・I/U/Dを照合"
+          ],
+          "tone": "teal",
+          "tag": "exactly-once一括保証ではない",
+          "logo": ""
+        }
+      ],
+      "edges": [
+        {
+          "source": "sql",
+          "target": "connect",
+          "label": "",
+          "kind": "data"
+        },
+        {
+          "source": "connect",
+          "target": "kafka",
+          "label": "",
+          "kind": "data"
+        },
+        {
+          "source": "kafka",
+          "target": "raw",
+          "label": "",
+          "kind": "data"
+        },
+        {
+          "source": "raw",
+          "target": "state",
+          "label": "",
+          "kind": "data"
+        },
+        {
+          "source": "state",
+          "target": "derived",
+          "label": "",
+          "kind": "data"
+        },
+        {
+          "source": "derived",
+          "target": "checkpoint",
+          "label": "",
+          "kind": "data"
+        },
+        {
+          "source": "checkpoint",
+          "target": "offset",
+          "label": "",
+          "kind": "data"
+        }
+      ],
+      "notes": [
+        "過去の合成試験：初期144＋INSERT6＋UPDATE6＋DELETE6＋tombstone6＝raw168。restart後distinct168。",
+        "GUIの固定I/U/Dは専用DBの所有権tokenを検証する素材操作。会社業務DBのDMLは実行しない。"
+      ],
+      "mermaid": "sequenceDiagram\n  participant SQL as SQL Server CDC\n  participant DBZ as Debezium\n  participant K as Kafka\n  participant C as consumer\n  participant I as Iceberg raw/Silver/Gold\n  participant S as SQLite state/checkpoint\n  SQL->>DBZ: commit済みI/U/D\n  DBZ->>K: LSN付きイベント / tombstone\n  K->>C: poll\n  C->>I: raw保存\n  C->>S: 現在値6表の更新\n  C->>I: Silver / Goldの確定\n  C->>S: checkpoint保存\n  C->>K: offset commit\n",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "05-control-api",
+      "title": "GUI・API・workerの操作責任",
+      "subtitle": "設定保存、素材生成、後続処理を分ける。APIはDockerやsudoを持たない。",
+      "audience": "利用者導線・API連携",
+      "caption": "Streamlit・Swagger・MCP連携は固定FastAPIを使い、source jobとpipeline jobを分ける。同梱n8n/AirflowはWORKER_TOKENでworkerへ直接依頼する。設定保存からDockerやsudoを呼ばない。",
+      "sources": [
+        "infra/demo/api.py",
+        "infra/demo/job_manager.py",
+        "infra/demo/control_settings.py",
+        "scripts/admin.py"
+      ],
+      "panels": [
+        {
+          "key": "clients",
+          "x": 56,
+          "y": 230,
+          "width": 420,
+          "height": 250,
+          "title": "利用者・クライアント",
+          "lines": [
+            "Streamlit / Swagger",
+            "MCPは内部APIへ橋渡し",
+            "既存tokenをURLへ入れない"
+          ],
+          "tone": "blue",
+          "tag": "操作対象の環境を確認",
+          "logo": ""
+        },
+        {
+          "key": "api",
+          "x": 566,
+          "y": 230,
+          "width": 740,
+          "height": 250,
+          "title": "FastAPI｜固定の業務操作",
+          "lines": [
+            "POST /jobs：batch / 有限streamの素材生成",
+            "POST /pipeline/{action}：ingest / medallion / verify",
+            "GET /catalog・/quality・/ai/context・/jobs"
+          ],
+          "tone": "blue",
+          "tag": "CONTROL_API_TOKEN",
+          "logo": ""
+        },
+        {
+          "key": "worker",
+          "x": 1396,
+          "y": 230,
+          "width": 468,
+          "height": 250,
+          "title": "worker｜実行と排他",
+          "lines": [
+            "起動時bootstrap → ready",
+            "busy / blockedを確認",
+            "未確認timeoutの自動retryなし"
+          ],
+          "tone": "teal",
+          "tag": "WORKER_TOKEN",
+          "logo": ""
+        },
+        {
+          "key": "settings",
+          "x": 56,
+          "y": 600,
+          "width": 560,
+          "height": 280,
+          "title": "設定保存 → 管理者が適用",
+          "lines": [
+            "private envへatomic保存",
+            "saved=true / applied=false",
+            "管理者がDokploy envと同期",
+            "Deploy後にhealthを再確認"
+          ],
+          "tone": "purple",
+          "tag": "保存だけでは稼働設定は変わらない",
+          "logo": ""
+        },
+        {
+          "key": "source",
+          "x": 708,
+          "y": 600,
+          "width": 560,
+          "height": 280,
+          "title": "素材job",
+          "lines": [
+            "landing / 専用DEMO SQL",
+            "新規schema / 明示書込同意",
+            "ここからpipelineは呼ばない"
+          ],
+          "tone": "bronze",
+          "tag": "素材だけを投入",
+          "logo": ""
+        },
+        {
+          "key": "schedulers",
+          "x": 1360,
+          "y": 600,
+          "width": 504,
+          "height": 280,
+          "title": "n8n / Airflow",
+          "lines": [
+            "WORKER_TOKENで認証",
+            "worker:8000/runへ直接依頼",
+            "同梱の手動workflow / DAG",
+            "FastAPIは経由しない"
+          ],
+          "tone": "gold",
+          "tag": "定期実行担当は一つに決める",
+          "logo": ""
+        }
+      ],
+      "edges": [
+        {
+          "source": "clients",
+          "target": "api",
+          "label": "Bearer",
+          "kind": "control"
+        },
+        {
+          "source": "api",
+          "target": "worker",
+          "label": "明示pipeline",
+          "kind": "control"
+        },
+        {
+          "source": "api",
+          "target": "settings",
+          "label": "PATCH /settings",
+          "kind": "control",
+          "points": [
+            [
+              740,
+              480
+            ],
+            [
+              740,
+              535
+            ],
+            [
+              336,
+              535
+            ],
+            [
+              336,
+              600
+            ]
+          ]
+        },
+        {
+          "source": "api",
+          "target": "source",
+          "label": "POST /jobs",
+          "kind": "control",
+          "points": [
+            [
+              1060,
+              480
+            ],
+            [
+              1060,
+              555
+            ],
+            [
+              988,
+              555
+            ],
+            [
+              988,
+              600
+            ]
+          ]
+        },
+        {
+          "source": "schedulers",
+          "target": "worker",
+          "label": "WORKER_TOKEN",
+          "kind": "control",
+          "points": [
+            [
+              1612,
+              600
+            ],
+            [
+              1612,
+              480
+            ]
+          ]
+        }
+      ],
+      "notes": [
+        "APIは1worker前提。直近20件のjob履歴はメモリ内で、API再起動後は失われる。",
+        "タイムアウトは処理停止を意味しない。workerのbusyと実体を見て、二重実行を避ける。"
+      ],
+      "mermaid": "flowchart LR\n  Client[\"Streamlit / Swagger / MCP連携\"] -->|Bearer| API[\"FastAPI固定API\"]\n  API -->|PATCH| Saved[\"private設定へ保存 / 未適用\"]\n  API -->|POST jobs| Source[\"素材だけ生成\"]\n  API -->|POST pipeline| Worker[\"worker / busy・blocked\"]\n  Native[\"同梱n8n / Airflow\"] -->|WORKER_TOKENで直接| Worker\n  Saved -.-> Admin[\"配置担当 / env同期→Deploy\"]\n",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "06-spark-compute",
+      "title": "常駐SparkとNotebookの実行経路",
+      "subtitle": "Spark 4.1.4 / Scala2.13 / Java21 / Iceberg1.12.0。driverとexecutorのPython minorを揃える。",
+      "audience": "分析基盤・分散計算レビュー",
+      "caption": "compute有効時、Jupyterのdriverがstandalone Masterへ接続し別Workerでexecutorを動かす。event logを共有し、Historyで終了後も参照する。computeなしのNotebookは明示local[2]である。",
+      "sources": [
+        "infra/compute/compose.yaml",
+        "infra/poc/lakehouse_session.py",
+        "infra/poc/Dockerfile.notebooks",
+        "docs/COMPATIBILITY.md"
+      ],
+      "panels": [
+        {
+          "key": "notebook",
+          "x": 56,
+          "y": 230,
+          "width": 490,
+          "height": 290,
+          "title": "Jupyter｜driver",
+          "lines": [
+            "Python3.10系でexecutorと一致",
+            "compute有効：remote接続",
+            "無効：明示local[2]",
+            "接続失敗時に黙ってfallbackしない"
+          ],
+          "tone": "purple",
+          "tag": "notebooks profile",
+          "logo": ""
+        },
+        {
+          "key": "master",
+          "x": 690,
+          "y": 230,
+          "width": 490,
+          "height": 290,
+          "title": "Spark Master",
+          "lines": [
+            "spark://spark-master:7077",
+            "RPCはhost公開しない",
+            "UI：既定8082",
+            "worker登録とアプリを確認"
+          ],
+          "tone": "purple",
+          "tag": "compute / 常駐",
+          "logo": "spark"
+        },
+        {
+          "key": "worker",
+          "x": 1324,
+          "y": 230,
+          "width": 540,
+          "height": 290,
+          "title": "Spark Worker / executors",
+          "lines": [
+            "別host名でPython処理",
+            "Python / pandas / Arrow一致",
+            "作業volume：spark-work",
+            "UI：既定8085"
+          ],
+          "tone": "purple",
+          "tag": "compute / 常駐",
+          "logo": ""
+        },
+        {
+          "key": "catalog",
+          "x": 56,
+          "y": 650,
+          "width": 490,
+          "height": 190,
+          "title": "Iceberg REST + S3",
+          "lines": [
+            "Lakekeeper / SeaweedFS",
+            "SparkとTrinoで同じ表を参照"
+          ],
+          "tone": "blue",
+          "tag": "固定版JAR / AWS bundle",
+          "logo": ""
+        },
+        {
+          "key": "events",
+          "x": 690,
+          "y": 650,
+          "width": 490,
+          "height": 190,
+          "title": "spark-events volume",
+          "lines": [
+            "driver / Historyで共有",
+            "initはroot領域だけ権限準備"
+          ],
+          "tone": "teal",
+          "tag": "non-root実行 / 履歴保持",
+          "logo": ""
+        },
+        {
+          "key": "history",
+          "x": 1324,
+          "y": 650,
+          "width": 540,
+          "height": 190,
+          "title": "Spark History",
+          "lines": [
+            "終了したアプリの履歴",
+            "UI：既定18080 / 再起動後も参照"
+          ],
+          "tone": "teal",
+          "tag": "compute / 常駐",
+          "logo": ""
+        }
+      ],
+      "edges": [
+        {
+          "source": "notebook",
+          "target": "master",
+          "label": "ジョブ受付",
+          "kind": "control"
+        },
+        {
+          "source": "master",
+          "target": "worker",
+          "label": "executor配置",
+          "kind": "control"
+        },
+        {
+          "source": "notebook",
+          "target": "catalog",
+          "label": "",
+          "kind": "data"
+        },
+        {
+          "source": "notebook",
+          "target": "events",
+          "label": "driverがevent log保存",
+          "kind": "control",
+          "points": [
+            [
+              546,
+              458
+            ],
+            [
+              616,
+              458
+            ],
+            [
+              616,
+              590
+            ],
+            [
+              935,
+              590
+            ],
+            [
+              935,
+              650
+            ]
+          ]
+        },
+        {
+          "source": "events",
+          "target": "history",
+          "label": "ログ読取",
+          "kind": "data"
+        },
+        {
+          "source": "worker",
+          "target": "catalog",
+          "label": "executorもREST / S3",
+          "kind": "data",
+          "points": [
+            [
+              1594,
+              520
+            ],
+            [
+              1594,
+              562
+            ],
+            [
+              301,
+              562
+            ],
+            [
+              301,
+              650
+            ]
+          ]
+        }
+      ],
+      "notes": [
+        "7077/7078・Notebook callbackは内部用。Sparkの3UIはhost loopbackに限定。",
+        "spark-checkは別のlocal[2]互換smoke。常駐クラスタへのremote実行成功とは区別する。"
+      ],
+      "mermaid": "flowchart LR\n  J[\"Jupyter driver\"] -->|compute有効| M[\"Master :7077 / 常駐\"]\n  M --> W[\"Worker / executors / 常駐\"]\n  J --> C[\"Lakekeeper REST / S3\"]\n  W --> C\n  J --> E[\"spark-events volume\"]\n  E --> H[\"History / 常駐\"]\n  J -.->|compute無効| L[\"明示local 2 threads\"]\n",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "07-ai-context",
+      "title": "AIへ渡す事実と根拠の境界",
+      "subtitle": "固定Gold2表をmain snapshotで読む。Document化、モデル推論、索引作成を分ける。",
+      "audience": "AI・業務利用の説明",
+      "caption": "Trinoが各表のmain snapshotを固定し、上限付きcontext JSONへ表名とsnapshot IDを付ける。LangChain Document化までを同梱し、モデル推論やRAGの完成とは区別する。",
+      "sources": [
+        "scripts/ai_context.py",
+        "examples/ai/context_chain.py",
+        "infra/mcp/server.py",
+        "docs/verification.json"
+      ],
+      "panels": [
+        {
+          "key": "gold",
+          "x": 56,
+          "y": 220,
+          "width": 400,
+          "height": 260,
+          "title": "01｜Gold2表",
+          "lines": [
+            "生産：工場・UTC日別",
+            "出荷：受注別",
+            "SQLで型と指標を確定"
+          ],
+          "tone": "gold",
+          "tag": "任意SQL入力は公開しない",
+          "logo": ""
+        },
+        {
+          "key": "snapshot",
+          "x": 520,
+          "y": 220,
+          "width": 400,
+          "height": 260,
+          "title": "02｜main snapshot",
+          "lines": [
+            "各表の$refsからmain",
+            "FOR VERSION AS OF",
+            "各表最大500行"
+          ],
+          "tone": "blue",
+          "tag": "表間の同時点保証はない",
+          "logo": "trino"
+        },
+        {
+          "key": "context",
+          "x": 984,
+          "y": 220,
+          "width": 400,
+          "height": 260,
+          "title": "03｜context JSON",
+          "lines": [
+            "table / snapshot_id / rows",
+            "complete_dataset:false",
+            "exporterと参照SQLのhash"
+          ],
+          "tone": "blue",
+          "tag": "全件集計として扱わない",
+          "logo": ""
+        },
+        {
+          "key": "document",
+          "x": 1448,
+          "y": 220,
+          "width": 416,
+          "height": 260,
+          "title": "04｜LangChain",
+          "lines": [
+            "Documentへ変換",
+            "表・snapshotをmetadataへ",
+            "推論・embeddingとは別操作"
+          ],
+          "tone": "purple",
+          "tag": "固定lock / tracing無効",
+          "logo": ""
+        },
+        {
+          "key": "mcp",
+          "x": 56,
+          "y": 620,
+          "width": 590,
+          "height": 220,
+          "title": "MCP｜AIクライアントの入口",
+          "lines": [
+            "9read tools / 2resourcesが既定",
+            "3write toolsはopt-in＋呼出ごと同意",
+            "HTTP Bearer・Host制限・固定API"
+          ],
+          "tone": "teal",
+          "tag": "任意SQL・shellは提供しない",
+          "logo": ""
+        },
+        {
+          "key": "model",
+          "x": 740,
+          "y": 620,
+          "width": 536,
+          "height": 220,
+          "title": "任意のローカル推論",
+          "lines": [
+            "Ollama接続例を同梱",
+            "モデル導入・推論評価は別途",
+            "原本・snapshotへ戻れる回答を確認"
+          ],
+          "tone": "gray",
+          "tag": "未実機評価 / 選択肢",
+          "logo": ""
+        },
+        {
+          "key": "rag",
+          "x": 1370,
+          "y": 620,
+          "width": 494,
+          "height": 220,
+          "title": "RAG / 外部AIの追加",
+          "lines": [
+            "OCR / chunk / embedding",
+            "権限・削除同期・検索評価",
+            "外部送信・accountは未設定"
+          ],
+          "tone": "gray",
+          "tag": "追加実装の範囲",
+          "logo": ""
+        }
+      ],
+      "edges": [
+        {
+          "source": "gold",
+          "target": "snapshot",
+          "label": "",
+          "kind": "data"
+        },
+        {
+          "source": "snapshot",
+          "target": "context",
+          "label": "",
+          "kind": "data"
+        },
+        {
+          "source": "context",
+          "target": "document",
+          "label": "",
+          "kind": "data"
+        },
+        {
+          "source": "document",
+          "target": "model",
+          "label": "任意",
+          "kind": "optional",
+          "points": [
+            [
+              1656,
+              480
+            ],
+            [
+              1656,
+              550
+            ],
+            [
+              1008,
+              550
+            ],
+            [
+              1008,
+              620
+            ]
+          ]
+        }
+      ],
+      "notes": [
+        "export時SQLのhashは、過去snapshotを生成したSQL版の証明ではない。実行監査台帳は追加課題。",
+        "Qdrantの合成vector3点とMarquezの手動系統seedは疎通試験。意味検索精度・実系統自動収集を保証しない。"
+      ],
+      "mermaid": "flowchart LR\n  G[\"Gold2表\"] --> S[\"各表main snapshot固定\"]\n  S --> C[\"最大500行/表 + 根拠JSON\"]\n  C --> D[\"LangChain Document\"]\n  D -.-> L[\"任意Ollama / 推論は別途評価\"]\n  M[\"MCP read tools\"] --> C\n  D -.-> R[\"追加実装: OCR / embedding / 検索 / 権限・削除同期\"]\n",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "08-proxy-ca",
+      "title": "企業プロキシとCAを設定する場所",
+      "subtitle": "Git取得・daemon pull・build・runtime・Javaは別の通信主体。内部通信はbypassする。",
+      "audience": "ネットワーク・導入担当",
+      "caption": "daemon、BuildKit、稼働中client、Java/SDKの設定を分ける。private canonicalへ必須内部名と会社追加先をまとめ、企業CAをホスト・image・JVMへ必要な範囲で適用する。",
+      "sources": [
+        "scripts/configure-proxy.sh",
+        "scripts/settings.py",
+        "infra/proxy",
+        "docs/COMPANY-PROXY.md"
+      ],
+      "panels": [
+        {
+          "key": "host",
+          "x": 56,
+          "y": 230,
+          "width": 420,
+          "height": 290,
+          "title": "ホスト / daemon",
+          "lines": [
+            "Git・apt・uv：会社標準設定",
+            "daemon：image pull / push",
+            "daemon用はlegacy6変数",
+            "設定配置と再起動は別操作"
+          ],
+          "tone": "blue",
+          "tag": "ホスト管理者",
+          "logo": ""
+        },
+        {
+          "key": "build",
+          "x": 562,
+          "y": 230,
+          "width": 420,
+          "height": 290,
+          "title": "BuildKit / build",
+          "lines": [
+            "HTTP(S)_PROXYのargs",
+            "CA：BuildKit secret",
+            "OS / Java trustへ追加",
+            "認証URLをCOPYしない"
+          ],
+          "tone": "purple",
+          "tag": "固定lock・JAR取得",
+          "logo": ""
+        },
+        {
+          "key": "runtime",
+          "x": 1068,
+          "y": 230,
+          "width": 420,
+          "height": 290,
+          "title": "runtime / client",
+          "lines": [
+            "HTTP(S)の大小case",
+            "Python / Node / curl等",
+            "client別のbypass解釈",
+            "n8n追加CAは任意"
+          ],
+          "tone": "teal",
+          "tag": "実通信で確認",
+          "logo": ""
+        },
+        {
+          "key": "proxy",
+          "x": 1574,
+          "y": 230,
+          "width": 290,
+          "height": 290,
+          "title": "企業proxy",
+          "lines": [
+            "外部宛先の許可",
+            "CONNECT / 認証",
+            "TLS検査時のCA",
+            "実URLはprivate"
+          ],
+          "tone": "gray",
+          "tag": "会社で受入",
+          "logo": ""
+        },
+        {
+          "key": "canonical",
+          "x": 56,
+          "y": 640,
+          "width": 926,
+          "height": 220,
+          "title": "内部通信｜LAKEHOUSE_NO_PROXY",
+          "lines": [
+            "必須Compose名＋loopback＋会社の内部宛先を正規化",
+            "NO_PROXY / no_proxyへ同期。raw Composeはcanonicalを優先",
+            "古い設定はconfigure --upgradeで保存値を更新"
+          ],
+          "tone": "blue",
+          "tag": "大小case / stale shellを整理",
+          "logo": ""
+        },
+        {
+          "key": "trust",
+          "x": 1068,
+          "y": 640,
+          "width": 796,
+          "height": 220,
+          "title": "証明書の信頼は主体ごとに確認",
+          "lines": [
+            "企業CAはGit外。未指定は0バイトplaceholder",
+            "build済みimageには追加した信頼が残る",
+            "SQL Server TCP・Java・各SDKは別に疎通確認"
+          ],
+          "tone": "gold",
+          "tag": "TLS検証を無効化して回避しない",
+          "logo": ""
+        }
+      ],
+      "edges": [
+        {
+          "source": "runtime",
+          "target": "proxy",
+          "label": "外部HTTPS",
+          "kind": "data"
+        },
+        {
+          "source": "build",
+          "target": "runtime",
+          "label": "完成image",
+          "kind": "control"
+        },
+        {
+          "source": "host",
+          "target": "build",
+          "label": "build依頼",
+          "kind": "control"
+        }
+      ],
+      "notes": [
+        "NO_PROXYは経路選択。n8nのSSRF許可は別の保護。内部bypassがあってもSSRF許可にはならない。",
+        "GUI診断は固定HTTPS4先だけ。成功してもdaemon・Java・実会社proxy全経路の受入完了ではない。"
+      ],
+      "mermaid": "flowchart TB\n  Site[\"private site.env / canonical\"] --> Build[\"BuildKit args + CA secret\"]\n  Site --> Runtime[\"runtime clients / Java・SDK\"]\n  Daemon[\"daemon専用proxy設定\"] --> Pull[\"image pull/push\"]\n  Build --> Proxy[\"企業proxy\"]\n  Runtime --> Proxy\n  Pull --> Proxy\n  Runtime -->|NO_PROXY| Internal[\"内部S3 / catalog / worker / DB\"]\n  CA[\"企業CA / Git外\"] --> Build\n  CA --> Host[\"host trust / 必要なJVM trust\"]\n",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "09-security-boundaries",
+      "title": "認証・権限・接続先の境界",
+      "subtitle": "管理者、利用者、内部サービス、外部DBを分ける。閉域PoCの共有認証を本番認可と混同しない。",
+      "audience": "セキュリティ・公開レビュー",
+      "caption": "利用者は限定入口から操作し、API/MCPは専用tokenを使う。管理者だけがDokploy/Docker/ホスト設定を変更する。内部Trino/カタログは閉域前提で、利用者別認可の完成は別課題である。",
+      "sources": [
+        "infra/demo/api.py",
+        "infra/mcp/server.py",
+        "infra/lakehouse/compose.yaml",
+        "docs/SSRF.md"
+      ],
+      "panels": [
+        {
+          "key": "user",
+          "x": 56,
+          "y": 230,
+          "width": 460,
+          "height": 260,
+          "title": "利用者の入口",
+          "lines": [
+            "loopback / SSH転送で開始",
+            "共有時はHTTPS・利用者認証",
+            "Streamlit自体のIdPは未同梱"
+          ],
+          "tone": "blue",
+          "tag": "会社標準の接続制限",
+          "logo": ""
+        },
+        {
+          "key": "api",
+          "x": 730,
+          "y": 230,
+          "width": 460,
+          "height": 260,
+          "title": "API / MCP",
+          "lines": [
+            "CONTROL / MCPの専用token",
+            "allowlist・上限・明示同意",
+            "任意URL・SQL・shellを公開しない"
+          ],
+          "tone": "teal",
+          "tag": "アプリ操作の境界",
+          "logo": ""
+        },
+        {
+          "key": "internal",
+          "x": 1404,
+          "y": 230,
+          "width": 460,
+          "height": 260,
+          "title": "内部ネットワーク",
+          "lines": [
+            "worker / Trino / catalog / S3",
+            "S3鍵とDB/暗号鍵をprivate管理",
+            "内部HTTPを全て認証済みとはしない"
+          ],
+          "tone": "bronze",
+          "tag": "利用者別認可は追加課題",
+          "logo": ""
+        },
+        {
+          "key": "admin",
+          "x": 56,
+          "y": 640,
+          "width": 460,
+          "height": 220,
+          "title": "管理者の入口",
+          "lines": [
+            "Dokploy / Docker / host設定",
+            "root相当の権限を限定",
+            "APIへ管理鍵やsocketを渡さない"
+          ],
+          "tone": "purple",
+          "tag": "設定保存とDeployを分離",
+          "logo": ""
+        },
+        {
+          "key": "ssrf",
+          "x": 730,
+          "y": 640,
+          "width": 460,
+          "height": 220,
+          "title": "n8nのSSRF保護",
+          "lines": [
+            "本構成はtrue",
+            "内部例外は既定workerのみ",
+            "許可・拒否を実nodeで照合"
+          ],
+          "tone": "teal",
+          "tag": "NO_PROXYとは別の制御",
+          "logo": ""
+        },
+        {
+          "key": "source",
+          "x": 1404,
+          "y": 640,
+          "width": 460,
+          "height": 220,
+          "title": "SQL / 秘密の境界",
+          "lines": [
+            "SOURCE：SELECT専用",
+            "DEMO：専用DB＋明示同意",
+            "CDC DML：所有権tokenも照合"
+          ],
+          "tone": "blue",
+          "tag": "TLS / 権限をDBAと受入",
+          "logo": ""
+        }
+      ],
+      "edges": [
+        {
+          "source": "user",
+          "target": "api",
+          "label": "限定入口",
+          "kind": "control"
+        },
+        {
+          "source": "api",
+          "target": "internal",
+          "label": "固定経路",
+          "kind": "control"
+        },
+        {
+          "source": "ssrf",
+          "target": "internal",
+          "label": "workerだけ",
+          "kind": "control",
+          "points": [
+            [
+              1190,
+              740
+            ],
+            [
+              1298,
+              740
+            ],
+            [
+              1298,
+              530
+            ],
+            [
+              1634,
+              530
+            ],
+            [
+              1634,
+              490
+            ]
+          ]
+        }
+      ],
+      "notes": [
+        "SQLのDB資格情報、worker token、S3鍵をLLMへ渡さない。Notebook/Superset等nativeツールの権限は別管理。",
+        "公開素材は実IP・proxy・ユーザー名・実データ・証明書を含めず、既知情報と全履歴を照合する。"
+      ],
+      "mermaid": "flowchart LR\n  User[\"利用者 / 限定入口\"] --> App[\"GUI / Bearer API・MCP\"]\n  App --> Worker[\"固定worker経路\"]\n  Admin[\"管理者\"] --> Host[\"Dokploy / Docker / host\"]\n  Host --> Worker\n  N8N[\"n8n SSRF enabled\"] -->|許可worker| Worker\n  SQL[\"SOURCE読取 / DEMO専用writer / TLS\"] --> Worker\n  Secret[\"private設定 / Git外\"] --> Host\n",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "10-observability",
+      "title": "監視・状態確認・業務品質を分ける",
+      "subtitle": "メトリクス、到達性、業務件数、履歴の4種類を区別する。healthyだけではデータの正しさは分からない。",
+      "audience": "運用・品質レビュー",
+      "caption": "Prometheusはworkerと自身の2targetを15秒ごとに収集する。ポータルのhealth、固定品質SQL、n8n/Airflow等の実行履歴は別の観測で、全ホストの監視や長期監査を完成させるものではない。",
+      "sources": [
+        "infra/monitoring/prometheus.yml",
+        "scripts/admin.py",
+        "scripts/grafana_setup.py",
+        "infra/demo/poc_quality.py"
+      ],
+      "panels": [
+        {
+          "key": "worker",
+          "x": 56,
+          "y": 230,
+          "width": 420,
+          "height": 240,
+          "title": "worker /metrics",
+          "lines": [
+            "処理の指標を公開",
+            "DBA・業務照合とは別",
+            "外部host exporterは未同梱"
+          ],
+          "tone": "blue",
+          "tag": "メトリクス対象1",
+          "logo": ""
+        },
+        {
+          "key": "prom",
+          "x": 650,
+          "y": 230,
+          "width": 520,
+          "height": 240,
+          "title": "Prometheus",
+          "lines": [
+            "worker＋Prometheus自身の2target",
+            "scrape interval：15秒",
+            "保存：15日 / 2GBの設定"
+          ],
+          "tone": "teal",
+          "tag": "monitoring",
+          "logo": "prometheus"
+        },
+        {
+          "key": "grafana",
+          "x": 1344,
+          "y": 230,
+          "width": 520,
+          "height": 240,
+          "title": "Grafana",
+          "lines": [
+            "datasourceはprovision",
+            "dashboardは初回だけseed",
+            "GUI編集はDBへ保存し保持"
+          ],
+          "tone": "teal",
+          "tag": "monitoring",
+          "logo": "grafana"
+        },
+        {
+          "key": "health",
+          "x": 56,
+          "y": 630,
+          "width": 420,
+          "height": 220,
+          "title": "到達性 / readiness",
+          "lines": [
+            "サービス入口カード16種",
+            "起動・未選択・未設定を区別",
+            "healthy≠業務数値の正しさ"
+          ],
+          "tone": "blue",
+          "tag": "Streamlit / API",
+          "logo": ""
+        },
+        {
+          "key": "quality",
+          "x": 650,
+          "y": 630,
+          "width": 520,
+          "height": 220,
+          "title": "業務品質",
+          "lines": [
+            "固定6表のBronze/Silver/隔離件数",
+            "Gold previewは表ごと上限付き",
+            "会社期待値は同じ範囲で照合"
+          ],
+          "tone": "gold",
+          "tag": "catalog / quality / verify",
+          "logo": ""
+        },
+        {
+          "key": "history",
+          "x": 1344,
+          "y": 630,
+          "width": 520,
+          "height": 220,
+          "title": "履歴 / 監査",
+          "lines": [
+            "n8n・Airflow・Sparkは各保存先",
+            "API job20件はメモリ内だけ",
+            "通知・全ログ・長期監査は追加課題"
+          ],
+          "tone": "purple",
+          "tag": "Alloy / Loki等は未導入",
+          "logo": ""
+        }
+      ],
+      "edges": [
+        {
+          "source": "worker",
+          "target": "prom",
+          "label": "HTTP scrape",
+          "kind": "data"
+        },
+        {
+          "source": "prom",
+          "target": "grafana",
+          "label": "PromQL参照",
+          "kind": "data"
+        }
+      ],
+      "notes": [
+        "GUI入口カードの数とPrometheus target数は別。会社SQL Server・DB・Kafka・ホスト全体の監視は追加する。",
+        "Grafana JSON exportはdashboard単体。利用者・権限・全設定の復元はDBと設定のバックアップで確認する。"
+      ],
+      "mermaid": "flowchart LR\n  W[\"worker metrics\"] --> P[\"Prometheus / 15s / 2target\"]\n  P --> G[\"Grafana / GUI保存\"]\n  P --> P\n  Portal[\"ポータル\"] --> Health[\"固定health / 到達性\"]\n  Portal --> Quality[\"固定品質SQL / Gold preview\"]\n  Portal --> Jobs[\"最新20job / 非永続\"]\n  Native[\"n8n / Airflow / Spark\"] --> Logs[\"各実行履歴・保存先\"]\n",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "11-deployment-lifecycle",
+      "title": "公開Gitから配置・反映する手順",
+      "subtitle": "採用Dokploy0.31.0の画面名を使用。アプリの実行名とデータvolumeの対応を保持する。",
+      "audience": "導入・変更管理",
+      "caption": "ホスト準備とprivate設定を行い、生成後appNameへCompose名を合わせる。Composeサービス自身のEnvironmentを保存し、Git Providerと7ファイルCommandからDeployする。GUI保存だけでは反映しない。",
+      "sources": [
+        "infra/dokploy/install.sh",
+        "docs/DOKPLOY.md",
+        "docs/START-HERE.md",
+        "docs/COMPANY-UPDATE.md"
+      ],
+      "panels": [
+        {
+          "key": "host",
+          "x": 56,
+          "y": 230,
+          "width": 400,
+          "height": 260,
+          "title": "01｜ホスト準備",
+          "lines": [
+            "Docker / proxy / CA",
+            "landingとUID/GID",
+            "image取得前に通信準備"
+          ],
+          "tone": "blue",
+          "tag": "ホスト管理者と配置担当",
+          "logo": ""
+        },
+        {
+          "key": "private",
+          "x": 520,
+          "y": 230,
+          "width": 400,
+          "height": 260,
+          "title": "02｜private設定",
+          "lines": [
+            "Git外 / 0600 / 親0700",
+            "通常ユーザーで設定を生成",
+            "そのenvでDokploy plan→apply"
+          ],
+          "tone": "purple",
+          "tag": "秘密・暗号鍵を保持",
+          "logo": ""
+        },
+        {
+          "key": "compose",
+          "x": 984,
+          "y": 230,
+          "width": 400,
+          "height": 260,
+          "title": "03｜Compose作成",
+          "lines": [
+            "Project → Environment",
+            "Create Service → Compose",
+            "ヘッダーの確定appName"
+          ],
+          "tone": "blue",
+          "tag": "入力名には生成suffixが付く",
+          "logo": ""
+        },
+        {
+          "key": "provider",
+          "x": 1448,
+          "y": 230,
+          "width": 416,
+          "height": 260,
+          "title": "04｜Provider / Git",
+          "lines": [
+            "公開URL / Branch main",
+            "Compose Pathを指定",
+            "GitHubタブの連携は不要"
+          ],
+          "tone": "blue",
+          "tag": "General → Provider",
+          "logo": ""
+        },
+        {
+          "key": "verify",
+          "x": 56,
+          "y": 650,
+          "width": 400,
+          "height": 190,
+          "title": "08｜受入・運用",
+          "lines": [
+            "health / one-shot exit0",
+            "隔離verify11検査 / 引継ぎ"
+          ],
+          "tone": "teal",
+          "tag": "会社接続の受入は現地で別途",
+          "logo": ""
+        },
+        {
+          "key": "deploy",
+          "x": 520,
+          "y": 650,
+          "width": 400,
+          "height": 190,
+          "title": "07｜Deploy",
+          "lines": [
+            "Gitを再取得してbuild",
+            "RebuildはGitを再取得しない"
+          ],
+          "tone": "teal",
+          "tag": "Auto Deployは初回OFF",
+          "logo": ""
+        },
+        {
+          "key": "command",
+          "x": 984,
+          "y": 650,
+          "width": 400,
+          "height": 190,
+          "title": "06｜Run Command",
+          "lines": [
+            "Commandはcomposeから",
+            "実appName / 7ファイル / wait"
+          ],
+          "tone": "purple",
+          "tag": "pipeやshell連結は使わない",
+          "logo": ""
+        },
+        {
+          "key": "env",
+          "x": 1448,
+          "y": 650,
+          "width": 416,
+          "height": 190,
+          "title": "05｜サービスenv",
+          "lines": [
+            "Environmentへ設定を登録",
+            "Create Environment File ON"
+          ],
+          "tone": "purple",
+          "tag": "Project変数は自動継承しない",
+          "logo": ""
+        }
+      ],
+      "edges": [
+        {
+          "source": "host",
+          "target": "private",
+          "label": "準備順",
+          "kind": "control"
+        },
+        {
+          "source": "private",
+          "target": "compose",
+          "label": "",
+          "kind": "control"
+        },
+        {
+          "source": "compose",
+          "target": "provider",
+          "label": "",
+          "kind": "control"
+        },
+        {
+          "source": "provider",
+          "target": "env",
+          "label": "",
+          "kind": "control"
+        },
+        {
+          "source": "env",
+          "target": "command",
+          "label": "",
+          "kind": "control"
+        },
+        {
+          "source": "command",
+          "target": "deploy",
+          "label": "",
+          "kind": "control"
+        },
+        {
+          "source": "deploy",
+          "target": "verify",
+          "label": "",
+          "kind": "control"
+        }
+      ],
+      "notes": [
+        "7Composeの標準Commandは初回から使用可能。起動対象はCOMPOSE_PROFILESで段階追加する。",
+        "CLIかDokployの管理入口を一つに決める。private envとDokployサービスenvは管理者が同期して再配置する。"
+      ],
+      "mermaid": "flowchart LR\n  H[\"host / proxy / CA準備\"] --> S[\"private設定 / landing\"]\n  S --> C[\"Compose作成 / 実appName確認\"]\n  C --> G[\"General / Provider / Git\"]\n  G --> E[\"サービスEnvironment / env file ON\"]\n  E --> R[\"Advanced / Run Command / 7file\"]\n  R --> D[\"Deploy / Git再取得\"]\n  D --> V[\"health / one-shot / verify\"]\n",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "12-persistence-recovery",
+      "title": "永続データと復元を一組で管理する",
+      "subtitle": "16種類の名前付きvolume定義と外部bind。cloneや再配置とデータ移行を分ける。",
+      "audience": "バックアップ・引継ぎ・復旧",
+      "caption": "受領原本とIceberg metadata/data、Lakekeeper DBと暗号鍵を整合した停止点で保管する。各GUIのDB/暗号鍵、SparkとCDCの再開状態、外部landing/workspaceも復元範囲へ含める。",
+      "sources": [
+        "docs/OPERATIONS.md",
+        "infra/lakehouse/compose.yaml",
+        "infra/compute/compose.yaml",
+        "infra/cdc/compose.yaml",
+        "infra/poc/compose.yaml"
+      ],
+      "panels": [
+        {
+          "key": "data",
+          "x": 56,
+          "y": 230,
+          "width": 560,
+          "height": 310,
+          "title": "正本データ｜core",
+          "lines": [
+            "storage：原本bucket / Iceberg bucket",
+            "catalog-db：REST catalog metadata",
+            "CATALOG_ENCRYPTION_KEY：復号鍵",
+            "trino：エンジン側volume",
+            "必須coreが使うnamed volumeは3種"
+          ],
+          "tone": "blue",
+          "tag": "原本だけのcopyでは復元できない",
+          "logo": "iceberg"
+        },
+        {
+          "key": "gui",
+          "x": 680,
+          "y": 230,
+          "width": 560,
+          "height": 310,
+          "title": "GUI / 実行状態",
+          "lines": [
+            "n8n-db / n8n ＋ encryption key",
+            "airflow-db / airflow-state ＋ Fernet",
+            "prometheus / grafana",
+            "superset-db / qdrant / marquez-db",
+            "Redisはcache / 専用volumeなし"
+          ],
+          "tone": "teal",
+          "tag": "GUI編集を保持する",
+          "logo": ""
+        },
+        {
+          "key": "state",
+          "x": 1304,
+          "y": 230,
+          "width": 560,
+          "height": 310,
+          "title": "計算・変更の再開状態",
+          "lines": [
+            "spark-events / spark-work",
+            "cdc-kafka / cdc-consumer",
+            "Kafka offset / history / SQLite",
+            "停止点と再開後の重複を確認",
+            "履歴保持と無停止性は別"
+          ],
+          "tone": "purple",
+          "tag": "明示した復元順が必要",
+          "logo": ""
+        },
+        {
+          "key": "external",
+          "x": 56,
+          "y": 670,
+          "width": 560,
+          "height": 190,
+          "title": "Git外のhost bind",
+          "lines": [
+            "LANDING_DIR / NOTEBOOKS_DIR",
+            "private env・鍵・企業CA"
+          ],
+          "tone": "bronze",
+          "tag": "実ファイルとUID/GIDを保持",
+          "logo": ""
+        },
+        {
+          "key": "backup",
+          "x": 680,
+          "y": 670,
+          "width": 560,
+          "height": 190,
+          "title": "整合する停止点",
+          "lines": [
+            "writer停止 → DB dump / volume保管",
+            "秘密設定と対応する保存点を記録"
+          ],
+          "tone": "gold",
+          "tag": "通常downはvolumeを保持",
+          "logo": ""
+        },
+        {
+          "key": "restore",
+          "x": 1304,
+          "y": 670,
+          "width": 560,
+          "height": 190,
+          "title": "別環境で復元",
+          "lines": [
+            "同じ鍵・volume対応で読書き確認",
+            "原本hash / SQL / 再開位置を照合"
+          ],
+          "tone": "gray",
+          "tag": "復元・RPO/RTOは未実機評価",
+          "logo": ""
+        }
+      ],
+      "edges": [
+        {
+          "source": "external",
+          "target": "backup",
+          "label": "保管",
+          "kind": "control"
+        },
+        {
+          "source": "backup",
+          "target": "restore",
+          "label": "復元試験",
+          "kind": "optional"
+        }
+      ],
+      "notes": [
+        "16は全profileのvolume定義数。core用Composeファイルの7定義には任意n8n・監視の4種も含む。",
+        "appName・DATA_VOLUME_PREFIX・秘密値を単独変更しない。DB passwordのenv変更だけで既存DBは更新されない。"
+      ],
+      "mermaid": "flowchart LR\n  R[\"原本 / Iceberg metadata・data\"] --> B[\"整合する停止点のbackup\"]\n  C[\"catalog DB + 暗号鍵\"] --> B\n  U[\"各GUI DB + 暗号鍵\"] --> B\n  S[\"Spark logs / Kafka・SQLite再開状態\"] --> B\n  F[\"landing / workspace / private設定\"] --> B\n  B -.-> T[\"別環境へ復元してSQL・hash・再開位置を確認\"]\n",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "13-evidence-summary",
+      "title": "合成PoCで確認したこと・未評価のこと",
+      "subtitle": "既存の2026-11-10検証記録を再利用。会社の実データ・性能・費用の成果として扱わない。",
+      "audience": "PoC結果の報告・意思決定",
+      "caption": "小規模合成データでファイルからIceberg、更新・削除、再実行、各GUI/APIの経路を確認した記録がある。一方、実会社proxy/DB・モデル推論・復元・容量/性能の受入は別に必要である。",
+      "sources": [
+        "docs/verification.json",
+        "medallion/expected-demo.json",
+        "docs/VALIDATION.md"
+      ],
+      "panels": [
+        {
+          "key": "medallion",
+          "x": 56,
+          "y": 230,
+          "width": 560,
+          "height": 270,
+          "title": "ファイル / メダリオン",
+          "lines": [
+            "業務SQL10＋画像1＝11検査",
+            "初回7原本 / 再投入7skip",
+            "Bronze155 → Silver145 / 隔離8",
+            "残り2は完全重複・過去版"
+          ],
+          "tone": "blue",
+          "tag": "合成fixture / 通常GUI累積値ではない",
+          "logo": ""
+        },
+        {
+          "key": "cdc",
+          "x": 680,
+          "y": 230,
+          "width": 560,
+          "height": 270,
+          "title": "CDC / 再開",
+          "lines": [
+            "初期144 / I・U・D各6",
+            "tombstone6を含みraw168",
+            "再起動後もdistinct168",
+            "lag0に加えて各層を照合"
+          ],
+          "tone": "teal",
+          "tag": "専用の合成試験DB",
+          "logo": ""
+        },
+        {
+          "key": "compute",
+          "x": 1304,
+          "y": 230,
+          "width": 560,
+          "height": 270,
+          "title": "Spark / AI入口",
+          "lines": [
+            "Spark↔Trino：同じ3行",
+            "remote Worker / History保持",
+            "LangChain Document34件",
+            "Qdrant合成3点 / 手動lineage"
+          ],
+          "tone": "purple",
+          "tag": "推論・意味検索精度の試験ではない",
+          "logo": ""
+        },
+        {
+          "key": "ui",
+          "x": 56,
+          "y": 640,
+          "width": 560,
+          "height": 220,
+          "title": "GUI / API / 保存",
+          "lines": [
+            "n8n・Airflowの手動実行",
+            "Grafana GUI編集の保持",
+            "設定保存と適用の区別"
+          ],
+          "tone": "gold",
+          "tag": "保存先と再起動後を確認",
+          "logo": ""
+        },
+        {
+          "key": "proxy",
+          "x": 680,
+          "y": 640,
+          "width": 560,
+          "height": 220,
+          "title": "proxy / 公開品質",
+          "lines": [
+            "認証CONNECT・TLSの模擬試験",
+            "既存記録：自動260テスト",
+            "Python / SQL / Compose検査"
+          ],
+          "tone": "blue",
+          "tag": "実会社proxyの検証ではない",
+          "logo": ""
+        },
+        {
+          "key": "limits",
+          "x": 1304,
+          "y": 640,
+          "width": 560,
+          "height": 220,
+          "title": "次の受入で埋める範囲",
+          "lines": [
+            "実会社DB / proxy・CA / IdP",
+            "負荷・復元・HA・RPO/RTO",
+            "モデル推論 / 業務効果 / 費用"
+          ],
+          "tone": "gray",
+          "tag": "未評価 / 成果値を捏造しない",
+          "logo": ""
+        }
+      ],
+      "edges": [],
+      "notes": [
+        "数値はdocs/verification.jsonと独立fixtureの範囲。全試験が単一commitで再実行されたとは主張しない。",
+        "図の作成日は再試験日ではない。報告先では環境・期間・母数・受入判定・未実施を一緒に記載する。"
+      ],
+      "mermaid": "flowchart TB\n  Evidence[\"2026-11-10の既存検証記録\"] --> M[\"メダリオン11検査 / 7原本skip\"]\n  Evidence --> C[\"CDC raw168 / 再開後distinct168\"]\n  Evidence --> S[\"Spark/Trino3行 / GUI保存\"]\n  Evidence --> A[\"Document34 / 推論未実施\"]\n  Evidence --> P[\"模擬proxy / source品質\"]\n  Next[\"別受入: 実会社・負荷・復元・推論・費用\"] -.-> Decision[\"導入判断\"]\n",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "14-poc-roadmap",
+      "title": "PoCから会社導入へ進む評価の順番",
+      "subtitle": "日程や成果値を仮定しない。段階ごとの成功条件を満たしてから次へ進む。",
+      "audience": "PoC計画・次フェーズの合意",
+      "caption": "機能往復の確認を起点に、会社ネットワーク/DB受入、業務整合、負荷と復元、AI評価へ段階を分ける。未評価を完了扱いせず、次へ進む条件と証跡を合意する。",
+      "sources": [
+        "docs/START-HERE.md",
+        "docs/COMPANY-ROLLOUT.md",
+        "docs/OPERATIONS.md",
+        "docs/AI-READINESS.md"
+      ],
+      "panels": [
+        {
+          "key": "baseline",
+          "x": 56,
+          "y": 230,
+          "width": 400,
+          "height": 270,
+          "title": "段階1｜機能の往復",
+          "lines": [
+            "core / GUI / 合成素材",
+            "11検査・再投入skip",
+            "選択profileの初期化と保存",
+            "既存記録を再現して確かめる"
+          ],
+          "tone": "blue",
+          "tag": "検証記録あり / 導入先で再確認",
+          "logo": ""
+        },
+        {
+          "key": "source",
+          "x": 520,
+          "y": 230,
+          "width": 400,
+          "height": 270,
+          "title": "段階2｜会社接続",
+          "lines": [
+            "proxy・CA・DNS・TLS",
+            "SOURCE読取権限・6表map",
+            "必要ならDBAとCDC準備",
+            "合成環境と別の空環境"
+          ],
+          "tone": "gray",
+          "tag": "会社の現地受入",
+          "logo": ""
+        },
+        {
+          "key": "business",
+          "x": 984,
+          "y": 230,
+          "width": 400,
+          "height": 270,
+          "title": "段階3｜業務整合",
+          "lines": [
+            "粒度・時刻・更新優先",
+            "Goldを会社側集計と照合",
+            "隔離・遅延・訂正・削除",
+            "担当者の確認と証跡"
+          ],
+          "tone": "gray",
+          "tag": "実業務の受入",
+          "logo": ""
+        },
+        {
+          "key": "operations",
+          "x": 1448,
+          "y": 230,
+          "width": 416,
+          "height": 270,
+          "title": "段階4｜継続運用",
+          "lines": [
+            "実測の負荷・容量・費用",
+            "backup→別環境復元",
+            "認可・通知・監査・障害",
+            "RPO/RTOを試験で決める"
+          ],
+          "tone": "gray",
+          "tag": "性能・復旧の受入",
+          "logo": ""
+        },
+        {
+          "key": "ai",
+          "x": 56,
+          "y": 650,
+          "width": 864,
+          "height": 190,
+          "title": "任意のAI評価｜根拠contextを起点にする",
+          "lines": [
+            "モデル・評価セット・権限・削除同期・外部送信を定義",
+            "回答の根拠・鮮度・精度・遅延・費用を実測する"
+          ],
+          "tone": "gray",
+          "tag": "推論・RAGは別の追加実装",
+          "logo": ""
+        },
+        {
+          "key": "decision",
+          "x": 1014,
+          "y": 650,
+          "width": 850,
+          "height": 190,
+          "title": "各段階の判断｜進む / 条件付き / 再試験",
+          "lines": [
+            "目的・対象・期間・母数・期待値・結果・残課題を記録",
+            "責任者と次段階の成功条件は会社で記入する"
+          ],
+          "tone": "gold",
+          "tag": "日付・担当者・達成値は空欄から合意",
+          "logo": ""
+        }
+      ],
+      "edges": [
+        {
+          "source": "baseline",
+          "target": "source",
+          "label": "次の受入",
+          "kind": "optional"
+        },
+        {
+          "source": "source",
+          "target": "business",
+          "label": "",
+          "kind": "optional"
+        },
+        {
+          "source": "business",
+          "target": "operations",
+          "label": "",
+          "kind": "optional"
+        },
+        {
+          "source": "ai",
+          "target": "decision",
+          "label": "評価を判断へ",
+          "kind": "optional"
+        }
+      ],
+      "notes": [
+        "Cloudflare・ClickHouse・LLM基盤・全ログ監視等は採用判断が必要な候補。自動導入済みとはしない。",
+        "具体的な評価項目・結果記入欄はEVALUATION-PLANとPOC-REPORT-TEMPLATEを使用する。"
+      ],
+      "mermaid": "flowchart LR\n  B[\"1 機能往復 / 合成\"] -.-> N[\"2 会社接続 / 権限・TLS\"]\n  N -.-> D[\"3 実業務整合\"]\n  D -.-> O[\"4 負荷・費用・復旧・認可\"]\n  D -.-> A[\"任意AI評価 / 根拠・精度・権限\"]\n  O -.-> G[\"進む / 条件付き / 再試験\"]\n  A -.-> G\n",
+      "width": 1920,
+      "height": 1080
+    }
+  ]
+}

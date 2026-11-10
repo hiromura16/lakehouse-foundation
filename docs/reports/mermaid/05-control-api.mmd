@@ -1,0 +1,7 @@
+flowchart LR
+  Client["Streamlit / Swagger / MCP連携"] -->|Bearer| API["FastAPI固定API"]
+  API -->|PATCH| Saved["private設定へ保存 / 未適用"]
+  API -->|POST jobs| Source["素材だけ生成"]
+  API -->|POST pipeline| Worker["worker / busy・blocked"]
+  Native["同梱n8n / Airflow"] -->|WORKER_TOKENで直接| Worker
+  Saved -.-> Admin["配置担当 / env同期→Deploy"]

@@ -69,3 +69,9 @@ Docker/Nginx等のホスト・基盤imageはminor/patch表記だけでなく、l
 公開前に現ファイル・Git index・全ローカル参照の履歴を検査します。一般的な秘密値/鍵/証明書/実データの規則に加え、提供資料内の実会社ホスト・IP・proxy・識別名と既存秘密値を**Git外の照合入力**として使います。検査結果に照合文字列そのものは出しません。社内添付資料や非公開のdeny listは公開しません。
 
 既知情報と検査規則に対する検出結果を記録し、未知の機密が一切存在しないことを無条件に保証する表現は使いません。会社で新しい設定・Notebook・GUI exportを追加した場合も、実値を除去して公開前の検査を繰り返します。詳細は [検証記録](VALIDATION.md) です。
+
+## PoC報告書用素材の追加
+
+[報告書素材集](reports/README.md)へ、詳細・用途別SVG14種、Mermaid、キャプション・根拠台帳、オフラインHTML、報告書/評価計画/根拠対応表/スライド構成/意思決定/画面撮影の雛形と実装一覧を追加しています。根拠は公開Compose・SQL・コード・既存verificationで、実会社の情報や新しい性能・費用の推定を図へ持ち込みません。
+
+SVG生成は標準Pythonだけ、PNG/PDF/PPTX出力は [専用hash lock](reports/requirements-export.lock) をuvで同期します。CairoSVG2.9.1、Pillow13.0.0、pypdf7.0.1、python-pptx1.0.2の公式PyPI配布を確認して固定しました。生成元一致はCIでも検査し、日本語fontの埋込と出力の閲覧は別途確認します。

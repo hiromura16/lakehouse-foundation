@@ -2,6 +2,8 @@
 
 確認日: 2026-11-10（JST）。会社MES/ERPのファイル・SQLを受け、Icebergで保持し、SQL・GUI・API・AIクライアントから利用する単一ホストPoC基盤です。新規構築は [START-HERE.md](START-HERE.md) を使います。以下は採用中の構成で、各製品の最新版一般を意味しません。[版と一次資料](REFERENCES.md)
 
+[報告書用の詳細・用途別14図](reports/README.md)には、service配置・各データ経路・認証/通信・運用・検証結果を分けたSVGと編集元、キャプション、PNG/PDF/PPTX出力手順があります。
+
 ## 全体像と責任範囲
 
 ![データレイクハウス全体図](assets/architecture.svg)

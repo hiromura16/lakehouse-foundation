@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="11-deployment-lifecycle-title 11-deployment-lifecycle-description" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
+<title id="11-deployment-lifecycle-title">公開Gitから配置・反映する手順</title>
+<desc id="11-deployment-lifecycle-description">ホスト準備とprivate設定を行い、生成後appNameへCompose名を合わせる。Composeサービス自身のEnvironmentを保存し、Git Providerと7ファイルCommandからDeployする。GUI保存だけでは反映しない。 根拠: infra/dokploy/install.sh, docs/DOKPLOY.md, docs/START-HERE.md, docs/COMPANY-UPDATE.md</desc>
+<defs>
+<marker id="11-deployment-lifecycle-data" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#2469a8"/></marker>
+<marker id="11-deployment-lifecycle-control" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#70608e"/></marker>
+<marker id="11-deployment-lifecycle-optional" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#78818c"/></marker>
+</defs>
+<rect x="0" y="0" width="1920" height="1080" rx="0" fill="#fff" stroke="none"/>
+<rect x="0" y="0" width="14" height="1080" rx="0" fill="#152a43" stroke="none"/>
+<text x="56" y="43" fill="#536780" font-size="18" font-weight="600">LAKEHOUSE FOUNDATION  /  PoC REPORT ASSETS</text>
+<text x="56" y="104" fill="#152a43" font-size="42" font-weight="700">11  公開Gitから配置・反映する手順</text>
+<path d="M1270,35 L1320,35" stroke="#2469a8" stroke-width="3"/>
+<text x="1332" y="41" fill="#536780" font-size="17" font-weight="400">データ</text>
+<path d="M1475,35 L1525,35" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5"/>
+<text x="1537" y="41" fill="#536780" font-size="17" font-weight="400">制御・設定</text>
+<path d="M1680,35 L1730,35" stroke="#78818c" stroke-width="3" stroke-dasharray="3 7"/>
+<text x="1742" y="41" fill="#536780" font-size="17" font-weight="400">任意・計画</text>
+<text x="56" y="148" fill="#536780" font-size="23" font-weight="400">採用Dokploy0.31.0の画面名を使用。アプリの実行名とデータvolumeの対応を保持する。</text>
+<rect x="56" y="230" width="400" height="260" rx="16" fill="#edf4ff" stroke="#b8cee8"/>
+<rect x="56" y="248" width="5" height="224" rx="2" fill="#245fa6" stroke="none"/>
+<text x="80" y="272" fill="#152a43" font-size="27" font-weight="700">01｜ホスト準備</text>
+<text x="80" y="317" fill="#152a43" font-size="23" font-weight="400">Docker / proxy / CA</text>
+<text x="80" y="349" fill="#152a43" font-size="23" font-weight="400">landingとUID/GID</text>
+<text x="80" y="381" fill="#152a43" font-size="23" font-weight="400">image取得前に通信準備</text>
+<text x="80" y="420" fill="#245fa6" font-size="20" font-weight="600">ホスト管理者と配置担当</text>
+<rect x="520" y="230" width="400" height="260" rx="16" fill="#f1edfc" stroke="#c6b9e9"/>
+<rect x="520" y="248" width="5" height="224" rx="2" fill="#63449b" stroke="none"/>
+<text x="544" y="272" fill="#152a43" font-size="27" font-weight="700">02｜private設定</text>
+<text x="544" y="317" fill="#152a43" font-size="23" font-weight="400">Git外 / 0600 / 親0700</text>
+<text x="544" y="349" fill="#152a43" font-size="23" font-weight="400">通常ユーザーで設定を生成</text>
+<text x="544" y="381" fill="#152a43" font-size="23" font-weight="400">そのenvでDokploy plan→apply</text>
+<text x="544" y="420" fill="#63449b" font-size="20" font-weight="600">秘密・暗号鍵を保持</text>
+<rect x="984" y="230" width="400" height="260" rx="16" fill="#edf4ff" stroke="#b8cee8"/>
+<rect x="984" y="248" width="5" height="224" rx="2" fill="#245fa6" stroke="none"/>
+<text x="1008" y="272" fill="#152a43" font-size="27" font-weight="700">03｜Compose作成</text>
+<text x="1008" y="317" fill="#152a43" font-size="23" font-weight="400">Project → Environment</text>
+<text x="1008" y="349" fill="#152a43" font-size="23" font-weight="400">Create Service → Compose</text>
+<text x="1008" y="381" fill="#152a43" font-size="23" font-weight="400">ヘッダーの確定appName</text>
+<text x="1008" y="420" fill="#245fa6" font-size="20" font-weight="600">入力名には生成suffixが付く</text>
+<rect x="1448" y="230" width="416" height="260" rx="16" fill="#edf4ff" stroke="#b8cee8"/>
+<rect x="1448" y="248" width="5" height="224" rx="2" fill="#245fa6" stroke="none"/>
+<text x="1472" y="272" fill="#152a43" font-size="27" font-weight="700">04｜Provider / Git</text>
+<text x="1472" y="317" fill="#152a43" font-size="23" font-weight="400">公開URL / Branch main</text>
+<text x="1472" y="349" fill="#152a43" font-size="23" font-weight="400">Compose Pathを指定</text>
+<text x="1472" y="381" fill="#152a43" font-size="23" font-weight="400">GitHubタブの連携は不要</text>
+<text x="1472" y="420" fill="#245fa6" font-size="20" font-weight="600">General → Provider</text>
+<rect x="56" y="650" width="400" height="190" rx="16" fill="#eaf7f3" stroke="#a4d1c1"/>
+<rect x="56" y="668" width="5" height="154" rx="2" fill="#126c59" stroke="none"/>
+<text x="80" y="692" fill="#152a43" font-size="27" font-weight="700">08｜受入・運用</text>
+<text x="80" y="737" fill="#152a43" font-size="23" font-weight="400">health / one-shot exit0</text>
+<text x="80" y="769" fill="#152a43" font-size="23" font-weight="400">隔離verify11検査 / 引継ぎ</text>
+<text x="80" y="808" fill="#126c59" font-size="20" font-weight="600">会社接続の受入は現地で別途</text>
+<rect x="520" y="650" width="400" height="190" rx="16" fill="#eaf7f3" stroke="#a4d1c1"/>
+<rect x="520" y="668" width="5" height="154" rx="2" fill="#126c59" stroke="none"/>
+<text x="544" y="692" fill="#152a43" font-size="27" font-weight="700">07｜Deploy</text>
+<text x="544" y="737" fill="#152a43" font-size="23" font-weight="400">Gitを再取得してbuild</text>
+<text x="544" y="769" fill="#152a43" font-size="23" font-weight="400">RebuildはGitを再取得しない</text>
+<text x="544" y="808" fill="#126c59" font-size="20" font-weight="600">Auto Deployは初回OFF</text>
+<rect x="984" y="650" width="400" height="190" rx="16" fill="#f1edfc" stroke="#c6b9e9"/>
+<rect x="984" y="668" width="5" height="154" rx="2" fill="#63449b" stroke="none"/>
+<text x="1008" y="692" fill="#152a43" font-size="27" font-weight="700">06｜Run Command</text>
+<text x="1008" y="737" fill="#152a43" font-size="23" font-weight="400">Commandはcomposeから</text>
+<text x="1008" y="769" fill="#152a43" font-size="23" font-weight="400">実appName / 7ファイル / wait</text>
+<text x="1008" y="808" fill="#63449b" font-size="20" font-weight="600">pipeやshell連結は使わない</text>
+<rect x="1448" y="650" width="416" height="190" rx="16" fill="#f1edfc" stroke="#c6b9e9"/>
+<rect x="1448" y="668" width="5" height="154" rx="2" fill="#63449b" stroke="none"/>
+<text x="1472" y="692" fill="#152a43" font-size="27" font-weight="700">05｜サービスenv</text>
+<text x="1472" y="737" fill="#152a43" font-size="23" font-weight="400">Environmentへ設定を登録</text>
+<text x="1472" y="769" fill="#152a43" font-size="23" font-weight="400">Create Environment File ON</text>
+<text x="1472" y="808" fill="#63449b" font-size="20" font-weight="600">Project変数は自動継承しない</text>
+<path d="M 456,360 L 520,360" fill="none" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5" marker-end="url(#11-deployment-lifecycle-control)"/>
+<rect x="455" y="326" width="66" height="27" rx="3" fill="#fff" stroke="none"/>
+<g text-anchor="middle"><text x="488" y="345" fill="#70608e" font-size="18" font-weight="600">準備順</text></g>
+<path d="M 920,360 L 984,360" fill="none" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5" marker-end="url(#11-deployment-lifecycle-control)"/>
+<path d="M 1384,360 L 1448,360" fill="none" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5" marker-end="url(#11-deployment-lifecycle-control)"/>
+<path d="M 1656,490 L 1656,650" fill="none" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5" marker-end="url(#11-deployment-lifecycle-control)"/>
+<path d="M 1448,745 L 1384,745" fill="none" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5" marker-end="url(#11-deployment-lifecycle-control)"/>
+<path d="M 984,745 L 920,745" fill="none" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5" marker-end="url(#11-deployment-lifecycle-control)"/>
+<path d="M 520,745 L 456,745" fill="none" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5" marker-end="url(#11-deployment-lifecycle-control)"/>
+<rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
+<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">7Composeの標準Commandは初回から使用可能。起動対象はCOMPOSE_PROFILESで段階追加する。</text>
+<text x="56" y="977" fill="#536780" font-size="20" font-weight="400">CLIかDokployの管理入口を一つに決める。private envとDokployサービスenvは管理者が同期して再配置する。</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+</svg>

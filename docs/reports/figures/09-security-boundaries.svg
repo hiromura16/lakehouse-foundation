@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="09-security-boundaries-title 09-security-boundaries-description" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
+<title id="09-security-boundaries-title">認証・権限・接続先の境界</title>
+<desc id="09-security-boundaries-description">利用者は限定入口から操作し、API/MCPは専用tokenを使う。管理者だけがDokploy/Docker/ホスト設定を変更する。内部Trino/カタログは閉域前提で、利用者別認可の完成は別課題である。 根拠: infra/demo/api.py, infra/mcp/server.py, infra/lakehouse/compose.yaml, docs/SSRF.md</desc>
+<defs>
+<marker id="09-security-boundaries-data" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#2469a8"/></marker>
+<marker id="09-security-boundaries-control" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#70608e"/></marker>
+<marker id="09-security-boundaries-optional" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#78818c"/></marker>
+</defs>
+<rect x="0" y="0" width="1920" height="1080" rx="0" fill="#fff" stroke="none"/>
+<rect x="0" y="0" width="14" height="1080" rx="0" fill="#152a43" stroke="none"/>
+<text x="56" y="43" fill="#536780" font-size="18" font-weight="600">LAKEHOUSE FOUNDATION  /  PoC REPORT ASSETS</text>
+<text x="56" y="104" fill="#152a43" font-size="42" font-weight="700">09  認証・権限・接続先の境界</text>
+<path d="M1270,35 L1320,35" stroke="#2469a8" stroke-width="3"/>
+<text x="1332" y="41" fill="#536780" font-size="17" font-weight="400">データ</text>
+<path d="M1475,35 L1525,35" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5"/>
+<text x="1537" y="41" fill="#536780" font-size="17" font-weight="400">制御・設定</text>
+<path d="M1680,35 L1730,35" stroke="#78818c" stroke-width="3" stroke-dasharray="3 7"/>
+<text x="1742" y="41" fill="#536780" font-size="17" font-weight="400">任意・計画</text>
+<text x="56" y="148" fill="#536780" font-size="23" font-weight="400">管理者、利用者、内部サービス、外部DBを分ける。閉域PoCの共有認証を本番認可と混同しない。</text>
+<rect x="56" y="230" width="460" height="260" rx="16" fill="#edf4ff" stroke="#b8cee8"/>
+<rect x="56" y="248" width="5" height="224" rx="2" fill="#245fa6" stroke="none"/>
+<text x="80" y="272" fill="#152a43" font-size="27" font-weight="700">利用者の入口</text>
+<text x="80" y="317" fill="#152a43" font-size="23" font-weight="400">loopback / SSH転送で開始</text>
+<text x="80" y="349" fill="#152a43" font-size="23" font-weight="400">共有時はHTTPS・利用者認証</text>
+<text x="80" y="381" fill="#152a43" font-size="23" font-weight="400">Streamlit自体のIdPは未同梱</text>
+<text x="80" y="420" fill="#245fa6" font-size="20" font-weight="600">会社標準の接続制限</text>
+<rect x="730" y="230" width="460" height="260" rx="16" fill="#eaf7f3" stroke="#a4d1c1"/>
+<rect x="730" y="248" width="5" height="224" rx="2" fill="#126c59" stroke="none"/>
+<text x="754" y="272" fill="#152a43" font-size="27" font-weight="700">API / MCP</text>
+<text x="754" y="317" fill="#152a43" font-size="23" font-weight="400">CONTROL / MCPの専用token</text>
+<text x="754" y="349" fill="#152a43" font-size="23" font-weight="400">allowlist・上限・明示同意</text>
+<text x="754" y="381" fill="#152a43" font-size="23" font-weight="400">任意URL・SQL・shellを公開しない</text>
+<text x="754" y="420" fill="#126c59" font-size="20" font-weight="600">アプリ操作の境界</text>
+<rect x="1404" y="230" width="460" height="260" rx="16" fill="#faf0e7" stroke="#d9baa1"/>
+<rect x="1404" y="248" width="5" height="224" rx="2" fill="#85512a" stroke="none"/>
+<text x="1428" y="272" fill="#152a43" font-size="27" font-weight="700">内部ネットワーク</text>
+<text x="1428" y="317" fill="#152a43" font-size="23" font-weight="400">worker / Trino / catalog / S3</text>
+<text x="1428" y="349" fill="#152a43" font-size="23" font-weight="400">S3鍵とDB/暗号鍵をprivate管理</text>
+<text x="1428" y="381" fill="#152a43" font-size="23" font-weight="400">内部HTTPを全て認証済みとはしない</text>
+<text x="1428" y="420" fill="#85512a" font-size="20" font-weight="600">利用者別認可は追加課題</text>
+<rect x="56" y="640" width="460" height="220" rx="16" fill="#f1edfc" stroke="#c6b9e9"/>
+<rect x="56" y="658" width="5" height="184" rx="2" fill="#63449b" stroke="none"/>
+<text x="80" y="682" fill="#152a43" font-size="27" font-weight="700">管理者の入口</text>
+<text x="80" y="727" fill="#152a43" font-size="23" font-weight="400">Dokploy / Docker / host設定</text>
+<text x="80" y="759" fill="#152a43" font-size="23" font-weight="400">root相当の権限を限定</text>
+<text x="80" y="791" fill="#152a43" font-size="23" font-weight="400">APIへ管理鍵やsocketを渡さない</text>
+<text x="80" y="830" fill="#63449b" font-size="20" font-weight="600">設定保存とDeployを分離</text>
+<rect x="730" y="640" width="460" height="220" rx="16" fill="#eaf7f3" stroke="#a4d1c1"/>
+<rect x="730" y="658" width="5" height="184" rx="2" fill="#126c59" stroke="none"/>
+<text x="754" y="682" fill="#152a43" font-size="27" font-weight="700">n8nのSSRF保護</text>
+<text x="754" y="727" fill="#152a43" font-size="23" font-weight="400">本構成はtrue</text>
+<text x="754" y="759" fill="#152a43" font-size="23" font-weight="400">内部例外は既定workerのみ</text>
+<text x="754" y="791" fill="#152a43" font-size="23" font-weight="400">許可・拒否を実nodeで照合</text>
+<text x="754" y="830" fill="#126c59" font-size="20" font-weight="600">NO_PROXYとは別の制御</text>
+<rect x="1404" y="640" width="460" height="220" rx="16" fill="#edf4ff" stroke="#b8cee8"/>
+<rect x="1404" y="658" width="5" height="184" rx="2" fill="#245fa6" stroke="none"/>
+<text x="1428" y="682" fill="#152a43" font-size="27" font-weight="700">SQL / 秘密の境界</text>
+<text x="1428" y="727" fill="#152a43" font-size="23" font-weight="400">SOURCE：SELECT専用</text>
+<text x="1428" y="759" fill="#152a43" font-size="23" font-weight="400">DEMO：専用DB＋明示同意</text>
+<text x="1428" y="791" fill="#152a43" font-size="23" font-weight="400">CDC DML：所有権tokenも照合</text>
+<text x="1428" y="830" fill="#245fa6" font-size="20" font-weight="600">TLS / 権限をDBAと受入</text>
+<path d="M 516,360 L 730,360" fill="none" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5" marker-end="url(#09-security-boundaries-control)"/>
+<rect x="581" y="326" width="84" height="27" rx="3" fill="#fff" stroke="none"/>
+<g text-anchor="middle"><text x="623" y="345" fill="#70608e" font-size="18" font-weight="600">限定入口</text></g>
+<path d="M 1190,360 L 1404,360" fill="none" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5" marker-end="url(#09-security-boundaries-control)"/>
+<rect x="1255" y="326" width="84" height="27" rx="3" fill="#fff" stroke="none"/>
+<g text-anchor="middle"><text x="1297" y="345" fill="#70608e" font-size="18" font-weight="600">固定経路</text></g>
+<path d="M 1190,740 L 1298,740 L 1298,530 L 1634,530 L 1634,490" fill="none" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5" marker-end="url(#09-security-boundaries-control)"/>
+<rect x="1189.76" y="706" width="108.48" height="27" rx="3" fill="#fff" stroke="none"/>
+<g text-anchor="middle"><text x="1244" y="725" fill="#70608e" font-size="18" font-weight="600">workerだけ</text></g>
+<rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
+<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">SQLのDB資格情報、worker token、S3鍵をLLMへ渡さない。Notebook/Superset等nativeツールの権限は別管理。</text>
+<text x="56" y="977" fill="#536780" font-size="20" font-weight="400">公開素材は実IP・proxy・ユーザー名・実データ・証明書を含めず、既知情報と全履歴を照合する。</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+</svg>

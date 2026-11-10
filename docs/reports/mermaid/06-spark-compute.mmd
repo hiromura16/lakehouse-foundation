@@ -1,0 +1,8 @@
+flowchart LR
+  J["Jupyter driver"] -->|compute有効| M["Master :7077 / 常駐"]
+  M --> W["Worker / executors / 常駐"]
+  J --> C["Lakekeeper REST / S3"]
+  W --> C
+  J --> E["spark-events volume"]
+  E --> H["History / 常駐"]
+  J -.->|compute無効| L["明示local 2 threads"]

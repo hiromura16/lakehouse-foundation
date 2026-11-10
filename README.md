@@ -41,6 +41,12 @@
 
 会社VMで一時修正したcloneを更新する場合は、[修正取り込み・Dokploy再配置手順](docs/COMPANY-UPDATE.md) を先に確認してください。
 
+## PoC報告書へ使う素材
+
+[詳細・用途別の図版集](docs/reports/README.md)に、全34serviceの配置、メダリオン、CDC、Spark、AI、proxy/認証、監視、配置・復旧、検証結果の**14図**を用意しています。編集可能なSVG/Mermaid、キャプションと根拠、報告書・評価計画・スライド構成の雛形を同梱し、uvの専用環境からPNG・PDF集・PowerPointへ一括出力できます。
+
+[オフラインHTML一覧](docs/reports/gallery.html) · [報告書雛形](docs/reports/POC-REPORT-TEMPLATE.md) · [評価計画](docs/reports/EVALUATION-PLAN.md)
+
 ## 導入の順番
 
 **初めての構築は [一本道ガイド](docs/START-HERE.md) を上から進めてください。** 作業する端末、入力場所、期待結果、全機能を追加する順序をまとめています。採用版ごとの根拠は [公式リファレンス・全ドキュメント監査表](docs/REFERENCES.md) にあります。
