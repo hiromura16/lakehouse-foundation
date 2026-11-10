@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<../DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](../SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 図の編集元、処理の入口、変更後に確かめることを説明します。[素材集](README.md) の通常利用では、この文書の編集作業は不要です。
 
 ## ファイルの責任を分ける
@@ -60,6 +72,8 @@ panelの `x` / `y` は左上、`width` / `height` はviewBox単位です。本�
 1. 伝える相手、図で答える問い、根拠、確認していないことを決めます。
 2. 公開実装を読み、figures.jsonの内容・caption・notes・sources・Mermaidを同じ変更として直します。
 3. リポジトリルートで生成し、SVG/HTML/台帳の差分を確認します。
+
+**Bash / Zsh共通**
 
 ```bash
 python3 scripts/render_report_assets.py

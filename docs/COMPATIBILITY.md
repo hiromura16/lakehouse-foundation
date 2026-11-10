@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 照合日: 2026-11-10。対象は、このcheckoutのDockerfile・Compose・hash lockで固定した版です。公式の版付き文書・release tagと実装を照合しました。配布物の実在確認、ビルド成功、コンテナ起動、システム間の読み書きは別の検証として扱い、実機の成功結果は [検証記録](VALIDATION.md) を正とします。
 
 ## 採用版を確認する
@@ -139,6 +151,8 @@ Sparkを使える利用者はexecutor上でコードを動かせます。会社�
 
 coreが正常に起動し、バケットとWarehouseが初期化済みの状態で実行します。
 
+**Bash / Zsh共通**
+
 ```bash
 export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 ./scripts/lakehouse.sh --env-file "$LAKEHOUSE_ENV_FILE" spark-check
@@ -152,7 +166,9 @@ export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 
 ### Composeを直接操作する場合の省略しない例
 
-以下はリポジトリのrootでBashを使う場合です。以後の `dc` は7本を結合する関数で、コンテナを起動するものではありません。private envのprofileを使い、公開ソースへ秘密値を展開しません。共通loaderで検査・正規化して子プロセスへ渡すため、shellに残った別projectや古いproxyで対象を取り違えません。
+以下はリポジトリのrootでBashまたはZshを使う場合です。以後の `dc` は7本を結合する関数で、コンテナを起動するものではありません。private envのprofileを使い、公開ソースへ秘密値を展開しません。共通loaderで検査・正規化して子プロセスへ渡すため、shellに残った別projectや古いproxyで対象を取り違えません。
+
+**Bash / Zsh共通**
 
 ```bash
 export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
@@ -216,6 +232,8 @@ DAGは `airflow.providers.standard.operators.python.PythonOperator` と `airflow
 ### Airflowの起動と接続設定
 
 private envの `COMPOSE_PROFILES` に既存の選択を残して `orchestration` を追加します。CLI管理の場合だけ通常の `up` で起動し、Dokploy管理では同じサービスEnvironmentを更新してDeployします。新しい設定項目は `AIRFLOW_PORT`（既定8081）、`AIRFLOW_DB_PASSWORD`、`AIRFLOW_FERNET_KEY`、`AIRFLOW_JWT_SECRET` です。Fernet鍵は32バイトをURL-safe Base64にした値で、通常のhex乱数とは異なります。
+
+**Bash / Zsh共通**
 
 ```bash
 ./scripts/lakehouse.sh --env-file "$LAKEHOUSE_ENV_FILE" up

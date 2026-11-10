@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 確認日: 2026-11-10（JST）。GUIで始める場合は [初回ガイド](START-HERE.md) → [ダミーGUI](DEMO-GUI.md) の順に進めます。以下はCLIから素材だけを作る手順です。
 
 `generate-demo.py` は工場MES・ERPに似た原データを作り、ランディングディレクトリか、専用のSQL Server検証DBへ投入するだけのツールです。取り込み、メダリオン変換、Trino、Dokployは呼び出しません。会社の実データを参照する必要はありません。
@@ -36,6 +48,8 @@
 ## ランディングへ生成する
 
 Python 3.10以降の標準ライブラリだけで動きます。出力先はGitリポジトリの外に置きます。既存の空ディレクトリも使えます。
+
+**Bash / Zsh共通**
 
 ```sh
 python3 scripts/generate-demo.py \
@@ -77,6 +91,8 @@ python3 scripts/generate-demo.py \
 
 この機能だけ追加ドライバが必要です。
 
+**Bash / Zsh共通**
+
 ```sh
 uv venv --python 3.12 "$HOME/.local/share/lakehouse-foundation/demo-venv"
 uv pip sync \
@@ -98,6 +114,8 @@ SOURCE_SQLSERVER_DATABASE=CompanyProduction
 ```
 
 `SOURCE_SQLSERVER_DATABASE` は書き込み禁止対象のDB名です。会社用設定と同じファイルを使う場合も、書き込みに使う資格情報は `DEMO_SQLSERVER_*` だけです。`master`・`model`・`msdb`・`tempdb` と、設定済みの会社ソースDB名を拒否します。書き込み先が会社の業務DBと別であることを管理者が確認してください。
+
+**Bash / Zsh共通**
 
 ```sh
 "$HOME/.local/share/lakehouse-foundation/demo-venv/bin/python" \
@@ -149,6 +167,8 @@ Icebergの置換コミットは表ごとです。全6表・隔離表・Goldを�
 
 素材と処理の役割を分けて確認する例です。coreが起動済みで、例の出力先がprivate envの `LANDING_DIR` と一致することを前提にします。
 
+**Bash / Zsh共通**
+
 ```bash
 export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 python3 scripts/generate-demo.py \
@@ -189,8 +209,26 @@ CLIの固定名の生成では、同じ条件なら素材のhashを比較でき�
 
 確認例として、通常ユーザーの端末で生成済みmanifestの要点だけを表示できます。`DEMO_OUTPUT` は自分の検証用出力先を入力し、秘密のenvファイルを指定しません。
 
+**Bash**
+
 ```bash
 read -r -p '生成済み素材の出力ディレクトリ: ' DEMO_OUTPUT
+python3 - "$DEMO_OUTPUT/manifest.json" <<'PYTHON'
+import json
+import sys
+from pathlib import Path
+
+manifest = json.loads(Path(sys.argv[1]).read_text())
+print("条件:", manifest["seed"], manifest["orders"], manifest["scenario"])
+for source in manifest["sources"]:
+    print(source["table"], source["rows"], source["sha256"])
+PYTHON
+```
+
+**Zsh**
+
+```zsh
+read -r 'DEMO_OUTPUT?生成済み素材の出力ディレクトリ: '
 python3 - "$DEMO_OUTPUT/manifest.json" <<'PYTHON'
 import json
 import sys

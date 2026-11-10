@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 確認日: 2026-11-10（JST）。初回配置・作業端末・権限は [START-HERE.md](START-HERE.md) で準備します。以下の `up` はCLI管理の環境だけで使います。Dokploy管理では同じprivate設定とComposeサービスのEnvironmentを揃え、7ファイルを使ってDeployします。[0.31.0の配置手順](DOKPLOY.md)
 
 
@@ -36,6 +48,8 @@
 
 [導入手順](DEPLOYMENT.md) に沿ってprivate設定を生成します。既存の設定がある場合は同じファイルを継続して使い、秘密値を再生成しません。
 
+**Bash / Zsh共通**
+
 ```bash
 python3 scripts/configure.py --output /absolute/private/site.env
 ```
@@ -55,6 +69,8 @@ private設定で次を確認します。
 | `WORKER_UID` / `WORKER_GID` | ランディングとprivate設定を読み書きできる所有者 |
 
 private設定のディレクトリは0700、ファイルは0600とします。APIは設定を安全に置き換えるため、ファイルだけでなく専用ディレクトリを読み書きします。他のアプリの資格情報を含む親ディレクトリを共有しません。ブラウザーUIにはホストディレクトリをmountしません。
+
+**Bash / Zsh共通**
 
 ```bash
 export LAKEHOUSE_ENV_FILE="/absolute/private/site.env"

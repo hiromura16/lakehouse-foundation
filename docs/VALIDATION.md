@@ -171,3 +171,13 @@ Git版、実施日とtimezone、platform、選択profile、合成/会社デー�
 レポート出力のPDF集は14ページです。個別14PDFとPDF集を合わせて28ページを検査しています。PPTXの構造・画像・caption/notesは確認しましたが、今回もMicrosoft Officeでの描画を実施済みとは扱いません。
 
 この段階は文書・コメント・ソース上の回帰と報告出力の確認です。過去の会社外での実機記録を書き換えず、会社SQL/実proxy/認証/負荷/復元/モデル推論の受入は[評価計画](reports/EVALUATION-PLAN.md)に沿って別途記録します。
+
+## BashとZshのコマンド例の受入
+
+会社VMのZsh利用に合わせ、[シェルの実行ガイド](SHELLS.md)を追加し、全54MDのコマンドを監査しました。共通例は同じブロックを使い、対話入力の `read -p` 等はBash/Zshを全文ペアで併記しています。Zsh対話端末のINTERACTIVE_COMMENTS、引用、特別な変数、shebang、stdinの扱いを明記しました。
+
+公開197shell例は新しい `scripts/shell_examples.py --check` で成功しました。Notion用10原稿を含む211例は、共通164・Bash専用6・Zsh専用41に分類し、対象シェルに応じたBash170回・Zsh205回の構文検査が成功しています。ローカル検証版はBash5.2.21 / Zsh5.9です。
+
+代表実行では、対話入力からコマンドへ渡る値、空白・backslash・glob文字を含む引数、7Composeの補助関数、複数行stdin、here-document、shebang経由のhelpを安全なstubまたは非変更のhelpで照合しました。構文検査やstubから会社のsudo・SSH・Deploy・実DBを実行していません。
+
+CIにもBash/Zshの準備と全MDのshell検査を追加しています。新しい例の未ラベル、Bash固有readの共通扱い、壊れたfenceや構文を検出し、shellがない場合も成功扱いにしません。入力・コメントの実動確認を含む追加回帰を実装しました。これは既存の会社接続や運用受入を置き換える結果ではありません。

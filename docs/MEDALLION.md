@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 この文書は、同梱の6ソースを使う**ファイル取り込みとメダリオン変換**の説明です。最初に1件の製造指図と受注を追い、その後で再投入・更新・不正行・失敗時の動きを確認します。確認日: 2026-11-10（JST）。初回導入は [START-HERE.md](START-HERE.md)、配置詳細は [DEPLOYMENT.md](DEPLOYMENT.md)、素材の生成は [DEMO-DATA.md](DEMO-DATA.md)、画面からの実行は [GUI-WALKTHROUGHS.md](GUI-WALKTHROUGHS.md) を参照してください。
 
 ## 読み始める前の用語と到達点
@@ -259,6 +271,8 @@ ORDER BY event_id;
 
 Samba等のコピーでは、一時名でコピーを完了させ、契約に合う完成名へリネームしてから実行します。
 
+**Bash / Zsh共通**
+
 ```bash
 python3 scripts/mark-ready.py /srv/lakehouse/landing/csv/erp_products.csv
 ```
@@ -294,6 +308,8 @@ python3 scripts/mark-ready.py /srv/lakehouse/landing/csv/erp_products.csv
 
 coreが起動済みで、private envの指定先と `LANDING_DIR` が合っていることを前提とします。
 
+**Bash / Zsh共通**
+
 ```bash
 export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 
@@ -324,6 +340,8 @@ python3 scripts/generate-demo.py \
 TrinoのHTTP 200だけを成功とは扱わず、workerが最後の結果まで追跡します。クエリが失敗したら中止を確認し、中止が確認できなければworkerをblockedにして新しいジョブを拒否します。画面のエラー別の操作は [GUI-WALKTHROUGHS.md](GUI-WALKTHROUGHS.md) を参照してください。
 
 ## 10. 同梱の品質検証で何を確かめるか
+
+**Bash / Zsh共通**
 
 ```bash
 ./scripts/lakehouse.sh verify

@@ -14,11 +14,25 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 この文書は `scripts/configure.py` が生成する設定と、現在のCompose・各CLIが読む項目を説明します。監査日: 2026-11-10。会社への導入順序は [COMPANY-ROLLOUT.md](COMPANY-ROLLOUT.md)、通常の操作は [DEPLOYMENT.md](DEPLOYMENT.md) を参照してください。
 
 ## まず決めること
 
 リポジトリの取得先、設定ファイル、ランディング、Dockerの永続データは別の場所です。clone先は任意で、スクリプトが自身の配置からリポジトリのルートを見つけます。会社側で特定の `apps` ディレクトリを作る必要はありません。
+
+**Bash / Zsh共通**
 
 ```bash
 python3 scripts/configure.py \
@@ -41,6 +55,8 @@ export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 ## 読み込み方と優先順位
 
 `lakehouse.sh` は明示した `--env-file` を優先し、省略時だけ `LAKEHOUSE_ENV_FILE` を使います。環境変数に入れるのは**ファイルの場所**です。どちらも未指定なら引数エラーとなり、Dockerは起動しません。
+
+**Bash / Zsh共通**
 
 ```bash
 # シェルに設定した既定サイトを使う。
@@ -292,6 +308,8 @@ daemon用 `proxy.env` は従来の6項目のみで、canonicalを受け付けず
 - 入力形式・表の意味の変更では、envだけで吸収せず、`medallion/sources.json` とSQL、検証データを一緒に見直す。
 
 生成器の現在の項目が正本です。配置担当がレイクハウスホストのリポジトリのルートで、既存のprivateファイルを更新します。
+
+**Bash / Zsh共通**
 
 ```bash
 python3 scripts/configure.py --output /absolute/private/site.env --upgrade

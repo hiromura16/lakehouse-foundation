@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 照合日: 2026-11-10。対象はSuperset 6.1.0、JupyterLab 4.6.6、Spark 4.1.4 / Iceberg 1.12.0、Qdrant 1.20.0、Marquez 0.50.0です。版を上げる手順と、今の版を使う手順は分けてください。
 
 データを入れるだけでなく、GUI で調べ、SQL を試し、Notebook で加工し、API から
@@ -92,6 +104,8 @@ Qdrant への埋め込み生成や、実際のジョブからの OpenLineage 自
 
 以下の `up` は**CLI管理の場合だけ**実行します。Dokploy管理ではprivate設定とComposeサービス自身のEnvironmentを揃え、7ファイルのCommandでDeployします。[DOKPLOY](DOKPLOY.md) に沿って配置し、同じ環境へCLIの起動を重ねません。`plan` は両方式で確認できます。
 
+**Bash / Zsh共通**
+
 ```sh
 export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 python3 scripts/control.py plan
@@ -123,9 +137,11 @@ URLのportはprivate envの実値を使います。別PCのブラウザーで `l
 
 ### CLIで対象serviceだけを操作する準備
 
-リポジトリrootのBashで以下を1回定義します。7ファイルを省略しないための関数です。`dc config --quiet` は起動や変更をしません。
+リポジトリrootのBashまたはZshで以下を1回定義します。7ファイルを省略しないための関数です。`dc config --quiet` は起動や変更をしません。
 
 以下の `up` は**CLI管理の場合だけ**実行します。Dokploy管理ではComposeサービス自身のEnvironmentを保存し、7ファイルを使ってDeployします。起動方法を重ねません。[配置手順](DOKPLOY.md)
+
+**Bash / Zsh共通**
 
 ```bash
 dc() {
@@ -201,11 +217,15 @@ GUIから追加する場合は **Data → Datasets → + Dataset** でDatabase�
 
 自動登録だけを再確認する管理者向けCLIは次です。SQL変換は実行しません。
 
+**Bash / Zsh共通**
+
 ```bash
 dc exec -T superset /app/.venv/bin/python /opt/lakehouse/superset_init.py
 ```
 
 Dokployでは `superset` 本体のContainer Terminalで次を実行できます。
+
+**Bash / Zsh共通**
 
 ```sh
 /app/.venv/bin/python /opt/lakehouse/superset_init.py
@@ -435,6 +455,8 @@ x86-64 向けです。この profile は Linux x86-64 と PostgreSQL 18.6 で mi
 Marquezは表を自動巡回しません。初回の空画面は障害とは限らず、eventを受信するまでjob/datasetがありません。`seed_tools.py` はDocker内の `marquez` / `qdrant` 名を使う検証用モジュールで、通常のhost端末からそのまま実行するCLIではありません。
 
 次はhostのPython標準ライブラリだけで、同梱の合成eventを送る例です。企業の実ジョブや会社DBは呼びません。private envの `MARQUEZ_API_PORT` を読み、proxyを通さずloopbackへ送ります。`lineage` を有効にしてから実行します。
+
+**Bash / Zsh共通**
 
 ```bash
 python3 - <<'PY'

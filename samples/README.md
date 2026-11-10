@@ -14,9 +14,23 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<../docs/DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](../docs/SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 確認日: 2026-11-10（JST）。実データのsampleは同梱しません。[初回ガイド](../docs/START-HERE.md) で配置した検証用環境のGUIから、6つのMES/ERP素材を作れます。会社データ用とは別の環境を使います。
 
 CLIではリポジトリのルートで、既存ファイルのない外部ディレクトリを選びます。Python標準ライブラリだけでファイル生成できます。
+
+**Bash / Zsh共通**
 
 ```bash
 python3 scripts/generate-demo.py --destination landing \

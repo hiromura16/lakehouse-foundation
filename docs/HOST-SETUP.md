@@ -14,11 +14,25 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 対象は新規のUbuntu LTS・Linux x86-64のPoCサーバーです。採用互換性の確認はDocker Engine29系/Compose5.6.1、アプリimageは各lockを使います。既存のDocker・Samba・Dokployが動いている場合は再導入せず、確認の節だけを使います。構築全体は [START-HERE](START-HERE.md)、用語は [GLOSSARY](GLOSSARY.md) を参照します。
 
 ## 1. 操作用PCと配置先を分ける
 
 Git、Python、Dockerの確認は配置先サーバーの端末で行います。ブラウザーは操作用PCで開けます。操作用PCのlocalhostは配置先ではないため、SSH転送等が必要です。実接続先は私有記録へ保存し、公開手順へ書き戻しません。
+
+**Bash / Zsh共通**
 
 ```bash
 id
@@ -54,6 +68,8 @@ df -h
 
 新規hostで基本ツールとDocker公式署名鍵を準備する例です。
 
+**Bash / Zsh共通**
+
 ```bash
 sudo apt-get update
 sudo apt-get install ca-certificates curl git python3 python3-venv
@@ -64,6 +80,8 @@ sudo chmod a+r /etc/apt/keyrings/docker.asc
 ```
 
 Dockerのapt sourceが未登録であることを管理者が確認し、対象OSのcodenameとarchitectureを使って登録します。既存のsourceは重複追加しません。
+
+**Bash / Zsh共通**
 
 ```bash
 DOCKER_ARCH="$(dpkg --print-architecture)"
@@ -83,9 +101,23 @@ apt-cache madison docker-compose-plugin
 
 `apt-cache`の実出力から、承認したEngine29系とCompose5.6.1のpackage版文字列を選びます。OSごとのsuffixを推測して固定しません。存在しない場合は社内ミラー・承認版・互換試験の方針を管理者と決めます。
 
+**Bash**
+
 ```bash
 read -r -p '一覧にあるDocker29系のpackage版全文: ' DOCKER_PACKAGE_VERSION
 read -r -p '一覧にあるCompose5.6.1のpackage版全文: ' COMPOSE_PACKAGE_VERSION
+sudo apt-get install \
+  "docker-ce=$DOCKER_PACKAGE_VERSION" \
+  "docker-ce-cli=$DOCKER_PACKAGE_VERSION" \
+  containerd.io docker-buildx-plugin \
+  "docker-compose-plugin=$COMPOSE_PACKAGE_VERSION"
+```
+
+**Zsh**
+
+```zsh
+read -r 'DOCKER_PACKAGE_VERSION?一覧にあるDocker29系のpackage版全文: '
+read -r 'COMPOSE_PACKAGE_VERSION?一覧にあるCompose5.6.1のpackage版全文: '
 sudo apt-get install \
   "docker-ce=$DOCKER_PACKAGE_VERSION" \
   "docker-ce-cli=$DOCKER_PACKAGE_VERSION" \
@@ -99,12 +131,16 @@ Buildx/containerdも導入記録へ実版を残します。今後apt更新する
 
 管理者が承認した配置利用者だけに付与します。Dockerグループはroot相当のhost権限なので、全員へ配布したりsocketをworld-writableへ変えたりしません。[公式の導入後設定](https://docs.docker.com/engine/install/linux-postinstall/)
 
+**Bash / Zsh共通**
+
 ```bash
 getent group docker
 sudo usermod -aG docker "$(id -un)"
 ```
 
 管理者が別利用者として作業している場合は、対象Unix利用者名を確認して指定します。上の例は自分自身を配置担当にする場合です。一度ログアウトしてSSH接続し直し、通常ユーザーで確認します。
+
+**Bash / Zsh共通**
 
 ```bash
 id -nG
@@ -122,6 +158,8 @@ uvは0.13.7を使用します。[固定版の公式配布](https://github.com/as
 
 新規に導入する通常ユーザー向けの例です。会社proxy/CAの準備後、固定版のinstallerを取得・確認して実行します。既に会社の配布方法で導入済みなら再実行しません。
 
+**Bash / Zsh共通**
+
 ```bash
 UV_INSTALL_DIR="$(mktemp -d)"
 curl -LsSf https://astral.sh/uv/0.13.7/install.sh \
@@ -131,6 +169,8 @@ sh "$UV_INSTALL_DIR/install.sh"
 ```
 
 installerが表示するPATH設定を確認してログインし直します。会社の配布binaryを使う場合は、その導入先へPATHを通します。確認後、上の一時ディレクトリに秘密がないことを確認して整理します。
+
+**Bash / Zsh共通**
 
 ```bash
 uv --version
@@ -142,6 +182,8 @@ uvがPATHに見つからなければ導入先とログインshellを確認し、
 ## 5B. 新規UbuntuでSambaを使う場合だけ準備する
 
 この節はホスト管理者向けで、Windows等からlandingへファイルを置く場合に使います。既存の会社Samba・ドメイン参加・共有アカウントがある場合は、管理担当の方式を継続します。[Ubuntuの導入説明](https://ubuntu.com/tutorials/install-and-configure-samba) と [Sambaアカウントの公式説明](https://www.samba.org/samba/docs/current/man-html/smbpasswd.8.html) を参照します。
+
+**Bash / Zsh共通**
 
 ```bash
 sudo apt-get update
@@ -156,6 +198,8 @@ systemctl is-active smbd
 
 共有に使う既存Unix利用者を確認します。次は自分を共有担当にする場合の例です。別の利用者なら管理者が対象名を指定します。
 
+**Bash / Zsh共通**
+
 ```bash
 SMB_SHARE_USER="$(id -un)"
 id "$SMB_SHARE_USER"
@@ -163,6 +207,8 @@ sudo pdbedit -L -u "$SMB_SHARE_USER"
 ```
 
 既存Sambaアカウントが表示されたらその資格情報を継続します。検索に失敗しただけで未登録とは判断せず、管理者がDBの読取結果と登録状態を確認します。**未登録だと確認できた場合だけ**次を実行し、端末の対話入力でSMB専用passwordを設定します。既存アカウントに `-a` を使うとpassword変更になるため繰り返しません。
+
+**Bash / Zsh共通**
 
 ```bash
 sudo smbpasswd -a "$SMB_SHARE_USER"

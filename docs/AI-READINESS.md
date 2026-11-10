@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 照合日: 2026-11-10。Trino **484**、langchain-core **1.7.6**、langchain-ollama **1.1.0**、LangSmith **0.14.17**、Trino Python client **0.340.0** の固定lockと同梱コードが対象です。
 
 この構成では、AIが利用する事実と、その根拠を取り出す経路を用意します。モデルの推論、画像OCR、埋め込みの生成、ベクトル索引は別の段階です。モデルやクラウドのアカウントを用意しなくても、データの参照とLangChain Documentへの変換を検証できます。
@@ -76,6 +88,8 @@ Goldが未作成なら、素材投入とメダリオン処理を先に実行し�
 
 独立したuv **0.13.7** の仮想環境を使います。worker、Spark、Airflowの依存をこの環境へ混在させません。`requirements.lock` は既存のLangChain/Trino固定版と推移依存をhash付きで保持し、Python 3.12と3.14向けに共通解決しています。以下はリポジトリroot、hostにPython 3.12とuvを導入済みの場合です。企業proxy・CAの設定は [COMPANY-PROXY.md](COMPANY-PROXY.md) を先に確認します。
 
+**Bash / Zsh共通**
+
 ```bash
 export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 uv venv --python 3.12 "$HOME/.local/share/lakehouse/ai-venv"
@@ -112,6 +126,8 @@ uv pip sync --python "$HOME/.local/share/lakehouse/ai-venv/bin/python" \
 
 同梱例は `langchain-core` のDocumentとprompt、`langchain-ollama` のChatOllamaを使います。LangChainを変換エンジンの代わりに使うものではなく、確定した事実をモデルへ渡す役割です。[LangChainの統合パッケージ](https://reference.langchain.com/python/integrations/overview)、[Ollama統合](https://reference.langchain.com/python/langchain-ollama)
 
+**Bash / Zsh共通**
+
 ```bash
 # Document化だけを確認。推論は起動しません。
 "$HOME/.local/share/lakehouse/ai-venv/bin/python" examples/ai/context_chain.py \
@@ -123,6 +139,8 @@ Documentには行のJSON、表名、snapshot ID、export時の参照SQLとadapte
 `{"documents": N, "inference": false}` の件数が、context内の全datasetの `rows` 合計と一致することを確認します。Nは入力・上限で変わり、34という固定値を期待する試験ではありません。この段階ではOllamaを起動しなくても成功します。
 
 ローカルOllamaへ導入済みのモデルがある場合だけ、明示的に推論します。モデルの取得・ライセンス・必要メモリは選択モデルごとに確認し、モデルの正確な版も運用記録へ残します。
+
+**Bash / Zsh共通**
 
 ```bash
 "$HOME/.local/share/lakehouse/ai-venv/bin/python" examples/ai/context_chain.py \

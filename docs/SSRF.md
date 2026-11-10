@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 監査日: 2026-11-10（JST）。対象はn8n2.46.7です。SSRFは、画面やワークフローに入れたURLを使って、サーバーから意図しない宛先へ通信させる攻撃です。この基盤では、n8nの宛先制御、固定API、プロキシ、ネットワーク制限をそれぞれ設定します。
 
 ## 実行場所と対象
@@ -56,6 +68,8 @@ n8n本体は無効なCIDRを警告して飛ばす場合があります。本基�
 2. 操作ポータルの設定で「SSRF・外向き通信」を開き、必要な内部名だけを設定して保存します。
 3. 保存結果の「反映待ち」を確認します。保存はn8nの再起動ではありません。
 4. 管理者がprivate envとDokploy Environmentを一致させて再配置します。CLIで管理する場合は次を実行します。
+
+**Bash / Zsh共通**
 
    ```bash
    ./scripts/lakehouse.sh --env-file /absolute/private/site.env plan

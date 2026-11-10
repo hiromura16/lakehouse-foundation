@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 2026-11-10監査。最初に対象の環境、配置commit、profile、発生時刻、ジョブIDを確認します。`site.env`、展開済みCompose、DB接続文字列、token、生のドライバー例外を公開ログへ貼り付けません。データ削除や再生成を初期対応にせず、観測した状態と保存先を確認します。
 
 ## まず見分ける
@@ -28,6 +40,8 @@
 | 更新後に初期画面へ戻った | 空volumeや別prefixへ向いていないか確認。再初期化を進めない |
 
 確認はレイクハウスホストのリポジトリのルートで、通常の配置利用者が行います。CLIでは配置と同じprivate設定を選びます。Dokploy管理なら同じアプリのcommit・Environment・Deploymentログ・healthと照合します。調査中に別名の `up` を追加しません。
+
+**Bash / Zsh共通**
 
 ```bash
 export LAKEHOUSE_ENV_FILE="/absolute/private/site.env"
@@ -50,6 +64,8 @@ export LAKEHOUSE_ENV_FILE="/absolute/private/site.env"
 | `up` でCDC registerだけ失敗 | 同名connectorの読戻し差異、HTTP／権限／TLSをprivateに確認。同一設定ならno-op成功する。消して再作成しない |
 
 checkout上のplaceholder確認はホストを変更しません。
+
+**Bash / Zsh共通**
 
 ```bash
 test -f infra/proxy/empty-ca.pem && test ! -s infra/proxy/empty-ca.pem
@@ -92,6 +108,8 @@ test -f infra/proxy/empty-ca.pem && test ! -s infra/proxy/empty-ca.pem
 | Sambaでは書けるがGUIでは書けない | APIのrw mountと同じUID/GIDを確認。worker側をrw化して解決しない |
 
 手動ファイルの完成後に、例えば次を実行します。
+
+**Bash / Zsh共通**
 
 ```bash
 python3 scripts/mark-ready.py /srv/lakehouse/landing/csv/erp_products.csv
@@ -202,6 +220,8 @@ SSRFの設定値、内部workerの例外、NO_PROXYとの違い、GUI保存と�
 `plan` の前にDocker自体が使えないなら、[ホスト準備](HOST-SETUP.md) のEngine・Compose・権限を確認します。Dockerグループへの所属後は新しいログインが必要な場合があります。`sudo` で別のホーム・Docker接続先・設定を使い、たまたま起動できた状態を通常運用にしません。
 
 ホストのランディングやprivate設定ディレクトリが存在するか、空き容量があるかだけを確認する例です。repoルートで実行し、private値やファイル内容は表示しません。これはホスト利用者の視点の確認であり、コンテナUIDの読書きやACL、別mount先の同一性まで保証しません。
+
+**Bash / Zsh共通**
 
 ```bash
 python3 - "$LAKEHOUSE_ENV_FILE" <<'PYTHON'

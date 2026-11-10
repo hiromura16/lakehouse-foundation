@@ -14,6 +14,18 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+<!-- shell-usage:start -->
+**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
+
+Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
+
+**Zsh**
+
+```zsh
+setopt INTERACTIVE_COMMENTS
+```
+<!-- shell-usage:end -->
+
 2026-11-10監査。この文書は単一ホスト構成の手作業runbookです。自動バックアップ、無停止更新、DB migrationの自動巻き戻しは実装していません。導入時は [START-HERE.md](START-HERE.md)、設定値は [CONFIGURATION.md](CONFIGURATION.md)、画面操作は [DEMO-GUI.md](DEMO-GUI.md) を参照します。
 
 ## 操作する場所と管理の正本
@@ -33,6 +45,8 @@
 同じ処理をn8n・Airflow・GUI・CLIから同時に開始しません。GUI API内では同時処理を制限しますが、外部のCLIやスケジューラーまで一つの分散ロックで排他する構成ではありません。定期実行の所有者を一つに決めます。
 
 CLIを使うときは同じcommit、private env、Composeプロジェクトへ向けます。
+
+**Bash / Zsh共通**
 
 ```bash
 export LAKEHOUSE_ENV_FILE="/absolute/private/site.env"
@@ -72,6 +86,8 @@ Grafanaの再起動・再初期化では、既存UIDを上書きしません。G
 
 通常停止ではvolumeを保持します。
 
+**Bash / Zsh共通**
+
 ```bash
 ./scripts/lakehouse.sh down
 ```
@@ -84,6 +100,8 @@ Dokployで管理している場合は対象アプリの停止操作を使い、C
 4. DB・S3等を止める前に、必要な処理が完了したことを確認します。
 
 再開は同じprivate設定、プロジェクト名、データprefix、暗号鍵で行います。
+
+**Bash / Zsh共通**
 
 ```bash
 ./scripts/lakehouse.sh up
@@ -136,6 +154,8 @@ GUI/API、ソース投入、カタログサーバー、Trino、Spark、n8n、Air
 
 リポジトリのルートで、配置と同じComposeファイル・同じenvを使う補助関数を定義できます。これは既存のDocker Composeへの引数を揃える例です。
 
+**Bash / Zsh共通**
+
 ```bash
 lakehouse_compose() {
   python3 -c '
@@ -162,6 +182,8 @@ subprocess.run(command + sys.argv[2:], env=environment(values), check=True)
 
 writer停止後に、必要なDBについてだけ実行します。未使用profileのDBを起動する必要はありません。新しい保存先を選び、既存のarchiveへ上書きしません。
 
+**Bash / Zsh共通**
+
 ```bash
 umask 077
 set -o noclobber
@@ -173,6 +195,8 @@ lakehouse_compose exec -T catalog-db \
 
 n8nとAirflowも使う場合の例です。
 
+**Bash / Zsh共通**
+
 ```bash
 lakehouse_compose exec -T n8n-db \
   pg_dump -U n8n -d n8n -Fc > "$BACKUP_DIR/n8n.dump"
@@ -183,6 +207,8 @@ lakehouse_compose exec -T airflow-db \
 各コマンドの終了コードとstderrを確認します。リダイレクト先が存在するだけで成功とは判断しません。`pg_restore --list`等でarchiveを検査し、ファイルのハッシュを記録します。`pg_dump`は単一DBの整合した論理exportですが、S3や別DBと同時点になる機能やcluster共通roleの保管は含みません。[PostgreSQL公式pg_dump](https://www.postgresql.org/docs/18/app-pgdump.html)
 
 同じ関数で、catalogのarchiveをDBへ書き戻さずに検査する例です。内容一覧にもschema名などが含まれるため、privateな保存先へ出します。`--list` 成功はarchiveの一覧を読めた確認であり、実データを全て復元できた保証とは区別します。
+
+**Bash / Zsh共通**
 
 ```bash
 lakehouse_compose exec -T catalog-db pg_restore --list \

@@ -712,6 +712,26 @@
       "status": "active"
     },
     {
+      "path": "docs/SHELLS.md",
+      "title": "BashとZshの両方で手順を実行する",
+      "purpose": "会社VMのZshとBashでコマンドを使い分け、対話入力・コメント・shebang・引用の違いを確認する。",
+      "audience": [
+        "初めて使う人",
+        "基盤構築担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "Zsh端末で初回構築や運用のコマンドを貼る前、シェル例を追加・変更するとき。",
+      "category": "01 入口・学習",
+      "prerequisites": [
+        "docs/HOST-SETUP.md"
+      ],
+      "next": [
+        "docs/START-HERE.md",
+        "CONTRIBUTING.md"
+      ],
+      "status": "active"
+    },
+    {
       "path": "docs/SOURCE-SQLSERVER.md",
       "title": "既存SQL Serverからランディングへ抽出する",
       "purpose": "既存SQL Serverを読取専用SELECTで抽出し、6契約のlanding素材を作成する。",
