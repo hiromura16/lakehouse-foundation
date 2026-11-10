@@ -1,6 +1,6 @@
 # サイト設定リファレンス
 
-この文書は `scripts/configure.py` が生成する設定と、現在のCompose・各CLIが読む項目を説明します。更新日: 2026-11-09。会社への導入順序は [COMPANY-ROLLOUT.md](COMPANY-ROLLOUT.md)、通常の操作は [DEPLOYMENT.md](DEPLOYMENT.md) を参照してください。
+この文書は `scripts/configure.py` が生成する設定と、現在のCompose・各CLIが読む項目を説明します。監査日: 2026-11-10。会社への導入順序は [COMPANY-ROLLOUT.md](COMPANY-ROLLOUT.md)、通常の操作は [DEPLOYMENT.md](DEPLOYMENT.md) を参照してください。
 
 ## まず決めること
 
@@ -53,13 +53,23 @@ export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 | `LANDING_DIR` | `/srv/lakehouse/landing` | ホスト上の専用絶対パス。workerへ `/landing` として読み取り専用mountする。変更時は新しいディレクトリ・Samba共有先・UID/GIDを揃え、対象を再配置する | 社内 |
 | `WORKER_UID` | 生成利用者のUID | workerの実行ユーザーID。ランディングの読み取り権限に合わせる。ファイルの所有権を自動で直す設定ではない | 社内 |
 | `WORKER_GID` | 生成利用者のGID | workerの実行グループID。親ディレクトリの通過権限とACLも確認する | 社内 |
-| `COMPOSE_PROFILES` | 空 | coreに加える機能。`automation`、`monitoring`、`compute`、`orchestration`、`demo`、`cdc` をカンマ区切り。変更後は同じprivate設定で `up` を実行する | いいえ |
+| `COMPOSE_PROFILES` | 空 | coreに加える機能。`automation,monitoring,compute,orchestration,demo,cdc,bi,notebooks,vector,lineage,mcp` からカンマ区切りで選択。変更後は同じprivate設定で `up` を実行する | いいえ |
 
 Dokployの `appName` はGUI側の項目であり、`site.env` に別の `APP_NAME` を作る仕組みではありません。Dokployは `-p <appName>` でComposeを実行するため、同じ環境をCLIでも操作する場合は `COMPOSE_PROJECT_NAME` をその `appName` に合わせます。画面のEnvironment名だけではデータは分離されません。[DOKPLOY.md](DOKPLOY.md)
 
 ### DATA_VOLUME_PREFIXを使う場面
 
-通常の新規導入では空のままにします。対象は `catalog-db`、`storage`、`trino`、`n8n-db`、`n8n`、`prometheus`、`grafana`、`airflow-db`、`airflow-state` の9個と、CDCを使う場合の `cdc-kafka` / `cdc-state` で、実名は `<prefix>_<volumeキー>` です。空の場合のprefixは `COMPOSE_PROJECT_NAME` です。
+通常の新規導入では空のままにします。定義は次の16キーで、有効profileにより実際に作る対象が変わります。実名は `<prefix>_<volumeキー>` です。
+
+| Compose | volumeキー |
+| --- | --- |
+| lakehouse | `catalog-db,storage,trino,n8n-db,n8n,prometheus,grafana` |
+| compute | `spark-events,spark-work` |
+| orchestration | `airflow-db,airflow-state` |
+| cdc | `cdc-kafka,cdc-state` |
+| poc | `superset-db,qdrant,marquez-db` |
+
+private設定、`LANDING_DIR`、`NOTEBOOKS_DIR`、truststore等のbind mountはこの数に含みません。空の場合のprefixは `COMPOSE_PROJECT_NAME` です。
 
 移行時にだけ、元のvolume prefixを `DATA_VOLUME_PREFIX` に指定し、新しい実行名と既存の永続データを分けて扱えます。形式の制約は `COMPOSE_PROJECT_NAME` と同じです。この設定はデータのコピー、DBのアップグレード、バックアップの復元を行いません。
 
@@ -78,9 +88,12 @@ Dokployの `appName` はGUI側の項目であり、`site.env` に別の `APP_NAM
 | `N8N_PORT` | `5678` | `automation` のn8n入口。n8nコンテナ内部は5678を使う | 社内 |
 | `AIRFLOW_PORT` | `8081` | `orchestration` のAirflow入口。Airflowコンテナ内部は8080を使う | 社内 |
 | `DEMO_GUI_PORT` | `8501` | `demo` の操作画面。画面自体に利用者別認証はないためloopback/限定入口で使う | 社内 |
-| `DEMO_API_PORT` | `8502` | `demo` のFastAPI/Swagger。業務操作はCONTROL_API_TOKENによるBearer認証 | 社内 |
+| `DEMO_API_PORT` | `8502` | `demo` または `mcp` のFastAPI/Swagger。業務操作はCONTROL_API_TOKENによるBearer認証 | 社内 |
+| `SPARK_MASTER_UI_PORT` | `8082` | `compute` のMaster UI。RPC portを変える設定ではない | 社内 |
+| `SPARK_WORKER_UI_PORT` | `8085` | `compute` のWorker UI | 社内 |
+| `SPARK_HISTORY_UI_PORT` | `18080` | `compute` のHistory UI。event log volumeと対で利用 | 社内 |
 
-coreのhost portは1024〜65535から選び、同じサイト設定内で重複させません。任意プロファイルのportや秘密項目も生成され、設定検査の対象になるため、未使用だからといって行を削除しません。
+host portは1024〜65535から選びます。coreと**有効profileで公開するhost port同士**の重複を拒否し、無効profileのportは数値範囲だけを検査します。例としてcomputeが無効なら `TRINO_PORT=8082` を保持できますが、computeを有効化すると既定のSpark Master UIと競合します。未使用の設定行や秘密値を削除する必要はありません。
 
 ここで変えるのはホスト側のportです。Docker内部の `http://worker:8000`、`http://trino:8080`、`http://catalog:8181`、`http://storage:8333` は別のアドレス体系です。n8n/Airflowからworkerへ接続する設定を、ホスト側の `localhost` に書き換えません。
 
@@ -166,7 +179,7 @@ GUIからSQLへ素材を投入する場合は、`DEMO_SQLSERVER_CA_FILE` のCA�
 
 ## SQL Serverの変更を読むCDC設定
 
-CDCはSOURCEの全件SELECTと別の選択機能です。DB担当がSQL Server側のCDC、SQL Server Agent、対象表の権限を準備し、専用の接続情報と6表の対応JSONを確認してから有効にします。設定欄を埋めるだけで会社DBのCDCを自動有効化しません。生成器の値が正本で、旧private設定には新規keyを個別に追加します。
+CDCはSOURCEの全件SELECTと別の選択機能です。DB担当がSQL Server側のCDC、SQL Server Agent、対象表の権限を準備し、専用の接続情報と6表の対応JSONを確認してから有効にします。設定欄を埋めるだけで会社DBのCDCを自動有効化しません。生成器の値が正本で、旧private設定には後述の `--upgrade` で不足keyを追加します。
 
 | 項目 | 既定・未設定時 | 意味と変更時の影響 | 秘密 |
 | --- | --- | --- | --- |
@@ -199,7 +212,7 @@ CDC接続・mapping・connector登録の検査はCDCツールが行い、設定�
 
 ## 任意のPoCサービス
 
-各機能は `bi`、`notebooks`、`vector`、`lineage` profileで選びます。portはComposeの既定、秘密値は生成器の値を保持します。既存site.envには追加キーを個別に補い、秘密値を再生成して置き換えません。入口状態の読み方は [POC-PORTAL.md](POC-PORTAL.md) を参照してください。
+各機能は `bi`、`notebooks`、`vector`、`lineage` profileで選びます。portはComposeの既定、秘密値は生成器の値を保持します。既存site.envは `--upgrade` で不足キーを補い、秘密値を再生成して置き換えません。入口状態の読み方は [POC-PORTAL.md](POC-PORTAL.md) を参照してください。
 
 | 項目 | 既定・指定 | 意味と変更時の影響 | 秘密 |
 | --- | --- | --- | --- |
@@ -212,14 +225,14 @@ CDC接続・mapping・connector登録の検査はCDCツールが行い、設定�
 | `SUPERSET_REDIS_PASSWORD` | 生成値を保持 | BI専用Redisの認証 | はい |
 | `JUPYTER_PORT` | 8888 | JupyterLabのhost入口。loopbackで公開 | 社内 |
 | `JUPYTER_TOKEN` | 生成値を保持 | Notebookのログイン。portalのURLへ埋め込まない | はい |
-| `NOTEBOOKS_DIR` | 専用host dir | Notebookの保存先。UID/GIDとmountを揃え、変更は再配置 | 社内 |
+| `NOTEBOOKS_DIR` | `/srv/lakehouse/notebooks` | Notebookの保存先。UID/GIDとmountを揃え、変更は再配置 | 社内 |
 | `QDRANT_PORT` | 6333 | Qdrant API/画面のhost入口。loopbackで公開 | 社内 |
 | `QDRANT_API_KEY` | 生成値を保持 | collection作成等の管理用。読取専用鍵と分離 | はい |
 | `QDRANT_READ_ONLY_API_KEY` | 生成値を保持 | 参照用。管理キーの代わりに書込みへ使わない | はい |
 | `MARQUEZ_API_PORT` | 5000 | lineage登録/参照APIのhost入口 | 社内 |
 | `MARQUEZ_UI_PORT` | 3001 | lineage画面のhost入口 | 社内 |
 | `MARQUEZ_DB_PASSWORD` | 生成値を保持 | Marquez metadata DB。DBと整合して管理 | はい |
-| `CORPORATE_CA_FILE` | 空 | host上の企業CA PEM。build secretでOS/Javaのtrustへ追加。診断で使う場合はCONTROL_SETTINGS_DIR配下に置く。変更はimage再build/再配置が必要 | 社内 |
+| `CORPORATE_CA_FILE` | 空 | host上の公開企業CA PEM。空欄時は0バイトの `infra/proxy/empty-ca.pem` を使い追加なし。自作imageへBuildKit secretでOS/Java trust追加、n8nへ公開CA単体bind。診断時はCONTROL_SETTINGS_DIR配下。変更はcacheなし再build／再配置 | 社内 |
 
 SSL_CERT_FILE、REQUESTS_CA_BUNDLE、AWS_CA_BUNDLE、CURL_CA_BUNDLEはimage内の固定bundleを指すruntime設定です。private入力としてGUIから任意のpathに変更する項目ではありません。CA保存後の反映と、保存値を使う診断を区別します。[PROXY.md](PROXY.md)
 
@@ -239,18 +252,22 @@ SSL_CERT_FILE、REQUESTS_CA_BUNDLE、AWS_CA_BUNDLE、CURL_CA_BUNDLEはimage内�
 
 既存Swarmや同名の管理外リソースが見つかった場合、導入ツールは強制離脱・再初期化・削除で回避しません。会社の既存管理基盤を維持するのか、このinstallerで新設するのかを先に決めます。[DOKPLOY.md](DOKPLOY.md)
 
-## プロキシ6変数
+## アプリのproxy設定とcanonical bypass
 
 | 項目 | 生成時の既定 | 意味と変更時の影響 | 秘密 |
 | --- | --- | --- | --- |
-| `HTTP_PROXY` | 空 | 外向きHTTP用proxy URL。runtimeとbuild argsへ渡す。認証付きURLなら資格情報として扱う | 条件付き |
-| `http_proxy` | `HTTP_PROXY` と同じ値 | 小文字のみを参照するクライアント用。上段と同じ値へ揃える | 条件付き |
-| `HTTPS_PROXY` | 空 | 外向きHTTPS用。HTTP CONNECT proxyならURLの方式が `http://` のこともある | 条件付き |
-| `https_proxy` | `HTTPS_PROXY` と同じ値 | 小文字版。上段と同じ値へ揃える | 条件付き |
-| `NO_PROXY` | 内部サービス名とloopback | Docker内のS3・カタログ・DB・worker等へ直接つなぐ除外先。社内SQLのTCPをHTTP proxyで中継する設定ではない | 社内 |
-| `no_proxy` | `NO_PROXY` と同じ値 | 小文字版。除外先の差で内部通信がproxyへ出ないよう揃える | 社内 |
+| `HTTP_PROXY` / `http_proxy` | 両方空 | HTTP向けproxy URL。両caseを同じ値にする。変更後はbuild/runtimeの反映を確認 | 認証付きURLは秘密 |
+| `HTTPS_PROXY` / `https_proxy` | 両方空 | HTTPS向けproxy URL。CONNECT proxyでは `http://` 方式の場合もある | 認証付きURLは秘密 |
+| `LAKEHOUSE_NO_PROXY` | 必須内部40名のCSV | Compose補間用のcanonical。標準内部名とprivate追加先を正規化した正本 | 社内 |
+| `NO_PROXY` / `no_proxy` | canonicalと同じ | clientが使う大小文字の互換値。生成/upgrade/GUIで3項目を同期 | 社内 |
 
-内部除外にはloopback、`storage,catalog,catalog-db,trino,worker` と、利用するn8n/Airflow/監視/操作画面/CDCのサービス名を含めます。CDCの実サービス名は `cdc-kafka,cdc-connect,cdc-consumer,cdc-ui` です。旧private設定のNO_PROXYも見直します。社内の追加接続先は実環境のprivate設定へ追記します。別ファイルのdaemon用 `proxy.env` は自動で `site.env` に同期されません。[PROXY.md](PROXY.md)
+必須名は [settings.pyのREQUIRED_NO_PROXY](../scripts/settings.py) を正本とします。loopback、実際の全Composeサービス、Dokployの内部サービス名を含みます。生成・CLI読込・upgradeは「必須 → 既存canonical → 大文字 → 小文字」の順でprivate値をマージし、空白・空要素・大小文字を無視した重複を除きます。host shellの値はこのマージに採用しません。CLIは子プロセスへ3項目を明示設定します。
+
+GUIはbypassの1項目を編集すると会社追加分を含む希望一覧として扱い、必須名を戻して3項目を保存します。追加先を削除する際も1項目の明示編集で行えます。host上の手編集では3項目を揃えます。どれかに残った旧追加先はupgradeの和集合に残ります。
+
+raw Compose/Dokploy Git配置では、upgrade後のcanonicalをEnvironmentへ引き継ぎます。未設定／空欄なら内部名を必ず含む旧形式fallbackになりますが、重複除去やshellで隠れた会社追加先の復元はしません。`LAKEHOUSE_NO_PROXY` 自体を別の値でexportしません。HTTP(S)4項目もCLIではprivateが優先、rawでは通常のshell補間優先です。
+
+daemon用 `proxy.env` は従来の6項目のみで、canonicalを受け付けず、site設定とも自動同期しません。CIDR/domain suffixの意味はclientごとに違います。[PROXY.md](PROXY.md)、[Compose補間仕様](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/)
 
 ## 更新時に使う判断
 
@@ -260,38 +277,54 @@ SSL_CERT_FILE、REQUESTS_CA_BUNDLE、AWS_CA_BUNDLE、CURL_CA_BUNDLEはimage内�
 - port・bind先の変更では、利用者のURL、接続元制限、n8n/Airflowの内部URLを混同しない。
 - 入力形式・表の意味の変更では、envだけで吸収せず、`medallion/sources.json` とSQL、検証データを一緒に見直す。
 
-生成器の現在の項目が正本です。旧版のprivate設定を新しい版へ引き継ぐ場合は、追加キーを個別に補い、既存の秘密値を保持したまま `plan` を通します。新しく生成した別ファイルは比較用に使えますが、既存設定全体の置換には使いません。
+生成器の現在の項目が正本です。配置担当がレイクハウスホストのリポジトリのルートで、既存のprivateファイルを更新します。
+
+```bash
+python3 scripts/configure.py --output /absolute/private/site.env --upgrade
+./scripts/lakehouse.sh --env-file /absolute/private/site.env plan
+```
+
+不足キーを追加し、bypass3項目を正規化します。他の既存値・秘密鍵・profileは保持します。元ファイルは隣の `site.env.before-upgrade` に0600で保存し、更新先も0600でatomic replaceします。変更が必要で控えが既に存在すると停止するので、控えを確認してprivate領域の一意な別名へ保管してから再実行します。変更不要ならファイルに触れず正常終了します。backup全体で現在の資格情報を上書きして戻さず、戻す項目を確認します。詳細は [COMPANY-UPDATE.md](COMPANY-UPDATE.md) です。
 
 
-## PoCツール・MCP・企業CAの追加設定
+## MCPの追加設定
 
-追加profileの一覧は `bi,notebooks,vector,lineage,mcp` です。coreだけの設定は引き続き利用できます。既存環境はprofile追加前に `python3 scripts/configure.py --output /absolute/private/site.env --upgrade` を実行し、新項目だけを追加します。既存の暗号鍵・パスワード・接続先・profileは保持し、直前ファイルを `.before-upgrade` として0600で保存します。控えが既にあるときは上書きしません。
+`mcp` profileはMCPと内部操作APIを起動します。`demo` も選ぶと操作画面を使えます。MCPへAPIの管理鍵を流用せず、専用tokenを使います。
 
-| 設定 | 用途 |
-| --- | --- |
-| `SUPERSET_PORT` / `SUPERSET_DB_PASSWORD` / `SUPERSET_SECRET_KEY` | BIの入口・専用DB・署名鍵 |
-| `SUPERSET_ADMIN_USERNAME` / `SUPERSET_ADMIN_PASSWORD` / `SUPERSET_ADMIN_EMAIL` | 初回BI管理者。既存ユーザーの秘密値を再初期化しない |
-| `SUPERSET_REDIS_PASSWORD` | BI専用cache認証 |
-| `JUPYTER_PORT` / `JUPYTER_TOKEN` / `NOTEBOOKS_DIR` | Spark付きNotebookの認証と外部workspace |
-| `QDRANT_PORT` / `QDRANT_API_KEY` / `QDRANT_READ_ONLY_API_KEY` | vector DB。管理と参照の鍵を分離 |
-| `MARQUEZ_API_PORT` / `MARQUEZ_UI_PORT` / `MARQUEZ_DB_PASSWORD` | 系統APIとUI・専用DB |
-| `MCP_PORT` / `MCP_API_TOKEN` | AI接続先とMCP専用認証 |
-| `MCP_ENABLE_MUTATIONS` / `MCP_ALLOWED_HOSTS` | 書込みtoolの明示有効化とHost許可 |
-| `CORPORATE_CA_FILE` | buildへ渡す公開企業CA PEM chainのホスト側絶対path。未設定は追加CAなし |
+| 項目 | 生成時の既定 | 意味と変更時の影響 | 秘密 |
+| --- | --- | --- | --- |
+| `MCP_PORT` | `8503` | hostの `/mcp` 入口。loopbackへ公開 | 社内 |
+| `MCP_API_TOKEN` | 64文字hexを生成 | MCP client用Bearer鍵。APIのCONTROL_API_TOKENとは別 | はい |
+| `MCP_ENABLE_MUTATIONS` | `false` | 既定は参照toolのみ。変更は書込み権限と操作範囲を確認して再配置 | いいえ |
+| `MCP_ALLOWED_HOSTS` | `localhost:*,127.0.0.1:*,mcp:*` | 着信Hostの許可。外向きNO_PROXYやn8n SSRF例外とは別 | 社内 |
 
-`NOTEBOOKS_DIR` はリポジトリ外の絶対pathで事前作成し、非rootの `WORKER_UID` と数値 `WORKER_GID` に書込権を与えます。追加キーは生成された値を保持し、公開Composeへ秘密値を直書きしません。`SUPERSET_SECRET_KEY` と `JUPYTER_TOKEN` は32文字以上、Qdrantの2鍵は異なる値を使います。全hostportを一意にします。
+## n8nのSSRF設定
 
-`NO_PROXY` と `no_proxy` に、新しい内部名 `superset,superset-db,superset-redis,jupyter,qdrant,marquez,marquez-db,marquez-web,mcp` を追加します。`--upgrade` は既存のproxy指定を変更しません。GUI保存後はDokployのEnvironmentとprivate設定を一致させて再配置し、CA変更時はcacheを使わず再buildします。[PoCツール](POC-TOOLS.md)、[MCP](MCP.md)、[会社proxy手順](COMPANY-PROXY.md) も確認してください。
+n8n2.46.7の上流既定は保護無効ですが、本構成は有効にして `worker` だけを例外にします。
 
+| 項目 | 生成時の既定 | 意味と変更時の影響 | 秘密 |
+| --- | --- | --- | --- |
+| `N8N_SSRF_PROTECTION_ENABLED` | `true` | user入力で変わるHTTP宛先の保護を有効化 | いいえ |
+| `N8N_SSRF_BLOCKED_IP_RANGES` | `default,100.64.0.0/10` | n8n標準の内部/特殊範囲と追加CIDRを拒否 | 社内 |
+| `N8N_SSRF_ALLOWED_IP_RANGES` | 空 | 必要な狭いIP例外。許可が拒否より優先する | 社内 |
+| `N8N_SSRF_ALLOWED_HOSTNAMES` | `worker` | DNS名だけ。空ならこの内部例外もなし | 社内 |
+| `N8N_SSRF_BLOCKED_HOSTNAMES` | 空 | 業務上の拒否名。許可名が優先する | 社内 |
+| `N8N_SSRF_DNS_CACHE_MAX_SIZE` | `1048576` | DNS cacheのbytes。基盤検査64KiB〜16MiB | いいえ |
 
-SSRFの設定値、内部workerの例外、NO_PROXYとの違い、GUI保存と再配置、許可・拒否の受入は [SSRF.md](SSRF.md) を参照してください。
-
+保存だけではn8nに反映されません。同じ配置を再作成し、許可workerの成功と未許可内部先の拒否を両方試験します。[SSRF手順](SSRF.md)、[n8n固定版source](https://github.com/n8n-io/n8n/blob/n8n%402.46.7/packages/%40n8n/config/src/configs/ssrf-protection.config.ts)
 
 ## 常駐Sparkの画面
 
-`compute` はMaster/Worker/Historyを常駐させます。`SPARK_MASTER_UI_PORT`（8082）、`SPARK_WORKER_UI_PORT`（8085）、`SPARK_HISTORY_UI_PORT`（18080）は他のhostportと重ならない値へ変更できます。cluster RPCとNotebook driver portはDocker内部だけです。`NO_PROXY` / `no_proxy` に `spark-master,spark-worker,spark-history,spark-volumes-init` を含めます。Notebookはcomputeの有無でremote/localを選びます。
+`compute` はMaster/Worker/Historyを常駐させます。`SPARK_MASTER_UI_PORT`（8082）、`SPARK_WORKER_UI_PORT`（8085）、`SPARK_HISTORY_UI_PORT`（18080）は他のhostportと重ならない値へ変更できます。cluster RPCとNotebook driver portはDocker内部だけです。canonicalには `spark-master,spark-worker,spark-history,spark-volumes-init,spark-check` が標準で含まれます。Notebookはcomputeの有無でremote/localを選びます。
 
 `WORKER_UID/GID` はNotebookとSparkのshared volumeを使う非rootの同じ実行IDにします。再配置でデータを消す構成にはせず、運用開始後の実行ID変更は既存ファイル所有権の移行として扱います。SSRF設定6項目と値の意味は [SSRF.md](SSRF.md) を参照してください。
 
 
 Docker 29／Buildx Bake／社内proxyで判明した互換性修正の取り込みと、`LAKEHOUSE_NO_PROXY` の生成・Dokployへの登録は [会社VMの更新手順](COMPANY-UPDATE.md) を参照してください。
+
+
+## 対象版と出典の読み方
+
+設定名・既定・検査の正本は [configure.py](../scripts/configure.py)、[settings.py](../scripts/settings.py)、各Compose、GUIの [control_settings.py](../infra/demo/control_settings.py) です。表にある生成既定と第三者製品の上流既定を区別します。
+
+監査対象はDocker Engine29系／[Compose5.6.1](https://github.com/docker/compose/releases/tag/v5.6.1)、n8n2.46.7、Debezium3.7.1.Final、Kafka4.4.0です。SQL ServerとSambaは外部ホストの既存版を使い、リポジトリでserver版を固定していません。DBA／ホスト管理者が導入先の版・editionを記録します。[Debezium3.7](https://debezium.io/documentation/reference/3.7/connectors/sqlserver.html)、[Microsoft SQL権限](https://learn.microsoft.com/en-us/sql/relational-databases/security/permissions-database-engine?view=sql-server-ver17)

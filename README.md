@@ -43,6 +43,8 @@
 
 ## 導入の順番
 
+**初めての構築は [一本道ガイド](docs/START-HERE.md) を上から進めてください。** 作業する端末、入力場所、期待結果、全機能を追加する順序をまとめています。採用版ごとの根拠は [公式リファレンス・全ドキュメント監査表](docs/REFERENCES.md) にあります。
+
 **会社でDokploy管理にする場合は、レイクハウスをDeployする前にDokployを導入します。** Docker・社内proxy/CAの準備 → cloneとprivate設定 → Dokploy導入 → GUIから公開GitをDeploy、の順です。
 
 | 導入方法 | 共通準備の後に行うこと |
@@ -65,11 +67,15 @@ python3 scripts/configure.py \
 export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 
 # 既定のlanding例。別の保存先はprivate設定のLANDING_DIRへ指定します。
-sudo install -d -m 0770 -o "$(id -un)" -g "$(id -gn)" \
-  /srv/lakehouse/landing
+LANDING_PATH=/srv/lakehouse/landing
+if [ -e "$LANDING_PATH" ] || [ -L "$LANDING_PATH" ]; then
+  stat -c '%a %u:%g %n' "$LANDING_PATH"
+else
+  sudo install -d -m 0770 -o "$(id -un)" -g "$(id -gn)" "$LANDING_PATH"
+fi
 ```
 
-private設定をエディターで開き、`LANDING_DIR`、`WORKER_UID/GID`、portを確認します。最初に操作画面と監視を使う場合は `COMPOSE_PROFILES=demo,monitoring`、coreだけなら空欄にします。既存環境では生成済みの秘密値・暗号鍵を保持します。
+private設定をエディターで開き、`LANDING_DIR`、`WORKER_UID/GID`、portを確認します。最初は `COMPOSE_PROFILES` を空にしてcoreを確認し、その後 `demo,monitoring` を追加すると操作画面と監視を使えます。既存環境では生成済みの秘密値・暗号鍵を保持します。
 
 ### Dokployで管理する場合
 
@@ -83,7 +89,7 @@ private設定をエディターで開き、`LANDING_DIR`、`WORKER_UID/GID`、po
 | `SWARM_ADDRESS_POOL` / `SWARM_SUBNET_SIZE` | 会社LAN・VPNと重ならないDocker用アドレス範囲 |
 | `DOKPLOY_ADMIN_PORT` | 管理画面のport。既定は `3100` |
 
-まず設定内容を表示し、導入時に `--apply` を付けます。一つ目のコマンドはホストを変更しません。既存Dokployを使う場合は、次のGUI設定へ進みます。
+まず設定値を検査・表示し、ホスト前提を検査して導入する時に `--apply` を付けます。一つ目はホストを変更せず、Docker・port等の全ホスト検査も行いません。既存Dokployを使う場合は、次のGUI設定へ進みます。
 
 ```bash
 bash infra/dokploy/install.sh --env-file "$LAKEHOUSE_ENV_FILE"
@@ -92,14 +98,15 @@ sudo bash infra/dokploy/install.sh --env-file "$LAKEHOUSE_ENV_FILE" --apply
 
 導入後、設定した管理画面へ接続して初期管理者を登録し、次の順で配置します。
 
-1. Project → Environment → Docker Composeサービスを作成します。
-2. SourceをGit、Repositoryを `https://github.com/hiromura16/lakehouse-foundation.git`、Branchを `main`、Compose pathを `infra/lakehouse/compose.yaml` にします。
-3. サービスの `appName` を確認し、private設定の `COMPOSE_PROJECT_NAME` を同じ値へ合わせます。Environmentへprivate設定を登録し、`.env`生成を有効にします。
-4. GUI・Spark等の追加profileも使うため、AdvancedのCustom Commandへ下記を設定します。`lakehouse-development` は実際の `appName` へ置き換えます。この欄には `compose` から入力します。
-5. Deployを実行し、サービスの起動とone-shotの正常終了を確認します。
+1. Projectを作り、Environment（初期は `production`）で `Create Service` → `Compose` を作成します。Compose Typeは `Docker Compose` です。
+2. `General` → `Provider` カードの **Git** タブで、`Repository URL` を `https://github.com/hiromura16/lakehouse-foundation.git`、`Branch` を `main`、`Compose Path` を `infra/lakehouse/compose.yaml` にして保存します。
+3. サービス画面ヘッダーの表示名直下で**生成後の確定appName**を確認します。作成時の入力名にはsuffixが付きます。private設定の `COMPOSE_PROJECT_NAME` を確定名へ合わせます。
+4. **Composeサービス自身のEnvironmentタブ**へprivate設定を登録し、`Create Environment File` をONにして保存します。Project/Environmentへ置いた変数は自動継承されません。このCompose Pathでは `infra/lakehouse/.env` を生成します。
+5. `Advanced` → **Run Command** カード → `Command` へ下記を一行で入力して保存します。`APP_NAME_FROM_HEADER` は確定appNameへ置き換えます。欄には `compose` から入力し、pipeや `&&` は使いません。
+6. `Deploy` を実行し、サービスの起動とone-shotの終了コード0を確認します。DeployはGitを再取得し、Rebuildは取得し直しません。[0.31.0の画面と公式tagの根拠](docs/DOKPLOY.md)
 
 ```text
-compose -p lakehouse-development --env-file infra/lakehouse/.env -f infra/lakehouse/compose.yaml -f infra/compute/compose.yaml -f infra/orchestration/compose.yaml -f infra/demo/compose.yaml -f infra/cdc/compose.yaml -f infra/poc/compose.yaml -f infra/mcp/compose.yaml up -d --build --remove-orphans --wait --wait-timeout 600
+compose -p APP_NAME_FROM_HEADER --env-file infra/lakehouse/.env -f infra/lakehouse/compose.yaml -f infra/compute/compose.yaml -f infra/orchestration/compose.yaml -f infra/demo/compose.yaml -f infra/cdc/compose.yaml -f infra/poc/compose.yaml -f infra/mcp/compose.yaml up -d --build --remove-orphans --wait --wait-timeout 600
 ```
 
 この方法の初回起動はDokployのDeployで行います。Grafanaを使う場合は、配置後に同じprivate設定で `./scripts/lakehouse.sh grafana-init` を実行すると、標準dashboardを一度だけ投入できます。Projectの分け方、既存Swarm、既存データの移行は [Dokploy手順](docs/DOKPLOY.md) を参照してください。
@@ -136,7 +143,7 @@ python3 scripts/generate-demo.py --destination landing \
 ./scripts/lakehouse.sh verify
 ```
 
-SQLへの素材投入やCDCテスト用の追加・更新・削除は、専用DB・所有権検証・明示同意を必要とします。通常のsource生成からworker・n8n・Airflowを起動しません。[素材投入](docs/DEMO-GUI.md) · [異常の期待結果](docs/ANOMALY-SCENARIOS.md)
+通常のSQL素材投入は、専用DB・SOURCE/system DB拒否・明示同意の下で新規schemaへINSERTします。CDCテストの固定追加・更新・削除は、さらに専用DBの所有権tokenを照合します。通常のsource生成からworker・n8n・Airflowを起動しません。[素材投入](docs/DEMO-GUI.md) · [異常の期待結果](docs/ANOMALY-SCENARIOS.md)
 
 ## 必要なprofileだけを追加する
 

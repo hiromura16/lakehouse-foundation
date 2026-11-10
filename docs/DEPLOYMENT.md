@@ -2,10 +2,20 @@
 
 公開リポジトリ `lakehouse-foundation` を取得し、実際の環境設定だけをチェックアウトの外へ置いて導入します。clone URLはREADMEを参照してください。この文書の `/absolute/private/site.env`、共有利用者、許可範囲は説明用であり、導入先で選んだ値に置き換えます。
 
+監査日: 2026-11-10。先に配置の所有者を一つ決めます。CLI管理を選んだ場合は本書の `up/down` を使い、Dokploy管理を選んだ場合は既存の同じComposeアプリから起動・停止します。どちらでも `site.env` と配置commit・profile・実volume名を一致させます。Dokploy導入そのものと、そこへこのスタックを配置する作業は別です。
+
+| 作業 | 実施するホスト／利用者 | 書き込み先と確認結果 |
+| --- | --- | --- |
+| clone、設定生成、plan | レイクハウスホスト／通常の配置利用者 | repo外のprivate file0600。plan終了コード0 |
+| CLI起動、状態確認 | 同ホスト／Docker操作権を持つ配置利用者 | 同じCompose project。healthとbootstrap成功 |
+| Samba・daemon・Dokploy新設 | 同ホスト／管理者、明示したsudo操作 | 変更対象とbackupを確認してからapply |
+| SQL権限・CDC有効化 | SQL Server／DBAが承認したSQL管理ツール | 対象DB/6表/権限/Agent/保持期間の確認記録 |
+| 画面・SMB受入 | 許可した利用者端末 | 認証、到達範囲、ファイル往復、処理結果 |
+
 ## 前提条件
 
-- Linux、Bash、Python 3、Git、Docker Engine、Docker Composeプラグイン。
-- Composeのinline configを使うため **Docker Compose 2.23.1以上**。Pythonはスクリプトが要求する版を使用します。
+- Linux、Bash、Git、ホスト用Python3.12とuv、Docker Engine、Docker Composeプラグイン。コンテナ内Pythonは各imageの固定版を使います。
+- 今回の互換性監査対象は **Docker Engine29系／Compose5.6.1**。inline config自体は2.23.1以上の機能ですが、その最低版で全構成を試験したという意味ではありません。
 - 実行ユーザーがDockerを操作できること。Dockerを操作できる権限はホスト管理権限として扱います。
 - 使用するイメージを取得できる通信、または社内レジストリへのミラー。
 - coreと任意のプロファイルを動かすRAM・CPU・永続ディスク、既存サービスと競合しないポート。
@@ -18,7 +28,9 @@ docker compose version
 python3 --version
 ```
 
-inline configの必要版は [Docker Compose公式文書](https://docs.docker.com/reference/compose-file/configs/) を参照します。
+終了コードと表示された版を導入記録へ残します。Docker管理権限はroot相当なので、権限のない利用者がsocketのmodeを緩めて解決しません。[Dockerの権限説明](https://docs.docker.com/engine/install/linux-postinstall/)、[Compose5.6.1公式release](https://github.com/docker/compose/releases/tag/v5.6.1)、[inline configs](https://docs.docker.com/reference/compose-file/configs/)
+
+全コマンドは特記なければレイクハウスホストのclone済みリポジトリのルートで実施します。`sudo python3 scripts/configure.py ...` で生成するとUID/GIDもrootになるため、通常は配置利用者で生成します。コンテナへ任意にsudoやDocker socketを追加しません。
 
 ## ホストのパスとコンテナ内のパス
 
@@ -89,26 +101,37 @@ python3 scripts/configure.py --output /absolute/private/site.env
 | `PROMETHEUS_PORT` | `9090`。monitoring有効時のみ使用 |
 | `N8N_PORT` | `5678`。automation有効時のみ使用 |
 | `AIRFLOW_PORT` | `8081`。orchestration有効時のみ使用 |
-| `COMPOSE_PROFILES` | 初期は空。`automation`、`monitoring`、`compute`、`orchestration`、`demo`、`cdc` を必要に応じてカンマ区切り |
+| `COMPOSE_PROFILES` | 初期は空。`automation,monitoring,compute,orchestration,demo,cdc,bi,notebooks,vector,lineage,mcp` から必要なものをカンマ区切り |
 | `S3_BUCKET_RAW` | `lakehouse-raw` |
 | `S3_BUCKET_WAREHOUSE` | `lakehouse-warehouse` |
 | `WAREHOUSE_NAME` | `lakehouse` |
 | S3・PostgreSQL・暗号鍵等 | 生成値を保持。導入後に再生成しない |
-| プロキシ6変数 | 直接接続ではHTTP(S)を空欄。会社では許可されたproxyとNO_PROXYを設定 |
+| proxy設定 | 直接接続ではHTTP(S)4項目を空欄。`LAKEHOUSE_NO_PROXY` と大小文字の互換値は保持。会社追加分はprivateへ追記しupgrade |
 | `SOURCE_SQLSERVER_*` | 外部の会社SQL Serverを使うときだけ設定 |
 | `DEMO_SQLSERVER_*` | 疑似データをSQLへ投入するときだけ設定。SOURCEとは別の専用DB |
 
 同じ `COMPOSE_PROJECT_NAME` と同じ設定ファイルを継続して使います。既存ボリュームを使う状態でDBパスワードや暗号鍵だけを変更すると、接続や復号に失敗します。設定ファイルはデータと合わせて安全にバックアップしてください。
 
-`DATA_VOLUME_PREFIX` が空欄または未設定なら、名前付きvolumeは `<Composeプロジェクト名>_<volumeキー>` となり、既定の動作は変わりません。core側のComposeに7個、Airflowに2個の計9個を定義し、CDCでは `cdc-kafka` と `cdc-state` の2個が加わり計11個です。使用するprofileに応じて実体を確認します。ランディングやprivate設定等のbind mountはこの数に含めません。指定するとデータの物理名だけがその接頭辞へ変わります。コンテナ・ネットワークの識別子である `COMPOSE_PROJECT_NAME` やDokployの `appName` と区別し、既存volume名を維持する移行専用として扱います。値は空欄、または先頭が小文字英字で、小文字英数字・ハイフン・アンダースコアからなる41文字以内です。
+`DATA_VOLUME_PREFIX` が空欄または未設定なら、名前付きvolumeは `<Composeプロジェクト名>_<volumeキー>` となります。定義はcore7個、compute2個、Airflow2個、CDC2個、PoC3個の計16個で、実際に使うものは有効profileによります。[全キー一覧](CONFIGURATION.md#data_volume_prefixを使う場面) から実体を確認します。ランディングやprivate設定等のbind mountはこの数に含めません。指定するとデータの物理名だけがその接頭辞へ変わります。コンテナ・ネットワークの識別子である `COMPOSE_PROJECT_NAME` やDokployの `appName` と区別し、既存volume名を維持する移行専用として扱います。値は空欄、または先頭が小文字英字で、小文字英数字・ハイフン・アンダースコアからなる41文字以内です。
 
-volumeの自動rename・コピーは行いません。移行前に使用する全volumeの解決名と既存の実名を照合し、CDCを使う場合は追加の2個も含めます。旧writerを停止してから一つの配置へ切り替えます。別の環境と同じ接頭辞を共有せず、移行後も指定を保持します。詳細は [Dokployで既存volumeを引き継ぐ手順](DOKPLOY.md#既存volume名を引き継ぐ場合) を参照します。
+volumeの自動rename・コピーは行いません。移行前に使用する全volumeの解決名と既存の実名を照合し、CDC・compute・PoC等の追加分も含めます。旧writerを停止してから一つの配置へ切り替えます。別の環境と同じ接頭辞を共有せず、移行後も指定を保持します。詳細は [Dokployで既存volumeを引き継ぐ手順](DOKPLOY.md#既存volume名を引き継ぐ場合) を参照します。
 
 `BIND_IP=127.0.0.1` のままでは、画面をサーバー自身のブラウザーかSSHポート転送から利用します。別端末の `localhost` は別端末自身を指します。LAN等のアドレスへ変更する場合、ネットワーク制限と利用者認証を先に検討します。標準coreは単一ホストでの検証向けです。
 
+### 既存site.envを更新する場合
+
+新規生成コマンドは既存ファイルを上書きしません。既存サイトには次を使います。
+
+```bash
+python3 scripts/configure.py --output /absolute/private/site.env --upgrade
+./scripts/lakehouse.sh --env-file /absolute/private/site.env plan
+```
+
+不足項目を追加し、内部必須名とprivateのcanonical/大小文字のbypassをマージします。既存秘密値・profileは維持します。変更前は隣の `.before-upgrade` に0600で保存し、同名backupを上書きしません。前回の控えがある場合は内容を確認してprivate領域の別名へ保管してから更新します。変更が不要なら何も変更しません。[既存VM更新](COMPANY-UPDATE.md)
+
 ## 2. 会社のプロキシを設定する
 
-サイト設定の `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` と小文字版を設定します。内部サービスは `NO_PROXY` に含めます。値は私有ファイルに保持します。
+privateのHTTP(S)4変数と `LAKEHOUSE_NO_PROXY` / `NO_PROXY` / `no_proxy` を使います。bypassは生成・upgradeで3項目を同期し、内部必須名を保持します。Dokploy管理ではupgrade後のcanonicalをEnvironmentにも登録します。古いshell変数がraw Composeの `--env-file` より優先するため、正規化済み設定を使います。
 
 コンテナのenvだけではDocker daemonのimage pullに適用されません。会社でpull用プロキシが必要なら、[PROXY.md](PROXY.md) の独立キットでdaemon用設定を用意します。設定の配置とDocker再起動は別操作です。既存コンテナへの影響を確認してから反映します。
 
@@ -130,7 +153,10 @@ sudo ./scripts/configure-proxy.sh --env-file /absolute/private/proxy.env --apply
 `LANDING_DIR` は先に作成し、共有利用者が読み書きできる所有者・権限を設定します。後述のSamba手順で作成するか、管理者が専用ディレクトリを用意します。既定の `/srv/lakehouse/landing` を使う例は次のとおりです。利用者・グループを環境に合わせて置き換えます。
 
 ```bash
-sudo install -d -m 0770 -o <existing-share-user> -g <existing-share-group> /srv/lakehouse/landing
+SHARE_USER="$(id -un)"
+SHARE_GROUP="$(id -gn)"
+# 新規の専用pathにだけ実施。既存pathは先に所有者とACLを確認する。
+sudo install -d -m 0770 -o "$SHARE_USER" -g "$SHARE_GROUP" /srv/lakehouse/landing
 ```
 
 起動前の設定確認はホストを変更しません。
@@ -143,9 +169,9 @@ sudo install -d -m 0770 -o <existing-share-user> -g <existing-share-group> /srv/
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env up
 ```
 
-この操作はSeaweedFS、PostgreSQL、Lakekeeperのマイグレーションとサーバー、Trinoを起動し、初期化ジョブでS3バケットとWarehouseを準備します。初期化状態を確認し、毎回新しいWarehouseを重複作成しない構成です。
+この操作はSeaweedFS、PostgreSQL、Lakekeeperのマイグレーションとサーバー、Trino、worker、および選択profileを `up --build --wait` で起動し、その後workerのbootstrapでS3バケットとWarehouseを準備します。初期化状態を確認し、毎回新しいWarehouseを重複作成しない構成です。
 
-初回はimage取得と起動に時間がかかります。失敗した場合は原因を修正して同じ設定で再実行します。初期化途中のDBやボリュームを削除してやり直す必要があると即断しません。
+初回はimage取得と起動に時間がかかります。正常時はコマンドが終了コード0になり、`status` で常駐サービスのhealthを確認できます。migration/init/register等の一時サービスは正常終了ならExited(0)で構いません。失敗時は [TROUBLESHOOTING.md](TROUBLESHOOTING.md) で原因を修正して同じ設定で再実行します。初期化途中のDBやボリュームを削除してやり直す必要があると即断しません。
 
 Lakekeeperは初期化時に利用条件への同意を記録するAPIを使います。採用ソフトウェアの利用条件は [ARCHITECTURE.md](ARCHITECTURE.md) と上流資料を確認してください。
 
@@ -241,7 +267,7 @@ n8nの提供テンプレートをimportし、手動トリガーからワーカ�
 
 定期実行のスケジュール、業務アラート、モデル推論は必要に応じて追加します。実装済みの [CDC](CDC.md) は `cdc` profileで、[操作GUI/API](DEMO-GUI.md) と [AI向けcontext取得](AI-READINESS.md) は `demo` profileで利用します。接続先・権限・mapping等の準備と導入先での受入を行い、profileを有効にしただけで業務フローが完成したとは扱いません。
 
-Sparkは `spark-check` から一時ジョブとして実行します。Airflowは `orchestration` を有効化すると手動DAGを追加します。正確な版・JAR・Provider、追加のprivate鍵、GUIでのworker接続、実行手順は [COMPATIBILITY.md](COMPATIBILITY.md) を参照します。
+`compute` はSpark Master/Worker/Historyを常駐起動します。`spark-check` は別の一時的なlocalスモークで、通常upでは起動しません。cluster接続の受入はJupyter等から別途行います。Airflowは `orchestration` を有効化すると手動DAGを追加します。正確な版・JAR・Provider、追加のprivate鍵、GUIでのworker接続、実行手順は [COMPATIBILITY.md](COMPATIBILITY.md) を参照します。
 
 ## 7. 外部の会社SQL Serverを指定する
 
@@ -271,13 +297,24 @@ coreの初期化ジョブは会社DBへテーブル作成・更新を行いま�
 
 Sambaはホストの共有サービスへ別手順で設定します。`LANDING_DIR` と `--path` を同じ値にします。Sambaパッケージ、稼働する `smbd`、Unix利用者、Sambaアカウントが先に必要です。このキットは利用者パスワードを作成・変更しません。
 
-最初は読み取り専用の計画を確認します。以下の山括弧の項目を、その会社で使う利用者と許可範囲へ置き換えます。
+ホスト管理者がUnix利用者、Sambaアカウント、既存共有、許可するクライアント範囲を確認します。`smbd --version` とOSパッケージ版を記録します。Samba本体の導入・アカウント作成は会社の標準手順で別途行います。既存利用者のパスワードを作り直す手順ではありません。
+
+以下は同じUnix利用者の例です。`ALLOW_CLIENT_CIDR=127.0.0.1/32` はホスト内の試験専用なので、実共有時は承認された端末範囲へ置き換えます。`SHARE_USER` が既存Sambaアカウントであることを確認してから進めます。
+
+```bash
+SHARE_USER="$(id -un)"
+ALLOW_CLIENT_CIDR="127.0.0.1/32"
+sudo systemctl is-active smbd.service
+sudo testparm -s /etc/samba/smb.conf
+```
+
+最初は設定を書き換えないplanを実行します。Samba設定の読取に管理権限が必要な環境に合わせ、ここではsudoを使います。
 
 ```bash
 sudo python3 scripts/setup-samba.py \
-  --user <existing-share-user> \
+  --user "$SHARE_USER" \
   --path /srv/lakehouse/landing \
-  --allow <allowed-client-cidr> \
+  --allow "$ALLOW_CLIENT_CIDR" \
   --plan
 ```
 
@@ -285,21 +322,23 @@ sudo python3 scripts/setup-samba.py \
 
 ```bash
 sudo python3 scripts/setup-samba.py \
-  --user <existing-share-user> \
+  --user "$SHARE_USER" \
   --path /srv/lakehouse/landing \
-  --allow <allowed-client-cidr> \
+  --allow "$ALLOW_CLIENT_CIDR" \
   --apply
 ```
 
-共有名の既定値は `Lakehouse-Landing` です。既存の共有と競合する場合は処理を止めます。適用時にバックアップ、`testparm` による検証、`smbd` の設定再読込を行います。共有のアクセス許可は導入先のクライアントIP/CIDRを指定します。利用者パスワードと既存共有の所有権を一括変更しません。
+共有名の既定値は `Lakehouse-Landing` です。同名共有、管理外include、動的include等の競合があると停止します。対象は `/etc/samba/smb.conf.d/lakehouse-foundation.conf` と、`/etc/samba/smb.conf` の管理マーカー付きinclude blockです。適用前に `/var/backups/lakehouse-foundation/samba/<時刻-ID>/`（0700、内容0600）へ控えを保存し、`testparm` 検証と `smbd` reloadを行います。失敗時は元の設定を戻してreloadします。共有のアクセス許可は導入先のクライアントIP/CIDRを指定します。利用者パスワード、既存directory、他共有の所有権は変更しません。既存 `LANDING_DIR` の権限不一致はhelperが直さないため、管理者が対象pathだけを調整します。新規作成時はlandingと `csv/json/images/quarantine` を用意します。
+
+apply成功後も `testparm` は構文確認までです。既存SMB接続をいったん切り、新規接続で共有へ認証して確認します。[Samba設定](https://www.samba.org/samba/docs/current/man-html/smb.conf.5.html)、[testparmの確認範囲](https://www.samba.org/samba/docs/current/man-html/testparm.1.html)
 
 許可したWindows/Macクライアントから、CSV・JSON・画像のコピー、読戻し、ハッシュ一致を確認します。この共有設定はファイルの受け口です。コピー完了後に `.ready` を作成し、CLIまたはn8nから取り込み・メダリオン処理を実行します。共有ディレクトリを自動監視して毎回起動する設定は別途追加します。
 
 ## 9. Dokployを別に導入する
 
-DokployはcoreのComposeとは別に導入します。提供するインストーラーはx86-64 Linux向けにイメージを固定し、稼働中のDockerを前提にします。`--apply` なしの既定動作は設定の検証とplanだけです。公式の導入手順は [Dokployのインストール](https://docs.dokploy.com/docs/core/installation) を参照します。
+DokployはcoreのComposeとは別に導入します。提供するインストーラーはx86-64 Linux向けにイメージを固定し、稼働中のDockerを前提にします。`--apply` なしの既定動作は設定の検証とplanだけで、port空き・host所有権・既存Swarm等の本検査はrootのapplyに入ってから実施します。plan成功をhost全体の導入可否確認と扱いません。公式の導入手順は [Dokployのインストール](https://docs.dokploy.com/docs/core/installation) を参照します。
 
-private envに `DOKPLOY_BIND_IP`、`DOKPLOY_ALLOWED_CIDRS`、`DOKPLOY_ADMIN_PORT`、`SWARM_ADVERTISE_ADDR`、`SWARM_ADDRESS_POOL`、`SWARM_SUBNET_SIZE` を設定します。必要なら `DOCKER_BRIDGE_CIDR` も指定します。アドレスは導入先のものを使い、Swarmのアドレスプールは会社・VPN・Dockerの既存ネットワークと重複しない範囲にします。管理画面は既定3100、Traefikは80/443を使用するため、既存のWebサービスと競合しないか確認します。
+private envに `DOKPLOY_BIND_IP`、`DOKPLOY_ALLOWED_CIDRS`、`DOKPLOY_ADMIN_PORT`、`SWARM_ADVERTISE_ADDR`、`SWARM_ADDRESS_POOL`、`SWARM_SUBNET_SIZE` を設定します。必要なら `DOCKER_BRIDGE_CIDR` も指定します。アドレスは導入先のものを使い、Swarmのアドレスプールは会社・VPN・Dockerの既存ネットワークと重複しない範囲にします。このinstallerの管理画面は既定3100（上流の既定3000とは別）、TraefikはTCP80/443とUDP443を使用するため、既存のWebサービスと競合しないか確認します。
 
 ```bash
 bash infra/dokploy/install.sh --env-file /absolute/private/site.env
@@ -324,9 +363,9 @@ sudo bash infra/dokploy/install.sh --env-file /absolute/private/site.env --apply
 
 | 症状 | 確認すること |
 | --- | --- |
-| Composeが `content` を解釈しない | Composeプラグインが2.23.1以上か |
+| Composeが `content` を解釈しない | plugin版を確認。採用手順のCompose5.6.1と相違がないか |
 | imageを取得できない | Docker daemon側proxy、CA、認証、レジストリ到達性 |
-| 内部接続がproxyへ流れる | サービス名・内部アドレスがNO_PROXYに含まれるか |
+| 内部接続がproxyへ流れる | private設定をupgradeしcanonical3項目を同期、Dokploy Environmentも更新して再配置 |
 | PostgreSQLの認証失敗 | 初回作成時のパスワードと現在のenvが一致するか |
 | Lakekeeperが起動しない | PostgreSQLの正常性、migrateの完了、暗号鍵の保持 |
 | Warehouse初期化が失敗 | S3認証、バケット、内部endpoint、region、既存登録との一致 |
@@ -339,3 +378,15 @@ sudo bash infra/dokploy/install.sh --env-file /absolute/private/site.env --apply
 
 
 Docker 29／Buildx Bake／社内proxyで判明した互換性修正の取り込みと、`LAKEHOUSE_NO_PROXY` の生成・Dokployへの登録は [会社VMの更新手順](COMPANY-UPDATE.md) を参照してください。
+
+
+## 監査した版・公式資料
+
+ホストEngine29系とCompose5.6.1を対象に、公開コードの挙動を照合しました。ホスト版の自動更新は行いません。実際に配置するimageは各Composeとlockのdigestが正本です。n8n2.46.7、Debezium3.7.1.Final、Kafka4.4.0の個別設定は [SSRF.md](SSRF.md) と [CDC.md](CDC.md) を参照します。
+
+| 一次資料 | 用途 |
+| --- | --- |
+| [Docker29 release notes](https://docs.docker.com/engine/release-notes/29/)、[Compose5.6.1](https://github.com/docker/compose/releases/tag/v5.6.1) | 導入先の版確認 |
+| [Swarmネットワーク](https://docs.docker.com/engine/swarm/networking/) | address poolは初期化時に決定。既存clusterを再初期化して直さない |
+| [Dokploy0.31.0 source](https://github.com/Dokploy/dokploy/tree/v0.31.0)、[公式導入](https://docs.dokploy.com/docs/core/installation) | 提供installerとの違い・管理権限を確認 |
+| [Samba公式](https://www.samba.org/samba/docs/current/man-html/smb.conf.5.html) | host既存版のman pageと共有設定を照合 |

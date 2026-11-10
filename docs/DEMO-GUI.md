@@ -1,5 +1,8 @@
 # GUIからダミーデータを投入する
 
+確認日: 2026-11-10（JST）。初回配置・作業端末・権限は [START-HERE.md](START-HERE.md) で準備します。以下の `up` はCLI管理の環境だけで使います。Dokploy管理では同じprivate設定とComposeサービスのEnvironmentを揃え、7ファイルを使ってDeployします。[0.31.0の配置手順](DOKPLOY.md)
+
+
 この画面では、MES・ERPの合成データをランディングディレクトリまたは専用の検証SQL Serverへ投入します。バッチと有限回のマイクロバッチを選べます。素材を作る操作から、Icebergへの取り込み・SQL変換・n8n・Airflowを自動起動することはありません。
 
 ## 最初に画面を開く
@@ -148,4 +151,8 @@ APIのSwagger UIは既定で `http://localhost:8502/docs` です。直接操作�
 
 投入ロジックは `infra/demo/service.py` の `generate_batch()` に分離しています。Streamlitは `POST /jobs` を呼ぶ薄いクライアントで、有限ループ・状態・取消はAPIが管理します。今後Kafka等の入力方式を増やす場合も、ソースへの投入と後段処理を分ける境界を維持します。
 
-Streamlit 1.67.0、FastAPI 0.162.2、Uvicorn 0.54.0等を公式PyPI metadataで確認し、依存全体をhash付きlockへ固定しています。Streamlit公式の対応範囲はPython 3.11～3.15で、このイメージはPython 3.14を使用します。[Streamlitの公式配布](https://pypi.org/project/streamlit/)、[Python対応と導入手順](https://docs.streamlit.io/get-started/installation/command-line)
+Streamlit 1.67.0、FastAPI 0.162.2、Uvicorn 0.54.0等を公式PyPI metadataで確認し、依存全体をhash付きlockへ固定しています。Pythonの対応版は採用するStreamlitのmetadataとlockを参照し、このイメージはPython 3.14を使用します。[Streamlitの公式配布](https://pypi.org/project/streamlit/)、[Python対応と導入手順](https://docs.streamlit.io/get-started/installation/command-line)
+
+## UIの再表示とジョブ継続
+
+Streamlit **1.67.0** の [fragment](https://github.com/streamlit/streamlit/blob/1.67.0/lib/streamlit/runtime/fragment.py) はブラウザーsessionが有効な間の再表示に使います。素材の有限ループ自体はFastAPI側が管理します。タブを閉じたことを取消と解釈せず、再接続時は「履歴」で既知IDを確認します。API再起動後の履歴は残りません。初期設定、SQL権限、書込み対象の違いは [会社SQL](SOURCE-SQLSERVER.md)・[CDC](CDC.md)、版と照合範囲は [REFERENCES.md](REFERENCES.md) を参照します。

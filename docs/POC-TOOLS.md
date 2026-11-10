@@ -1,5 +1,7 @@
 # BI・Notebook・ベクトル検索・データ系統を追加する
 
+照合日: 2026-11-10。対象はSuperset 6.1.0、JupyterLab 4.6.6、Spark 4.1.4 / Iceberg 1.12.0、Qdrant 1.20.0、Marquez 0.50.0です。版を上げる手順と、今の版を使う手順は分けてください。
+
 データを入れるだけでなく、GUI で調べ、SQL を試し、Notebook で加工し、API から
 操作するための追加ツールです。4 つの profile は独立しているので、必要なものだけ
 起動できます。通常の Bronze / Silver / Gold と CDC の役割は変えません。
@@ -70,16 +72,50 @@ python3 scripts/control.py up
 ```
 
 profile が無効なときは、追加ツールの未設定値が core-only の plan を止めません。
-有効なツールに必要な secret が空の場合は、DB または app の起動時に拒否します。
+CLIは有効なツールの必須secret・重複portをplan前に検証します。Dokployから直接配置する場合も、生成済みprivate設定をEnvironmentへ入れてください。空secretを入れたまま起動確認へ進めません。
 Jupyter・Superset の Python 依存は uv 0.13.7 と hash lock で image 作成時に確定し、
 通常起動で package をダウンロードしません。
 
 企業 proxy は build/runtime の `HTTP_PROXY/HTTPS_PROXY/NO_PROXY` と小文字の 6 変数を
-引き継ぎます。内部 service 名を NO_PROXY へ追加してください。独自 CA は
+引き継ぎます。生成・upgradeで保存する `LAKEHOUSE_NO_PROXY` に必須内部名と会社側の追加先をまとめ、大小文字を同期します。独自 CA は
 `CORPORATE_CA_FILE` の BuildKit secret で OS trust に追加し、Notebook の Java trust
 にも追加します。既存の信頼済み root は削除しません。秘密鍵や proxy の password を
 image に COPY しないでください。具体的な社内設定は
 [COMPANY-PROXY.md](COMPANY-PROXY.md) と [PROXY.md](PROXY.md) を参照してください。
+
+### 初期値をどこで確認するか
+
+管理者のローカル端末でprivate `site.env` をエディターで開き、必要な1項目だけを各GUIへ入力します。ファイル全体をログ、チャット、スクリーンショットへ出しません。`site.env` はshellスクリプトではないため `source` しないでください。
+
+- Superset: `SUPERSET_ADMIN_USERNAME` と `SUPERSET_ADMIN_PASSWORD`。
+- Jupyter: `JUPYTER_TOKEN`。token付きURLを共有する代わりにログイン欄へ入力します。
+- Qdrant: 閲覧は `QDRANT_READ_ONLY_API_KEY`、デモ投入は `QDRANT_API_KEY`。
+- Marquez: 同梱版にログイン画面・ユーザー管理はありません。loopbackから利用します。
+
+URLのportはprivate envの実値を使います。別PCのブラウザーで `localhost` を開くには、そのportのSSH転送等が必要です。Container Terminalのlocalhostはコンテナ自身であり、ホストの画面URLとは異なります。
+
+### CLIで対象serviceだけを操作する準備
+
+リポジトリrootのBashで以下を1回定義します。7ファイルを省略しないための関数です。`dc config --quiet` は起動や変更をしません。
+
+以下の `up` は**CLI管理の場合だけ**実行します。Dokploy管理ではComposeサービス自身のEnvironmentを保存し、7ファイルを使ってDeployします。起動方法を重ねません。[配置手順](DOKPLOY.md)
+
+```bash
+dc() {
+  docker compose --env-file "$LAKEHOUSE_ENV_FILE" \
+    -f infra/lakehouse/compose.yaml \
+    -f infra/compute/compose.yaml \
+    -f infra/orchestration/compose.yaml \
+    -f infra/demo/compose.yaml \
+    -f infra/cdc/compose.yaml \
+    -f infra/poc/compose.yaml \
+    -f infra/mcp/compose.yaml "$@"
+}
+dc config --quiet
+dc ps
+```
+
+Dokploy管理のサイトは [DOKPLOY.md](DOKPLOY.md) に従い、対象の稼働Container Terminalから下記の単一コマンドを使えます。新しいCompose projectを別途起動する必要はありません。
 
 ## 2. Superset で Gold を可視化する
 
@@ -93,8 +129,8 @@ Redis は cache で、catalog や業務データの保存先ではありませ�
 
 1. `http://localhost:8088` を開く。
 2. private 設定の `SUPERSET_ADMIN_USERNAME/PASSWORD` でログインする。
-3. **Settings → Database Connections** で `Lakehouse Trino` を確認する。
-4. **SQL → SQL Lab** で接続と `iceberg` catalog / `gold` schema を選ぶ。
+3. **Settings → Data: Database Connections** で `Lakehouse Trino` を確認する。
+4. **SQL → SQL Lab** でDatabaseを `Lakehouse Trino`、Schemaを `gold` にする。URIのcatalogは `iceberg` で設定済み。
 5. 例えば次の SELECT を実行する。
 
 ```sql
@@ -124,14 +160,41 @@ init 時に Gold が存在すれば、次の 2 dataset を登録します。
 成功した後、**Data → Datasets** の追加操作で `Lakehouse Trino` / `gold` から
 2 表を選べます。dataset の列情報を変更した場合も GUI の metadata refresh を使います。
 
+GUIから追加する場合は **Data → Datasets → + Dataset** でDatabase、Schema、Tableを選び、**Add** を押します。対象は上記2表です。接続を作り直したり、同じ表を別名で何度も登録したりする必要はありません。[Superset 6.1.0のDataset登録](https://superset.apache.org/user-docs/6.1.0/using-superset/creating-your-first-dashboard/)
+
+自動登録だけを再確認する管理者向けCLIは次です。SQL変換は実行しません。
+
+```bash
+dc exec -T superset /app/.venv/bin/python /opt/lakehouse/superset_init.py
+```
+
+Dokployでは `superset` 本体のContainer Terminalで次を実行できます。
+
+```sh
+/app/.venv/bin/python /opt/lakehouse/superset_init.py
+```
+
+`gold_datasets: 2, pending: 0` なら2表の登録を確認できています。`pending` が残る場合は、先にworkerのmedallion成功とTrinoのGold表を確認します。再実行で既存adminやGUI編集を上書きしません。
+
 Charts の作成では、dataset を選び、日付・工場等の軸と指標を設定し、結果を確認して
 保存します。Dashboard を作って chart を追加すると、GUI の編集結果が DB に残ります。
 初期設定は chart の完成品を自動生成しません。会社の KPI と粒度を確認して作成できます。
 
 歩留まりを複数の日や工場でまとめる場合、`yield_pct` を単純平均せず、
-`100 * SUM(good_qty) / NULLIF(SUM(total_qty), 0)` としてください。計画達成率も
-`100 * SUM(good_qty) / NULLIF(SUM(planned_qty), 0)` で計算します。
+`100.0 * SUM(good_qty) / NULLIF(SUM(total_qty), 0)` としてください。計画達成率も
+`100.0 * SUM(good_qty) / NULLIF(SUM(planned_qty), 0)` で計算します。
 詳細な式と制約は [MEDALLION.md](MEDALLION.md) にあります。OEE は未実装です。
+
+### 最初のチャートとDashboardを保存する
+
+1. **Data → Datasets** で `factory_daily_production` をクリックし、Exploreを開きます。
+2. Chart typeを時系列の棒または線にし、時間列は `production_date`、粒度は日、Metricsは `SUM(good_qty)` にします。Group byに `factory_id` を指定します。
+3. 初回はTime rangeを **No filter** にして **Run** を押します。疑似データの日付が現在より前でも、結果を確認できます。
+4. 結果を見て **Save**。チャート名を付け、新規Dashboardを選ぶか既存のものへ追加します。
+5. Dashboardを開いて **Edit Dashboard** から配置を調整し、もう一度 **Save** します。編集画面での変更と保存を区別します。
+6. 画面を再読み込みし、ChartsとDashboardsの両一覧から開けることを確認します。他の利用者へ見せる場合だけDraftの公開状態とその利用者の権限を確認します。
+
+SQL Labのクエリ実行履歴、保存したSQL、Dataset、Chart、Dashboardは別の保存物です。SQL Labで実行しただけでDashboardが作成されるわけではありません。[6.1.0のExploreと保存操作](https://superset.apache.org/user-docs/6.1.0/using-superset/creating-your-first-dashboard/)
 
 ### API から操作する
 
@@ -158,14 +221,16 @@ SQL Lab API の `client_id` は短い識別子を使います。metadata の列�
 
 1. `http://localhost:8888/lab` を開き、private `JUPYTER_TOKEN` でログインする。
 2. File Browser にある `01-lakehouse-tour.ipynb` を開く。
-3. Gold の参照 cell を上から実行する。結果は Pandas の表で表示する。
+3. 上のセルから **Shift+Enter** またはRunの実行操作で進める。Goldの結果はPandasの表で表示する。
 4. Spark の cell を実行する。compute 有効時は常駐 Master/Worker、無効時は local[2] と表示する。
 5. `notebook_demo.notes` の作成・MERGE・SELECT を実行し、小さな Iceberg 読書きを確認する。
-6. notebook を保存し、利用後は kernel を shutdown する。
+6. **File → Save Notebook** で保存し、利用後は `spark.stop()` を実行して左の **Running** からkernelをShutdownする。
 
 初期 notebook は workspace に同名ファイルがない場合だけコピーします。再起動で GUI の
 編集や保存内容を初期化しません。kernel の変数は一時状態で、notebook と作成した Iceberg
 表の保存先は別です。最後の `spark.stop()` で JVM を終了できます。
+
+ブラウザーのタブやNotebook文書を閉じてもkernelは続きます。長い処理を終えた後はRunning一覧を確認します。保存済みの出力には業務データを含み得るため、`.ipynb` をそのまま公開Gitへコピーしません。[JupyterLab 4.6.6のRunning操作](https://jupyterlab.readthedocs.io/en/stable/user/running.html)
 
 ```python
 from lakehouse_session import read_gold, session_info, spark_session
@@ -267,6 +332,33 @@ Console から native REST API も操作できます。PoC の小例は 4 次元
 header は `api-key: <private key>`。read-only key でも検索できますが、collection 作成や
 point の更新は HTTP 403 になります。GRPC の host port は公開していません。
 
+### native GUIだけで3点のデモを試す
+
+1. DashboardのAPI key入力欄へ管理用keyを入れ、**Console** を開きます。
+2. collection一覧に `lh_demo_numeric_vectors` があるか確認します。既存なら作成・投入は省略して、最後のqueryだけ実行します。
+3. 新規の場合に限り、Consoleへ次を順に入力します。これは合成ベクトルであり、ERP/MESや画像の自動embeddingではありません。
+
+```http
+PUT collections/lh_demo_numeric_vectors
+{"vectors":{"size":4,"distance":"Cosine"}}
+```
+
+```http
+PUT collections/lh_demo_numeric_vectors/points?wait=true
+{
+  "points": [
+    {"id":1,"vector":[1,0,0,0],"payload":{"label":"synthetic production A"}},
+    {"id":2,"vector":[0.9,0.1,0,0],"payload":{"label":"synthetic production B"}},
+    {"id":3,"vector":[0,0,1,0],"payload":{"label":"synthetic maintenance"}}
+  ]
+}
+```
+
+4. API keyをread-only用へ切り替え、前記の `points/query` を実行します。ID 1、2の順を確認します。
+5. Collectionsから3件とpayloadを確認します。通常の閲覧はread-only keyに戻し、Consoleへ秘密値を書いたリクエストを保存しません。
+
+Consoleの `GET collections` はread-onlyで確認できます。collection作成は管理用keyが必要です。vector次元を後から別モデルへ替える場合は、同じcollectionへ不一致のvectorを投入せず、移行を設計してください。[公式Web UI](https://qdrant.tech/documentation/interfaces/web-ui/)、[v1.20.0の認証設定](https://github.com/qdrant/qdrant/blob/v1.20.0/config/config.yaml)
+
 `infra/poc/seed_tools.py` の `seed_vector(values)` は、小さな 3 点のデモを API 経由で
 作る関数です。同名 collection がすでにある場合は上書きしません。通常起動時の
 自動 seed にはしていないため、会社データをいつの間にか投入する処理にはなりません。
@@ -297,9 +389,48 @@ GUI の job/dataset と系統表示を試すための手動 seed であり、実
 入力・出力、実行時刻を実際のジョブに合わせて送信してください。
 
 OpenSearch を追加する高度な検索は無効です。通常の系統/API/GUI と、専用 PostgreSQL の
-metadata 保存を使います。公式 latest の Marquez 0.50.0 は 2024 年の release で、image は
+metadata 保存を使います。採用する Marquez 0.50.0 は 2024 年の release で、image は
 x86-64 向けです。この profile は Linux x86-64 と PostgreSQL 18.6 で migration / health /
 小さな lineage event を検証しました。ARM 向けの image 再梱包や emulation は行いません。
+
+### 初めて系統を表示する
+
+Marquezは表を自動巡回しません。初回の空画面は障害とは限らず、eventを受信するまでjob/datasetがありません。`seed_tools.py` はDocker内の `marquez` / `qdrant` 名を使う検証用モジュールで、通常のhost端末からそのまま実行するCLIではありません。
+
+次はhostのPython標準ライブラリだけで、同梱の合成eventを送る例です。企業の実ジョブや会社DBは呼びません。private envの `MARQUEZ_API_PORT` を読み、proxyを通さずloopbackへ送ります。`lineage` を有効にしてから実行します。
+
+```bash
+python3 - <<'PY'
+import importlib.util
+import json
+import os
+from pathlib import Path
+from urllib.request import ProxyHandler, Request, build_opener
+
+settings_spec = importlib.util.spec_from_file_location(
+    "private_settings", Path("scripts/settings.py")
+)
+settings = importlib.util.module_from_spec(settings_spec)
+settings_spec.loader.exec_module(settings)
+values = settings.load(os.environ["LAKEHOUSE_ENV_FILE"])
+spec = importlib.util.spec_from_file_location(
+    "lineage_seed", Path("infra/poc/seed_tools.py")
+)
+seed = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(seed)
+port = int(values.get("MARQUEZ_API_PORT", "5000"))
+message = Request(
+    f"http://127.0.0.1:{port}/api/v1/lineage",
+    data=json.dumps(seed.lineage_event()).encode(),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+with build_opener(ProxyHandler({})).open(message, timeout=30) as response:
+    print("Synthetic lineage event:", response.status)
+PY
+```
+
+その後GUIでnamespace `lakehouse-poc` を選び、Jobsから `manual-demo-lineage` を開きます。実行履歴と系統図の入力2・出力1を確認します。Datasetのnamespaceは `iceberg` なので、dataset一覧ではそちらも選択します。空ならnamespaceの選択とAPIのjobs一覧を確認し、coreの表が自動検出されるとは考えません。[Marquez 0.50.0の構成](https://github.com/MarquezProject/marquez/blob/0.50.0/docker-compose.yml)、[Lineage API](https://marquezproject.ai/docs/api/get-lineage/)
 
 ## 6. 保存・再起動・停止時の注意
 
@@ -348,9 +479,10 @@ Superset init が失敗したときは `/tmp/superset-setup-error.log` に owner
 Marquez 0.50.0 を使います。Superset は upstream の SQLAlchemy 1.4.54 を維持して
 Trino driver 0.340.0 を追加し、既存アプリの依存一式を uv sync で消さない方法にしています。
 
-- [Superset documentation](https://superset.apache.org/docs/intro): BI/SQL Lab/API。
-- [Superset releases](https://github.com/apache/superset/releases): 本体の対応版。
-- [JupyterLab changelog](https://jupyterlab.readthedocs.io/en/stable/getting_started/changelog.html): GUI と Python 対応。
-- [Qdrant API](https://api.qdrant.tech/api-reference): vector/payload/search の API。
-- [Marquez documentation](https://marquezproject.ai/docs/introduction): lineage API/GUI。
-- [OpenLineage specification](https://openlineage.io/docs/spec/): 実ジョブから送る event の契約。
+### 今回照合した一次資料
+
+- [Superset 6.1.0の接続手順](https://superset.apache.org/user-docs/6.1.0/databases/) と [Dataset / Explore / Dashboard](https://superset.apache.org/user-docs/6.1.0/using-superset/creating-your-first-dashboard/)。初期化の正本は `superset_init.py`。
+- [JupyterLab 4.6.6のInterface](https://jupyterlab.readthedocs.io/en/stable/user/interface.html) と [Running](https://jupyterlab.readthedocs.io/en/stable/user/running.html)。照合時のstable表示は4.6.6。実採用版は `requirements-notebooks.lock` で固定。
+- [Spark 4.1.4 Monitoring](https://spark.apache.org/docs/4.1.4/monitoring.html)。UI・event logの公式仕様と `lakehouse_session.py` を照合。
+- [Qdrant v1.20.0の設定](https://github.com/qdrant/qdrant/blob/v1.20.0/config/config.yaml)、[Security](https://qdrant.tech/documentation/security/)、[Web UI](https://qdrant.tech/documentation/interfaces/web-ui/)。認証の2 keyはComposeで明示設定。
+- [Marquez 0.50.0 README](https://github.com/MarquezProject/marquez/blob/0.50.0/README.md)、[同tagのCompose](https://github.com/MarquezProject/marquez/blob/0.50.0/docker-compose.yml)、[Lineage API](https://marquezproject.ai/docs/api/get-lineage/)。上流のPG例は14で、このキットの18.6との小規模実機確認とは別の根拠。

@@ -1,6 +1,12 @@
 # 平時・更新・復旧の運用手順
 
-この文書は単一ホスト構成の手作業runbookです。自動バックアップ、無停止更新、DB migrationの自動巻き戻しは実装していません。導入時は [START-HERE.md](START-HERE.md)、設定値は [CONFIGURATION.md](CONFIGURATION.md)、画面操作は [DEMO-GUI.md](DEMO-GUI.md) を参照します。
+2026-11-10監査。この文書は単一ホスト構成の手作業runbookです。自動バックアップ、無停止更新、DB migrationの自動巻き戻しは実装していません。導入時は [START-HERE.md](START-HERE.md)、設定値は [CONFIGURATION.md](CONFIGURATION.md)、画面操作は [DEMO-GUI.md](DEMO-GUI.md) を参照します。
+
+## 操作する場所と管理の正本
+
+レイクハウスを動かすホストのrepoルートで、通常の配置利用者がprivate設定を選びます。Docker操作権が必要です。daemon/Samba/Dokployホスト設定の変更だけ管理者が別途行います。CLIかDokployのどちらで配置を管理するか決め、同じstackを別名で同時起動しません。`COMPOSE_PROJECT_NAME`、Dokployの `appName`、利用中volumeの対応を運用台帳に残します。
+
+本書のCLI起動停止例はCLI管理用です。Dokploy管理では同じ既存アプリの操作に読み替えます。backupのexec等をCLIで行う場合も、同じcommit・appName・private env・7Composeを使う保守作業として管理者が統一します。
 
 ## 毎日の確認
 
@@ -26,7 +32,7 @@ GUIの「設定を保存」はprivateファイルの保存です。稼働中コ�
 
 1. 変更項目・理由・担当・反映する環境を記録します。秘密値自体は記録へ貼り付けません。
 2. private設定を安全にバックアップします。ファイル0600、専用ディレクトリ0700を維持します。
-3. Dokployを正本に配置する場合は、そのEnvironmentの非公開envと、GUIが保存したprivateファイルを整合させます。UIの設定を別の古いenvで上書きしないようにします。
+3. Dokployを正本に配置する場合は、そのEnvironmentの非公開envと、GUIが保存したprivateファイルを整合させます。正規化された `LAKEHOUSE_NO_PROXY` を含むbypass3項目も引き継ぎます。UIの設定を別の古いenvで上書きしないようにします。
 4. `plan`で構成を確認し、実行中ジョブを終了させてから同じアプリを再配置します。
 5. health、GUI/API認証、データ件数、再配置待ち表示を確認します。
 
@@ -78,9 +84,11 @@ Dokployで管理している場合は対象アプリの停止操作を使い、C
 
 移行前に全volumeの解決名を既存の実名と照合し、旧コンテナを全て停止してから一つの新配置を起動します。prefixはvolumeをrename・copyしません。誤ったprefixで空のDBが見えた場合は初期化を進めず、設定と実体を確認します。別環境やPreviewへ同じprefixを共有しません。
 
-core・任意サービスの9個に加え、CDC有効時はKafkaとCDC状態用volume等も対象です。追加したprofileや外部mountを含め、その環境の実際の一覧を確認します。
+volume定義は全7Composeで16キーです。core7、compute2、Airflow2、CDC2、PoC3のうち利用中のものと、landing/private設定/notebook等のbind mountを含め、実際の保存先を確認します。[全キー一覧](CONFIGURATION.md#data_volume_prefixを使う場面)
 
 ## 更新とロールバック
+
+既存サイトのprivate設定は、通常の配置利用者が `python3 scripts/configure.py --output /absolute/private/site.env --upgrade` で更新します。不足キー追加とbypass3項目正規化を行い、既存の他の値は保持します。変更前は隣の `.before-upgrade`（0600）に控えます。既存控えは上書きしないのでprivateな別名へ保管してから次の変更を行います。変更不要ならno-opです。GUIの保存だけでEngine・image・mountは更新されません。[会社VM更新](COMPANY-UPDATE.md)
 
 更新前に、現在のcommit、イメージdigest、private設定の版、利用中profile、実volume名、復元点を記録します。変更先は別環境で `plan`、health、往復検証、メダリオン、必要なSpark／Airflow／CDCの試験を通してから本環境へ反映します。
 
@@ -104,6 +112,8 @@ DBだけ、S3だけ、暗号鍵だけの保管では復旧できません。Iceb
 | Prometheus | 停止したTSDB volumeと設定 |
 | ランディング | CSV／JSON／画像、完了マーカー、manifest |
 | CDC有効時 | Kafkaデータ・Connect offset/config/status・schema history、CDC状態、private connector設定 |
+| compute有効時 | Spark event log/work volume、UID/GIDとjob commit。未完了jobの自動再実行はしない |
+| PoC有効時 | Superset metadata DBとSECRET_KEY、Qdrant volumeと鍵、Marquez DB、Notebook host dirと認証 |
 | 共通 | private設定、利用したGit commit、digest/lock、実volume名の対応表 |
 
 GUI/API、ソース投入、カタログサーバー、Trino、Spark、n8n、Airflow、CDC等のwriterを止めます。論理dumpを取る間は対象DBだけを動かし、cold copyを取る前にはDB・S3・Grafana等も正常停止します。Grafanaの既定SQLiteをファイルコピーする場合も停止が必要です。[Grafana公式バックアップ手順](https://grafana.com/docs/grafana/latest/administration/back-up-grafana/)
@@ -114,14 +124,27 @@ GUI/API、ソース投入、カタログサーバー、Trino、Spark、n8n、Air
 
 ```bash
 lakehouse_compose() {
-  docker compose --env-file "$LAKEHOUSE_ENV_FILE" \
-    -f infra/lakehouse/compose.yaml \
-    -f infra/compute/compose.yaml \
-    -f infra/orchestration/compose.yaml \
-    -f infra/demo/compose.yaml \
-    -f infra/cdc/compose.yaml "$@"
+  python3 - "$LAKEHOUSE_ENV_FILE" "$@" <<'PYTHON'
+import subprocess
+import sys
+from pathlib import Path
+
+from scripts.settings import environment, load
+
+root = Path.cwd()
+values = load(sys.argv[1])
+command = ["docker", "compose", "--env-file", sys.argv[1]]
+for name in (
+    "lakehouse", "compute", "orchestration", "demo", "cdc", "poc", "mcp"
+):
+    command.extend(["-f", str(root / "infra" / name / "compose.yaml")])
+subprocess.run(command + sys.argv[2:], env=environment(values), check=True)
+PYTHON
 }
 ```
+
+この関数はrepoルートでのみ使い、Pythonは検査済みsite値を子プロセスへ渡します。古いshellのproxyやproject値を直接Composeへ混入させません。新しいstackを起動せず、既存DBへのexecと確認に使います。
+
 
 writer停止後に、必要なDBについてだけ実行します。未使用profileのDBを起動する必要はありません。新しい保存先を選び、既存のarchiveへ上書きしません。
 
@@ -143,7 +166,7 @@ lakehouse_compose exec -T airflow-db \
   pg_dump -U airflow -d airflow -Fc > "$BACKUP_DIR/airflow.dump"
 ```
 
-各コマンドの終了コードとstderrを確認します。リダイレクト先が存在するだけで成功とは判断しません。`pg_restore --list`等でarchiveを検査し、ファイルのハッシュを記録します。`pg_dump`は単一DBの整合した論理exportですが、S3や別DBと同時点になる機能やcluster共通roleの保管は含みません。[PostgreSQL公式pg_dump](https://www.postgresql.org/docs/current/app-pgdump.html)
+各コマンドの終了コードとstderrを確認します。リダイレクト先が存在するだけで成功とは判断しません。`pg_restore --list`等でarchiveを検査し、ファイルのハッシュを記録します。`pg_dump`は単一DBの整合した論理exportですが、S3や別DBと同時点になる機能やcluster共通roleの保管は含みません。[PostgreSQL公式pg_dump](https://www.postgresql.org/docs/18/app-pgdump.html)
 
 ### 停止したvolumeを保管する
 
@@ -162,3 +185,16 @@ lakehouse_compose exec -T airflow-db \
 5. 復元所要時間・復元できた時点・不足した対象を記録し、定期処理は確認後に一つずつ有効化します。
 
 バックアップファイルを作成した段階と復元試験成功を分けて記録します。本手順の記載だけで、各導入先の復旧試験が済んだことにはなりません。
+
+
+## 監査した版と公式資料
+
+coreのPostgreSQL18.6、n8n2.46.7、Kafka4.4.0／Debezium3.7.1.Final、Dokploy0.31.0を対象に公開Composeとlockを照合しました。hostのDocker Engine29系／Compose5.6.1は導入先の実版を記録します。AirflowやPoC側のDB majorは各Composeを確認し、そのコンテナに含まれる対応pg_dumpを使います。
+
+| 一次資料 | 本手順の対応 |
+| --- | --- |
+| [Compose project名](https://docs.docker.com/compose/how-tos/project-name/)、[Docker volume](https://docs.docker.com/engine/storage/volumes/#back-up-restore-or-migrate-data-volumes) | 同じデータ領域への二重writerを避け、実volume名を記録 |
+| [PostgreSQL18 pg_dump](https://www.postgresql.org/docs/18/app-pgdump.html) | 論理dumpの成功と復元試験を分ける |
+| [Kafka4.4 Connect設定](https://kafka.apache.org/44/configuration/kafka-connect-configs/)、[Debezium3.7](https://debezium.io/documentation/reference/3.7/connectors/sqlserver.html) | offset・schema履歴・source側保持を一組で扱う |
+
+公式の一般手順と、このリポジトリで実装した範囲は区別します。実会社のbackup／restore試験は導入先で記録してください。

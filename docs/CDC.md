@@ -10,6 +10,15 @@ Kafbat UI を起動します。通常のファイル投入と、SELECT だけの
 1 なので、ノードやディスクの故障に対する冗長性はありません。会社の継続運用へ
 進む前に、DBA と保持期間・復旧方法・認証・監視を決めてください。
 
+2026-11-10監査。固定版はKafka4.4.0／Debezium3.7.1.Final／Kafbat UI1.5.0です。会社SQL Serverは既存の外部サーバーを使うため、DBAがserver版・edition・CDC対応を個別に確認します。
+
+| 作業する場所 | 担当と変更するもの | 次へ進む条件 |
+| --- | --- | --- |
+| SQL Serverの管理接続 | DBAがレビュー済みSQLでDB/6表/role/Agent/保持を準備 | capture readerで取得可能、Agent稼働、TLSと保持期間を確認 |
+| レイクハウスホストのrepoルート | 通常の配置利用者がprivate site.envと外部mappingを保存 | env0600、CDC dir0700、mappingをWORKER_UID/GIDで読める |
+| 既存のCLIまたはDokploy配置 | 選んだ一つの管理入口からcdc profileを起動 | register成功、connector/task RUNNING、consumer進捗 |
+| 許可端末の画面／SQL | 管理者がlag・raw/current/Goldを照合 | 導入先の受入記録が揃う |
+
 ## 1. どこに保存されるか
 
 ```mermaid
@@ -72,6 +81,8 @@ DBA が対象 DB、schema、表、取得列、capture reader を実環境に合�
 既存 capture instance があれば上書きせず停止するので、その設定を DBA が確認します。
 この SQL は connector や consumer から自動実行しません。
 
+DB単位CDCの有効化はSQL Server側のsysadmin権限が必要です。DBの有効化後、表のcapture instance作成はDBAのdb_owner権限で実施します。これは**準備するDBA**の権限で、常時稼働するcapture readerに同じroleを付ける説明ではありません。[Microsoft CDC準備](https://learn.microsoft.com/en-us/sql/relational-databases/track-changes/enable-and-disable-change-data-capture-sql-server?view=sql-server-ver17)
+
 準備には次が含まれます。
 
 1. 対象 DB と 6 table の CDC 有効化、SQL Server Agent の稼働確認。
@@ -91,11 +102,27 @@ Agent の状態確認にサーバー全体の参照権限が必要な環境で�
 
 ## 4. 外部 private 設定を用意する
 
+既存siteは先に通常の配置利用者が更新します。秘密値を再生成する新規ファイルで置き換えません。
+
+```bash
+python3 scripts/configure.py --output /absolute/private/site.env --upgrade
+```
+
+変更前の `.before-upgrade` が既にあればprivateな一意の別名へ保管してから再実行します。詳細は [設定更新](CONFIGURATION.md#更新時に使う判断) です。
+
 [導入手順](DEPLOYMENT.md) で生成した private `site.env` を編集します。
 `CDC_CONFIG_DIR` はその checkout 外の所有者だけが入れるディレクトリにし、
 `table-map.json` を保存します。consumer/register は `WORKER_UID/GID` で読むので、
 そのユーザーに読み取りを許可してください。資格情報は env ファイルに保管し、
-mapping に埋め込まないでください。
+mapping に埋め込まないでください。次は雛形を新しい専用directoryへ置く例で、`CDC_CONFIG_DIR` と同じpathを選びます。
+
+```bash
+install -d -m 0700 /absolute/private/cdc
+install -m 0600 infra/source/sqlserver-tables.example.json \
+  /absolute/private/cdc/table-map.json
+```
+
+エディターで6表すべての実名・取得列を対応付け、DBAが準備したcapture設定と一致させます。registry/image/build用HTTP proxyはsiteのcanonical設定を使い、SQL用truststoreとは別に扱います。
 
 | 項目 | 内容 |
 | --- | --- |
@@ -123,7 +150,7 @@ Connect には truststore ファイル単体を read-only mount します。
 
 JVM 標準 CA を使う場合は `TRUSTSTORE` を空にします。Compose は未使用の target に
 Linux の `/dev/null` を read-only mount し、connector は trustStore/password 項目を
-送信しません。host の CA bundle の場所や、存在しない private file に依存しません。
+送信しません。host の CA bundle の場所や、存在しない private file に依存しません。この `/dev/null` は**SQL用truststore未指定時のruntime bind**です。build用の `corporate_ca` とn8n用CAの空入力は別で、0バイトregular fileの `infra/proxy/empty-ca.pem` を使います。両者を同じものとして置き換えません。
 `CDC_TEST_TRUST_SERVER_CERTIFICATE=true` は loopback 接続かつ `lh_cdc_demo_` DB だけに
 限定したテスト例外です。会社接続には使えません。
 
@@ -135,7 +162,7 @@ API や GUI で扱う接続設定を管理者以外に公開しないでくだ�
 
 ## 5. 起動して状態を見る
 
-private 設定と mapping を準備した後、通常の入口を使います。
+private設定とmapping、landing、core資格情報を準備した後、CLI管理を選んだ場合だけ通常の入口を使います。Dokploy管理なら同じprivate値とcanonicalを既存アプリのEnvironmentへ反映し、同じアプリで再配置します。CLIから別名の二重起動をしません。
 
 ```sh
 export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
@@ -148,6 +175,16 @@ core の warehouse bootstrap が完了してから consumer が起動します�
 再配置時は既存nameの `GET /connectors/{name}/config` を読み戻し、候補設定の全key・値と厳密比較します。Connectが追加する `name` だけは指定名と一致することを検証して除外します。文字列のtrimや型変換、他の追加defaultの無視はしません。
 
 完全一致なら `registered: true, unchanged: true` で正常終了します。設定、source DB、topic、offset、schema historyを変更せず、既存の取り込み位置を維持します。同名 connector の設定が違う場合、nameが不一致の場合、認証・HTTP・読戻しに失敗した場合は停止し、GUI の編集を自動で元に戻しません。更新・削除・再作成やoffset初期化へ切り替える処理はなく、PUT/PATCH/DELETEを送りません。差異があるときはprivateの現在設定と候補を管理者が照合し、再配置のためだけに既存connectorを消さないでください。
+register成功はconnector設定の登録／一致確認までです。DB接続、初回snapshot完了、consumerの反映成功は別に確認します。registerの正常終了はExited(0)で構いません。connector/taskの状態は固定した既存名でread-onlyに調べます。
+
+```bash
+# port/connector名を変えたサイトではprivateの設定値に合わせる。
+curl --noproxy '*' --fail --silent --show-error \
+  http://localhost:8083/connectors/factory-source/status
+```
+
+期待はconnectorと全taskの `RUNNING` です。応答には障害時の内部情報が含まれ得るためprivateに保管します。`GET /config` の出力を公開ログへ貼りません。[Kafka4.4のREST仕様](https://kafka.apache.org/44/kafka-connect/user-guide/#rest-interface)
+
 `cdc-consumer` は失敗時の無限再起動を避けるため、異常終了後は operator が確認して
 再開します。通常の host 再起動後も、状態を確認して consumer を明示起動してください。
 
@@ -308,8 +345,13 @@ Kafka 4.4.0、Debezium 3.7.1.Final、Kafbat UI v1.5.0、Python Kafka client 2.16
 組み合わせています。client の追加依存は hash 付き lock、基盤依存は既存 worker の
 lock を使います。更新時は SQL Server の対応版と protocol を再確認してください。
 
-- [Debezium releases](https://debezium.io/releases/): stable と対応する runtime。
+- [Debezium3.7.1.Final固定source](https://github.com/debezium/debezium/tree/v3.7.1.Final): 採用するconnector実装。
 - [SQL Server connector](https://debezium.io/documentation/reference/3.7/connectors/sqlserver.html): CDC 設定、TLS、LSN、snapshot、権限、schema history。
-- [Kafka downloads](https://kafka.apache.org/community/downloads/): Kafka の公開 release。
+- [Kafka4.4設定](https://kafka.apache.org/44/configuration/kafka-connect-configs/): Connectの永続topic等。broker4.4.0とDebezium image内のConnect runtimeは区別する。
 - [Kafbat UI configuration](https://ui.docs.kafbat.io/configuration/configuration-file): cluster と Connect 接続。
 - [Kafbat UI releases](https://github.com/kafbat/kafka-ui/releases): UI の版と変更点。
+
+- [Microsoft JDBCのTLS](https://learn.microsoft.com/en-us/sql/connect/jdbc/connecting-with-ssl-encryption?view=sql-server-ver17): CA検証とhostnameの意味。
+- [Microsoft CDC有効化](https://learn.microsoft.com/en-us/sql/relational-databases/track-changes/enable-and-disable-change-data-capture-sql-server?view=sql-server-ver17): DBA準備と権限。
+
+起動停止・backupは [OPERATIONS.md](OPERATIONS.md) に従います。connector設定が異なる場合の拒否は保護動作です。再配置を通すためにDELETE・offset初期化へ進まず、DBAと管理者が既存設定との差を確認します。

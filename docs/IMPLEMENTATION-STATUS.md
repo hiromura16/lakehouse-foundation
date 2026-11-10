@@ -28,6 +28,10 @@
 | GitHubの見栄えと図 | 公式ロゴ7種・SVG構成図2枚、詳細文書 | SVG hero・実CI badge・機能ナビ・説明文書を公開 |
 | Cloudflare用途 | Tunnel/Access/R2/Basin/AI機能の適用案 | 資格情報・外部公開・課金は未設定。採用時に別途接続確認 |
 
+## 文書の版監査
+
+2026-11-10に全公開Markdownを再監査しました。Dokploy 0.31.0の固定tagで画面名、生成後appName、サービス変数と `.env` 生成を確認し、初心者の作業順を [START-HERE.md](START-HERE.md) に統一しました。他の採用版の一次資料と文書ごとの照合内容は [REFERENCES.md](REFERENCES.md) にあります。今回の文書修正のためにlive環境を更新した、または会社接続を再検証したという意味ではありません。
+
 ## 完了時に確認すること
 
 公開ソースの品質検査、Git履歴の秘密値検査、原本Dockerfileからのbuild、各GUIとAPI、疑似データの一連経路、永続データの保持を確認し、[検証記録](VALIDATION.md) と機械可読結果へ反映します。

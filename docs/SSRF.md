@@ -1,6 +1,10 @@
 # SSRF対策と内部接続の設定
 
-更新日: 2026-11-10（JST）。SSRFは、画面やワークフローに入れたURLを使って、サーバーから意図しない宛先へ通信させる攻撃です。この基盤では、n8nの宛先制御、固定API、プロキシ、ネットワーク制限をそれぞれ設定します。
+監査日: 2026-11-10（UTC）。対象はn8n2.46.7です。SSRFは、画面やワークフローに入れたURLを使って、サーバーから意図しない宛先へ通信させる攻撃です。この基盤では、n8nの宛先制御、固定API、プロキシ、ネットワーク制限をそれぞれ設定します。
+
+## 実行場所と対象
+
+配置担当がレイクハウスホストのrepoルートでprivate `site.env` を編集し、既存の同じCLI/Dokploy配置へ反映します。n8n2.46.7の [固定source](https://github.com/n8n-io/n8n/blob/n8n%402.46.7/packages/%40n8n/config/src/configs/ssrf-protection.config.ts) と、[公式release](https://github.com/n8n-io/n8n/releases/tag/n8n%402.46.7) を照合しました。hostのFW全体や全プログラムの通信を、この設定だけで制御する構成ではありません。
 
 ## 最初に設定する値
 
@@ -34,7 +38,7 @@ n8n本体は無効なCIDRを警告して飛ばす場合があります。本基�
 
 ## GUIとDokployで反映する
 
-1. 既存設定は、profileや許可先を増やす前に `configure.py --upgrade` で不足キーを追加します。既存秘密値と変更前の0600ファイルを保持します。
+1. 既存設定は、profileや許可先を増やす前に、通常の配置利用者が `python3 scripts/configure.py --output /absolute/private/site.env --upgrade` を実行します。既存秘密値を保持し、canonical bypassも正規化します。必要な変更がある場合は隣の `.before-upgrade` を作り、既存backupは上書きしません。[更新手順](COMPANY-UPDATE.md)
 2. 操作ポータルの設定で「SSRF・外向き通信」を開き、必要な内部名だけを設定して保存します。
 3. 保存結果の「反映待ち」を確認します。保存はn8nの再起動ではありません。
 4. 管理者がprivate envとDokploy Environmentを一致させて再配置します。CLIで管理する場合は次を実行します。
@@ -53,12 +57,12 @@ n8n本体は無効なCIDRを警告して飛ばす場合があります。本基�
 | 仕組み | 決めること |
 | --- | --- |
 | `HTTP_PROXY` / `HTTPS_PROXY` | どのproxyを経由して通信するか |
-| `NO_PROXY` / `no_proxy` | どの宛先をproxy経由にしないか |
+| `LAKEHOUSE_NO_PROXY` → `NO_PROXY` / `no_proxy` | どの宛先をproxy経由にしないか。必須内部名とprivate追加分を正規化 |
 | SSRFのallow/block | アプリがその宛先へ通信してよいか |
 | 企業CA・TLS hostname検証 | 通信相手の証明書を信頼できるか |
 | FW・egress policy | ネットワークとしてどの通信を通すか |
 
-`NO_PROXY=worker` でもSSRFの許可にはなりません。逆にhostnameのSSRF許可だけではproxy経路や企業CAは設定されません。n8nは小文字のproxy変数を優先するため、大文字・小文字を揃えます。会社proxyを経由する場合も、許可済み接続と拒否対象の両方を実際のHTTP Requestノードで確認します。[企業proxy・CA手順](COMPANY-PROXY.md)
+`worker` がcanonical bypassに含まれていてもSSRFの許可にはなりません。逆にhostnameのSSRF許可だけではproxy経路や企業CAは設定されません。n8nは小文字のproxy変数を優先するため、大文字・小文字を揃えます。会社proxyを経由する場合も、許可済み接続と拒否対象の両方を実際のHTTP Requestノードで確認します。[企業proxy・CA手順](COMPANY-PROXY.md)
 
 ## この基盤の他の通信制限
 
@@ -86,7 +90,10 @@ APIのBearer認証と、MCPのHost検査は別の保護です。`MCP_ALLOWED_HOS
 
 拒否ログの宛先・接続情報はprivateに保管します。実会社の宛先を公開issueへ貼りません。n8nの保護範囲はnodeや実装によって異なるため、独自node・raw socket・DB接続・Sparkの任意コードに、同じHTTP保護が自動適用されるとは扱いません。FWとネットワークの分離、workflow編集権限、資格情報の権限も合わせて運用します。
 
-本書の値は固定したn8n版の公式仕様と実コンテナで照合します。会社のproxy・DNS・node追加後には導入先で同じ受入を行ってください。
+本書の値は固定したn8n2.46.7の設定sourceと公開Composeを照合しました。公式latest文書との差が出た場合は採用tagを確認します。会社proxy・DNS・node追加後の許可／拒否結果は導入先で記録してください。
 
 
 検証環境では `automation,monitoring` を有効にし、Manual Trigger → HTTP Request（認証なし）の試験workflowで `http://prometheus:9090/-/ready` を指定して、restrictedエラーを確認しました。これは拒否されることが期待結果です。同じ環境の同梱medallion workflowは `worker` の狭い例外で成功しました。試験workflowはGUIのArchive後にDeleteし、実業務workflowへ混ぜません。
+
+
+確認の順は、n8nログイン → 手動workflowのworker成功 → 認証情報なしの未許可内部health拒否 → 会社proxy経路で同じ許可／拒否、です。画面上のエラー種類と実行IDを記録し、宛先・token・業務payloadは公開しません。設定を戻した場合も同じアプリを再配置してから再試験します。

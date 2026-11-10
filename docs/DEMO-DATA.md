@@ -1,5 +1,7 @@
 # MES・ERPのダミーデータ投入
 
+確認日: 2026-11-10（JST）。GUIで始める場合は [初回ガイド](START-HERE.md) → [ダミーGUI](DEMO-GUI.md) の順に進めます。以下はCLIから素材だけを作る手順です。
+
 `generate-demo.py` は工場MES・ERPに似た原データを作り、ランディングディレクトリか、専用のSQL Server検証DBへ投入するだけのツールです。取り込み、メダリオン変換、Trino、Dokployは呼び出しません。会社の実データを参照する必要はありません。
 
 1件の製造指図・改訂実績・分割出荷を追う説明は [MEDALLION.md](MEDALLION.md)、n8n等からの手動実行は [GUI-WALKTHROUGHS.md](GUI-WALKTHROUGHS.md) を参照してください。
@@ -49,8 +51,10 @@ python3 scripts/generate-demo.py \
 この機能だけ追加ドライバが必要です。
 
 ```sh
-uv venv --python 3.12 /srv/demo-venv
-uv pip sync --python /srv/demo-venv/bin/python requirements-demo.txt
+uv venv --python 3.12 "$HOME/.local/share/lakehouse-foundation/demo-venv"
+uv pip sync \
+  --python "$HOME/.local/share/lakehouse-foundation/demo-venv/bin/python" \
+  requirements-demo.txt
 ```
 
 管理者が先に専用の検証DBと書き込み用ユーザーを用意します。生成器はDBを作りません。会社の読み取り接続を示す `SOURCE_SQLSERVER_*` を書き込みには使わず、別の非公開envファイルに次を設定します。ファイルはリポジトリ外・0600にします。
@@ -69,7 +73,8 @@ SOURCE_SQLSERVER_DATABASE=CompanyProduction
 `SOURCE_SQLSERVER_DATABASE` は書き込み禁止対象のDB名です。会社用設定と同じファイルを使う場合も、書き込みに使う資格情報は `DEMO_SQLSERVER_*` だけです。`master`・`model`・`msdb`・`tempdb` と、設定済みの会社ソースDB名を拒否します。書き込み先が会社の業務DBと別であることを管理者が確認してください。
 
 ```sh
-/srv/demo-venv/bin/python scripts/generate-demo.py \
+"$HOME/.local/share/lakehouse-foundation/demo-venv/bin/python" \
+  scripts/generate-demo.py \
   --destination sqlserver \
   --output /srv/demo-run-metadata \
   --env-file /srv/private/demo.env \
@@ -80,7 +85,7 @@ SOURCE_SQLSERVER_DATABASE=CompanyProduction
 
 各SQL表も全列 `nvarchar(max)` の生データ用ステージングです。異常な型の文字列と重複版を検証するための設計であり、本番MES・ERPの型付きスキーマ、制約、インデックス、更新負荷、CDC性能の再現ではありません。型・CDCの試験は実ソース契約に対応した別の試験で行います。
 
-接続は暗号化を必須にし、通常はCAと証明書のホスト名も検証します。`DEMO_SQLSERVER_CA_FILE` はOSの信頼ストアを使う `system`、または社内CAのPEMファイルを指定します。FreeTDSの `require` は暗号化を要求し、証明書検証には `ca file` の指定も必要なので、ツールはプロセス専用設定で両方を指定します。[FreeTDS公式設定](https://www.freetds.org/userguide/freetdsconf.html)、[pymssqlの暗号化引数](https://github.com/pymssql/pymssql/blob/master/docs/ref/pymssql.rst)
+接続は暗号化を必須にし、通常はCAと証明書のホスト名も検証します。`DEMO_SQLSERVER_CA_FILE` はOSの信頼ストアを使う `system`、または社内CAのPEMファイルを指定します。FreeTDSの `require` は暗号化を要求し、証明書検証には `ca file` の指定も必要なので、ツールはプロセス専用設定で両方を指定します。[FreeTDS公式設定](https://www.freetds.org/userguide/freetdsconf.html)、[pymssqlの暗号化引数](https://github.com/pymssql/pymssql/blob/v2.4.6/docs/ref/pymssql.rst)
 
 `DEMO_SQLSERVER_HOSTNAME_IN_CERTIFICATE` は省略可能です。接続alias/IPと証明書名が異なる場合に限り、管理者が確認した証明書の照合名を指定します。英数字・`_`・`.`・`-` の1〜253文字を許可し、改行や設定文の挿入は拒否します。FreeTDSの `certificate hostname` を使ってCA検証と明示名の照合を維持し、空欄なら接続hostを照合します。[FreeTDS公式設定](https://www.freetds.org/userguide/freetdsconf.html)
 
@@ -137,3 +142,9 @@ python3 scripts/generate-demo.py \
 標準workerは1原本16MiB以下、契約付きCSV/JSONは100000行以下です。ファイルを大きくする場合は、生成後のbyte数と実際の明細件数を先に確認します。`--force` は上書きの承認だけで、取り込み上限を解除しません。
 
 同じパスを更新すると、そのファイル由来の現在のBronze行を置き換えます。ファイルやreadyを削除しただけでは、既に取り込んだ行は消えません。全件ファイルの置換と、DBのINSERT/UPDATE/DELETEイベントの追跡は別の契約です。詳細は [再投入・更新・削除](MEDALLION.md#8-完了マーカー再投入更新削除) を参照してください。
+
+## 読み取り用と投入用の接続を分ける
+
+pymssql **2.4.6** を [requirements-demo.txt](../requirements-demo.txt) に固定し、TLSは [同版の接続API](https://github.com/pymssql/pymssql/blob/v2.4.6/docs/ref/pymssql.rst) と [FreeTDS設定](https://www.freetds.org/userguide/freetdsconf.html) を照合しています。DB管理者が用意する通常生成用writerの具体的な権限は [SOURCE-SQLSERVER.md](SOURCE-SQLSERVER.md) を参照します。CSV/JSONだけの生成には追加Python依存は不要です。
+
+通常のGUI生成は毎回新しいschemaへINSERTします。既存6行のUPDATE/DELETEを試したい場合は [CDC専用DB準備](CDC.md) の別フローを使います。DB作成・CDC有効化・権限付与はGUI投入から実行しません。製品の版と本基盤固有の入力契約の違いは [REFERENCES.md](REFERENCES.md) に記録しています。
