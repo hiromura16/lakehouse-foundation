@@ -85,7 +85,12 @@ jobs:
       shell: bash
       run: |
         set -Eeuo pipefail
-        for sql_file in infra/sqlserver/*.sql; do
+        sql_files=(
+          infra/sqlserver/*.sql
+          infra/sqlserver/diagnostics/*.sql
+          tests/integration/sqlserver_collation/*.sql
+        )
+        for sql_file in "${sql_files[@]}"; do
           sqlfluff parse --dialect tsql "$sql_file" > /dev/null
         done
     - name: Validate all Compose profiles without starting services

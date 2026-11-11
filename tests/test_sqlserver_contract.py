@@ -410,7 +410,12 @@ class FixedSqlContractTests(unittest.TestCase):
                     "r.owning_principal_id=DATABASE_PRINCIPAL_ID(N'dbo')", sql
                 )
                 self.assertIn("m.member_principal_id", sql)
-                self.assertIn("p.permission_name<>N'SELECT'", sql)
+                self.assertRegex(
+                    sql,
+                    r"p\.permission_name\s+COLLATE\s+"
+                    r"Latin1_General_100_BIN2\s*<>\s*N'SELECT'\s+"
+                    r"COLLATE\s+Latin1_General_100_BIN2",
+                )
                 self.assertIn("p.class<>1 OR p.minor_id<>0", sql)
                 self.assertIn("p.state<>'G'", sql)
                 self.assertIn("@AllowedReadObjects", sql)

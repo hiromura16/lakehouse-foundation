@@ -2,6 +2,84 @@
 
 import streamlit as st
 
+CDC_ERROR_CODES = {
+    "CDC_STARTING",
+    "CDC_REBUILD_REQUIRED",
+    "CDC_QUERY_REVIEW_REQUIRED",
+    "CDC_PROCESSING_FAILED",
+    "CDC_KAFKA_ACK_FAILED",
+    "CDC_REBUILD_FAILED",
+}
+CONNECT_STATES = {
+    "RUNNING",
+    "PAUSED",
+    "FAILED",
+    "UNASSIGNED",
+    "DESTROYED",
+    "RESTARTING",
+}
+
+
+def render_cdc_lifecycle(consumer, connector):
+    """Separate cache availability from observed processing lifecycle."""
+
+    def flag(value):
+        return (
+            "true"
+            if value is True
+            else ("false" if value is False else "unknown")
+        )
+
+    st.write(
+        "consumer: ready="
+        + flag(consumer.get("ready"))
+        + " / blocked="
+        + flag(consumer.get("blocked"))
+        + " / busy="
+        + flag(consumer.get("busy"))
+    )
+    if consumer.get("blocked") is True:
+        st.error("consumerはblockedです。手動確認まで処理を再開しません。")
+    elif consumer.get("ready") is False:
+        st.warning("consumerはreadyではありません。処理完了を示しません。")
+    elif consumer.get("ready") is not True:
+        st.info("consumerの稼働可否は未観測です。正常とは判断できません。")
+    code = consumer.get("error_code")
+    if isinstance(code, str) and code in CDC_ERROR_CODES:
+        st.error("consumer診断: " + code)
+    elif code is not None:
+        st.warning("consumer診断: unknown（詳細は表示しません）")
+    state = connector.get("connector_state")
+    state = (
+        state
+        if isinstance(state, str) and state in CONNECT_STATES
+        else ("unknown")
+    )
+    st.write("Connect connector稼働状態: " + state)
+    tasks = connector.get("tasks") or []
+    selected = []
+    for task in tasks[:64]:
+        if not isinstance(task, dict):
+            continue
+        task_id, state = task.get("id"), task.get("state")
+        if type(task_id) is not int or not 0 <= task_id <= 2**63 - 1:
+            continue
+        selected.append(
+            {
+                "id": task_id,
+                "state": state
+                if isinstance(state, str) and state in CONNECT_STATES
+                else "unknown",
+            }
+        )
+    if selected:
+        st.dataframe(selected, hide_index=True, width="stretch")
+        if any(task["state"] != "RUNNING" for task in selected):
+            st.warning("Connect taskにRUNNING以外の状態があります。")
+    else:
+        st.info("Connect taskの稼働状態は未観測です。")
+    st.caption("観測できたことは、稼働正常や分析表の整合性を意味しません。")
+
 
 def render_sql_source(call_api):
     """Show initialization diagnostics before source-only test mutations."""
@@ -164,6 +242,7 @@ def render_sql_observations(call_api):
             + " / Connect観測: "
             + cdc["connector"]["state"]
         )
+        render_cdc_lifecycle(consumer, cdc["connector"])
         if not cdc["configured"]:
             st.info("固定CDCのprofile・mode・準備状況を確認します。")
         st.write(

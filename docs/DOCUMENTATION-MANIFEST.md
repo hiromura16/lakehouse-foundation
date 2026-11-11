@@ -85,6 +85,7 @@
 | [段階的な監視基盤の配置と受入](<OBSERVABILITY.md>) | 監視のhost権限、create-only GUI、閾値、検証と実機受入を分けて段階導入する。 | monitoringを追加・更新し、host mountと未検証項目を確認するとき。 | active |
 | [平時・更新・復旧の運用手順](<OPERATIONS.md>) | 平時点検・更新・backup・復旧を、鍵・DB・object・volumeの状態を揃えて行う。 | 運用を引き継ぐとき、更新前、障害復旧前に実施順序を確認するとき。 | active |
 | [採用版の公式リファレンスと文書監査](<REFERENCES.md>) | 採用版の公式仕様・tag・公開実装・検証記録の根拠を照合する。 | 画面名や設定の仕様を確認するときや、依存更新の調査を始めるとき。 | reference |
+| [SQL Server DDLの照合順序と途中失敗からの再開](<SQLSERVER-DDL-RECOVERY.md>) | error468・51019の残存診断、exact checkerの保護、CDC部分完了とWindows client別の安全な再開を整理する。 | DBA用003が失敗した後や、混在collationでCDCの適用/無効化を再開するとき。 | active |
 | [症状から確認する](<TROUBLESHOOTING.md>) | 観測した症状から設定・起動・通信・job・データの失敗箇所を絞り込む。 | 成功条件を満たさないときや、削除や再生成を行う前に原因を調べるとき。 | reference |
 | [検証記録](<VALIDATION.md>) | 既存の合成環境・公開clone・CI・互換性修正で確認した条件と限界を読む。 | 報告に結果を引用するときや、変更後の回帰と会社受入を分けるとき。 | reference |
 | [Vectorによる対象ログの整形と秘匿化](<VECTOR.md>) | 対象projectの有限capture・VRL重大度・秘匿化・有界配送と未検証項目を確認する。 | ログ収集の設定・合成試験・機密境界を確認するとき。 | active |
@@ -186,6 +187,7 @@
 | [採用版の公式リファレンスと文書監査](<REFERENCES.md>) | 採用版の公式仕様・tag・公開実装・検証記録の根拠を照合する。 |
 | [BashとZshの両方で手順を実行する](<SHELLS.md>) | 会社VMのZshとBashでコマンドを使い分け、対話入力・コメント・shebang・引用の違いを確認する。 |
 | [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>) | 既存SQL Serverを読取専用SELECTで抽出し、6契約のlanding素材を作成する。 |
+| [SQL Server DDLの照合順序と途中失敗からの再開](<SQLSERVER-DDL-RECOVERY.md>) | error468・51019の残存診断、exact checkerの保護、CDC部分完了とWindows client別の安全な再開を整理する。 |
 | [固定SQL sourceで疑似ERP・MESを検証する](<SQLSERVER-FIXED-DEMO.md>) | 所有権付き固定SQL表への合成データ投入と、読取専用バッチ・CDCの段階的な受入を行う。 |
 | [SSRF対策と内部接続の設定](<SSRF.md>) | n8nの宛先制御、内部worker通信、proxyと固定APIの境界を設定する。 |
 | [初めて構築する人の一本道ガイド](<START-HERE.md>) | 新規Linux環境の準備からcore配置と合成データ検証までを順に進める。 |
@@ -236,6 +238,7 @@
 | [段階的な監視基盤の配置と受入](<OBSERVABILITY.md>) | 監視のhost権限、create-only GUI、閾値、検証と実機受入を分けて段階導入する。 |
 | [平時・更新・復旧の運用手順](<OPERATIONS.md>) | 平時点検・更新・backup・復旧を、鍵・DB・object・volumeの状態を揃えて行う。 |
 | [PoC操作ポータル](<POC-PORTAL.md>) | 操作ポータルの各ページから、サービス入口・データ・診断・履歴へ移動する。 |
+| [SQL Server DDLの照合順序と途中失敗からの再開](<SQLSERVER-DDL-RECOVERY.md>) | error468・51019の残存診断、exact checkerの保護、CDC部分完了とWindows client別の安全な再開を整理する。 |
 | [症状から確認する](<TROUBLESHOOTING.md>) | 観測した症状から設定・起動・通信・job・データの失敗箇所を絞り込む。 |
 | [検証記録](<VALIDATION.md>) | 既存の合成環境・公開clone・CI・互換性修正で確認した条件と限界を読む。 |
 | [Vectorによる対象ログの整形と秘匿化](<VECTOR.md>) | 対象projectの有限capture・VRL重大度・秘匿化・有界配送と未検証項目を確認する。 |
@@ -272,6 +275,7 @@
 | [レビュー指摘を改善へ取り込む](<REVIEW-WORKFLOW.md>) | issue・PR・依頼文書の指摘を対象commitで確認し、安全な回帰と差分へつなげる。 |
 | [BashとZshの両方で手順を実行する](<SHELLS.md>) | 会社VMのZshとBashでコマンドを使い分け、対話入力・コメント・shebang・引用の違いを確認する。 |
 | [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>) | 既存SQL Serverを読取専用SELECTで抽出し、6契約のlanding素材を作成する。 |
+| [SQL Server DDLの照合順序と途中失敗からの再開](<SQLSERVER-DDL-RECOVERY.md>) | error468・51019の残存診断、exact checkerの保護、CDC部分完了とWindows client別の安全な再開を整理する。 |
 | [固定SQL sourceで疑似ERP・MESを検証する](<SQLSERVER-FIXED-DEMO.md>) | 所有権付き固定SQL表への合成データ投入と、読取専用バッチ・CDCの段階的な受入を行う。 |
 | [SSRF対策と内部接続の設定](<SSRF.md>) | n8nの宛先制御、内部worker通信、proxyと固定APIの境界を設定する。 |
 | [検証記録](<VALIDATION.md>) | 既存の合成環境・公開clone・CI・互換性修正で確認した条件と限界を読む。 |

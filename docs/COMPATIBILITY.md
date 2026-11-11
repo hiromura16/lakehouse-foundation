@@ -342,3 +342,9 @@ SQL Server 2022向けDDLは型・PK・所有権・固定captureを静的検査�
 新しいplan/apply/probe、projectの優先順、local-only、結果の保存と未受入事項は [COMPUTE-VALIDATION.md](COMPUTE-VALIDATION.md) を正本とします。raw Composeだけのsmokeではhost preflightとprivate結果保存を行わないため、通常は同じprojectを明示するCLIの専用操作を使います。Deployの管理入口は切り替えません。
 
 監視拡張のhost権限・GUI保持・検証未了事項は [段階的な監視基盤](OBSERVABILITY.md) を参照してください。既存monitoringの更新でも、新規host mountは配置前に承認が必要です。
+
+## SQL Server catalog/databaseの混在collation
+
+固定sourceの003/004/005は、catalog/table variable等の異なる由来の文字列を両辺`Latin1_General_100_BIN2`で比較します。混在例`Latin1_General_CI_AS_KS_WS`/`Latin1_General_CI_AS`やcase-sensitive DBを対象にした合成fixtureを用意しています。実SQL Server 2022での互換性試験は未実行で、AST/SQLFluff成功から動作保証しません。006・canonical checker・runtime完全一致は維持しています。
+
+Go sqlcmd v1.10.0の`:r`は引用符をfile名から除去しない公式実装のため、ODBC版/一般資料と扱いを区別します。会社で使用中の版は未確認です。実行file/版を記録し、合成includeで空白入りpathを確認してから使います。wrapperはprivate directoryを作業場所にし、相対basenameを`:r`へ渡す例とします。[失敗後の診断・client互換性](SQLSERVER-DDL-RECOVERY.md)

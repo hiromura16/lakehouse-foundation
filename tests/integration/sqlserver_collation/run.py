@@ -1,0 +1,1272 @@
+#!/usr/bin/env python3
+"""Plan an opt-in SQL Server 2022 fixture; never connect by default.
+
+The operator supplies a pre-existing disposable SQL Server 2022 Developer
+instance and official sqlcmd. No image is downloaded, service is started,
+server collation is changed, or database is dropped. Fresh databases are left
+for owner-reviewed disposal. All code is synthetic, not a company runbook.
+"""
+
+import argparse
+import getpass
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+import uuid
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[3]
+HERE = Path(__file__).resolve().parent
+CONSENT = "CREATE_SYNTHETIC_DATABASES_ON_DISPOSABLE_SQL2022"
+PREFIX = "LAKEHOUSE_SQL_FIXTURE="
+CHECKER = "lh_demo_ctl.check_write_safety_v1"
+EXPECTED_CAPTURES = (
+    "lh_demo_erp_products_v1",
+    "lh_demo_erp_work_orders_v1",
+    "lh_demo_erp_sales_orders_v1",
+    "lh_demo_erp_shipments_v1",
+    "lh_demo_mes_events_v1",
+    "lh_demo_mes_downtime_v1",
+)
+CHECKER_CASES = (
+    "own_exact",
+    "unrelated",
+    "execution",
+    "quoted",
+    "owner",
+    "effective",
+    "whitespace",
+    "version",
+    "ownership",
+)
+FIXED_STAGES = (
+    {
+        "mixed_collation",
+        "fresh_database_created",
+        "ddl_001_passed",
+        "ddl_002_passed",
+        "legacy_prepared",
+        "checker_creation_fault",
+        "permission_grant_fault",
+        "outer_sentinel_prepared",
+        "outer_transaction_003_preserved",
+        "outer_transaction_004_preserved",
+        "outer_transaction_005_preserved",
+        "outer_transaction_preflight_preserved",
+        "before_explicit_rollback",
+        "after_explicit_rollback",
+        "ddl_003_retry_passed",
+        "ddl_003_idempotent",
+        "partial_enable",
+        "one_fixed_capture_retained",
+        "enable_resume",
+        "enable_idempotent",
+        "disable_without_consent_refused",
+        "disable_refusal_preserved_captures",
+        "partial_disable",
+        "five_fixed_captures_remain",
+        "disable_resume",
+        "disable_idempotent",
+        "own_checker_reused",
+        "own_checker_reused_again",
+        "untrusted_checker_preserved",
+        "corrupt_capture_preflight_refused",
+        "corrupt_capture_preserved",
+        "role_alias_baseline",
+        "role_alias_metadata",
+        "role_alias_004_rejected",
+        "role_alias_005_rejected",
+        "role_alias_004_preserved",
+        "role_alias_005_preserved",
+        "distinct_role_004_passed",
+        "distinct_role_005_passed",
+    }
+    | {"validation_006_captures_" + str(n) for n in (0, 6)}
+    | {
+        "checker_" + case + suffix
+        for case in CHECKER_CASES
+        for suffix in ("_prepared", "_rejected")
+    }
+)
+SCRIPTS = {
+    number: ROOT / "infra/sqlserver" / filename
+    for number, filename in (
+        ("001", "001_demo_schemas.sql"),
+        ("002", "002_demo_tables.sql"),
+        ("003", "003_demo_permissions.sql"),
+        ("004", "004_demo_cdc_enable.sql"),
+        ("005", "005_demo_cdc_disable.sql"),
+        ("006", "006_demo_validation.sql"),
+        ("preflight", "diagnostics/003_permissions_preflight.sql"),
+    )
+}
+
+
+class FixtureError(RuntimeError):
+    """Return a fixed diagnostic without SQL output, paths or credentials."""
+
+
+def literal(text):
+    """Quote a controlled SQL value, never a caller-selected identifier."""
+    return "N'" + text.replace("'", "''") + "'"
+
+
+def endpoint(value):
+    """Allow only a literal local TCP test instance, with no DNS resolution."""
+    found = re.fullmatch(r"tcp:127\.0\.0\.1,([0-9]{4,5})", value or "")
+    if not found or not 1024 <= int(found[1]) <= 65535:
+        raise FixtureError("LOCAL_DISPOSABLE_ENDPOINT_REQUIRED")
+    return value
+
+
+def client_environment(password=None):
+    """Pass only process essentials; exclude inherited sqlcmd/proxy secrets."""
+    result = {
+        key: os.environ[key]
+        for key in (
+            "PATH",
+            "SYSTEMROOT",
+            "WINDIR",
+            "TMP",
+            "TEMP",
+            "TMPDIR",
+            "LANG",
+            "LC_ALL",
+        )
+        if key in os.environ
+    }
+    if password is not None:
+        result["SQLCMDPASSWORD"] = password
+    return result
+
+
+def verify_client(sqlcmd):
+    """Gate writes on the exact source-verified Go client version only."""
+    completed = subprocess.run(
+        [str(sqlcmd), "--version"],
+        env=client_environment(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        timeout=10,
+        check=False,
+    )
+    if completed.returncode or len(completed.stdout) > 65536:
+        raise FixtureError("GO_SQLCMD_1_10_0_REQUIRED")
+    text = completed.stdout.decode("utf-8", errors="strict")
+    if not re.search(
+        r"(?im)^(?:Version:\s*|sqlcmd:?\s+(?:version\s+)?)"
+        r"v?1\.10\.0\s*$",
+        text,
+    ):
+        raise FixtureError("GO_SQLCMD_1_10_0_REQUIRED")
+    return "go-sqlcmd-1.10.0"
+
+
+def source_hashes():
+    """Fingerprint public inputs, never read a private configuration file."""
+    paths = [
+        *SCRIPTS.values(),
+        ROOT / "scripts/sqlserver_safety.sql",
+        HERE / "run.py",
+        HERE / "mixed_collation.sql",
+        HERE / "role_alias.sql",
+    ]
+    return {
+        str(path.relative_to(ROOT)): hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
+        for path in paths
+    }
+
+
+def variables(database, nonce, version):
+    """Make SQLCMD inputs from validated synthetic identifiers only."""
+    if not re.fullmatch(r"lh_collation_[0-9a-f]{16}_[a-z_]{1,24}", database):
+        raise FixtureError("SYNTHETIC_DATABASE_NAME_INVALID")
+    if not re.fullmatch(r"[0-9a-f]{32}", nonce):
+        raise FixtureError("SYNTHETIC_OWNER_INVALID")
+    if not re.fullmatch(r"[0-9a-f]{40}", version):
+        raise FixtureError("SOURCE_COMMIT_REQUIRED")
+    return {
+        "TargetDatabase": database,
+        "InstallationId": nonce,
+        "OwnershipHash": hashlib.sha256(nonce.encode()).hexdigest(),
+        "RepositoryVersion": version,
+        "DemoWriterUser": "fixture_writer",
+        "SourceReaderUser": "fixture_reader",
+        "ControlWriterUser": "fixture_control",
+        "ConfirmDisableCdc": "0",
+    }
+
+
+def render(number, selected, *, confirm=False):
+    """Read current public DDL; do not patch its checker or safety gates."""
+    if number not in SCRIPTS:
+        raise FixtureError("FIXED_SCRIPT_REQUIRED")
+    expected = variables(
+        selected.get("TargetDatabase", ""),
+        selected.get("InstallationId", ""),
+        selected.get("RepositoryVersion", ""),
+    )
+    if selected != expected:
+        raise FixtureError("SYNTHETIC_VARIABLES_CHANGED")
+    values = dict(expected, ConfirmDisableCdc="1" if confirm else "0")
+    source = SCRIPTS[number].read_text(encoding="utf-8")
+    for key, value in values.items():
+        source = source.replace("$(" + key + ")", value)
+    if "$ (" in source or "$(" in source:
+        raise FixtureError("UNRESOLVED_FIXTURE_VARIABLE")
+    return source
+
+
+def inject(source, stage):
+    """Insert a test-only THROW in memory; production SQL stays unchanged."""
+    expressions = {
+        "checker": (
+            r"(?m)^IF NOT EXISTS \(\s*\n\s*SELECT 1 FROM sys\.sql_modules",
+            51990,
+        ),
+        "grant": (
+            r"(?m)^GRANT SELECT, INSERT, UPDATE, DELETE ON OBJECT::"
+            r"\[lh_demo_erp\]\.\[products\] TO \[lh_demo_writer\];$",
+            51994,
+        ),
+        "enable": (r"(?m)^\s*@allow_partition_switch=0;", 51991),
+        "disable": (
+            r"(?m)^\s*@source_schema=@Schema,@source_name=@Table,"
+            r"@capture_instance=@Capture;",
+            51993,
+        ),
+    }
+    if stage not in expressions:
+        raise FixtureError("FIXED_FAULT_STAGE_REQUIRED")
+    pattern, error = expressions[stage]
+    matches = list(re.finditer(pattern, source))
+    if len(matches) != 1:
+        raise FixtureError("FAULT_ANCHOR_CHANGED_REVIEW_REQUIRED")
+    position = matches[0].start() if stage == "checker" else matches[0].end()
+    fault = "\nTHROW " + str(error) + ", 'Synthetic injected failure.', 1;\n"
+    return source[:position] + fault + source[position:]
+
+
+def captures():
+    """Use only the six exact source capture names, with binary matching."""
+    return (
+        "capture_instance COLLATE Latin1_General_100_BIN2 IN ("
+        + ",".join(literal(name) for name in EXPECTED_CAPTURES)
+        + ")"
+    )
+
+
+def guard(database, nonce):
+    """Require the fresh database's fixture marker before every later batch."""
+    return f"""SET NOCOUNT ON;
+IF DB_NAME() COLLATE Latin1_General_100_BIN2
+    <>{literal(database)} COLLATE Latin1_General_100_BIN2
+    OR NOT EXISTS (SELECT 1 FROM sys.extended_properties
+        WHERE class=0 AND name=N'LakehouseCollationFixtureOwner'
+        AND CONVERT(nvarchar(128),value) COLLATE Latin1_General_100_BIN2
+            ={literal(nonce)} COLLATE Latin1_General_100_BIN2)
+    THROW 51970, 'The fresh synthetic fixture marker did not match.', 1;
+"""
+
+
+def record(stage, extras=""):
+    """Print a small machine record; raw SQLCMD output is never forwarded."""
+    if stage not in FIXED_STAGES:
+        raise FixtureError("FIXED_STAGE_REQUIRED")
+    return (
+        "PRINT N'"
+        + PREFIX
+        + '{"stage":"'
+        + stage
+        + '","status":"passed"'
+        + extras
+        + "}';\n"
+    )
+
+
+def create_database(database, nonce, collation):
+    """Create a never-adopted fresh database; no cleanup/drop is supplied."""
+    variables(database, nonce, "0" * 40)
+    if collation not in {"Latin1_General_CI_AS", "Latin1_General_CS_AS"}:
+        raise FixtureError("FIXED_DATABASE_COLLATION_REQUIRED")
+    setup = (
+        "EXEC sys.sp_addextendedproperty "
+        "@name=N'LakehouseCollationFixtureOwner',@value="
+        + literal(nonce)
+        + "; CREATE USER [fixture_writer] WITHOUT LOGIN;"
+        " CREATE USER [fixture_reader] WITHOUT LOGIN;"
+        " CREATE USER [fixture_control] WITHOUT LOGIN;"
+        " CREATE USER [fixture_legacy_user] WITHOUT LOGIN;"
+        " CREATE ROLE [fixture_legacy_reader] AUTHORIZATION [dbo];"
+        " CREATE TABLE dbo.fixture_legacy_data (id int NOT NULL PRIMARY KEY);"
+        " GRANT SELECT ON OBJECT::dbo.fixture_legacy_data"
+        " TO [fixture_legacy_reader];"
+        " ALTER ROLE [fixture_legacy_reader] ADD MEMBER [fixture_legacy_user];"
+    )
+    return f"""SET NOCOUNT ON;
+IF CONVERT(int,SERVERPROPERTY('ProductMajorVersion'))<>16
+    OR CONVERT(nvarchar(128),SERVERPROPERTY('Edition')) NOT LIKE N'%Developer%'
+    THROW 51971, 'Use an approved disposable SQL2022 Developer instance.', 1;
+IF DB_ID({literal(database)}) IS NOT NULL
+    THROW 51972, 'Never adopt an existing database for this fixture.', 1;
+BEGIN TRY
+    EXEC sys.sp_executesql N'CREATE DATABASE [{database}] COLLATE {collation}';
+END TRY
+BEGIN CATCH
+    -- A name collision, permission failure or other CREATE error must stop
+    -- before any target batch can execute against an unrelated database.
+    THROW;
+END CATCH;
+EXEC [{database}].sys.sp_executesql {literal(setup)};
+""" + record("fresh_database_created")
+
+
+def residual_snapshot(label):
+    """Observe artifacts and permissions without assuming rollback."""
+    if label not in {"before_explicit_rollback", "after_explicit_rollback"}:
+        raise FixtureError("FIXED_RESIDUAL_STAGE_REQUIRED")
+    return f"""DECLARE @Snapshot_{label} nvarchar(4000)=(
+SELECT N'{label}' AS stage, N'observed' AS status,
+    XACT_STATE() AS transaction_state, @@TRANCOUNT AS transaction_count,
+    CONVERT(bit,CASE WHEN OBJECT_ID(N'{CHECKER}',N'P') IS NULL
+        THEN 0 ELSE 1 END) AS checker_present,
+    (SELECT COUNT_BIG(*) FROM sys.database_principals WHERE name IN (
+        N'lh_demo_writer',N'lh_demo_reader',N'lh_demo_control_writer'))
+        AS fixed_role_count,
+    (SELECT COUNT_BIG(*) FROM sys.database_permissions p
+        JOIN sys.database_principals r ON p.grantee_principal_id=r.principal_id
+        WHERE r.name IN (N'lh_demo_writer',N'lh_demo_reader',
+                         N'lh_demo_control_writer')) AS fixed_permission_count
+FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);
+PRINT N'{PREFIX}'+@Snapshot_{label};
+"""
+
+
+def expect_failure(source, number, stage, *, inspect_residual=False):
+    """Catch only the intended test failure at a lower compilation level."""
+    if number not in {
+        51003,
+        51018,
+        51019,
+        51113,
+        51115,
+        51123,
+        51990,
+        51991,
+        51993,
+        51994,
+    }:
+        raise FixtureError("FIXED_EXPECTED_ERROR_REQUIRED")
+    before = (
+        residual_snapshot("before_explicit_rollback")
+        if inspect_residual
+        else ""
+    )
+    after = (
+        residual_snapshot("after_explicit_rollback")
+        if inspect_residual
+        else ""
+    )
+    return f"""BEGIN TRY
+    EXEC sys.sp_executesql {literal(source)};
+    THROW 51989, 'The negative fixture unexpectedly succeeded.', 1;
+END TRY
+BEGIN CATCH
+    IF ERROR_NUMBER()<>{number} THROW;
+{before}
+    IF XACT_STATE()<>0 ROLLBACK TRANSACTION;
+{after}
+END CATCH;
+""" + record(stage, ',"expected_error":' + str(number))
+
+
+def outer_transaction_probe(source, stage, ordinal):
+    """Assert rejection leaves the caller's own synthetic transaction intact.
+
+    This deliberately does not use expect_failure: that helper rolls back
+    before checking residuals, whereas this contract must inspect the still
+    committable transaction first. Only this fixture rolls its sentinel back.
+    """
+    if stage not in {
+        "outer_transaction_003_preserved",
+        "outer_transaction_004_preserved",
+        "outer_transaction_005_preserved",
+        "outer_transaction_preflight_preserved",
+    } or ordinal not in range(1, 5):
+        raise FixtureError("FIXED_OUTER_TRANSACTION_STAGE_REQUIRED")
+    return f"""SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+INSERT fixture_ctl.outer_transaction_sentinel (sentinel_id) VALUES ({ordinal});
+DECLARE @CallerCount int=@@TRANCOUNT,@CallerOptions int=@@OPTIONS;
+DECLARE @BeforeObjects varbinary(32)=HASHBYTES('SHA2_256',
+ CONVERT(nvarchar(max),(SELECT object_id,name,type,principal_id,schema_id
+ FROM sys.objects ORDER BY object_id FOR JSON PATH)));
+DECLARE @BeforeRoles varbinary(32)=HASHBYTES('SHA2_256',
+ CONVERT(nvarchar(max),(SELECT principal_id,name,type,owning_principal_id
+ FROM sys.database_principals ORDER BY principal_id FOR JSON PATH)));
+DECLARE @BeforeGrants varbinary(32)=HASHBYTES('SHA2_256',
+ CONVERT(nvarchar(max),(SELECT class,major_id,minor_id,grantee_principal_id,
+ grantor_principal_id,permission_name,state FROM sys.database_permissions
+ ORDER BY class,major_id,minor_id,grantee_principal_id,permission_name
+ FOR JSON PATH)));
+DECLARE @BeforeModules varbinary(32)=HASHBYTES('SHA2_256',
+ CONVERT(nvarchar(max),(SELECT object_id,[definition],execute_as_principal_id,
+ uses_ansi_nulls,uses_quoted_identifier FROM sys.sql_modules
+ ORDER BY object_id FOR JSON PATH)));
+DECLARE @CaughtOuterGuard bit=0;
+BEGIN TRY
+    EXEC sys.sp_executesql {literal(source)};
+END TRY
+BEGIN CATCH
+    IF ERROR_NUMBER()<>50000 THROW;
+    SET @CaughtOuterGuard=1;
+END CATCH;
+IF @CaughtOuterGuard<>1 OR XACT_STATE()<>1 OR @@TRANCOUNT<>@CallerCount
+    OR @CallerCount<>1 OR @@OPTIONS<>@CallerOptions
+    OR NOT EXISTS (SELECT 1 FROM fixture_ctl.outer_transaction_sentinel
+                   WHERE sentinel_id={ordinal})
+    THROW 51987, 'The caller transaction or synthetic sentinel changed.', 1;
+IF @BeforeObjects<>HASHBYTES('SHA2_256',CONVERT(nvarchar(max),(
+ SELECT object_id,name,type,principal_id,schema_id FROM sys.objects
+ ORDER BY object_id FOR JSON PATH)))
+ OR @BeforeRoles<>HASHBYTES('SHA2_256',CONVERT(nvarchar(max),(
+ SELECT principal_id,name,type,owning_principal_id FROM sys.database_principals
+ ORDER BY principal_id FOR JSON PATH)))
+ OR @BeforeGrants<>HASHBYTES('SHA2_256',CONVERT(nvarchar(max),(
+ SELECT class,major_id,minor_id,grantee_principal_id,grantor_principal_id,
+ permission_name,state FROM sys.database_permissions
+ ORDER BY class,major_id,minor_id,grantee_principal_id,permission_name
+ FOR JSON PATH)))
+ OR @BeforeModules<>HASHBYTES('SHA2_256',CONVERT(nvarchar(max),(
+ SELECT object_id,[definition],execute_as_principal_id,uses_ansi_nulls,
+ uses_quoted_identifier FROM sys.sql_modules
+ ORDER BY object_id FOR JSON PATH)))
+    THROW 51988, 'Rejected call changed synthetic fixture metadata.', 1;
+-- Explicitly discard only the transaction started by this synthetic test.
+ROLLBACK TRANSACTION;
+IF EXISTS (SELECT 1 FROM fixture_ctl.outer_transaction_sentinel
+           WHERE sentinel_id={ordinal})
+    THROW 51987, 'The fixture sentinel was not discarded by its owner.', 1;
+""" + record(stage)
+
+
+def assert_fixed_captures(count):
+    """Check captures and tracked flags only for the exact six tables."""
+    if count not in range(7):
+        raise FixtureError("FIXED_CAPTURE_COUNT_REQUIRED")
+    objects = ",".join(
+        "OBJECT_ID(" + literal(name) + ",N'U')"
+        for name in (
+            "lh_demo_erp.products",
+            "lh_demo_erp.work_orders",
+            "lh_demo_erp.sales_orders",
+            "lh_demo_erp.shipments",
+            "lh_demo_mes.events",
+            "lh_demo_mes.downtime",
+        )
+    )
+    return (
+        "IF (SELECT COUNT_BIG(*) FROM cdc.change_tables WHERE "
+        + captures()
+        + ")<>"
+        + str(count)
+        + " THROW 51974, 'Unexpected fixed capture count.', 1;\n"
+        + "IF (SELECT COUNT_BIG(*) FROM sys.tables WHERE object_id IN ("
+        + objects
+        + ") AND is_tracked_by_cdc=1)<>"
+        + str(count)
+        + " THROW 51974, 'Unexpected fixed tracked-table count.', 1;\n"
+    )
+
+
+def successful_permissions():
+    """Check three narrow memberships and reject broad roles."""
+    return """IF (SELECT COUNT_BIG(*) FROM sys.database_role_members m
+JOIN sys.database_principals r ON m.role_principal_id=r.principal_id
+JOIN sys.database_principals u ON m.member_principal_id=u.principal_id
+WHERE (r.name COLLATE Latin1_General_100_BIN2=N'lh_demo_writer'
+       AND u.name COLLATE Latin1_General_100_BIN2=N'fixture_writer')
+   OR (r.name COLLATE Latin1_General_100_BIN2=N'lh_demo_reader'
+       AND u.name COLLATE Latin1_General_100_BIN2=N'fixture_reader')
+   OR (r.name COLLATE Latin1_General_100_BIN2=N'lh_demo_control_writer'
+       AND u.name COLLATE Latin1_General_100_BIN2=N'fixture_control'))<>3
+    THROW 51975, 'Expected three narrow role memberships.', 1;
+IF EXISTS (SELECT 1 FROM sys.database_role_members m
+JOIN sys.database_principals r ON m.role_principal_id=r.principal_id
+WHERE m.member_principal_id IN (USER_ID(N'fixture_writer'),
+    USER_ID(N'fixture_reader'),USER_ID(N'fixture_control'))
+  AND r.name IN (N'db_owner',N'db_datawriter',N'db_ddladmin',
+                      N'db_securityadmin'))
+    THROW 51976, 'A synthetic runtime user gained a broad role.', 1;
+"""
+
+
+def prepare_legacy_cdc():
+    """Prepare CDC only inside a freshly marker-guarded synthetic database."""
+    return """EXEC sys.sp_cdc_enable_db;
+EXEC sys.sp_cdc_enable_table @source_schema=N'dbo',
+    @source_name=N'fixture_legacy_data',
+    @capture_instance=N'fixture_legacy_data_v1',@role_name=NULL,
+    @supports_net_changes=0,@allow_partition_switch=0;
+EXEC(N'CREATE SCHEMA fixture_ctl AUTHORIZATION dbo');
+CREATE TABLE fixture_ctl.legacy_identity (
+    role_id int NOT NULL,user_id int NOT NULL,object_id int NOT NULL,
+    capture_object_id int NOT NULL,capture_job_id uniqueidentifier NOT NULL,
+    cleanup_job_id uniqueidentifier NOT NULL);
+INSERT fixture_ctl.legacy_identity
+SELECT DATABASE_PRINCIPAL_ID(N'fixture_legacy_reader'),
+    USER_ID(N'fixture_legacy_user'),OBJECT_ID(N'dbo.fixture_legacy_data'),
+    (SELECT object_id FROM cdc.change_tables WHERE capture_instance
+        COLLATE Latin1_General_100_BIN2=N'fixture_legacy_data_v1'),
+    (SELECT job_id FROM msdb.dbo.cdc_jobs WHERE database_id=DB_ID()
+        AND job_type=N'capture'),
+    (SELECT job_id FROM msdb.dbo.cdc_jobs WHERE database_id=DB_ID()
+        AND job_type=N'cleanup');
+SELECT p.class,p.major_id,p.minor_id,p.permission_name,p.state
+INTO fixture_ctl.legacy_permissions FROM sys.database_permissions p
+WHERE p.grantee_principal_id=DATABASE_PRINCIPAL_ID(N'fixture_legacy_reader');
+"""
+
+
+def preserve_legacy():
+    """Check identity, grants and the existing shared CDC job IDs both ways."""
+    return """IF NOT EXISTS (SELECT 1 FROM fixture_ctl.legacy_identity saved
+WHERE saved.role_id=DATABASE_PRINCIPAL_ID(N'fixture_legacy_reader')
+  AND saved.user_id=USER_ID(N'fixture_legacy_user')
+  AND saved.object_id=OBJECT_ID(N'dbo.fixture_legacy_data')
+  AND saved.capture_object_id=(SELECT object_id FROM cdc.change_tables
+      WHERE capture_instance COLLATE Latin1_General_100_BIN2
+          =N'fixture_legacy_data_v1')
+  AND saved.capture_job_id=(SELECT job_id FROM msdb.dbo.cdc_jobs
+      WHERE database_id=DB_ID() AND job_type=N'capture')
+  AND saved.cleanup_job_id=(SELECT job_id FROM msdb.dbo.cdc_jobs
+      WHERE database_id=DB_ID() AND job_type=N'cleanup'))
+    THROW 51977, 'Legacy fixture identity or shared job ID changed.', 1;
+IF NOT EXISTS (SELECT 1 FROM sys.database_role_members
+    WHERE role_principal_id=DATABASE_PRINCIPAL_ID(N'fixture_legacy_reader')
+      AND member_principal_id=USER_ID(N'fixture_legacy_user'))
+    THROW 51978, 'Legacy fixture role membership changed.', 1;
+IF EXISTS (
+ SELECT class,major_id,minor_id,
+    permission_name COLLATE Latin1_General_100_BIN2,
+    state COLLATE Latin1_General_100_BIN2 FROM fixture_ctl.legacy_permissions
+ EXCEPT SELECT class,major_id,minor_id,
+    permission_name COLLATE Latin1_General_100_BIN2,
+    state COLLATE Latin1_General_100_BIN2 FROM sys.database_permissions
+ WHERE grantee_principal_id=DATABASE_PRINCIPAL_ID(N'fixture_legacy_reader')
+) OR EXISTS (
+ SELECT class,major_id,minor_id,
+    permission_name COLLATE Latin1_General_100_BIN2,
+    state COLLATE Latin1_General_100_BIN2 FROM sys.database_permissions
+ WHERE grantee_principal_id=DATABASE_PRINCIPAL_ID(N'fixture_legacy_reader')
+ EXCEPT SELECT class,major_id,minor_id,
+    permission_name COLLATE Latin1_General_100_BIN2,
+    state COLLATE Latin1_General_100_BIN2 FROM fixture_ctl.legacy_permissions
+)
+    THROW 51979, 'Legacy fixture permissions changed.', 1;
+"""
+
+
+def role_alias_identity():
+    """Observe actual saved spelling and native lookup, not a CI simulation."""
+    return """DECLARE @SavedRole sysname,@SavedRoleId int,
+ @FixedRoleId int=DATABASE_PRINCIPAL_ID(N'lh_demo_cdc_reader'),
+ @AliasCapture int,@SamePrincipal bit,@SavedCaseDifferent bit;
+SELECT @SavedRole=role_name,@AliasCapture=object_id FROM cdc.change_tables
+WHERE capture_instance COLLATE Latin1_General_100_BIN2
+    =N'fixture_role_alias_v1' COLLATE Latin1_General_100_BIN2;
+SET @SavedRoleId=DATABASE_PRINCIPAL_ID(@SavedRole);
+IF @AliasCapture IS NULL OR @SavedRole IS NULL OR @SavedRoleId IS NULL
+ OR @FixedRoleId IS NULL
+ OR DATABASE_PRINCIPAL_ID(N'LH_DEMO_CDC_READER') IS NULL
+ OR @SavedRoleId<>DATABASE_PRINCIPAL_ID(N'LH_DEMO_CDC_READER')
+ THROW 51984, 'Synthetic CDC role identity could not be established.', 1;
+SET @SamePrincipal=CONVERT(bit,CASE
+ WHEN @SavedRoleId=@FixedRoleId THEN 1 ELSE 0 END);
+SET @SavedCaseDifferent=CONVERT(bit,CASE
+ WHEN @SavedRole COLLATE Latin1_General_100_BIN2
+     <>N'lh_demo_cdc_reader' COLLATE Latin1_General_100_BIN2
+ THEN 1 ELSE 0 END);
+"""
+
+
+def role_alias_probe(source, number):
+    """Assert reject-only identity discovery and preserve unrelated metadata.
+
+    Same-principal sharing must raise 51115 before any mutation. When the
+    catalog resolves a genuinely different principal, normal fixed lifecycle
+    remains possible. The saved alias capture itself is always preserved.
+    """
+    if number not in {"004", "005"}:
+        raise FixtureError("FIXED_ROLE_ALIAS_STAGE_REQUIRED")
+    queries = {
+        # SQL Agent can advance start/end LSNs or drop-pending progress while
+        # these scripts are correctly refusing a change. Compare stable
+        # identity/definition only; do not confuse progress with DDL mutation.
+        "Captures": (
+            "SELECT object_id,source_object_id,capture_instance,role_name,"
+            "index_name,supports_net_changes FROM cdc.change_tables "
+            "ORDER BY object_id"
+        ),
+        "Roles": (
+            "SELECT principal_id,name,type,owning_principal_id "
+            "FROM sys.database_principals ORDER BY principal_id"
+        ),
+        "Members": (
+            "SELECT role_principal_id,member_principal_id "
+            "FROM sys.database_role_members "
+            "ORDER BY role_principal_id,member_principal_id"
+        ),
+        "Grants": (
+            "SELECT class,major_id,minor_id,grantee_principal_id,"
+            "grantor_principal_id,permission_name,state "
+            "FROM sys.database_permissions "
+            "ORDER BY class,major_id,minor_id,grantee_principal_id,"
+            "permission_name"
+        ),
+    }
+    hashes = {
+        name: "HASHBYTES('SHA2_256',CONVERT(nvarchar(max),("
+        + query
+        + " FOR JSON PATH,INCLUDE_NULL_VALUES)))"
+        for name, query in queries.items()
+    }
+    before = "".join(
+        "DECLARE @Before" + name + " varbinary(32)=" + digest + ";\n"
+        for name, digest in hashes.items()
+    )
+    unchanged = "\n OR ".join(
+        "@Before" + name + "<>" + digest for name, digest in hashes.items()
+    )
+    return (
+        role_alias_identity()
+        + "IF @SamePrincipal=1\nBEGIN\n"
+        + before
+        + expect_failure(source, 51115, "role_alias_" + number + "_rejected")
+        + "IF "
+        + unchanged
+        + "\n"
+        + " THROW 51984, 'Rejected role sharing changed metadata.', 1;\n"
+        + assert_fixed_captures(6)
+        + record("role_alias_" + number + "_preserved")
+        + "END\nELSE\nBEGIN\n"
+        + "EXEC sys.sp_executesql "
+        + literal(source)
+        + ";\n"
+        + assert_fixed_captures(6 if number == "004" else 0)
+        + record("distinct_role_" + number + "_passed")
+        + "END;\n"
+        + """IF NOT EXISTS (SELECT 1 FROM cdc.change_tables
+ WHERE object_id=@AliasCapture
+ AND source_object_id=OBJECT_ID(N'dbo.fixture_role_alias_data')
+ AND capture_instance COLLATE Latin1_General_100_BIN2
+     =N'fixture_role_alias_v1' COLLATE Latin1_General_100_BIN2
+ AND role_name COLLATE Latin1_General_100_BIN2
+     =@SavedRole COLLATE Latin1_General_100_BIN2
+ AND DATABASE_PRINCIPAL_ID(role_name)=@SavedRoleId)
+ THROW 51984, 'Unrelated synthetic role-alias capture changed.', 1;
+"""
+        + preserve_legacy()
+    )
+
+
+def role_alias_coverage(records):
+    """Do not call canonicalized spelling an exercised saved-alias case."""
+    observations = [
+        row for row in records if row["stage"] == "role_alias_metadata"
+    ]
+    return {
+        "same_principal_saved_alias_exercised": any(
+            row["same_principal"] and row["saved_case_different"]
+            for row in observations
+        ),
+        "distinct_principal_exercised": any(
+            not row["same_principal"] for row in observations
+        ),
+        "observation_count": len(observations),
+    }
+
+
+class Runner:
+    """Execute only explicit synthetic stages; never forward raw SQL output."""
+
+    def __init__(self, server, sqlcmd, password, nonce, version):
+        self.server = endpoint(server)
+        self.sqlcmd = str(sqlcmd)
+        self.password = password
+        self.nonce = nonce
+        self.version = version
+        self.records = []
+        self.case = "initial"
+        self.candidate_databases = []
+        variables("lh_collation_" + nonce[:16] + "_probe", nonce, version)
+        self.databases_created = 0
+
+    def execute(self, database, source, *, guarded=True):
+        if guarded:
+            source = guard(database, self.nonce) + source
+        # Synthetic fixture DBA credentials exist only in this client process.
+        # They never enter application runtime/site.env/argv/source or logs.
+        environment = client_environment(self.password)
+        with tempfile.TemporaryDirectory(
+            prefix="lh-collation-input-"
+        ) as temporary:
+            path = Path(temporary) / "synthetic.sql"
+            descriptor = os.open(
+                path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600
+            )
+            with os.fdopen(descriptor, "w", encoding="utf-8") as target:
+                target.write(source)
+            completed = subprocess.run(
+                [
+                    self.sqlcmd,
+                    "-S",
+                    self.server,
+                    "-d",
+                    database,
+                    "-U",
+                    "sa",
+                    "-N",
+                    "mandatory",
+                    "-C",
+                    "-b",
+                    "-l",
+                    "10",
+                    "-t",
+                    "120",
+                    "-i",
+                    str(path),
+                ],
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=150,
+                check=False,
+            )
+        if completed.returncode or len(completed.stdout) > 2 * 1024**2:
+            raise FixtureError("SYNTHETIC_SQLCMD_STAGE_FAILED")
+        found = []
+        for line in completed.stdout.decode(
+            "utf-8", errors="strict"
+        ).splitlines():
+            line = line.strip()
+            if not line.startswith(PREFIX):
+                continue
+            prefix_length = len(PREFIX)
+            value = json.loads(line[prefix_length:])
+            if (
+                not isinstance(value, dict)
+                or value.get("stage") not in FIXED_STAGES
+                or value.get("status") not in {"passed", "observed"}
+            ):
+                raise FixtureError("SYNTHETIC_RESULT_INVALID")
+            allowed = {
+                "stage",
+                "status",
+                "transaction_state",
+                "transaction_count",
+                "checker_present",
+                "fixed_role_count",
+                "fixed_permission_count",
+                "expected_error",
+                "observed_468",
+                "forced_column_collations",
+                "case_alias_detected",
+                "same_principal",
+                "saved_case_different",
+            }
+            if set(value) - allowed or any(
+                type(v) not in {int, bool} or not -1 <= int(v) <= 1000000
+                for key, v in value.items()
+                if key not in {"stage", "status"}
+            ):
+                raise FixtureError("SYNTHETIC_RESULT_INVALID")
+            if value["stage"] == "role_alias_metadata" and (
+                set(value)
+                != {
+                    "stage",
+                    "status",
+                    "same_principal",
+                    "saved_case_different",
+                }
+                or value["status"] != "observed"
+                or type(value["same_principal"]) is not bool
+                or type(value["saved_case_different"]) is not bool
+            ):
+                raise FixtureError("SYNTHETIC_RESULT_INVALID")
+            value["case"] = self.case
+            found.append(value)
+        if not found:
+            raise FixtureError("SYNTHETIC_STAGE_EVIDENCE_MISSING")
+        self.records.extend(found)
+        return found
+
+    def fresh(self, suffix, collation):
+        self.case = suffix
+        database = "lh_collation_" + self.nonce[:16] + "_" + suffix
+        self.candidate_databases.append(database)
+        self.execute(
+            "master",
+            create_database(database, self.nonce, collation),
+            guarded=False,
+        )
+        self.databases_created += 1
+        selected = variables(database, self.nonce, self.version)
+        for number in ("001", "002"):
+            self.execute(
+                database,
+                render(number, selected) + record("ddl_" + number + "_passed"),
+            )
+        return database, selected
+
+    def lifecycle(self, suffix, collation):
+        database, selected = self.fresh(suffix, collation)
+        self.execute(
+            database, prepare_legacy_cdc() + record("legacy_prepared")
+        )
+        self.outer_transaction_guards(database, selected)
+        self.execute(database, (HERE / "mixed_collation.sql").read_text())
+        permissions = render("003", selected)
+        self.execute(
+            database,
+            expect_failure(
+                inject(permissions, "checker"),
+                51990,
+                "checker_creation_fault",
+                inspect_residual=True,
+            ),
+        )
+        self.execute(
+            database,
+            expect_failure(
+                inject(permissions, "grant"),
+                51994,
+                "permission_grant_fault",
+                inspect_residual=True,
+            ),
+        )
+        # The observation records above establish actual residuals. The test
+        # does not infer rollback from XACT_ABORT or a successful parser.
+        self.execute(
+            database,
+            permissions
+            + successful_permissions()
+            + preserve_legacy()
+            + record("ddl_003_retry_passed"),
+        )
+        self.execute(
+            database,
+            permissions + preserve_legacy() + record("ddl_003_idempotent"),
+        )
+        self.validation(database, selected, 0)
+        enabled = render("004", selected)
+        self.execute(
+            database,
+            expect_failure(inject(enabled, "enable"), 51991, "partial_enable")
+            + assert_fixed_captures(1)
+            + preserve_legacy()
+            + record("one_fixed_capture_retained"),
+        )
+        self.execute(
+            database,
+            enabled
+            + assert_fixed_captures(6)
+            + preserve_legacy()
+            + record("enable_resume"),
+        )
+        self.execute(
+            database,
+            enabled
+            + assert_fixed_captures(6)
+            + preserve_legacy()
+            + record("enable_idempotent"),
+        )
+        self.validation(database, selected, 6)
+        self.execute(
+            database,
+            expect_failure(
+                render("005", selected),
+                51123,
+                "disable_without_consent_refused",
+            )
+            + assert_fixed_captures(6)
+            + preserve_legacy()
+            + record("disable_refusal_preserved_captures"),
+        )
+        disabled = render("005", selected, confirm=True)
+        self.execute(
+            database,
+            expect_failure(
+                inject(disabled, "disable"), 51993, "partial_disable"
+            )
+            + assert_fixed_captures(5)
+            + preserve_legacy()
+            + record("five_fixed_captures_remain"),
+        )
+        self.execute(
+            database,
+            disabled
+            + assert_fixed_captures(0)
+            + preserve_legacy()
+            + record("disable_resume"),
+        )
+        self.execute(
+            database,
+            disabled
+            + assert_fixed_captures(0)
+            + preserve_legacy()
+            + record("disable_idempotent"),
+        )
+        self.validation(database, selected, 0)
+        self.corrupt_capture_preflight(database, selected)
+
+    def outer_transaction_guards(self, database, selected):
+        """Reject four child scripts without harming the caller transaction."""
+        setup = """IF OBJECT_ID(
+ N'fixture_ctl.outer_transaction_sentinel',N'U') IS NOT NULL
+ THROW 51987, 'Refuse to adopt an existing fixture sentinel.', 1;
+CREATE TABLE fixture_ctl.outer_transaction_sentinel (
+ sentinel_id int NOT NULL PRIMARY KEY);
+"""
+        self.execute(database, setup + record("outer_sentinel_prepared"))
+        for ordinal, number in enumerate(
+            ("003", "004", "005", "preflight"), 1
+        ):
+            stage = "outer_transaction_" + number + "_preserved"
+            self.execute(
+                database,
+                outer_transaction_probe(
+                    render(number, selected), stage, ordinal
+                ),
+            )
+
+    def corrupt_capture_preflight(self, database, selected):
+        """Preserve a deliberately wrong owned-test capture on refusal."""
+        setup = """EXEC sys.sp_cdc_enable_table
+ @source_schema=N'lh_demo_erp',@source_name=N'products',
+ @capture_instance=N'lh_demo_erp_products_v1',
+ @role_name=N'lh_demo_cdc_reader',@supports_net_changes=0,
+ @captured_column_list=N'[product_id]',@allow_partition_switch=0;
+DECLARE @BadCapture int=(SELECT object_id FROM cdc.change_tables
+ WHERE capture_instance COLLATE Latin1_General_100_BIN2
+     =N'lh_demo_erp_products_v1');
+"""
+        setup += expect_failure(
+            render("004", selected), 51113, "corrupt_capture_preflight_refused"
+        )
+        setup += """IF @BadCapture IS NULL OR NOT EXISTS (
+ SELECT 1 FROM cdc.change_tables WHERE object_id=@BadCapture
+ AND capture_instance COLLATE Latin1_General_100_BIN2
+     =N'lh_demo_erp_products_v1') OR (
+ SELECT COUNT_BIG(*) FROM cdc.captured_columns
+ WHERE object_id=@BadCapture)<>1
+ THROW 51986, 'The deliberately incorrect test capture changed.', 1;
+"""
+        self.execute(
+            database,
+            setup
+            + assert_fixed_captures(1)
+            + preserve_legacy()
+            + record("corrupt_capture_preserved"),
+        )
+
+    def validation(self, database, selected, count):
+        # Hash only fixture metadata; the real 006 is read-only and unchanged.
+        before = """DECLARE @Before006 varbinary(32)=HASHBYTES('SHA2_256',
+ CONVERT(nvarchar(max),(SELECT object_id,name,type FROM sys.objects
+ ORDER BY object_id FOR JSON PATH)));
+"""
+        after = """IF @Before006<>HASHBYTES('SHA2_256',CONVERT(nvarchar(max),
+ (SELECT object_id,name,type FROM sys.objects
+  ORDER BY object_id FOR JSON PATH)))
+ THROW 51984, 'Read-only validation changed fixture object metadata.', 1;
+"""
+        self.execute(
+            database,
+            before
+            + "EXEC sys.sp_executesql "
+            + literal(render("006", selected))
+            + ";\n"
+            + after
+            + assert_fixed_captures(count)
+            + preserve_legacy()
+            + record("validation_006_captures_" + str(count)),
+        )
+
+    def shared_role_alias(self, suffix, collation):
+        """Exercise aliases in a fresh DB without editing CDC metadata."""
+        database, selected = self.fresh(suffix, collation)
+        self.execute(
+            database,
+            prepare_legacy_cdc()
+            + render("003", selected)
+            + render("004", selected)
+            + assert_fixed_captures(6)
+            + record("role_alias_baseline"),
+        )
+        self.execute(
+            database,
+            (HERE / "role_alias.sql").read_text()
+            + role_alias_identity()
+            + """DECLARE @Evidence nvarchar(max)=N'LAKEHOUSE_SQL_FIXTURE=' + (
+ SELECT N'role_alias_metadata' AS stage,N'observed' AS status,
+ @SamePrincipal AS same_principal,
+ @SavedCaseDifferent AS saved_case_different
+ FOR JSON PATH,WITHOUT_ARRAY_WRAPPER);
+PRINT @Evidence;
+""",
+        )
+        for number in ("004", "005"):
+            self.execute(
+                database,
+                role_alias_probe(
+                    render(number, selected, confirm=(number == "005")),
+                    number,
+                ),
+            )
+
+    def checker_identity(self, case):
+        database, selected = self.fresh(
+            "checker_" + case, "Latin1_General_CI_AS"
+        )
+        canonical = (ROOT / "scripts/sqlserver_safety.sql").read_text().strip()
+        setup = "SET ANSI_NULLS ON; SET QUOTED_IDENTIFIER ON;\n"
+        code = 51019
+        if case == "own_exact":
+            definition = canonical
+        elif case == "unrelated":
+            definition = canonical.replace("THEN 1 ELSE 0", "THEN 0 ELSE 0")
+        elif case == "execution":
+            definition = canonical.replace(
+                "EXECUTE AS 'dbo'", "EXECUTE AS OWNER"
+            )
+        elif case == "quoted":
+            setup = "SET ANSI_NULLS ON; SET QUOTED_IDENTIFIER OFF;\n"
+            definition = canonical
+        elif case == "owner":
+            definition = canonical
+            code = 51018
+        elif case in {"effective", "version", "ownership"}:
+            definition = canonical
+            if case in {"version", "ownership"}:
+                code = 51003
+        elif case == "whitespace":
+            definition = canonical.replace(
+                "SET NOCOUNT ON;", "SET  NOCOUNT ON;"
+            )
+        else:
+            raise FixtureError("FIXED_CHECKER_CASE_REQUIRED")
+        setup += "EXEC sys.sp_executesql " + literal(definition) + ";\n"
+        if case == "owner":
+            setup += (
+                "CREATE USER fixture_other_owner WITHOUT LOGIN;\n"
+                "ALTER AUTHORIZATION ON SCHEMA::lh_demo_ctl "
+                "TO fixture_other_owner;\n"
+            )
+        if case == "effective":
+            setup += (
+                "CREATE USER fixture_other_owner WITHOUT LOGIN;\n"
+                "ALTER AUTHORIZATION ON OBJECT::"
+                "lh_demo_ctl.check_write_safety_v1 TO fixture_other_owner;\n"
+            )
+        if case == "version":
+            setup += "UPDATE lh_demo_ctl.installation SET schema_version=2;\n"
+        if case == "ownership":
+            setup += (
+                "UPDATE lh_demo_ctl.installation SET ownership_hash="
+                "REPLICATE('0',64);\n"
+            )
+        self.execute(database, setup + record("checker_" + case + "_prepared"))
+        if case == "own_exact":
+            self.execute(
+                database,
+                render("003", selected)
+                + successful_permissions()
+                + record("own_checker_reused"),
+            )
+            self.execute(
+                database,
+                render("003", selected) + record("own_checker_reused_again"),
+            )
+        else:
+            # Record a definition hash before the rejected attempt; do not
+            # output its body or overwrite/drop the unrelated procedure.
+            body = """DECLARE @BeforeDefinition varbinary(32)=
+ HASHBYTES('SHA2_256',
+ OBJECT_DEFINITION(OBJECT_ID(N'lh_demo_ctl.check_write_safety_v1')));
+"""
+            body += expect_failure(
+                render("003", selected), code, "checker_" + case + "_rejected"
+            )
+            body += """IF OBJECT_ID(
+ N'lh_demo_ctl.check_write_safety_v1',N'P') IS NULL
+ OR @BeforeDefinition<>HASHBYTES('SHA2_256',
+ OBJECT_DEFINITION(OBJECT_ID(N'lh_demo_ctl.check_write_safety_v1')))
+ THROW 51985, 'A rejected checker was changed.', 1;
+"""
+            self.execute(
+                database, body + record("untrusted_checker_preserved")
+            )
+
+
+def plan():
+    """Make limitations and exact opt-in prerequisites machine-readable."""
+    return {
+        "schema_version": 1,
+        "kind": "sqlserver-collation-fixture",
+        "status": "not_run",
+        "required_server": "SQL Server 2022 Developer",
+        "required_client": "official Go sqlcmd exactly 1.10.0 (version-gated)",
+        "transport": "explicit -N mandatory with disposable-cert trust -C",
+        "endpoint_policy": "literal TCP loopback, no DNS or remote host",
+        "operator_prerequisites": [
+            "pre-existing isolated disposable instance; never company/prod",
+            "SA fixture authorization and running SQL Server Agent for CDC",
+            "no existing synthetic database name will be adopted",
+            "no Docker/host/network changes or image downloads by this tool",
+        ],
+        "database_collations": [
+            "Latin1_General_CI_AS",
+            "Latin1_General_CS_AS",
+        ],
+        "mixed_collation_reproduction": (
+            "forced column mismatch, not measured catalog"
+        ),
+        "checker_cases": list(CHECKER_CASES),
+        "outer_transaction_cases": ["003", "004", "005", "preflight"],
+        "role_alias_cases": (
+            "supported CDC creation in fresh CI/CS databases; read back saved "
+            "spelling/principal IDs; canonicalization is a coverage gap"
+        ),
+        "ansi_nulls_off_case": (
+            "not forced; SQL2022 ANSI_NULLS behavior requires observation"
+        ),
+        "cleanup": "none; fresh marked databases retained for owner review",
+        "runtime_proof": False,
+    }
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--run", action="store_true")
+    mode.add_argument("--plan", action="store_true")
+    parser.add_argument("--consent", default="")
+    parser.add_argument("--server")
+    parser.add_argument("--sqlcmd", type=Path)
+    args = parser.parse_args(argv)
+    if not args.run:
+        print(json.dumps(plan()))
+        return 0
+    if args.consent != CONSENT:
+        raise FixtureError("EXPLICIT_DISPOSABLE_SERVER_CONSENT_REQUIRED")
+    server = endpoint(args.server)
+    sqlcmd = args.sqlcmd or shutil.which("sqlcmd")
+    if not sqlcmd:
+        raise FixtureError("OFFICIAL_SQLCMD_UNAVAILABLE")
+    client_version = verify_client(sqlcmd)
+    initial_hashes = source_hashes()
+    nonce = uuid.uuid4().hex
+    version = (
+        subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ROOT,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        .stdout.decode()
+        .strip()
+    )
+    password = getpass.getpass("Disposable SQL2022 SA password (not saved): ")
+    if not password:
+        raise FixtureError("SYNTHETIC_DBA_CREDENTIAL_REQUIRED")
+    runner = Runner(server, sqlcmd, password, nonce, version)
+    candidates = runner.candidate_databases
+    try:
+        runner.lifecycle("ci", "Latin1_General_CI_AS")
+        runner.lifecycle("cs", "Latin1_General_CS_AS")
+        runner.shared_role_alias("role_ci", "Latin1_General_CI_AS")
+        runner.shared_role_alias("role_cs", "Latin1_General_CS_AS")
+        for case in plan()["checker_cases"]:
+            runner.checker_identity(case)
+        if source_hashes() != initial_hashes:
+            raise FixtureError("PUBLIC_FIXTURE_INPUTS_CHANGED")
+    except (FixtureError, OSError, ValueError, subprocess.SubprocessError):
+        print(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "status": "failed_or_partial",
+                    "confirmed_databases_created": runner.databases_created,
+                    "candidate_synthetic_databases": candidates,
+                    "fixture_owner_sha256": hashlib.sha256(
+                        nonce.encode()
+                    ).hexdigest(),
+                    "client_version": client_version,
+                    "source_commit": version,
+                    "source_sha256": initial_hashes,
+                    "records": runner.records,
+                    "databases_may_remain": True,
+                    "cleanup": "none; inspect owned synthetic databases",
+                }
+            )
+        )
+        return 1
+    role_coverage = role_alias_coverage(runner.records)
+    role_coverage_complete = all(
+        role_coverage[key]
+        for key in (
+            "same_principal_saved_alias_exercised",
+            "distinct_principal_exercised",
+        )
+    )
+    print(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "status": (
+                    "passed"
+                    if role_coverage_complete
+                    else "passed_with_coverage_gaps"
+                ),
+                "role_alias_coverage": role_coverage,
+                "confirmed_databases_created": runner.databases_created,
+                "candidate_synthetic_databases": candidates,
+                "fixture_owner_sha256": hashlib.sha256(
+                    nonce.encode()
+                ).hexdigest(),
+                "client_version": client_version,
+                "source_commit": version,
+                "source_sha256": initial_hashes,
+                "records": runner.records,
+                "cleanup": "retained_intentionally",
+            }
+        )
+    )
+    return 0 if role_coverage_complete else 3
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except (
+        FixtureError,
+        OSError,
+        ValueError,
+        subprocess.SubprocessError,
+    ) as error:
+        # Fixed messages only; no exception bodies containing client output.
+        code = (
+            str(error)
+            if isinstance(error, FixtureError)
+            else "FIXTURE_UNAVAILABLE"
+        )
+        print(json.dumps({"status": "blocked", "code": code}))
+        raise SystemExit(2) from None

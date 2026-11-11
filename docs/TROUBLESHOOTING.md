@@ -333,3 +333,9 @@ rebuildの202は完了ではありません。同じrequest IDを再照会し、
 Notebook workspaceのread-only計画と承認後のapply/probe、既存projectを明示したSpark検証、機械可読な結果は [compute配置前・検証手順](COMPUTE-VALIDATION.md) を参照します。通常Deployでspark-checkが常駐しないのは正常です。local tagのpull方針はFROM/uv/JAR通信や未解決のBuildKit auth session timeoutを修復する保証ではありません。
 
 監視拡張のhost権限・GUI保持・検証未了事項は [段階的な監視基盤](OBSERVABILITY.md) を参照してください。既存monitoringの更新でも、新規host mountは配置前に承認が必要です。
+
+## SQL Server error 468 / checker error 51019
+
+003のrole/permission、004/005のcapture/index/column比較でsystem/catalogと対象DBのcollation差が現れる場合、承認済み修正版の両辺BIN2比較を使います。server/database collation変更、`DATABASE_DEFAULT`での回避、安全gate解除はしません。006は読取り監査で同型の異種列競合を確認していません。
+
+失敗後はchecker・role・grant・CDC captureが残っていないと推測せず、新しい専用DBA sessionで読取り専用preflightを行います。51019は未知の同名checkerを保護する停止です。自動DROPや定義の強制更新を行いません。003成功とrole割当が既に確認できた場合は006へ進み、修正版004の承認後に004→006とします。003未確認ならpreflight→必要な003→006で止めて照合します。005は明示的なrollback専用です。[残存診断・Windows sqlcmd・部分完了の再開](SQLSERVER-DDL-RECOVERY.md)
