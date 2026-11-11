@@ -62,11 +62,11 @@ source acknowledgementsは無効です。optional sinkの停止がcheckpointや�
 
 `monitoring-host` が正確に選ばれた場合だけ、Vectorは追加の `host-expected.yaml` からstatic_metricsを読み、15秒ごとに1個のgauge `lakehouse_host_collection_expected=1` を公開します。これはhost exporterの選択を表すsignalで、host root/PIDの読取り権限をVectorへ追加しません。Prometheusはexpected=1とVector自身のup=1を条件に、個別exporterの停止・DNS target消失を判定します。Vector停止中はhost判定unknownとなり、LogTransportDownの別条件で扱います。source/stubの成功をnative metrics公開の受入へ読み替えません。[static_metrics固定版source](https://github.com/vectordotdev/vector/blob/v0.61.0/src/sources/static_metrics.rs)・[Prometheus collector固定版source](https://github.com/vectordotdev/vector/blob/v0.61.0/src/sinks/prometheus/collector.rs)
 
-接続URIのuserinfo（`scheme://user:password@…`）はHTTP/S3に限らず、PostgreSQL・SQLAlchemy driver名・Redis・AMQP・MongoDBなどのschemeも同じ規則で伏せます。userinfoのないURIをその理由だけで消さない合成fixtureも含めます。単独JWTや複数行PEM秘密鍵の完全な検出・追従は未実装です。regexを秘密値の網羅的な防御とせず、application側で資格情報をログへ出さないことと、Git外private captureの権限を前提にします。
+接続URIのuserinfo（`scheme://user:password@…`）はHTTP/S3に限らず、PostgreSQL・SQLAlchemy driver名・Redis・AMQP・MongoDBなどのschemeも同じ規則で伏せます。空ユーザーのpassword-only形式やtoken-as-userも伏せ、userinfoのないURIやquery内の`@`をその理由だけで消さない合成fixtureも含めます。単独JWTや複数行PEM秘密鍵の完全な検出・追従は未実装です。regexを秘密値の網羅的な防御とせず、application側で資格情報をログへ出さないことと、Git外private captureの権限を前提にします。
 
 ## 6. 検証の現状
 
-99合成case定義（severity 59＝既知format期待49＋unknown/malformed/continuation期待10、秘匿化/metadata期待40）とpipeline3件、合計102のnative Vectorテストを同梱します。`ab5a50f` の[GitHub Actions](https://github.com/hiromura16/lakehouse-foundation/actions/runs/43016741384)では、当時の公式固定Vector 0.61.0でbase/host/OpenObserve fanoutの4構成検査と92合成テストが成功しました。追加したDB接続URIの10合成ケースは、各commitのCIで同じ公式バイナリを使って検証します。Pythonによる模倣結果ではなく、選択版バイナリでの合成期待値検証です。会社の実format対応率や配送・耐久・GUI受入の成功率には読み替えません。ローカルDocker APIへの過去の拒否は再試行・迂回せず、CIの使い捨てcontainerはnetwork・host mount・socket・追加capabilityなしで公開入力だけを使用しました。[公式validator](../scripts/validate_observability.py)は既定でplanのみです。
+103合成case定義（severity 59＝既知format期待49＋unknown/malformed/continuation期待10、秘匿化/metadata期待44）とpipeline3件、合計106のnative Vectorテストを同梱します。`ab5a50f` の[GitHub Actions](https://github.com/hiromura16/lakehouse-foundation/actions/runs/43016741384)では、当時の公式固定Vector 0.61.0でbase/host/OpenObserve fanoutの4構成検査と92合成テストが成功しました。追加したDB接続URIの14合成ケースは、各commitのCIで同じ公式バイナリを使って検証します。Pythonによる模倣結果ではなく、選択版バイナリでの合成期待値検証です。会社の実format対応率や配送・耐久・GUI受入の成功率には読み替えません。ローカルDocker APIへの過去の拒否は再試行・迂回せず、CIの使い捨てcontainerはnetwork・host mount・socket・追加capabilityなしで公開入力だけを使用しました。[公式validator](../scripts/validate_observability.py)は既定でplanのみです。
 
 会社での20–50行/serviceのprivate原本→Vector→Loki/OpenObserve→Grafana色/field比較、false error/fatal=0、既知format parse成功99%以上の評価は後日の許可された受入です。分母・未知format除外・失敗数を明記し、少数の合成期待値を達成率として報告しません。
 

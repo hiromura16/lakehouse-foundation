@@ -1327,6 +1327,30 @@
       "kind": "redaction",
       "message": "redis://service.invalid/db",
       "expected_message": "redis://service.invalid/db"
+    },
+    {
+      "name": "redaction-redis-password-only",
+      "kind": "redaction",
+      "message": "redis://:synthetic-value@service.invalid/0",
+      "expected_message": "[REDACTED: sensitive log content]"
+    },
+    {
+      "name": "redaction-rediss-password-only",
+      "kind": "redaction",
+      "message": "rediss://:synthetic-value@service.invalid/0",
+      "expected_message": "[REDACTED: sensitive log content]"
+    },
+    {
+      "name": "redaction-dsn-token-as-user",
+      "kind": "redaction",
+      "message": "postgresql://synthetic-value@service.invalid/db",
+      "expected_message": "[REDACTED: sensitive log content]"
+    },
+    {
+      "name": "safe-uri-at-in-query",
+      "kind": "redaction",
+      "message": "https://service.invalid?email=sample@example.invalid",
+      "expected_message": "https://service.invalid?email=sample@example.invalid"
     }
   ]
 }

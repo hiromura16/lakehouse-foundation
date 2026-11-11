@@ -4572,6 +4572,166 @@ tests:
         assert_eq!(.truncated, 0)
 
         assert_eq!(.logger, "unit.logger")'
+- name: redaction-redis-password-only
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 28ea3a7ee48ebdb19b2b5566ff69c74755e7d42d73bb7ea6f6b8df0095c0268d
+      stream: stdout
+      message: redis://:synthetic-value@service.invalid/0
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: unit.logger
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "[REDACTED: sensitive log content]")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "unit.logger")'
+- name: redaction-rediss-password-only
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 9f665d8ffdc4b005ef254d047ca85b05dca43f36ca1b140670f2d7bdb3c1fae3
+      stream: stdout
+      message: rediss://:synthetic-value@service.invalid/0
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: unit.logger
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "[REDACTED: sensitive log content]")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "unit.logger")'
+- name: redaction-dsn-token-as-user
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 7a60416c661e6b02c3cf835fb7f5a6f1744229e423f89047045823557ab449a9
+      stream: stdout
+      message: postgresql://synthetic-value@service.invalid/db
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: unit.logger
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "[REDACTED: sensitive log content]")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "unit.logger")'
+- name: safe-uri-at-in-query
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 4b18a1237e9c3a18ce4d6948f5d49f01aee892fe7796eec84094f742e80df9b9
+      stream: stdout
+      message: https://service.invalid?email=sample@example.invalid
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: unit.logger
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "https://service.invalid?email=sample@example.invalid")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "unit.logger")'
 - name: envelope-ansi-before-severity
   inputs:
   - insert_at: envelope
