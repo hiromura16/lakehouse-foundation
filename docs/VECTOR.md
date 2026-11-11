@@ -42,7 +42,7 @@ captureは**自動常駐collectorではありません**。明示フラグ付き
 
 [parser matrix](../infra/monitoring/vector/log_parsers.yaml) は配備lockの版、公式参照、合成format例、mapping、multilineとfallbackを記録します。会社の実ログを取得していないためformat対応は**provisional**です。Trino、Python/Uvicorn/portal/CDC、Superset/Gunicorn、Prometheus/Grafana、PostgreSQL、SeaweedFS、Lakekeeper、Redis、Nginx/Traefik/Dokploy、Kafka/Debezium/UI、exporter/Loki/Vector/labを区別します。未知formatを既知として統計の分母に混ぜません。
 
-複数行はcontainer/source/stream/processごとに集約し、最初のrecordのlevel・logger・時刻・identityを継承します。Python最終exception行やJava continuationも対象です。次の新record、1秒timeout、最大32eventで区切り、truncated flagを付けます。最終messageは4096文字へ制限します。UnicodeやJSON escapeによる膨張もLoki64KiB以内へ収める設計ですが、合成VRL実行はCIで確認しましたが、実配送のサイズ・並行動作は別受入です。並行traceの混在、rotation、shutdownは未受入です。
+複数行はcontainer/source/stream/processごとに集約し、最初のrecordのlevel・logger・時刻・identityを継承します。Python最終exception行やJava continuationも対象です。次の新record、1秒timeout、最大32eventで区切り、truncated flagを付けます。最終messageは4096文字へ制限します。UnicodeやJSON escapeによる膨張もLoki64KiB以内へ収める設計です。合成VRL実行はCIで確認し、実配送のサイズ・並行動作は別受入とします。並行traceの混在、rotation、shutdownは未受入です。
 
 ## 4. 秘匿化とラベル
 
@@ -64,9 +64,11 @@ source acknowledgementsは無効です。optional sinkの停止がcheckpointや�
 
 接続URIのuserinfo（`scheme://user:password@…`）はHTTP/S3に限らず、PostgreSQL・SQLAlchemy driver名・Redis・AMQP・MongoDBなどのschemeも同じ規則で伏せます。空ユーザーのpassword-only形式やtoken-as-userも伏せ、userinfoのないURIやquery内の`@`をその理由だけで消さない合成fixtureも含めます。単独JWTや複数行PEM秘密鍵の完全な検出・追従は未実装です。regexを秘密値の網羅的な防御とせず、application側で資格情報をログへ出さないことと、Git外private captureの権限を前提にします。
 
+Prometheusのhost exporter DNS discoveryは、`monitoring-host` 未選択時も設定上15秒ごとに2つの固定service名を再解決します。Dockerの内部DNSが上位resolverへ転送する可能性があり、未解決時のログや問い合わせの実頻度は配置先で確認します。同名が上位DNSで解決されると意図しないtargetへscrapeし得るため、DNS解決だけをproject所有の証明にせず、PrometheusのService Discovery／TargetsとCompose内部DNSの対応を配置前後で照合します。今回のコード修正でhostのDNS・firewall・network設定は変更していません。
+
 ## 6. 検証の現状
 
-103合成case定義（severity 59＝既知format期待49＋unknown/malformed/continuation期待10、秘匿化/metadata期待44）とpipeline3件、合計106のnative Vectorテストを同梱します。`ab5a50f` の[GitHub Actions](https://github.com/hiromura16/lakehouse-foundation/actions/runs/43016741384)では、当時の公式固定Vector 0.61.0でbase/host/OpenObserve fanoutの4構成検査と92合成テストが成功しました。追加したDB接続URIの14合成ケースは、各commitのCIで同じ公式バイナリを使って検証します。Pythonによる模倣結果ではなく、選択版バイナリでの合成期待値検証です。会社の実format対応率や配送・耐久・GUI受入の成功率には読み替えません。ローカルDocker APIへの過去の拒否は再試行・迂回せず、CIの使い捨てcontainerはnetwork・host mount・socket・追加capabilityなしで公開入力だけを使用しました。[公式validator](../scripts/validate_observability.py)は既定でplanのみです。
+103合成case定義（severity 59＝既知format期待49＋unknown/malformed/continuation期待10、秘匿化/metadata期待44）とpipeline3件、合計106のnative Vectorテストを同梱します。`63c957c` の[GitHub Actions](https://github.com/hiromura16/lakehouse-foundation/actions/runs/43018038442)では、公式固定Vector 0.61.0でbase/host/OpenObserve fanoutの4構成検査と106合成テストが成功しました。DB接続URIの14合成ケースもこの結果に含みます。Pythonによる模倣結果ではなく、選択版バイナリでの合成期待値検証です。会社の実format対応率や配送・耐久・GUI受入の成功率には読み替えません。ローカルDocker APIへの過去の拒否は再試行・迂回せず、CIの使い捨てcontainerはnetwork・host mount・socket・追加capabilityなしで公開入力だけを使用しました。[公式validator](../scripts/validate_observability.py)は既定でplanのみです。
 
 会社での20–50行/serviceのprivate原本→Vector→Loki/OpenObserve→Grafana色/field比較、false error/fatal=0、既知format parse成功99%以上の評価は後日の許可された受入です。分母・未知format除外・失敗数を明記し、少数の合成期待値を達成率として報告しません。
 
