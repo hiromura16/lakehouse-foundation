@@ -246,6 +246,10 @@ Microsoftの手続きは、最初の表の有効化や最後の表の無効化�
 
 ### Kafka・Icebergを分離する
 
+SQL Server AgentがDBAの画面で動いていても、Debezium既定の状態queryをreaderが実行できるとは限りません。`VIEW DATABASE STATE` だけでは不足する環境があります。採用Debezium 3.7とSQL Server版の必要な参照権限をDBAが確認します。アプリがserver権限を追加する処理はありません。汎用CDCで案内する署名付きscalar UDFも、固定readerの任意EXECUTE拒否と衝突する場合があり、無条件に利用できるとは扱いません。6captureのpreflight成功だけでAgent queryやconnectorの実稼働を受入済みにしません。
+
+Deploy前に `CDC_CONFIG_DIR` のcheckout外privateディレクトリを用意し、`WORKER_UID/GID` が読める所有権を確認します。[CDC共通のprivateディレクトリ手順](CDC.md#4-外部-private-設定を用意する) を使います。fixed-demoでは `table-map.json` は不要ですが、共通Composeのread-only directory bindは残るため、ディレクトリ自体は必要です。別の配置先の実pathを公開Composeへ固定しません。
+
 connector名とdata prefixは `lakehouse-demo-sqlserver`、consumer groupは `lakehouse-demo-sqlserver-consumer` に固定します。6表のdata topicとschema-history topicを従来のgeneric sourceから分けます。Kafka Connect worker自体のconfig/offset/status topicは既存基盤を共有し、これらを新しく分離したとは説明しません。既存connectorの設定差分は自動PUTせず、登録を拒否します。既存offset/history/stateを削除してやり直す操作を提供しません。
 
 登録前とconsumer起動前に、SOURCE readerで所有権、read-only有効権限、固定6captureと列・datetime2(7)をSELECT診断します。初回snapshotはfixed-demoのみ `exclusive` isolationとし、線形なsnapshot/stream履歴を得る代わりに固定sourceの更新を一時的に待たせます。投入を停止したメンテナンス窓で開始します。DBのsnapshot isolation設定を変更しません。日時はadaptive、decimalは文字列、transaction metadataを有効にします。NanoTimestampの表現範囲外などの変換失敗は停止して調査し、欠損を成功として扱いません。[Debezium 3.7 SQL Server仕様](https://debezium.io/documentation/reference/3.7/connectors/sqlserver.html)
@@ -259,3 +263,65 @@ Phase 4のfixed consumerはRaw保存後に停止し、Current Stateの再構築�
 Python登録器/consumerのPEMと、Java Connectのtruststoreは別です。標準CAだけなら `SOURCE_SQLSERVER_CA_FILE` を空にします。custom PEMでは、公開Composeの0byte placeholderをprivate Compose overrideで `/run/source-certs/source-ca.pem` のread-only bindへ置き換えます。対象は `cdc-register` と `cdc-consumer` の2サービスです。host path、実CAはcheckout外に置き、Dokployのprivate File Mountsでoverrideを作り、Run Commandへその `-f` を加えます。placeholderのままcustom CAを選ぶとpreflightが拒否します。Java側は従来の `CDC_SQLSERVER_TRUSTSTORE_FILE` と `CDC_SQLSERVER_TRUSTSTORE` を使います。custom SOURCE PEMで証明書検証を行う場合、Java truststoreも明示しない設定はplanで拒否します。runtimeの再診断はcapture列・日時精度を含みますが、全scalar型・PKの検査はDBAの004と、その後にDDLを変更しない運用が前提です。認証情報やCAを公開Composeへ書きません。
 
 profile追加は実装のテスト成功だけで判断せず、会社側でsnapshot・増分の受入完了後に行います。`demo,monitoring,bi,cdc` のメモリ・Swap・保持期間を計測し、connector RUNNING、Raw、Current、Gold、offsetを順番に確認します。ローカルunit/static試験だけからSQL Server Agentや実CDCが正常とは報告しません。
+
+## 8. Current State・replay・GUI監視
+
+状態画面の固定SQL欄で、バッチ状態、CDC状態、SQL watermarkをそれぞれ明示的に照会します。画面を開いただけでSQL Serverへ接続したり、DDLやrebuildを実行したりしません。SQL watermark照会は別control資格情報でSELECTだけを行い、初期行の作成・位置更新・update lockを取りません。部分baselineや混在したbatch IDは正常扱いしません。
+
+| 見る場所 | 確認できること | 確認できないこと |
+| --- | --- | --- |
+| 固定source診断 | 接続・所有権・限定権限、固定6表件数/最終更新/capture | SQL Server Agent全体の健康を保証しない。権限不足で見えない情報はDBAが確認 |
+| バッチ状態 | SQL用Bronze件数と完了台帳・適用途中の記録 | Iceberg完了記録だけからSQL checkpointのcommitを断定しない |
+| SQL watermark照会 | 実control表の時刻＋PK＋完了batch ID | timestampより古い遅延commitや物理DELETEを保証しない |
+| CDC状態 | connector/task、観測できたpartitionのoffset/lag、Raw/Current件数、rebuild進捗 | 未観測のlagを0にせず、未到達を成功にしない。LSN遅延とKafka lagは別 |
+| SQL用Gold preview | batch/CDC別の固定2datasetをsnapshot固定・上限付きで参照 | 全件集計の完全な証拠や複数表の同時snapshotではない |
+
+### Rawと現在値の境界
+
+`sqlcdc_events.events` は受信したr/c/u/d/tombstoneの不変原本です。Kafka nullはArrow/SQL NULLとして、空バイト列は空文字として別々に保存します。壊れた空payloadもtombstoneへ書き換えません。解釈に失敗してもRawが残る場合があり、その件数だけから処理完了を判定しません。
+
+`sqlcdc_bronze` はSQLiteのPK別最新LSN/revisionから作る現在値です。UPDATE後は最新だけを保持し、DELETEでは業務行を除去します。SQLiteには削除版を残し、古いUPDATEで復活しないようにします。tombstoneは削除本体とは別の配送記録です。元のbefore/afterをRawへ残し、Currentは原値JSONを業務値の正本にします。SQL ServerのLOB列はUPDATEのbeforeでNULLになる場合があるため、更新前LOBの存在を現在値反映の必須条件にしません。
+
+```mermaid
+sequenceDiagram
+    participant K as Kafka 固定6topic
+    participant R as Iceberg 不変Raw
+    participant S as SQLite 永続state
+    participant M as SQL CDC Bronze/Silver/Gold
+    K->>R: topic/partition/offsetと原文を先にcommit
+    R->>S: keyとLSN/revisionで現在値をstage
+    S->>M: 6表と派生処理を再構築
+    M-->>S: 全処理の完了を確認
+    S->>S: local完了offsetをcommit
+    S-->>K: 最後にbrokerへoffsetをack
+    Note over R,M: 各保存先は独立commit。分散transactionではない
+```
+
+固定sourceのdatetime2(7)はDebeziumの整数nanosecondsから7桁文字列へ変換し、floatを使いません。NULL・空文字・日本語・decimal原値はJSON側へ保持します。Silverの既存型付き業務日時はミリ秒であり、Rawの精度と区別します。
+
+### 明示的に再構築する
+
+GUIのrebuild同意を選ぶと、固定Current Stateの再構築要求を送ります。Swaggerでは `POST /sql-source/cdc/rebuild` に `{"confirm": true}` を送ります。202は `request_id` を付けたqueue受付で、`completed=false` のままです。CDC状態を再照会し、同じIDが `succeeded`・`completed=true` になったことを確認します。通常のJobManagerの成功件数へ受付だけを加算しません。
+
+consumerの単一実行threadがKafka読取りを止め、RawのIceberg snapshotを固定し、source identityと履歴の連続性を検査して別のSQLiteへ再生します。Rawの欠落・途中からの履歴・gap・既存checkpointを覆えない履歴は拒否します。これは小規模PoCの保守的な再生条件で、任意の途中snapshotと残存ログから復旧する汎用ツールではありません。空のtable/topicで履歴の開始点を証明できない場合も、自動的に完全とみなしません。
+
+検証・materialization・新SQLite保存が成功する前は旧SQLiteを保持します。派生表の更新開始前に永続pendingを残すため、途中停止後に旧stateだけを見てreadyへ戻りません。成功したSQLiteの公開後にbroker ACKだけ失敗した場合、有効な新local checkpointは保持して停止します。結果不明を避けるために有効stateを巻き戻すことはありません。Iceberg複数表・SQLite・Kafkaを一括commitしたとの保証はありません。
+
+再構築中や失敗後は各表の世代が混ざる場合があり、利用者はGoldを完成データとして扱いません。Raw、Kafka、stateを保全し、表示された安全なerror codeと私有の観測記録を照合します。queryの取消が未確定なblockedはrebuildで自動解除しません。失敗したイベントを飛ばしてoffsetを進めたり、offset/historyを削除して成功に見せたりする操作はありません。
+
+### AIから参照する
+
+固定Gold previewは `origin=batch|cdc`、`dataset=production|sales`、上限1〜100行だけを受け付けます。任意SQL・table・URLは渡せません。CLIのAI contextも既定Landingを維持し、明示originでSQL用/CDC用Goldへ切り替えられます。各datasetをsnapshotへ固定し、decimalは文字列、日付はISOで出力します。応答のtable/snapshotを根拠として引用し、LLMへDB資格情報やSQL実行権限を渡しません。API入口は [API.md](API.md)、既存AI連携は [AI-READINESS.md](AI-READINESS.md) を参照します。
+
+### PoCの容量と待ち時間の上限
+
+| 処理 | 実装の上限・前提 |
+| --- | --- |
+| SQL batch原本 | 全体16 MiB、各表10万行、1原値JSON 128 KiB。大きい原値をfetch前にも確認 |
+| SQL batch現在値 | 全6表の直列化64 MiB。分散MERGEの性能試験ではない |
+| CDC現在値 | 現在payload全体64 MiB、削除版を含め各表10万key。各batchで6表と派生SQLを再構築 |
+| Raw rebuild | 全6表のoffset 0から連続した最大10万イベント、payload合計128 MiB、1配送16 MiB。partition=0の固定PoC topic契約 |
+| 監視のTrino HTTP | 1page 64 KiBと行数上限、queryごとの期限とpoll URL allowlist。期限は処理中にも検査し、進行中の1回のI/O timeout分だけ超過し得る |
+| Gold preview | 固定projection・1〜100行・個別snapshot。CLI AI exportは別のDBAPI経路で行数とrequest timeoutを制限し、GUI監視と同じtransport上限とは説明しない |
+
+この上限を超える業務sourceや、複数partition・長期履歴・並列writerへ広げる場合は、別の設計・負荷試験・復旧試験を行います。値を大きく変更するだけで本番向けになるとは扱いません。

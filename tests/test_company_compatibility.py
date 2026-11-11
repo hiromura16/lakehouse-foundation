@@ -127,6 +127,9 @@ class PrivateSettingsCompatibilityTests(
         original = self.read_literal()
         self.assertEqual(original["CDC_SOURCE_MODE"], "generic")
         self.assertEqual(original["CDC_STATE_VOLUME_NAME"], "")
+        self.assertEqual(
+            original["SOURCE_SQLSERVER_HOSTNAME_IN_CERTIFICATE"], ""
+        )
         for key, value in (
             ("CDC_SOURCE_MODE", "automatic"),
             ("CDC_STATE_VOLUME_NAME", "../private"),
@@ -161,6 +164,9 @@ class PrivateSettingsCompatibilityTests(
         original.pop("CDC_SOURCE_MODE")
         original.pop("CDC_STATE_VOLUME_NAME")
         original["SOURCE_SQLSERVER_PASSWORD"] = "fixture-source-secret"
+        original["SOURCE_SQLSERVER_HOSTNAME_IN_CERTIFICATE"] = (
+            "tls.example.invalid"
+        )
         self.write_literal(original)
         self.configure("--upgrade")
         upgraded = self.read_literal()
@@ -168,6 +174,10 @@ class PrivateSettingsCompatibilityTests(
         self.assertEqual(
             upgraded["SOURCE_SQLSERVER_PASSWORD"],
             original["SOURCE_SQLSERVER_PASSWORD"],
+        )
+        self.assertEqual(
+            upgraded["SOURCE_SQLSERVER_HOSTNAME_IN_CERTIFICATE"],
+            "tls.example.invalid",
         )
 
     def test_fixed_cdc_custom_pem_needs_independent_java_trust(self):

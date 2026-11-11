@@ -2,6 +2,7 @@
 
 import json
 import math
+import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
@@ -14,6 +15,35 @@ TIMESTAMP_COLUMNS = {
     "end_time",
 }
 DATE_COLUMNS = {"planned_date", "order_date", "promised_date"}
+MAX_CURRENT_BYTES = 64 * 1024 * 1024
+MAX_CURRENT_ROWS = 100000
+
+
+def nano_timestamp(value):
+    """Preserve datetime2(7) nanoseconds without floating point conversion."""
+    if type(value) is not int or not -(2**63) <= value < 2**63 or value % 100:
+        raise ValueError("Fixed CDC requires exact datetime2(7) nanoseconds.")
+    seconds, nanos = divmod(value, 1000000000)
+    stamp = datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(
+        seconds=seconds
+    )
+    return stamp.strftime("%Y-%m-%dT%H:%M:%S") + f".{nanos // 100:07d}Z"
+
+
+def fixed_business_row(current, columns, primary_key, key):
+    """Reuse the batch reader's bounded, NULL-preserving sidecar contract."""
+    import importlib
+    import sys
+
+    from fixed_source import ROOT
+
+    scripts = str(ROOT / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    batch = importlib.import_module("sqlserver_batch")
+    return batch.original_values(
+        current.get("original_values"), columns, primary_key, key
+    )
 
 
 def assignment_offset(completed, low, high):
@@ -77,7 +107,21 @@ class State:
 
     def __init__(self, path, identity):
         """Refuse to reuse a durable volume for a different SQL source."""
+        self.path = path
+        self.identity = dict(identity)
+        self.fixed_source = identity.get("source_mode") == "fixed-demo"
+        expected = sha256(
+            json.dumps(identity, sort_keys=True).encode()
+        ).hexdigest()
         self.connection = sqlite3.connect(path)
+        existing = {
+            row[0]
+            for row in self.connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        if self.fixed_source:
+            self.check_existing_identity(existing, expected)
         self.connection.execute("PRAGMA journal_mode=WAL")
         self.connection.execute("PRAGMA synchronous=FULL")
         self.connection.executescript(
@@ -98,13 +142,56 @@ class State:
             );
             """
         )
-        expected = sha256(
-            json.dumps(identity, sort_keys=True).encode()
-        ).hexdigest()
         prior = self.get("identity")
         if prior and prior != expected:
+            self.connection.close()
             raise ValueError("CDC state volume belongs to a different source.")
         self.set("identity", expected)
+        if self.fixed_source:
+            self.connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS processing_errors (
+                    topic TEXT NOT NULL, partition_id INTEGER NOT NULL,
+                    offset_id INTEGER NOT NULL, error_code TEXT NOT NULL,
+                    recorded_at TEXT NOT NULL,
+                    PRIMARY KEY (topic, partition_id, offset_id)
+                );
+                CREATE TABLE IF NOT EXISTS rebuild_history (
+                    request_id TEXT PRIMARY KEY, status TEXT NOT NULL,
+                    raw_snapshot_id INTEGER, error_code TEXT,
+                    updated_at TEXT NOT NULL
+                );
+                """
+            )
+
+    def check_existing_identity(self, existing, expected):
+        """Inspect a fixed state before any persistent PRAGMA or table DDL."""
+        allowed = {
+            "metadata",
+            "current_rows",
+            "offsets",
+            "processing_errors",
+            "rebuild_history",
+        }
+        try:
+            if existing - allowed or (existing and "metadata" not in existing):
+                raise ValueError
+            prior = self.get("identity") if "metadata" in existing else None
+            if prior and prior != expected:
+                raise ValueError
+            if not prior and any(
+                # table names come only from the fixed allowlist above.
+                self.connection.execute(
+                    "SELECT 1 FROM " + table + " LIMIT 1"
+                ).fetchone()
+                for table in existing
+            ):
+                raise ValueError
+        except Exception:
+            self.connection.close()
+            raise ValueError(
+                "Restore the fixed CDC source identity and schema first."
+            ) from None
 
     def get(self, key):
         """Read one internal metadata field without exposing source data."""
@@ -138,34 +225,51 @@ class State:
         if record["value"] is None:
             return
         envelope = json.loads(record["value"])
+        if not isinstance(envelope, dict):
+            raise ValueError("CDC expects a JSON event envelope.")
         if envelope.get("op") not in {"r", "c", "u", "d"}:
             raise ValueError("Unsupported CDC operation; raw event was kept.")
         source = envelope.get("source", {})
         if (
             source.get("schema") != mapping["source_schema"]
             or source.get("table") != mapping["source_table"]
+            or (
+                self.fixed_source
+                and source.get("db") != self.identity["database"]
+            )
         ):
             raise ValueError("CDC event origin does not match the mapping.")
         fields = mapping["columns"]
         primary_key = columns[0]
         key_column = next(key for key in fields if fields[key] == primary_key)
         key = json.loads(record["key"] or "{}")
-        if set(key) != {key_column} or key[key_column] is None:
+        if (
+            not isinstance(key, dict)
+            or set(key) != {key_column}
+            or (key[key_column] is None)
+        ):
             raise ValueError("CDC requires a single declared business key.")
+        if self.fixed_source and not isinstance(key[key_column], str):
+            raise ValueError("Fixed CDC requires a string business key.")
         key_value = str(key[key_column])
         current = (
             envelope["before"] if envelope["op"] == "d" else envelope["after"]
         )
-        if not isinstance(current, dict) or any(
+        if self.fixed_source:
+            row = self.fixed_row(
+                record, envelope, current, mapping, columns, key_value
+            )
+        elif not isinstance(current, dict) or any(
             key not in current for key in fields
         ):
             raise ValueError(
                 "CDC source columns changed; review the contract."
             )
-        row = {
-            fields[key]: text_value(current[key], fields[key])
-            for key in fields
-        }
+        else:
+            row = {
+                fields[key]: text_value(current[key], fields[key])
+                for key in fields
+            }
         if row[primary_key] != key_value or not key_value:
             raise ValueError("CDC key does not match its source row.")
         order = version(envelope, record["offset"])
@@ -179,6 +283,8 @@ class State:
         payload = (
             None if envelope["op"] == "d" else json.dumps(row, sort_keys=True)
         )
+        if self.fixed_source:
+            self.check_budget(target, key_value, payload)
         with self.connection:
             self.connection.execute(
                 "INSERT OR REPLACE INTO current_rows "
@@ -197,6 +303,127 @@ class State:
         ).fetchone()[0]
         if count > 100000:
             raise ValueError("CDC demo current-state limit exceeded.")
+
+    def fixed_row(self, record, envelope, current, mapping, columns, key):
+        """Decode business originals; retain SQL watermark as provenance.
+
+        SQL Server can omit an unchanged LOB from an UPDATE before image.
+        INSERT/UPDATE use the after sidecar. DELETE needs only its key and LSN,
+        not a before-image original_values LOB. Tombstones never reach here.
+        """
+        primary = columns[0]
+        if not re.fullmatch(r"[!-~]{1,160}", key):
+            raise ValueError("Fixed CDC needs a bounded stable business key.")
+        if envelope["op"] == "d":
+            if isinstance(current, dict) and current.get(primary, key) != key:
+                raise ValueError("CDC DELETE key differs from its image.")
+            return {primary: key}
+        if not isinstance(current, dict) or current.get(primary) != key:
+            raise ValueError("Fixed CDC after image differs from its key.")
+        row = fixed_business_row(current, columns, primary, key)
+        run_id = current.get("run_id")
+        if not isinstance(run_id, str) or not re.fullmatch(
+            r"[0-9a-f]{12}", run_id
+        ):
+            raise ValueError("Fixed CDC after image has no tracked run ID.")
+        delivery = json.dumps(
+            [record["topic"], record["partition"], record["offset"]],
+            separators=(",", ":"),
+        )
+        return {
+            **row,
+            "_source_system": "sqlserver-fixed-cdc",
+            "_source_database": self.identity["database"],
+            "_source_schema": mapping["source_schema"],
+            "_source_table": mapping["source_table"],
+            "_source_pk": key,
+            "_source_updated_at": nano_timestamp(current.get("updated_at")),
+            "_batch_id": sha256(delivery.encode()).hexdigest(),
+            "_run_id": run_id,
+        }
+
+    def check_budget(self, target, key, payload):
+        """Bound total fixed state bytes and per-table version markers."""
+        row = self.connection.execute(
+            "SELECT LENGTH(CAST(row_json AS BLOB)) FROM current_rows "
+            "WHERE table_name=? AND row_key=?",
+            (target, key),
+        ).fetchone()
+        total = self.connection.execute(
+            "SELECT COALESCE(SUM(LENGTH(CAST(row_json AS BLOB))),0) "
+            "FROM current_rows"
+        ).fetchone()[0]
+        size = len(payload.encode()) if payload is not None else 0
+        prior = (row[0] or 0) if row else 0
+        if total - prior + size > MAX_CURRENT_BYTES:
+            raise ValueError("Fixed CDC current-state byte limit exceeded.")
+        if row is None:
+            count = self.connection.execute(
+                "SELECT COUNT(*) FROM current_rows WHERE table_name=?",
+                (target,),
+            ).fetchone()[0]
+            if count >= MAX_CURRENT_ROWS:
+                raise ValueError("Fixed CDC row-version limit exceeded.")
+
+    def counts(self, targets):
+        """Count observed live rows without returning source payloads."""
+        return {
+            target: self.connection.execute(
+                "SELECT COUNT(*) FROM current_rows WHERE table_name=? "
+                "AND row_json IS NOT NULL",
+                (target,),
+            ).fetchone()[0]
+            for target in targets
+        }
+
+    def completed_offsets(self):
+        """Return internal Kafka checkpoints for bounded replay validation."""
+        return {
+            (topic, partition): offset
+            for topic, partition, offset in self.connection.execute(
+                "SELECT topic,partition_id,offset_id FROM offsets"
+            )
+        }
+
+    def record_failure(self, record, code):
+        """Save a fixed failure code without payload or driver text."""
+        if not self.fixed_source:
+            return
+        if not re.fullmatch(r"[A-Z_]{1,64}", code):
+            raise ValueError("Invalid CDC diagnostic code.")
+        with self.connection:
+            self.connection.execute(
+                "INSERT OR REPLACE INTO processing_errors VALUES (?,?,?,?,?)",
+                (
+                    record["topic"],
+                    record["partition"],
+                    record["offset"],
+                    code,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+
+    def record_rebuild(self, request_id, status, snapshot_id=None, error=None):
+        """Keep main-thread rebuild outcomes durably without private values."""
+        if not self.fixed_source or not re.fullmatch(
+            r"[0-9a-f]{32}", request_id
+        ):
+            raise ValueError("Invalid fixed CDC rebuild identity.")
+        if status not in {"running", "succeeded", "failed"} or (
+            error is not None and not re.fullmatch(r"[A-Z_]{1,64}", error)
+        ):
+            raise ValueError("Invalid CDC rebuild outcome.")
+        with self.connection:
+            self.connection.execute(
+                "INSERT OR REPLACE INTO rebuild_history VALUES (?,?,?,?,?)",
+                (
+                    request_id,
+                    status,
+                    snapshot_id,
+                    error,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
 
     def rows(self, target):
         """Return live business rows with the existing Bronze metadata

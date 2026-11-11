@@ -20,8 +20,9 @@ from hashlib import sha256
 from pathlib import Path
 
 from config import CONTRACTS, selected_mapping, settings, topic_names
+from event_limits import MAX_RECORD_BYTES
 from fixed_source import preflight
-from state import State, assignment_offset
+from state import State
 
 RAW_COLUMNS = [
     "event_id",
@@ -129,7 +130,9 @@ def message_record(message):
     """
     payload = message.value()
     key = message.key()
-    if len(payload if payload is not None else b"") > 16 * 1024 * 1024:
+    size = len(payload if payload is not None else b"")
+    size += len(key if key is not None else b"")
+    if size > MAX_RECORD_BYTES:
         raise ValueError("CDC event exceeds the 16 MiB limit.")
     return {
         "topic": message.topic(),
@@ -247,38 +250,54 @@ def process(admin, state, records, mapping, topics, *, values=None):
         "fixed-demo"
     )
     if fixed:
-        count = append_raw(
-            admin.catalog(),
-            records,
-            namespace="sqlcdc_events",
-            identity=identity_digest(source_identity(values, mapping)),
-        )
-        # Phase 4 retains raw events safely. Fixed current-state decoding is
-        # introduced with the separately tested replay/materialization phase.
+        try:
+            count = append_raw(
+                admin.catalog(),
+                records,
+                namespace="sqlcdc_events",
+                identity=identity_digest(source_identity(values, mapping)),
+            )
+        except Exception:
+            for record in records:
+                state.record_failure(record, "CDC_RAW_WRITE_FAILED")
+            raise
+        # Never apply fixed events through a generic decoder or state file.
         if not getattr(state, "fixed_source", False):
             raise ValueError("Fixed CDC current-state support is not ready.")
     else:
         count = append_raw(admin.catalog(), records)
+    state.last_raw_appended = count
+    if fixed:
+        # A later invalid event can leave earlier rows staged. Persist the
+        # generation marker before staging, not only before derived SQL.
+        state.set("materialization_pending", "true")
     contracts = {item["table"]: item["columns"] for item in CONTRACTS}
     for record in records:
-        target = topics.get(record["topic"])
-        if target is None:
-            raise ValueError("Unexpected Kafka topic; no offset advanced.")
-        if record["offset"] <= state.offset(
-            record["topic"], record["partition"]
-        ):
-            continue
-        if record["value"] is not None:
-            source = json.loads(record["value"]).get("source", {})
-            database = (
-                values["CDC_SQLSERVER_DATABASE"]
-                if values is not None
-                else os.environ["CDC_SQLSERVER_DATABASE"]
-            )
-            if source.get("db") != database:
-                raise ValueError("CDC event database does not match settings.")
-        # 工程2: LSN/削除版を現在値へ反映。完了offsetはまだ進めない。
-        state.stage(record, target, mapping[target], contracts[target])
+        try:
+            target = topics.get(record["topic"])
+            if target is None:
+                raise ValueError("Unexpected Kafka topic; no offset advanced.")
+            if record["offset"] <= state.offset(
+                record["topic"], record["partition"]
+            ):
+                continue
+            if record["value"] is not None:
+                source = json.loads(record["value"]).get("source", {})
+                database = (
+                    values["CDC_SQLSERVER_DATABASE"]
+                    if values is not None
+                    else os.environ["CDC_SQLSERVER_DATABASE"]
+                )
+                if source.get("db") != database:
+                    raise ValueError(
+                        "CDC event database differs from settings."
+                    )
+            # 工程2: LSN/削除版を現在値へ反映。完了offsetはまだ進めない。
+            state.stage(record, target, mapping[target], contracts[target])
+        except Exception:
+            if fixed:
+                state.record_failure(record, "CDC_INVALID_EVENT")
+            raise
     try:
         # 工程3: 現在値6表と派生表を再構築する。1表ずつのcommitになる。
         result = (
@@ -289,9 +308,13 @@ def process(admin, state, records, mapping, topics, *, values=None):
     except Exception:
         if admin.STATE.get("blocked"):
             state.set("blocked", "true")
+        if fixed and records:
+            state.record_failure(records[-1], "CDC_MATERIALIZATION_FAILED")
         raise
     # 工程4: 派生まで成功した後だけlocal完了位置を永続化する。
     state.complete(records)
+    if fixed:
+        state.set("materialization_pending", "")
     return {"raw_events_appended": count, **result}
 
 
@@ -352,6 +375,8 @@ def run(directory, mapping_file):
     """
     import admin
     from confluent_kafka import Consumer, KafkaError, TopicPartition
+    from consumer_runtime import Runtime
+    from runtime_control import Control, start_server
 
     values = settings()
     mapping = selected_mapping(values, mapping_file)
@@ -365,9 +390,17 @@ def run(directory, mapping_file):
     # 同じstateを別DB/mapへ流用しない。identityの一致検査はStateが担う。
     identity = source_identity(values, mapping)
     state = State(directory / "state.sqlite3", identity)
-    if state.get("blocked") == "true":
+    if state.get("blocked") == "true" and not fixed:
         raise RuntimeError("CDC is blocked pending query cancellation review.")
-    refuse_lost_state(admin, state, fixed=fixed)
+    lost_state = False
+    try:
+        refuse_lost_state(admin, state, fixed=fixed)
+    except ValueError:
+        if not fixed:
+            raise
+        # Fixed recovery remains reachable through the authenticated API.
+        # No delivery is acknowledged while raw/state consistency is unknown.
+        lost_state = True
     consumer = Consumer(
         {
             "bootstrap.servers": "cdc-kafka:9092",
@@ -378,25 +411,51 @@ def run(directory, mapping_file):
             "auto.offset.reset": "error",
             "allow.auto.create.topics": False,
             "max.poll.interval.ms": 3600000,
+            "log_level": 0,
         }
     )
-
-    def assign(client, partitions):
-        """partition割当時に、localの完了位置とKafka保持範囲から再開位置を決める。
-
-        未処理範囲が保持切れなら拒否し、latestへ暗黙に進めない。
-        """
-        for partition in partitions:
-            offset = state.offset(partition.topic, partition.partition)
-            low, high = client.get_watermark_offsets(partition, timeout=10)
-            partition.offset = assignment_offset(offset, low, high)
-        client.assign(partitions)
-
-    consumer.subscribe(list(topics), on_assign=assign)
-    print(json.dumps({"ready": True, "namespaces": "cdc_*"}), flush=True)
+    control = Control(
+        values["CDC_SOURCE_MODE"], os.environ.get("WORKER_TOKEN", ""), mapping
+    )
+    runtime = Runtime(
+        admin,
+        state,
+        values,
+        mapping,
+        topics,
+        control,
+        consumer,
+        TopicPartition,
+        process,
+        lambda selected_admin, selected_state: materialize(
+            selected_admin, selected_state, prefix="sqlcdc_"
+        ),
+        lost_state=lost_state,
+    )
+    server = start_server(control)
+    consumer.subscribe(list(topics), on_assign=runtime.assign)
+    print(
+        json.dumps(
+            {
+                "started": True,
+                "ready": control.snapshot()["ready"],
+                "namespaces": "sqlcdc_*" if fixed else "cdc_*",
+            }
+        ),
+        flush=True,
+    )
     try:
         while True:
+            if runtime.handle_rebuild():
+                continue
+            if runtime.maintenance:
+                # Polling services group callbacks; paused deliveries are
+                # never staged or acked. A successful rebuild seeks explicitly.
+                consumer.poll(0.2)
+                runtime.observe()
+                continue
             records = []
+            batch_bytes = 0
             # 窓は有限だがconsumer自体は常駐する。空pollで正常終了しない。
             deadline = time.monotonic() + int(values["CDC_POLL_SECONDS"])
             while len(records) < int(values["CDC_BATCH_SIZE"]):
@@ -407,36 +466,46 @@ def run(directory, mapping_file):
                             message.error().code()
                             == KafkaError.UNKNOWN_TOPIC_OR_PART
                         ):
-                            continue
-                        raise RuntimeError("Kafka returned a consumer error.")
-                    records.append(message_record(message))
+                            pass
+                        elif fixed:
+                            runtime.maintenance = True
+                            runtime.error_code = "CDC_PROCESSING_FAILED"
+                            if runtime.partitions:
+                                consumer.pause(runtime.partitions)
+                            runtime.observe()
+                            break
+                        else:
+                            raise RuntimeError("Kafka consumer failed.")
+                    else:
+                        record = message_record(message)
+                        records.append(record)
+                        batch_bytes += len((record["key"] or "").encode())
+                        batch_bytes += len((record["value"] or "").encode())
+                        if batch_bytes >= 16 * 1024 * 1024:
+                            break
                 if time.monotonic() >= deadline:
                     break
+            if runtime.maintenance:
+                continue
             if not records:
+                runtime.observe()
                 continue
             # 工程5: Icebergとlocal完了位置より先にKafkaをackしない。
             # broker応答だけ失敗しても、再開位置はlocal checkpointから決める。
-            result = process(
-                admin, state, records, mapping, topics, values=values
-            )
-            offsets = {}
-            for record in records:
-                key = (record["topic"], record["partition"])
-                # Kafka commitへは、処理した位置の次offsetを渡す。
-                offsets[key] = max(offsets.get(key, -1), record["offset"] + 1)
-            consumer.commit(
-                offsets=[
-                    TopicPartition(topic, partition, offset)
-                    for (topic, partition), offset in offsets.items()
-                ],
-                asynchronous=False,
-            )
-            print(
-                json.dumps({"processed": len(records), **result}), flush=True
-            )
+            result = runtime.process(records)
+            if result is not None:
+                print(
+                    json.dumps({"processed": len(records), **result}),
+                    flush=True,
+                )
     finally:
-        consumer.close()
-        lock.close()
+        try:
+            consumer.close()
+        finally:
+            runtime.state.connection.close()
+            server.shutdown()
+            server.server_close()
+            lock.close()
 
 
 def main():

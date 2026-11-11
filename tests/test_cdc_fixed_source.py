@@ -752,6 +752,16 @@ class KafkaMessageDecodingTests(unittest.TestCase):
                 self.message(b"a" * (16 * 1024 * 1024 + 1))
             )
 
+    def test_combined_key_value_limit_matches_replay_before_decoding(self):
+        with self.assertRaisesRegex(ValueError, "16 MiB"):
+            consumer.message_record(
+                self.message(b"a" * (consumer.MAX_RECORD_BYTES - 1), b"{}")
+            )
+        with self.assertRaisesRegex(ValueError, "16 MiB"):
+            consumer.message_record(
+                self.message(None, b"a" * (consumer.MAX_RECORD_BYTES + 1))
+            )
+
 
 class FixedCdcStaticContracts(unittest.TestCase):
     """Check image inputs without Docker starts or package resolution."""

@@ -133,6 +133,52 @@ class FixedSqlApiTests(unittest.TestCase):
         self.assertEqual(reply.status_code, 200)
         self.assertNotIn("synthetic-private", reply.text)
 
+    def test_checkpoint_diagnostic_is_authenticated_and_filters_secrets(self):
+        """Use the control-only observer without enqueuing a write job."""
+        implementation = mock.Mock()
+        implementation.inspect_checkpoints.return_value = {
+            "configured": True,
+            "baseline_complete": False,
+            "watermarks": {},
+            "password": "synthetic-private-do-not-return",
+        }
+        with mock.patch.object(
+            SQL_API, "batch_module", return_value=implementation
+        ):
+            self.assertEqual(
+                self.client.get("/sql-source/checkpoints").status_code, 401
+            )
+            reply = self.request("GET", "/sql-source/checkpoints")
+        self.assertEqual(reply.status_code, 200)
+        self.assertFalse(reply.json()["baseline_complete"])
+        self.assertNotIn("synthetic-private", reply.text)
+        selected = implementation.inspect_checkpoints.call_args.args[0]
+        self.assertNotIn("DEMO_SQLSERVER_PASSWORD", selected)
+        self.assertIn("SOURCE_SQLSERVER_CONTROL_PASSWORD", selected)
+
+    def test_checkpoint_diagnostic_shares_operation_lock_and_redacts_errors(
+        self,
+    ):
+        """Never observe during a checkpoint transaction or leak a driver."""
+        implementation = mock.Mock()
+        with mock.patch.object(
+            SQL_API, "batch_module", return_value=implementation
+        ):
+            self.app.state.jobs.operation.acquire()
+            try:
+                reply = self.request("GET", "/sql-source/checkpoints")
+                self.assertEqual(reply.status_code, 409)
+                implementation.inspect_checkpoints.assert_not_called()
+            finally:
+                self.app.state.jobs.operation.release()
+            implementation.inspect_checkpoints.side_effect = RuntimeError(
+                "synthetic-private-driver-error"
+            )
+            reply = self.request("GET", "/sql-source/checkpoints")
+        self.assertEqual(reply.status_code, 422)
+        self.assertNotIn("synthetic-private", reply.text)
+        self.assertFalse(self.app.state.jobs.operation.locked())
+
     def test_dml_is_fixed_authenticated_and_requires_strict_boolean(self):
         endpoint = "/sql-source/demo/insert"
         for body in (

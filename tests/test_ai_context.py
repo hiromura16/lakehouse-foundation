@@ -78,6 +78,61 @@ class ContextTests(unittest.TestCase):
                 CONTEXT.collect(connection, name, limit)
         connection.cursor.assert_not_called()
 
+    def test_finite_origins_pin_their_own_gold_snapshots(self):
+        for origin, schema in (
+            ("landing", "gold"),
+            ("batch", "sql_gold"),
+            ("cdc", "sqlcdc_gold"),
+        ):
+            with self.subTest(origin=origin):
+                connection = mock.Mock()
+                cursor = connection.cursor.return_value
+                cursor.fetchall.side_effect = [[(12345,)], []]
+                cursor.description = [("factory_id",)]
+                result = CONTEXT.collect(
+                    connection, "production", 10, origin=origin
+                )
+                sql = [call.args[0] for call in cursor.execute.call_args_list]
+                self.assertIn("iceberg." + schema + '."', sql[0])
+                self.assertIn("FOR VERSION AS OF 12345", sql[1])
+                self.assertEqual(
+                    result["table"],
+                    "iceberg." + schema + ".factory_daily_production",
+                )
+                self.assertEqual(result["origin"], origin)
+
+    def test_origin_injection_and_boolean_limits_are_rejected_before_sql(self):
+        connection = mock.Mock()
+        for origin in ("sql_gold", "batch; DELETE", "unknown"):
+            with self.assertRaises(ValueError):
+                CONTEXT.collect(connection, "production", origin=origin)
+        for limit in (True, 0, 501):
+            with self.assertRaises(ValueError):
+                CONTEXT.collect(connection, "production", limit)
+        connection.cursor.assert_not_called()
+        connect = mock.Mock()
+        with self.assertRaises(ValueError):
+            CONTEXT.export_context(
+                {}, ["production"], connect=connect, origin="arbitrary_schema"
+            )
+        connect.assert_not_called()
+
+    def test_invalid_snapshots_and_excess_rows_do_not_escape_bounds(self):
+        for value in (True, -1, "12345", 2**64):
+            connection = mock.Mock()
+            connection.cursor.return_value.fetchall.return_value = [(value,)]
+            with self.assertRaises(ValueError):
+                CONTEXT.collect(connection, "production")
+            self.assertEqual(
+                connection.cursor.return_value.execute.call_count, 1
+            )
+        connection = mock.Mock()
+        cursor = connection.cursor.return_value
+        cursor.fetchall.side_effect = [[(1,)], [("F1",), ("F2",)]]
+        cursor.description = [("factory_id",)]
+        with self.assertRaises(ValueError):
+            CONTEXT.collect(connection, "production", 1)
+
     def test_private_export_is_new_and_has_mode_0600(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "facts.json"

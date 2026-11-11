@@ -508,6 +508,60 @@ def validate_acknowledgement(result, prepared):
     return public
 
 
+def inspect_checkpoints(values, *, adapter=None):
+    """Read actual control positions without updates or source escalation.
+
+    This explicit diagnostic uses the narrow control principal, not the
+    SOURCE reader. It neither acquires update locks nor initializes missing
+    rows. Hidden, partial or mixed-generation metadata is a safe failure.
+    """
+    configured = [
+        bool(values.get("SOURCE_SQLSERVER_CONTROL_" + suffix))
+        for suffix in ("USER", "PASSWORD")
+    ]
+    if not any(configured):
+        return {
+            "configured": False,
+            "baseline_complete": False,
+            "watermarks": {},
+        }
+    if not all(configured):
+        raise BatchError("Complete the separate SQL control credentials.")
+    adapter = adapter or source_adapter()
+    try:
+        selected = adapter.validate_settings(values, role="control")
+        with adapter.connection(selected, role="control") as handle:
+            cursor = handle.cursor()
+            adapter.ownership(cursor, selected, role="control")
+            if not adapter.permissions_safe(cursor, role="control"):
+                raise BatchError("Narrow checkpoint rights are required.")
+            cursor.execute(
+                "SELECT TOP (7) [source_table], "
+                "CONVERT(varchar(27), [last_watermark], 126), "
+                "[last_primary_key], [snapshot_id] "
+                "FROM [lh_demo_ctl].[batch_watermarks] ORDER BY [source_table]"
+            )
+            positions = {}
+            for name, stamp, key, snapshot_id in cursor.fetchmany(7):
+                if name in positions or name not in adapter.TABLES:
+                    raise BatchError("Invalid checkpoint identity.")
+                positions[name] = {
+                    "timestamp": canonical_timestamp(stamp) if stamp else None,
+                    "primary_key": key,
+                    "snapshot_id": snapshot_id,
+                }
+            validate_checkpoints(positions, adapter.TABLES)
+        return {
+            "configured": True,
+            "baseline_complete": set(positions) == set(adapter.TABLES),
+            "watermarks": positions,
+        }
+    except Exception:
+        raise BatchError(
+            "SQL checkpoint observation failed; private details withheld."
+        ) from None
+
+
 @contextmanager
 def checkpoint_lease(values, adapter):
     """Hold a narrow control transaction until worker acknowledgement.

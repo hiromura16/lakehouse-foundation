@@ -30,6 +30,7 @@ from poc_api import portal_router
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from service import generate_batch, scenario_destination
 from sqlsource_api import sqlsource_router
+from sqlsource_observer import observation_router
 
 ROOT = Path(__file__).resolve().parents[2]
 SECURITY = HTTPBearer(auto_error=False)
@@ -775,6 +776,7 @@ def create_app(
         portal_router(store, jobs, authorize, ai_exporter)
     )
     application.include_router(sqlsource_router(store, jobs, authorize))
+    application.include_router(observation_router(store, jobs, authorize))
     return application
 
 

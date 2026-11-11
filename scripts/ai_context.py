@@ -18,28 +18,41 @@ DATASETS = {
     "production": ("factory_daily_production", "factory_id, production_date"),
     "sales": ("sales_fulfillment", "sales_order_id"),
 }
+ORIGINS = {"landing": "gold", "batch": "sql_gold", "cdc": "sqlcdc_gold"}
 
 
-def collect(connection, dataset, limit=100):
-    """Read a named table at its current main-branch snapshot."""
-    if dataset not in DATASETS or not 1 <= limit <= 500:
+def collect(connection, dataset, limit=100, *, origin="landing"):
+    """Read a fixed origin/table at its current main-branch snapshot."""
+    if (
+        dataset not in DATASETS
+        or origin not in ORIGINS
+        or (type(limit) is not int or not 1 <= limit <= 500)
+    ):
         raise ValueError("Select a known dataset and a limit from 1 to 500.")
     table, ordering = DATASETS[dataset]
+    namespace = ORIGINS[origin]
     cursor = connection.cursor()
     try:
         cursor.execute(
-            'SELECT snapshot_id FROM iceberg.gold."'
+            "SELECT snapshot_id FROM iceberg."
+            + namespace
+            + '."'
             + table
             + "$refs\" WHERE name = 'main' LIMIT 1"
         )
         snapshot_rows = cursor.fetchall()
         if not snapshot_rows:
             raise ValueError("Run the medallion pipeline before exporting.")
-        snapshot = int(snapshot_rows[0][0])
+        value = snapshot_rows[0][0]
+        if type(value) is not int or not 0 <= value <= 2**63 - 1:
+            raise ValueError("The current Gold snapshot was not available.")
+        snapshot = value
         # Every interpolated identifier comes from the fixed mapping above;
         # snapshot and limit are integers, never model-generated SQL text.
         cursor.execute(
-            "SELECT * FROM iceberg.gold."
+            "SELECT * FROM iceberg."
+            + namespace
+            + "."
             + table
             + " FOR VERSION AS OF "
             + str(snapshot)
@@ -50,9 +63,12 @@ def collect(connection, dataset, limit=100):
         )
         columns = [column[0] for column in cursor.description]
         rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        if len(rows) > limit:
+            raise ValueError("Gold preview exceeded its explicit row limit.")
         return {
             "dataset": dataset,
-            "table": "iceberg.gold." + table,
+            "origin": origin,
+            "table": "iceberg." + namespace + "." + table,
             "snapshot_id": str(snapshot),
             "rows": rows,
             "row_limit": limit,
@@ -63,8 +79,20 @@ def collect(connection, dataset, limit=100):
         cursor.close()
 
 
-def export_context(values, datasets, limit=100, connect=None):
+def export_context(
+    values, datasets, limit=100, connect=None, *, origin="landing"
+):
     """Use a distinct Trino identity and expose no connection secrets."""
+    if (
+        origin not in ORIGINS
+        or type(limit) is not int
+        or not 1 <= limit <= 500
+        or not isinstance(datasets, (list, tuple))
+        or not 1 <= len(datasets) <= 2
+        or any(name not in DATASETS for name in datasets)
+        or len(set(datasets)) != len(datasets)
+    ):
+        raise ValueError("Select bounded fixed Gold datasets and an origin.")
     if connect is None:
         from trino.dbapi import connect
     connection = connect(
@@ -76,7 +104,10 @@ def export_context(values, datasets, limit=100, connect=None):
         max_attempts=1,
     )
     try:
-        result = [collect(connection, name, limit) for name in datasets]
+        result = [
+            collect(connection, name, limit, origin=origin)
+            for name in datasets
+        ]
     finally:
         connection.close()
     return {
@@ -127,6 +158,12 @@ def main():
         ),
     )
     parser.add_argument(
+        "--origin",
+        choices=list(ORIGINS),
+        default="landing",
+        help="固定Goldの由来。landing（既定）、batch、cdcのいずれか",
+    )
+    parser.add_argument(
         "--env-file",
         type=Path,
         default=os.environ.get("LAKEHOUSE_ENV_FILE") or None,
@@ -158,7 +195,7 @@ def main():
     try:
         values = load(args.env_file)
         names = list(DATASETS) if args.dataset == "all" else [args.dataset]
-        context = export_context(values, names, args.limit)
+        context = export_context(values, names, args.limit, origin=args.origin)
         write_private(args.output, context)
     except Exception:
         raise SystemExit(

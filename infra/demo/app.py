@@ -11,7 +11,11 @@ from poc_ui import (
     render_network,
     render_portal,
 )
-from sqlsource_ui import render_sql_batches, render_sql_source
+from sqlsource_ui import (
+    render_sql_batches,
+    render_sql_observations,
+    render_sql_source,
+)
 
 st.set_page_config(page_title="Lakehouse PoC ポータル", page_icon="🏭")
 st.title("Lakehouse PoC ポータル")
@@ -487,6 +491,7 @@ def render_settings():
         "SOURCE_SQLSERVER_HOST": "業務参照元SQL Server",
         "SOURCE_SQLSERVER_DATABASE": "業務参照元のDB名",
         "SOURCE_SQLSERVER_USER": "参照元reader（SELECT専用）",
+        "SOURCE_SQLSERVER_HOSTNAME_IN_CERTIFICATE": "SOURCE:証明書の照合名",
         "SOURCE_SQLSERVER_CONTROL_USER": "checkpoint専用ユーザー",
         "SOURCE_SQLSERVER_CONTROL_PASSWORD": "checkpoint専用パスワード",
         "SOURCE_SQLSERVER_BATCH_OVERLAP_SECONDS": "増分で重ねて読む秒数",
@@ -716,6 +721,7 @@ with status_tab:
     if status is not None:
         st.json(status)
     st.caption("初期設定ではサーバー自身またはSSHポート転送から利用します。")
+    render_sql_observations(call_api)
 with ai_tab:
     render_ai_context()
 

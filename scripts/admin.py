@@ -207,9 +207,9 @@ def ensure_tables(prefix=""):
                 "_source_hash",
                 "_ingested_at",
             ]
-            if prefix == "sql_":
+            if prefix in {"sql_", "sqlcdc_"}:
                 # SQL provenance extends only the isolated fixed-source tables.
-                # Existing Landing/CDC schemas keep their current contracts.
+                # Existing Landing/generic CDC schemas keep their contracts.
                 from scripts.sql_batch_worker import SQL_SOURCE_COLUMNS
 
                 fields += list(SQL_SOURCE_COLUMNS)
@@ -521,7 +521,7 @@ def medallion(prefix=""):
         for statement in statements.split(";"):
             if not statement.strip():
                 continue
-            if prefix == "sql_":
+            if prefix in {"sql_", "sqlcdc_"}:
                 # Preserve SQL origin columns through each typed/final SELECT.
                 # Keep the same qualifier when a source is selected via alias.
                 from scripts.sql_batch_worker import SQL_SOURCE_COLUMNS

@@ -174,6 +174,7 @@ n8nのownerアカウントやAirflowの画面ログインを、この表のDBパ
 | `SOURCE_SQLSERVER_DATABASE` | 空 | 読み取る業務DB。system DBは選択できない | 社内 |
 | `SOURCE_SQLSERVER_USER` | 空 | 必要な表/ビューのSELECTだけを許可した専用ログイン | 社内 |
 | `SOURCE_SQLSERVER_PASSWORD` | 空 | そのログインのパスワード。workerコンテナへ一括配布せず、ホスト上の抽出ツールが読む | はい |
+| `SOURCE_SQLSERVER_HOSTNAME_IN_CERTIFICATE` | 空 | 固定source/固定CDCの明示的な証明書照合名。空なら接続hostを照合。従来汎用extractへの適用を意味しない | 社内 |
 | `SOURCE_SQLSERVER_CA_FILE` | 空（抽出時は `system`） | ホストの信頼ストア、または企業CAのPEMファイル。TLS暗号化と証明書ホスト名検証を行う | 社内 |
 | `SOURCE_SQLSERVER_TIMEZONE` | `UTC` | タイムゾーン情報のないSQL日時型の解釈。実際の保存方式に合わせる。文字列日時の形式を自動修正する設定ではない | いいえ |
 
@@ -183,10 +184,10 @@ n8nのownerアカウントやAirflowの画面ログインを、この表のDBパ
 
 | 項目 | 生成時の既定 | 意味と変更時の影響 | 秘密 |
 | --- | --- | --- | --- |
-| `DEMO_SQLSERVER_HOST` | 空 | 合成データの投入先。会社SOURCEとは別の専用テストDBを指定する | 社内 |
+| `DEMO_SQLSERVER_HOST` | 空 | 合成データの投入先。ランダム方式はSOURCEと別DB。固定方式は所有権付き専用schema | 社内 |
 | `DEMO_SQLSERVER_PORT` | `1433` | テストDBのTCP port | 社内 |
-| `DEMO_SQLSERVER_DATABASE` | 空 | 作成済みの専用DB。system DBおよびSOURCEと同名のDBは拒否する | 社内 |
-| `DEMO_SQLSERVER_USER` | 空 | 専用DBに新規スキーマと表を作成しINSERTできるテスト用ログイン | 社内 |
+| `DEMO_SQLSERVER_DATABASE` | 空 | 作成済みの非system DB。SOURCE同名は既定拒否。固定方式だけ別記の厳格なshared許可条件を適用 | 社内 |
+| `DEMO_SQLSERVER_USER` | 空 | 固定方式は固定6表と必要制御表だけのDML principal。従来ランダム方式のDDL権限を固定APIへ流用しない | 社内 |
 | `DEMO_SQLSERVER_PASSWORD` | 空 | そのテスト用ログインのパスワード | はい |
 | `DEMO_SQLSERVER_CA_FILE` | 空（実行時は `system`） | テストDBのTLS検証に使うホスト側PEMまたはsystem trust | 社内 |
 | `DEMO_SQLSERVER_HOSTNAME_IN_CERTIFICATE` | 空 | 接続先alias/IPと証明書名が異なる場合に、CAで検証した証明書へ照合する明示名。英数字・`_`・`.`・`-` の1〜253文字。空なら接続hostを照合し、TLS検証は維持する | 社内 |
