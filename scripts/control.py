@@ -200,11 +200,21 @@ elif args.action == "up":
 
         result = setup(values)
         print("Grafana dashboard: " + result["status"])
+        if "dashboards" in result:
+            print(json.dumps(result))
+        if result["status"] == "partial":
+            raise SystemExit(
+                "Some dashboard seeds failed; existing UIDs kept."
+            )
 elif args.action == "grafana-init":
     from grafana_setup import setup
 
     result = setup(values)
     print("Grafana dashboard: " + result["status"])
+    if "dashboards" in result:
+        print(json.dumps(result))
+    if result["status"] == "partial":
+        raise SystemExit("Some dashboard seeds failed; existing UIDs kept.")
 elif args.action == "spark-check":
     from compute_check import run_check
 

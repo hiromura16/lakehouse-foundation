@@ -6,7 +6,7 @@
 
 # 内部service名をproxy対象から除外し、社内proxyへ内部要求を送らない。
 # 同じ除外値を大文字/小文字の両方へ渡し、利用libraryの違いを吸収する。
-x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
+x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,node-exporter,cadvisor,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
 
 # Connect・登録器・consumerで外部DBとtopic/mappingの識別を揃える。
 # SQL Server/Kafkaへの接続をHTTP proxyで中継する設定ではない。

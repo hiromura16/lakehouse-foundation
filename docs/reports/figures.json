@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "reviewed_on": "2026-11-10",
-  "reviewed_source_commit": "b63b9d00d664d3e547679d0da4dd63f76fe1f45f",
+  "reviewed_on": "2026-11-11",
+  "reviewed_source_commit": "49898acc3d324e11d9e4cd3583d814800f043b2c",
   "figures": [
     {
       "id": "01-platform-detail",
-      "title": "全34サービスの配置と起動条件",
+      "title": "全36サービスの配置と起動条件",
       "subtitle": "Docker Compose 7ファイルを同じprojectへ結合。coreに必要なprofileを追加する。",
       "audience": "基盤設計・導入レビュー",
-      "caption": "core6サービスに11種類のprofileを重ねる単一ホストPoC構成。34は定義数であり、常駐・一度だけの初期化・明示スモークを区別する。",
+      "caption": "core6サービスに11種類のprofileを重ねる36定義の単一ホストPoC構成。監視拡張はsource-only検査であり、host権限と実機受入は別途必要。",
       "sources": [
         "infra/lakehouse/compose.yaml",
         "infra/compute/compose.yaml",
@@ -129,13 +129,13 @@
           "height": 330,
           "title": "monitoring｜監視",
           "lines": [
-            "prometheus / grafana",
-            "workerとPrometheus自身を収集",
-            "dashboardはGUI保存を保持",
-            "全ホスト監視は別途追加"
+            "prometheus / grafana / node-exporter / cadvisor",
+            "worker/self＋host/containerの4job",
+            "GUI保存を保持。socketなし・host読取り承認",
+            "network/TCPと実Docker labelsは未受入"
           ],
           "tone": "teal",
-          "tag": "2定義",
+          "tag": "4定義",
           "logo": "grafana"
         },
         {
@@ -210,9 +210,9 @@
       "edges": [],
       "notes": [
         "Dokploy・Samba・daemon proxyはホスト側の別設定。SQL Serverは外部DB。",
-        "一度だけの初期化は4定義。全profileでは33containerの検証記録があり、34全てが常時稼働する構成ではない。"
+        "一度だけの初期化4定義と通常0の明示smokeを区別する。新規exporterの実機互換性は未検証。"
       ],
-      "mermaid": "flowchart TB\n  Host[\"ホスト: Dokploy / Samba / Docker proxy\"] --> Core[\"core: storage / catalog-db / catalog-migrate / catalog / trino / worker\"]\n  GUI[\"demo: demo / demo-api\"] --> Core\n  MCP[\"mcp + demo-api\"] --> Core\n  N8N[\"automation: n8n / n8n-db\"] --> Core\n  AF[\"orchestration: airflow / airflow-db\"] --> Core\n  CDC[\"cdc: kafka / connect / ui / register / consumer\"] --> Core\n  Compute[\"compute: master / worker / history / init / smoke\"] --- Core\n  NB[\"notebooks: jupyter\"] --> Compute\n  BI[\"bi: superset / db / redis / init\"] --> Core\n  Extra[\"vector: qdrant / lineage: marquez + db + web\"] --- Core\n  Mon[\"monitoring: prometheus / grafana\"] --> Core\n",
+      "mermaid": "flowchart TB\n  Host[\"ホスト: Dokploy / Samba / Docker proxy\"] --> Core[\"core: storage / catalog-db / catalog-migrate / catalog / trino / worker\"]\n  GUI[\"demo: demo / demo-api\"] --> Core\n  MCP[\"mcp + demo-api\"] --> Core\n  N8N[\"automation: n8n / n8n-db\"] --> Core\n  AF[\"orchestration: airflow / airflow-db\"] --> Core\n  CDC[\"cdc: kafka / connect / ui / register / consumer\"] --> Core\n  Compute[\"compute: master / worker / history / init / smoke\"] --- Core\n  NB[\"notebooks: jupyter\"] --> Compute\n  BI[\"bi: superset / db / redis / init\"] --> Core\n  Extra[\"vector: qdrant / lineage: marquez + db + web\"] --- Core\n  Mon[\"monitoring: prometheus / grafana / node-exporter / cadvisor\"] --> Core\n",
       "width": 2400,
       "height": 1500
     },
@@ -1608,7 +1608,7 @@
       "title": "監視・状態確認・業務品質を分ける",
       "subtitle": "メトリクス、到達性、業務件数、履歴の4種類を区別する。healthyだけではデータの正しさは分からない。",
       "audience": "運用・品質レビュー",
-      "caption": "Prometheusはworkerと自身の2targetを15秒ごとに収集する。ポータルのhealth、固定品質SQL、n8n/Airflow等の実行履歴は別の観測で、全ホストの監視や長期監査を完成させるものではない。",
+      "caption": "Prometheusは既存worker/selfにnode/cadvisorを追加する4job定義。host権限とDocker29/cgroupv2の指標・ラベルは別途実機受入が必要。ポータルhealth・品質SQL・実行履歴とは別の観測。",
       "sources": [
         "infra/monitoring/prometheus.yml",
         "scripts/admin.py",
@@ -1640,7 +1640,7 @@
           "height": 240,
           "title": "Prometheus",
           "lines": [
-            "worker＋Prometheus自身の2target",
+            "worker/self＋node/cadvisorの4job",
             "scrape interval：15秒",
             "保存：15日 / 2GBの設定"
           ],
@@ -1731,7 +1731,7 @@
         "GUI入口カードの数とPrometheus target数は別。会社SQL Server・DB・Kafka・ホスト全体の監視は追加する。",
         "Grafana JSON exportはdashboard単体。利用者・権限・全設定の復元はDBと設定のバックアップで確認する。"
       ],
-      "mermaid": "flowchart LR\n  W[\"worker metrics\"] --> P[\"Prometheus / 15s / 2target\"]\n  P --> G[\"Grafana / GUI保存\"]\n  P --> P\n  Portal[\"ポータル\"] --> Health[\"固定health / 到達性\"]\n  Portal --> Quality[\"固定品質SQL / Gold preview\"]\n  Portal --> Jobs[\"最新20job / 非永続\"]\n  Native[\"n8n / Airflow / Spark\"] --> Logs[\"各実行履歴・保存先\"]\n",
+      "mermaid": "flowchart LR\n  W[\"worker metrics\"] --> P[\"Prometheus / 15s / 4job（実機未受入）\"]\n  P --> G[\"Grafana / GUI保存\"]\n  P --> P\n  Portal[\"ポータル\"] --> Health[\"固定health / 到達性\"]\n  Portal --> Quality[\"固定品質SQL / Gold preview\"]\n  Portal --> Jobs[\"最新20job / 非永続\"]\n  Native[\"n8n / Airflow / Spark\"] --> Logs[\"各実行履歴・保存先\"]\n",
       "width": 1920,
       "height": 1080
     },

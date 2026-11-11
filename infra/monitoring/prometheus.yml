@@ -1,11 +1,24 @@
-# Scrape application metrics over the private Compose network.
-# Host/GPU exporters can be added when their operating requirements are known.
+# All endpoints are private Compose DNS names; no runtime proxy is inherited.
+# Existing worker/self targets stay available when an optional collector fails.
 global:
   scrape_interval: 15s
+  scrape_timeout: 10s
+rule_files:
+  - rules/foundation.yml
 scrape_configs:
   - job_name: prometheus
     static_configs:
-      - targets: ["prometheus:9090"]
+      - targets: [prometheus:9090]
+        labels: {host_alias: local}
   - job_name: lakehouse
     static_configs:
-      - targets: ["worker:8000"]
+      - targets: [worker:8000]
+        labels: {host_alias: local}
+  - job_name: node
+    static_configs:
+      - targets: [node-exporter:9100]
+        labels: {host_alias: local}
+  - job_name: cadvisor
+    static_configs:
+      - targets: [cadvisor:8080]
+        labels: {host_alias: local}

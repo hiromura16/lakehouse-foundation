@@ -438,3 +438,5 @@ Docker 29／Buildx Bake／社内proxyで判明した互換性修正の取り込�
 `SOURCE_SQLSERVER_CONTROL_USER/PASSWORD` は空が既定で、SOURCE readerやDEMO writerとは異なる既存principalを指定します。接続先とTLSはSOURCEの設定を使います。重なり窓 `SOURCE_SQLSERVER_BATCH_OVERLAP_SECONDS=300`（1〜86400）、安全遅延 `SOURCE_SQLSERVER_BATCH_SAFETY_LAG_SECONDS=5`（0〜3600）はprivate設定・GUIで保存し、再配置後に反映します。単に窓を広げても完全CDCやDELETE検出にはなりません。[baseline・checkpoint・復旧](SQLSERVER-FIXED-DEMO.md#6-watermark増分バッチ)
 
 固定CDCのCA、専用topic、DBA適用・無効化の詳細は [固定SQL sourceのCDC](SQLSERVER-FIXED-DEMO.md#7-固定6表のcdc準備とraw履歴) にまとめています。fixed-demoではOS標準CAはSOURCEのCA欄を空にします。genericが従来使わないSOURCEの `system` sentinelを勝手にhost mountしません。PEMとJava truststoreは別に管理します。
+
+監視拡張のhost権限・GUI保持・検証未了事項は [段階的な監視基盤](OBSERVABILITY.md) を参照してください。既存monitoringの更新でも、新規host mountは配置前に承認が必要です。

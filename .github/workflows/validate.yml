@@ -67,6 +67,10 @@ jobs:
     # unittest discovery also includes all Dokploy environment regressions.
     - name: Test source-only generation and publication checks
       run: python -m unittest discover -s tests
+    - name: Check monitoring templates and official Prometheus configuration
+      run: |
+        python scripts/monitoring_assets.py --check
+        python scripts/validate_observability.py --run
     - name: Check generated report figures and offline gallery
       run: python scripts/render_report_assets.py --check
     - name: Check Markdown roles, manifest and local links

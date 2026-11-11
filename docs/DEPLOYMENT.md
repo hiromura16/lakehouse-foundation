@@ -515,7 +515,7 @@ Dokployルートでは、新規のDokploy導入を済ませてからGitサービ
 
 ## 資源を見積もる担当者へ
 
-Composeの `mem_limit` は設定上限で、実測RSSや必要host RAMの保証ではありません。全profileの常駐service上限は、公開構成の集計で約30.56GiBです。one-shot、build、OS、Docker/Dokploy、file cacheやbackupの余力は別に考えます。profile別の値と共有serviceの重複は [実装台帳](reports/IMPLEMENTATION-INVENTORY.md#9-資源上限の見積もりに使う値) を確認してください。
+Composeの `mem_limit` は設定上限で、実測RSSや必要host RAMの保証ではありません。全profileの常駐service上限は、公開構成の集計で約30.94GiBです。one-shot、build、OS、Docker/Dokploy、file cacheやbackupの余力は別に考えます。profile別の値と共有serviceの重複は [実装台帳](reports/IMPLEMENTATION-INVENTORY.md#9-資源上限の見積もりに使う値) を確認してください。
 
 1. coreだけを受け入れ、実際の入力件数・fileサイズ・処理時間を記録します。
 2. demo/monitoring、n8n等を一つずつ追加し、起動時ピークと平常時を分けます。
@@ -543,3 +543,5 @@ Composeの `mem_limit` は設定上限で、実測RSSや必要host RAMの保証�
 
 
 Notebook workspaceのread-only計画と承認後のapply/probe、既存projectを明示したSpark検証、機械可読な結果は [compute配置前・検証手順](COMPUTE-VALIDATION.md) を参照します。通常Deployでspark-checkが常駐しないのは正常です。local tagのpull方針はFROM/uv/JAR通信や未解決のBuildKit auth session timeoutを修復する保証ではありません。
+
+監視拡張のhost権限・GUI保持・検証未了事項は [段階的な監視基盤](OBSERVABILITY.md) を参照してください。既存monitoringの更新でも、新規host mountは配置前に承認が必要です。

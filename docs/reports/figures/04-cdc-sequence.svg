@@ -83,5 +83,5 @@
 <rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
 <text x="56" y="950" fill="#536780" font-size="20" font-weight="400">過去の合成試験：初期144＋INSERT6＋UPDATE6＋DELETE6＋tombstone6＝raw168。restart後distinct168。</text>
 <text x="56" y="977" fill="#536780" font-size="20" font-weight="400">GUIの固定I/U/Dは専用DBの所有権tokenを検証する素材操作。会社業務DBのDMLは実行しない。</text>
-<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>

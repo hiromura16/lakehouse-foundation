@@ -9,4 +9,4 @@ flowchart TB
   NB["notebooks: jupyter"] --> Compute
   BI["bi: superset / db / redis / init"] --> Core
   Extra["vector: qdrant / lineage: marquez + db + web"] --- Core
-  Mon["monitoring: prometheus / grafana"] --> Core
+  Mon["monitoring: prometheus / grafana / node-exporter / cadvisor"] --> Core

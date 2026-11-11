@@ -7,7 +7,7 @@
 
 # 内部service名をproxy対象から除外し、社内proxyへ内部要求を送らない。
 # 同じ除外値を大文字/小文字の両方へ渡し、利用libraryの違いを吸収する。
-x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
+x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,node-exporter,cadvisor,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
 
 name: ${COMPOSE_PROJECT_NAME:-lakehouse}
 
@@ -329,8 +329,8 @@ services:
       timeout: 5s
       retries: 30
 
-  # monitoringの時系列保存。現在の収集対象はworkerとPrometheus自身の2種。
-  # 15日/2GBの保持設定を設ける。hostや全コンテナを自動収集する構成ではない。
+  # 既存のworker/self収集を維持し、承認後にhost/container exporterを追加する。
+  # exporter停止でもPrometheus自身は起動する。15日/2GBの保持上限は維持する。
   prometheus:
     restart: unless-stopped
     labels:
@@ -348,6 +348,8 @@ services:
     configs:
       - source: prometheus-config
         target: /etc/prometheus/prometheus.yml
+      - source: monitoring-rules
+        target: /etc/prometheus/rules/foundation.yml
     volumes:
       - prometheus:/prometheus
     ports:
@@ -374,6 +376,8 @@ services:
       # 標準dashboardは組込み機能だけを使う。外部pluginの取得は管理者の別作業。
       GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: 'false'
       GF_PLUGINS_PREINSTALL_DISABLED: 'true'
+      GF_PLUGINS_PREINSTALL_AUTO_UPDATE: 'false'
+      GF_PLUGINS_PLUGIN_ADMIN_ENABLED: 'false'
     configs:
       - source: grafana-datasource
         target: /etc/grafana/provisioning/datasources/prometheus.yml
@@ -382,8 +386,105 @@ services:
     ports:
       - ${BIND_IP:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000
 
+  # host root/proc/sysの読取りを追加するため、既存monitoring利用者も配置前に承認する。
+  # netlinkや/proc/netがcontainer netnsを示す問題を避け、ネットワーク/TCPは未提供。
+  # D-Bus・host network・追加capabilityは渡さない。systemd collectorは無効。
+  node-exporter:
+    image: ghcr.io/prometheus/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0
+    profiles: [monitoring]
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.5
+    user: '65534:65534'
+    pid: host
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: *service_logging
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    command:
+      - --path.rootfs=/host
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.disable-defaults
+      - --collector.cpu
+      - --collector.loadavg
+      - --collector.meminfo
+      - --collector.vmstat
+      - --collector.filesystem
+      - --collector.diskstats
+      - --collector.time
+      - --collector.stat
+      - --collector.uname
+      - --collector.processes
+      - --web.listen-address=:9100
+    volumes:
+      - type: bind
+        source: /
+        target: /host
+        read_only: true
+        bind:
+          propagation: rslave
+          create_host_path: false
+    # BusyBox/wgetの存在は公式Dockerfileに基づく。実imageでのprobeは未実施。
+    healthcheck:
+      test: [CMD, /bin/wget, -q, -T, '4', -O, /dev/null, 'http://127.0.0.1:9100/metrics']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # socket-freeで見えるcgroup指標だけを収集する。Docker metadata/labelは実機受入が必要。
+  # DockerRootDirはoperatorが確認した絶対パスをprivate設定へ指定する。既定値を推測しない。
+  cadvisor:
+    image: ghcr.io/google/cadvisor:v0.60.6@sha256:b8e7d1093144fd088f425ff003d75a4aa405de075db78dae3bc563730b1bd07a
+    profiles: [monitoring]
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
+    user: '65534:65534'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: *service_logging
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    command:
+      - --docker_only=false
+      - --housekeeping_interval=15s
+      - --store_container_labels=false
+      - --whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service,app.owner
+    volumes:
+      - type: bind
+        source: /
+        target: /rootfs
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /sys
+        target: /sys
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${CADVISOR_DOCKER_DATA_ROOT:-../monitoring/empty-docker-root}
+        target: /var/lib/docker
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: [CMD, /usr/bin/healthcheck.sh]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
 # configは起動時の設定配布。S3認証を含む展開結果を公開ログやGitへ保存しない。
 configs:
+  monitoring-rules:
+    file: ../monitoring/rules/foundation.yml
   s3-credentials:
     content: |-
       {

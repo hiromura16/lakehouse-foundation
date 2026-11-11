@@ -199,3 +199,5 @@ Dashboardの受入ではGUI変更→Save→再読込→同じvolumeで再起動�
 ## 外部pluginを使わない会社PoC
 
 標準dashboardは組込みPrometheus datasourceとpanelを使います。Composeで `GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES=false` と `GF_PLUGINS_PREINSTALL_DISABLED=true` を設定し、外部pluginの更新確認・初回自動取得を抑えます。GUI保存先のvolumeや組込み機能は維持します。独自pluginを追加するときは、許可された取得経路・署名・versionを管理者が別途評価します。これだけで全外向き通信を遮断する意味ではありません。[Grafanaの公式設定](https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/)
+
+監視拡張のhost権限・GUI保持・検証未了事項は [段階的な監視基盤](OBSERVABILITY.md) を参照してください。既存monitoringの更新でも、新規host mountは配置前に承認が必要です。

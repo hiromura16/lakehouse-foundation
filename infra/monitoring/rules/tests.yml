@@ -1,0 +1,23 @@
+# These fixtures require matching promtool; Python/static tests do not execute
+# PromQL. Expected absence of Trino alerts guards ordinary JVM reservation.
+rule_files: [foundation.yml]
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'node_memory_MemTotal_bytes{host_alias="local"}'
+        values: '8589934592+0x20'
+      - series: 'container_spec_memory_limit_bytes{host_alias="local",instance="cadvisor:8080",id="/synthetic/trino",container_label_com_docker_compose_project="example",container_label_com_docker_compose_service="trino"}'
+        values: '1610612736+0x20'
+      - series: 'container_memory_working_set_bytes{host_alias="local",instance="cadvisor:8080",id="/synthetic/trino",container_label_com_docker_compose_project="example",container_label_com_docker_compose_service="trino"}'
+        values: '1593835520+0x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: TrinoMemoryFailureEvidence
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: ContainerMemoryWarning
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: ContainerMemoryCritical
+        exp_alerts: []

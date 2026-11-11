@@ -340,3 +340,5 @@ SQL Server 2022向けDDLは型・PK・所有権・固定captureを静的検査�
 
 
 新しいplan/apply/probe、projectの優先順、local-only、結果の保存と未受入事項は [COMPUTE-VALIDATION.md](COMPUTE-VALIDATION.md) を正本とします。raw Composeだけのsmokeではhost preflightとprivate結果保存を行わないため、通常は同じprojectを明示するCLIの専用操作を使います。Deployの管理入口は切り替えません。
+
+監視拡張のhost権限・GUI保持・検証未了事項は [段階的な監視基盤](OBSERVABILITY.md) を参照してください。既存monitoringの更新でも、新規host mountは配置前に承認が必要です。

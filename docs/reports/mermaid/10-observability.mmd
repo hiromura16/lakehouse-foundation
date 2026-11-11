@@ -1,5 +1,5 @@
 flowchart LR
-  W["worker metrics"] --> P["Prometheus / 15s / 2target"]
+  W["worker metrics"] --> P["Prometheus / 15s / 4job（実機未受入）"]
   P --> G["Grafana / GUI保存"]
   P --> P
   Portal["ポータル"] --> Health["固定health / 到達性"]

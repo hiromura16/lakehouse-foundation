@@ -25,6 +25,8 @@ REQUIRED_NO_PROXY = (
     "n8n",
     "prometheus",
     "grafana",
+    "node-exporter",
+    "cadvisor",
     "spark-volumes-init",
     "spark-master",
     "spark-worker",
@@ -194,6 +196,58 @@ def validate_ssrf(values):
                 for label in hostname.split(".")
             ):
                 raise ValueError("Use DNS names without URL or port in " + key)
+
+
+def validate_monitoring_paths(values, settings_path):
+    """Check selected host mounts without preparing or correcting the host.
+
+    Empty Docker root keeps config-only plans possible but is never runtime
+    acceptance. Nonempty paths must be literal external directories, distinct
+    from notebooks, landing and private settings. Never include their value in
+    validation errors.
+    """
+    if "monitoring" not in values.get("COMPOSE_PROFILES", "").split(","):
+        return
+    selected = values.get("CADVISOR_DOCKER_DATA_ROOT", "")
+    if not selected:
+        return
+    candidate = Path(selected)
+    excluded = [ROOT, Path(settings_path).parent]
+    excluded.extend(
+        Path(values[key])
+        for key in ("LANDING_DIR", "NOTEBOOKS_DIR", "CONTROL_SETTINGS_DIR")
+        if values.get(key)
+    )
+    blocked = {"/", "/var", "/srv", "/opt", "/mnt", "/tmp", "/home"}
+    protected = {".config", ".ssh", ".aws", ".docker", ".codex"}
+    if (
+        not candidate.is_absolute()
+        or ".." in candidate.parts
+        or str(candidate) in blocked
+        or protected.intersection(candidate.parts)
+        or any(
+            candidate == target or candidate.is_relative_to(target)
+            for target in map(
+                Path, ("/etc", "/proc", "/sys", "/dev", "/run", "/root")
+            )
+        )
+        or any(
+            candidate.is_relative_to(target)
+            or target.is_relative_to(candidate)
+            for target in excluded
+        )
+    ):
+        raise ValueError("Use a dedicated external CADVISOR_DOCKER_DATA_ROOT.")
+    try:
+        for part in (candidate, *candidate.parents):
+            if part.is_symlink():
+                raise ValueError(
+                    "Monitoring mount paths must not use symlinks."
+                )
+        if candidate.exists() and not candidate.is_dir():
+            raise ValueError("Monitoring mount must be a directory.")
+    except OSError:
+        raise ValueError("Monitoring mount could not be inspected.") from None
 
 
 def load(path):
@@ -411,6 +465,7 @@ def load(path):
     values["DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN"] = buildkit_client_token_mode(
         values
     )
+    validate_monitoring_paths(values, path)
     validate_ssrf(values)
     validate_sql_source_policy(values)
     return synchronize_no_proxy(values)

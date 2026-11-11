@@ -1,0 +1,312 @@
+{
+  "uid": "lakehouse-container-overview",
+  "title": "Lakehouse Container Overview",
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": true,
+  "tags": [
+    "lakehouse",
+    "source-template"
+  ],
+  "timezone": "browser",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Observed project containers",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "foundation-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(container_last_seen{container_label_com_docker_compose_project!=\"\",container_label_com_docker_compose_service!=\"\",name!=\"\",container_label_com_docker_compose_project=~\"$project\",container_label_com_docker_compose_service=~\"$service\",name=~\"$container\",id!=\"/\"} > time() - 60)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "CPU cores",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "foundation-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_project!=\"\",container_label_com_docker_compose_service!=\"\",name!=\"\",container_label_com_docker_compose_project=~\"$project\",container_label_com_docker_compose_service=~\"$service\",name=~\"$container\",id!=\"/\"}[5m])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Working set",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "foundation-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "container_memory_working_set_bytes{container_label_com_docker_compose_project!=\"\",container_label_com_docker_compose_service!=\"\",name!=\"\",container_label_com_docker_compose_project=~\"$project\",container_label_com_docker_compose_service=~\"$service\",name=~\"$container\",id!=\"/\"}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "Finite memory limit used (%)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "foundation-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * foundation:container_memory_used:ratio{container_label_com_docker_compose_project=~\"$project\",container_label_com_docker_compose_service=~\"$service\",name=~\"$container\"}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Network receive/transmit",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "foundation-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate({__name__=~\"container_network_receive_bytes_total|container_network_transmit_bytes_total\",container_label_com_docker_compose_project!=\"\",container_label_com_docker_compose_service!=\"\",name!=\"\",container_label_com_docker_compose_project=~\"$project\",container_label_com_docker_compose_service=~\"$service\",name=~\"$container\",id!=\"/\"}[5m])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "Filesystem usage",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "foundation-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "container_fs_usage_bytes{container_label_com_docker_compose_project!=\"\",container_label_com_docker_compose_service!=\"\",name!=\"\",container_label_com_docker_compose_project=~\"$project\",container_label_com_docker_compose_service=~\"$service\",name=~\"$container\",id!=\"/\"}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "Emitted OOM events",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "foundation-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "increase(container_oom_events_total{container_label_com_docker_compose_project!=\"\",container_label_com_docker_compose_service!=\"\",name!=\"\",container_label_com_docker_compose_project=~\"$project\",container_label_com_docker_compose_service=~\"$service\",name=~\"$container\",id!=\"/\"}[10m])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "title": "Start-time changes (not a restart counter)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "foundation-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "changes(container_start_time_seconds{container_label_com_docker_compose_project!=\"\",container_label_com_docker_compose_service!=\"\",name!=\"\",container_label_com_docker_compose_project=~\"$project\",container_label_com_docker_compose_service=~\"$service\",name=~\"$container\",id!=\"/\"}[1h])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "title": "Socket-free metadata may be unavailable",
+      "type": "text",
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Docker 29/cgroup v2 metrics and Compose labels require separate runtime acceptance. Empty selectors mean missing evidence; they are not zero containers. No Docker socket, privileged mode or synthetic restart/health/JVM metric is supplied."
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "project",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "foundation-prometheus"
+        },
+        "query": "label_values(container_last_seen, container_label_com_docker_compose_project)",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "service",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "foundation-prometheus"
+        },
+        "query": "label_values(container_last_seen{container_label_com_docker_compose_project=~\"$project\"},container_label_com_docker_compose_service)",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "container",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "foundation-prometheus"
+        },
+        "query": "label_values(container_last_seen{container_label_com_docker_compose_project=~\"$project\",container_label_com_docker_compose_service=~\"$service\"},name)",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "links": []
+}

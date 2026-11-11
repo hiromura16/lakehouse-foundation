@@ -54,6 +54,8 @@ values = {
     "S3_PORT": "8333",
     "GRAFANA_PORT": "3000",
     "PROMETHEUS_PORT": "9090",
+    # Discover DockerRootDir locally; never assume a company host path.
+    "CADVISOR_DOCKER_DATA_ROOT": "",
     "N8N_PORT": "5678",
     "AIRFLOW_PORT": "8081",
     "SPARK_MASTER_UI_PORT": "8082",

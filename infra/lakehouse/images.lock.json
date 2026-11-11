@@ -22,5 +22,15 @@
   },
   "grafana": {
     "pinned": "grafana/grafana:13.3.0@sha256:6e5d306338670f381a942f1c50d3c266bf71531e5ddd9ee4fc1a133dac5ce63d"
+  },
+  "node-exporter": {
+    "pinned": "ghcr.io/prometheus/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0",
+    "provenance": "https://github.com/prometheus/node_exporter/pkgs/container/node-exporter/1029141164",
+    "verification": "official registry index metadata; image runtime not tested"
+  },
+  "cadvisor": {
+    "pinned": "ghcr.io/google/cadvisor:v0.60.6@sha256:b8e7d1093144fd088f425ff003d75a4aa405de075db78dae3bc563730b1bd07a",
+    "provenance": "https://github.com/google/cadvisor/pkgs/container/cadvisor/1267507127",
+    "verification": "official registry index metadata; image runtime not tested"
   }
 }

@@ -81,6 +81,7 @@
 | [BuildKit auth session timeout: 公開前の診断draft](<BUILD-KIT-AUTH-DIAGNOSTIC.md>) | PR11後も報告されたBuildKit timeoutの事実・仮説・次の診断を分離し、未解決として引き継ぐ。 | computeの配置前、明示検証、proxy build障害の切り分け時。 | active |
 | [Notebook workspace準備と明示Spark検証](<COMPUTE-VALIDATION.md>) | 安全なworkspace plan/apply/probe、既存projectのSpark smoke、結果とpull policyを確認する。 | computeの配置前、明示検証、proxy build障害の切り分け時。 | active |
 | [実装・配置・検証の追跡表](<IMPLEMENTATION-STATUS.md>) | 依頼された機能のソース実装、配置、既存検証、残る受入を別々に追跡する。 | できることと未実施の評価を確認し、PoCの範囲や進捗を説明するとき。 | reference |
+| [段階的な監視基盤の配置と受入](<OBSERVABILITY.md>) | 監視のhost権限、create-only GUI、閾値、検証と実機受入を分けて段階導入する。 | monitoringを追加・更新し、host mountと未検証項目を確認するとき。 | active |
 | [平時・更新・復旧の運用手順](<OPERATIONS.md>) | 平時点検・更新・backup・復旧を、鍵・DB・object・volumeの状態を揃えて行う。 | 運用を引き継ぐとき、更新前、障害復旧前に実施順序を確認するとき。 | active |
 | [採用版の公式リファレンスと文書監査](<REFERENCES.md>) | 採用版の公式仕様・tag・公開実装・検証記録の根拠を照合する。 | 画面名や設定の仕様を確認するときや、依存更新の調査を始めるとき。 | reference |
 | [症状から確認する](<TROUBLESHOOTING.md>) | 観測した症状から設定・起動・通信・job・データの失敗箇所を絞り込む。 | 成功条件を満たさないときや、削除や再生成を行う前に原因を調べるとき。 | reference |
@@ -105,7 +106,7 @@
 | [図と出力スクリプトを変更する人へ](<reports/EDITING-GUIDE.md>) | figures.json、描画・exportコード、生成物の責務と変更後の検証を理解する。 | 図の意味・レイアウト・出力形式を変更し、生成差分を確認するとき。 | active |
 | [PoCの評価計画と受入条件](<reports/EVALUATION-PLAN.md>) | 配置・品質・CDC・AI・復旧の評価範囲と受入条件を、実施前に記入する。 | 会社PoCを始める前に、担当・条件・成功基準・残す証跡を決めるとき。 | template |
 | [報告する主張と根拠の対応表](<reports/EVIDENCE-MATRIX.md>) | 報告する主張を既存検証・合成fixture・導入先受入・未評価に分けて根拠へ結ぶ。 | 数値や成功を報告へ引用するときと、導入先の証跡台帳を作るとき。 | reference |
-| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 34サービス・11profile・port・volume・接続主体を公開定義から技術付録として照合する。 | 詳細図の箱と線を確認するときや、構成定義の数量と制約を引用するとき。 | reference |
+| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 36サービス・11profile・port・volume・接続主体を公開定義から技術付録として照合する。 | 詳細図の箱と線を確認するときや、構成定義の数量と制約を引用するとき。 | reference |
 | [データレイクハウスPoC 報告書テンプレート](<reports/POC-REPORT-TEMPLATE.md>) | 業務目的、評価条件、観測結果、残る条件、次段階の判断を報告書へ整理する。 | 評価計画と証跡が揃い、社内保存用の報告書原本を作成するとき。 | template |
 | [PoC説明用のスライド構成](<reports/PRESENTATION-OUTLINE.md>) | 読み手と持ち時間に合わせ、14図の選択・説明順・話す論点を組み立てる。 | 報告書の判断と根拠を、発表や引継ぎのスライドへ移すとき。 | template |
 | [PoC報告書・発表に使う図版と雛形](<reports/README.md>) | 用途別14図・キャプション・雛形を選び、PNG・PDF・PPTXへ書き出す。 | PoC報告書や説明スライドを準備し、必要な図と根拠を選ぶとき。 | active |
@@ -175,6 +176,7 @@
 | [Dokploy 0.31.0でGitから配置する](<DOKPLOY.md>) | Dokploy 0.31.0の画面で、生成appName・個別Environment・7つのComposeを揃えて配置する。 |
 | [Linuxサーバーを最初に準備する](<HOST-SETUP.md>) | 新規Ubuntuで操作端末・権限・Docker・Git・uvの前提を準備する。 |
 | [実装・配置・検証の追跡表](<IMPLEMENTATION-STATUS.md>) | 依頼された機能のソース実装、配置、既存検証、残る受入を別々に追跡する。 |
+| [段階的な監視基盤の配置と受入](<OBSERVABILITY.md>) | 監視のhost権限、create-only GUI、閾値、検証と実機受入を分けて段階導入する。 |
 | [平時・更新・復旧の運用手順](<OPERATIONS.md>) | 平時点検・更新・backup・復旧を、鍵・DB・object・volumeの状態を揃えて行う。 |
 | [プロキシ設定の場所と反映方法](<PROXY.md>) | 通信主体別のproxy設定ファイル、CA受渡しと反映方法を参照する。 |
 | [採用版の公式リファレンスと文書監査](<REFERENCES.md>) | 採用版の公式仕様・tag・公開実装・検証記録の根拠を照合する。 |
@@ -185,7 +187,7 @@
 | [初めて構築する人の一本道ガイド](<START-HERE.md>) | 新規Linux環境の準備からcore配置と合成データ検証までを順に進める。 |
 | [症状から確認する](<TROUBLESHOOTING.md>) | 観測した症状から設定・起動・通信・job・データの失敗箇所を絞り込む。 |
 | [PoCの評価計画と受入条件](<reports/EVALUATION-PLAN.md>) | 配置・品質・CDC・AI・復旧の評価範囲と受入条件を、実施前に記入する。 |
-| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 34サービス・11profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
+| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 36サービス・11profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
 
 ### 評価・報告担当
 
@@ -195,6 +197,7 @@
 | [会社への導入・受入ガイド](<COMPANY-ROLLOUT.md>) | 会社側の担当分担、Samba、外部SQL、業務照合と導入受入条件を決める。 |
 | [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>) | 公開Markdown全件の固有の目的・読者・読む時点を、目的別と読者別に引く。 |
 | [実装・配置・検証の追跡表](<IMPLEMENTATION-STATUS.md>) | 依頼された機能のソース実装、配置、既存検証、残る受入を別々に追跡する。 |
+| [段階的な監視基盤の配置と受入](<OBSERVABILITY.md>) | 監視のhost権限、create-only GUI、閾値、検証と実機受入を分けて段階導入する。 |
 | [採用版の公式リファレンスと文書監査](<REFERENCES.md>) | 採用版の公式仕様・tag・公開実装・検証記録の根拠を照合する。 |
 | [外部レビュー指摘の対応と確認](<REVIEW-FOLLOWUP.md>) | PR #3の外部レビュー指摘と、再現・修正・回帰確認の対応を追跡する。 |
 | [検証記録](<VALIDATION.md>) | 既存の合成環境・公開clone・CI・互換性修正で確認した条件と限界を読む。 |
@@ -203,7 +206,7 @@
 | [PoCの意思決定記録テンプレート](<reports/DECISION-RECORD-TEMPLATE.md>) | 選択肢・根拠・制約・承認・再評価条件を、後から追える意思決定記録に残す。 |
 | [PoCの評価計画と受入条件](<reports/EVALUATION-PLAN.md>) | 配置・品質・CDC・AI・復旧の評価範囲と受入条件を、実施前に記入する。 |
 | [報告する主張と根拠の対応表](<reports/EVIDENCE-MATRIX.md>) | 報告する主張を既存検証・合成fixture・導入先受入・未評価に分けて根拠へ結ぶ。 |
-| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 34サービス・11profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
+| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 36サービス・11profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
 | [データレイクハウスPoC 報告書テンプレート](<reports/POC-REPORT-TEMPLATE.md>) | 業務目的、評価条件、観測結果、残る条件、次段階の判断を報告書へ整理する。 |
 | [PoC説明用のスライド構成](<reports/PRESENTATION-OUTLINE.md>) | 読み手と持ち時間に合わせ、14図の選択・説明順・話す論点を組み立てる。 |
 | [PoC報告書・発表に使う図版と雛形](<reports/README.md>) | 用途別14図・キャプション・雛形を選び、PNG・PDF・PPTXへ書き出す。 |
@@ -223,6 +226,7 @@
 | [Dokploy 0.31.0でGitから配置する](<DOKPLOY.md>) | Dokploy 0.31.0の画面で、生成appName・個別Environment・7つのComposeを揃えて配置する。 |
 | [GrafanaのGUI編集と保存](<GRAFANA.md>) | GrafanaのGUIでdashboardを編集・保存し、収集対象とPromQLの意味を確認する。 |
 | [n8n・Airflow・Grafanaを画面から使う](<GUI-WALKTHROUGHS.md>) | n8n・Airflow・Grafanaで接続、認証、手動実行、履歴、保存を順に確かめる。 |
+| [段階的な監視基盤の配置と受入](<OBSERVABILITY.md>) | 監視のhost権限、create-only GUI、閾値、検証と実機受入を分けて段階導入する。 |
 | [平時・更新・復旧の運用手順](<OPERATIONS.md>) | 平時点検・更新・backup・復旧を、鍵・DB・object・volumeの状態を揃えて行う。 |
 | [PoC操作ポータル](<POC-PORTAL.md>) | 操作ポータルの各ページから、サービス入口・データ・診断・履歴へ移動する。 |
 | [症状から確認する](<TROUBLESHOOTING.md>) | 観測した症状から設定・起動・通信・job・データの失敗箇所を絞り込む。 |
@@ -265,7 +269,7 @@
 | [PoCの意思決定記録テンプレート](<reports/DECISION-RECORD-TEMPLATE.md>) | 選択肢・根拠・制約・承認・再評価条件を、後から追える意思決定記録に残す。 |
 | [図と出力スクリプトを変更する人へ](<reports/EDITING-GUIDE.md>) | figures.json、描画・exportコード、生成物の責務と変更後の検証を理解する。 |
 | [報告する主張と根拠の対応表](<reports/EVIDENCE-MATRIX.md>) | 報告する主張を既存検証・合成fixture・導入先受入・未評価に分けて根拠へ結ぶ。 |
-| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 34サービス・11profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
+| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 36サービス・11profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
 | [PoC報告書・発表に使う図版と雛形](<reports/README.md>) | 用途別14図・キャプション・雛形を選び、PNG・PDF・PPTXへ書き出す。 |
 
 ## 文書を追加・変更するとき

@@ -16,7 +16,7 @@
 
 [図版集の使い方](README.md) / [HTML一覧](gallery.html)
 
-照合日: 2026-11-10。生成元はfigures.jsonです。図の作成は、同日付で全機能を再試験したことを意味しません。
+照合日: 2026-11-11。生成元はfigures.jsonです。図の作成は、同日付で全機能を再試験したことを意味しません。
 
 ## 初めて図を使うとき
 
@@ -33,16 +33,16 @@ captionは図の説明で、会社での実施結果の代筆ではありませ�
 
 内容を直す場合はfigures.jsonのcaption・notes・sources・Mermaidを揃え、SVG/HTML/台帳を再生成します。[編集ガイド](EDITING-GUIDE.md)と[根拠対応表](EVIDENCE-MATRIX.md)を使います。
 
-## 図01 全34サービスの配置と起動条件
+## 図01 全36サービスの配置と起動条件
 
 **用途:** 基盤設計・導入レビュー
 
-**キャプション:** core6サービスに11種類のprofileを重ねる単一ホストPoC構成。34は定義数であり、常駐・一度だけの初期化・明示スモークを区別する。
+**キャプション:** core6サービスに11種類のprofileを重ねる36定義の単一ホストPoC構成。監視拡張はsource-only検査であり、host権限と実機受入は別途必要。
 
 [SVG](figures/01-platform-detail.svg) / [Mermaid](mermaid/01-platform-detail.mmd)
 
 - Dokploy・Samba・daemon proxyはホスト側の別設定。SQL Serverは外部DB。
-- 一度だけの初期化は4定義。全profileでは33containerの検証記録があり、34全てが常時稼働する構成ではない。
+- 一度だけの初期化4定義と通常0の明示smokeを区別する。新規exporterの実機互換性は未検証。
 
 **根拠:** [compose.yaml](../../infra/lakehouse/compose.yaml)、[compose.yaml](../../infra/compute/compose.yaml)、[compose.yaml](../../infra/orchestration/compose.yaml)、[compose.yaml](../../infra/demo/compose.yaml)、[compose.yaml](../../infra/cdc/compose.yaml)、[compose.yaml](../../infra/poc/compose.yaml)、[compose.yaml](../../infra/mcp/compose.yaml)
 
@@ -154,7 +154,7 @@ captionは図の説明で、会社での実施結果の代筆ではありませ�
 
 **用途:** 運用・品質レビュー
 
-**キャプション:** Prometheusはworkerと自身の2targetを15秒ごとに収集する。ポータルのhealth、固定品質SQL、n8n/Airflow等の実行履歴は別の観測で、全ホストの監視や長期監査を完成させるものではない。
+**キャプション:** Prometheusは既存worker/selfにnode/cadvisorを追加する4job定義。host権限とDocker29/cgroupv2の指標・ラベルは別途実機受入が必要。ポータルhealth・品質SQL・実行履歴とは別の観測。
 
 [SVG](figures/10-observability.svg) / [Mermaid](mermaid/10-observability.mmd)
 
