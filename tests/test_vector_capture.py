@@ -12,8 +12,10 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest import mock
 
@@ -287,6 +289,224 @@ class CaptureTests(unittest.TestCase):
             MODULE.capture(self.values, confirm=True, runner=runner)
         runner.assert_not_called()
         self.assertEqual(len(list(self.path.iterdir())), MODULE.MAX_FILES)
+
+    def test_concurrent_publishers_serialize_capacity_and_keep_private_files(
+        self,
+    ):
+        """Force contention on real directory locks in this temporary spool."""
+        existing = self.path / ("0" * 64 + ".jsonl")
+        existing.write_bytes(b"synthetic existing\n")
+        existing.chmod(0o600)
+        first_checked = threading.Event()
+        second_blocked = threading.Event()
+        release_first = threading.Event()
+        first_thread = None
+        original_inspect = MODULE.inspect_spool
+        original_flock = MODULE.fcntl.flock
+
+        def inspect(handle, fd):
+            original_inspect(handle, fd)
+            if threading.get_ident() == first_thread:
+                first_checked.set()
+                if not release_first.wait(timeout=3):
+                    raise AssertionError(
+                        "Synthetic publisher was not released"
+                    )
+
+        def flock(fd, operation):
+            try:
+                return original_flock(fd, operation)
+            except BlockingIOError:
+                if threading.get_ident() != first_thread:
+                    second_blocked.set()
+                raise
+
+        def publish(payload, *, first=False):
+            nonlocal first_thread
+            if first:
+                first_thread = threading.get_ident()
+            with MODULE.walk(self.path) as handle:
+                return MODULE.publish(handle, payload)
+
+        with (
+            mock.patch.object(MODULE, "MAX_FILES", 2),
+            mock.patch.object(MODULE, "inspect_spool", side_effect=inspect),
+            mock.patch.object(MODULE.fcntl, "flock", side_effect=flock),
+            ThreadPoolExecutor(max_workers=2) as executor,
+        ):
+            first = executor.submit(publish, b"synthetic first\n", first=True)
+            second = None
+            try:
+                self.assertTrue(first_checked.wait(timeout=2))
+                second = executor.submit(publish, b"synthetic second\n")
+                # This observes actual kernel contention, rather than relying
+                # on a sleep to guess whether both threads ran concurrently.
+                self.assertTrue(second_blocked.wait(timeout=2))
+                self.assertFalse(second.done())
+            finally:
+                release_first.set()
+            self.assertTrue(first.result(timeout=3)[1])
+            with self.assertRaisesRegex(MODULE.CaptureError, "SPOOL_CAPACITY"):
+                second.result(timeout=3)
+        files = list(self.path.iterdir())
+        self.assertEqual(len(files), 2)
+        self.assertEqual(existing.read_bytes(), b"synthetic existing\n")
+        for path in files:
+            self.assertFalse(path.name.startswith(".capture-"))
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+            self.assertEqual(path.stat().st_nlink, 1)
+
+    def test_initial_inspection_waits_for_publication_and_has_a_timeout(self):
+        runner = mock.Mock(side_effect=AssertionError)
+        with MODULE.walk(self.path) as handle:
+            fd = MODULE.writable_fd(handle, len(handle.nodes) - 1)
+            try:
+                with (
+                    mock.patch.object(MODULE, "LOCK_TIMEOUT_SECONDS", 0.05),
+                    MODULE.spool_lock(fd),
+                ):
+                    temporary = self.path / ".capture-synthetic"
+                    temporary.write_bytes(b"synthetic private\n")
+                    started = time.monotonic()
+                    try:
+                        with ThreadPoolExecutor(max_workers=1) as executor:
+                            blocked = executor.submit(
+                                MODULE.capture,
+                                self.values,
+                                confirm=True,
+                                runner=runner,
+                            )
+                            with self.assertRaisesRegex(
+                                MODULE.CaptureError, "LOCK_TIMEOUT"
+                            ):
+                                blocked.result(timeout=2)
+                    finally:
+                        temporary.unlink()
+                    self.assertLess(time.monotonic() - started, 2)
+            finally:
+                os.close(fd)
+        runner.assert_not_called()
+        self.assertEqual(list(self.path.iterdir()), [])
+
+    def test_publication_lock_includes_temporary_cleanup(self):
+        original_unlink = os.unlink
+        observed = []
+
+        def unlink(name, **options):
+            if str(name).startswith(".capture-"):
+                probe = os.open(self.path, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    with self.assertRaises(BlockingIOError):
+                        MODULE.fcntl.flock(
+                            probe, MODULE.fcntl.LOCK_EX | MODULE.fcntl.LOCK_NB
+                        )
+                    observed.append("locked")
+                finally:
+                    os.close(probe)
+            return original_unlink(name, **options)
+
+        with (
+            MODULE.walk(self.path) as handle,
+            mock.patch.object(MODULE.os, "unlink", side_effect=unlink),
+        ):
+            self.assertTrue(MODULE.publish(handle, b"synthetic\n")[1])
+        self.assertEqual(observed, ["locked"])
+        self.assertEqual(len(list(self.path.iterdir())), 1)
+
+    def test_cleanup_failure_is_normalized_and_does_not_keep_lock(self):
+        with (
+            MODULE.walk(self.path) as handle,
+            mock.patch.object(
+                MODULE.os, "unlink", side_effect=OSError("synthetic private")
+            ),
+        ):
+            with self.assertRaisesRegex(
+                MODULE.CaptureError, "^LOG_CAPTURE_TEMP_CLEANUP_FAILED$"
+            ):
+                MODULE.publish(handle, b"synthetic\n")
+        # Failure is reported even though the immutable final link may exist.
+        # Only this temporary test directory is cleaned after the assertion.
+        self.assertEqual(len(list(self.path.iterdir())), 2)
+        fd = os.open(self.path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            with MODULE.spool_lock(fd):
+                pass
+        finally:
+            os.close(fd)
+
+    def test_capture_deadline_caps_a_contended_publication_lock(self):
+        with MODULE.walk(self.path) as handle:
+            holder = MODULE.writable_fd(handle, len(handle.nodes) - 1)
+            contender = MODULE.writable_fd(handle, len(handle.nodes) - 1)
+            try:
+                with MODULE.spool_lock(holder):
+                    started = time.monotonic()
+                    with self.assertRaisesRegex(
+                        MODULE.CaptureError, "LOCK_TIMEOUT"
+                    ):
+                        with MODULE.spool_lock(
+                            contender, deadline=started + 0.03
+                        ):
+                            self.fail("A contended lock must not be acquired")
+                    self.assertLess(time.monotonic() - started, 1)
+            finally:
+                os.close(contender)
+                os.close(holder)
+        self.assertEqual(list(self.path.iterdir()), [])
+
+    def test_release_failure_is_not_success_and_closing_fd_releases_lock(self):
+        original_flock = MODULE.fcntl.flock
+
+        def fail_release(fd, operation):
+            if operation == MODULE.fcntl.LOCK_UN:
+                raise OSError("synthetic private")
+            return original_flock(fd, operation)
+
+        with (
+            MODULE.walk(self.path) as handle,
+            mock.patch.object(MODULE.fcntl, "flock", side_effect=fail_release),
+        ):
+            with self.assertRaisesRegex(
+                MODULE.CaptureError, "^LOG_CAPTURE_LOCK_RELEASE_FAILED$"
+            ):
+                MODULE.publish(handle, b"synthetic\n")
+        files = list(self.path.iterdir())
+        self.assertEqual(len(files), 1)
+        self.assertEqual(files[0].read_bytes(), b"synthetic\n")
+        self.assertEqual(files[0].stat().st_nlink, 1)
+        fd = os.open(self.path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            with MODULE.spool_lock(fd):
+                pass
+        finally:
+            os.close(fd)
+
+    def test_lock_unavailable_or_deadline_exhausted_precedes_docker(self):
+        for replacement in (
+            None,
+            mock.Mock(
+                flock=mock.Mock(side_effect=OSError),
+                LOCK_EX=MODULE.fcntl.LOCK_EX,
+                LOCK_NB=MODULE.fcntl.LOCK_NB,
+                LOCK_UN=MODULE.fcntl.LOCK_UN,
+            ),
+        ):
+            with (
+                self.subTest(platform=replacement is None),
+                mock.patch.object(MODULE, "fcntl", replacement),
+            ):
+                runner = mock.Mock(side_effect=AssertionError)
+                with self.assertRaisesRegex(
+                    MODULE.CaptureError, "LOCK_UNAVAILABLE"
+                ):
+                    MODULE.capture(self.values, confirm=True, runner=runner)
+                runner.assert_not_called()
+        with mock.patch.object(MODULE, "TIMEOUT_SECONDS", 0):
+            runner = mock.Mock(side_effect=AssertionError)
+            with self.assertRaisesRegex(MODULE.CaptureError, "DEADLINE"):
+                MODULE.capture(self.values, confirm=True, runner=runner)
+            runner.assert_not_called()
+        self.assertEqual(list(self.path.iterdir()), [])
 
     def test_bounds_rejected_before_queries_and_payload_never_published(self):
         for options in ({"tail": 0}, {"minutes": 1441}, {"tail": True}):

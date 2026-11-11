@@ -209,6 +209,10 @@ def run_trial():
         if not isinstance(summary, dict) or summary.get("schema_version") != 1:
             raise ValueError("ISOLATED_RESULT_INVALID")
         summary["container_exit_code"] = result.returncode
+        if result.returncode != 0:
+            # A process may print its last record before failing. Both the
+            # structured result and the actual exit status must prove success.
+            summary["status"] = "container_failed"
         return summary
 
 

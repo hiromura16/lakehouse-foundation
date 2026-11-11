@@ -62,7 +62,7 @@ source acknowledgementsは無効です。optional sinkの停止がcheckpointや�
 
 ## 6. 検証の現状
 
-75合成case定義（既知format期待45・秘匿化期待20・unknown/error/continuation期待10）とpipeline3件、合計78の**native Vector期待テスト**を同梱します。これはテスト定義数であり、成功したparser実測率ではありません。19 Python/static/有限capture試験は通っています。公式`vector validate`/`vector test`はDocker APIがsandboxで拒否されたため未実行です。[公式validator plan](../scripts/validate_observability.py)を許可されたdisposable CIで実行し、通るまで運用受入にしません。
+85合成case定義（既知format期待45・秘匿化/metadata期待30・unknown/error/continuation期待10）とpipeline3件、合計88の**native Vector期待テスト**を同梱します。これはテスト定義数であり、成功したparser実測率ではありません。Python/static/有限capture試験と、loggerの秘密assignment・安全なmodule名の期待fixtureを別に検査します。公式`vector validate`/`vector test`はDocker APIがsandboxで拒否されたため未実行です。[公式validator plan](../scripts/validate_observability.py)を許可されたdisposable CIで実行し、通るまで運用受入にしません。
 
 会社での20–50行/serviceのprivate原本→Vector→Loki/OpenObserve→Grafana色/field比較、false error/fatal=0、既知format parse成功99%以上の評価は後日の許可された受入です。分母・未知format除外・失敗数を明記し、少数の合成期待値を達成率として報告しません。
 

@@ -23,8 +23,14 @@ import stat
 import subprocess
 import tempfile
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
 from notebook_workspace import selected as selected_workspace
 from notebook_workspace import walk, writable_fd
@@ -38,6 +44,8 @@ MAX_FILES = 64
 MAX_LINES = 10000
 MAX_MESSAGE_BYTES = 16384
 TIMEOUT_SECONDS = 60
+LOCK_TIMEOUT_SECONDS = 2
+LOCK_POLL_SECONDS = 0.02
 SERVICES = frozenset(
     "catalog-db storage catalog catalog-migrate trino worker demo-api demo "
     "prometheus grafana superset-db superset-redis superset-init superset "
@@ -51,6 +59,46 @@ SERVICES = frozenset(
 
 class CaptureError(ValueError):
     """Carry fixed codes without Docker output or a selected path."""
+
+
+@contextmanager
+def spool_lock(fd, *, deadline=None):
+    """Serialize cooperating captures through the pinned directory fd.
+
+    No lockfile is created in the immutable spool. Nonblocking attempts have
+    a finite wait, also capped by the capture's existing overall deadline.
+    Unsupported platforms/filesystems fail closed instead of publishing
+    without a lock. Private directory ownership remains the boundary against
+    unrelated writers that do not use this advisory protocol.
+    """
+    if fcntl is None:
+        raise CaptureError("LOG_CAPTURE_LOCK_UNAVAILABLE")
+    started = time.monotonic()
+    lock_deadline = started + LOCK_TIMEOUT_SECONDS
+    if deadline is not None:
+        if deadline <= started:
+            raise CaptureError("LOG_CAPTURE_DEADLINE")
+        lock_deadline = min(lock_deadline, deadline)
+    while True:
+        if time.monotonic() >= lock_deadline:
+            raise CaptureError("LOG_CAPTURE_LOCK_TIMEOUT")
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except BlockingIOError:
+            remaining = lock_deadline - time.monotonic()
+            if remaining <= 0:
+                raise CaptureError("LOG_CAPTURE_LOCK_TIMEOUT") from None
+            time.sleep(min(LOCK_POLL_SECONDS, remaining))
+        except OSError:
+            raise CaptureError("LOG_CAPTURE_LOCK_UNAVAILABLE") from None
+    try:
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        except OSError:
+            raise CaptureError("LOG_CAPTURE_LOCK_RELEASE_FAILED") from None
 
 
 def bounded_command(command, *, deadline):
@@ -191,11 +239,14 @@ def inspect_spool(handle, fd):
     handle.verify()
 
 
-def publish(handle, payload):
+def publish(handle, payload, *, deadline=None):
     """Keep a readable descriptor pinned for directory sync and publication."""
     fd = writable_fd(handle, len(handle.nodes) - 1)
     try:
-        return _publish(handle, fd, payload)
+        # Hold through _publish's temporary-file cleanup as well as its
+        # capacity check, exclusive link, and directory synchronization.
+        with spool_lock(fd, deadline=deadline):
+            return _publish(handle, fd, payload)
     finally:
         os.close(fd)
 
@@ -291,7 +342,10 @@ def capture(values, *, confirm=False, minutes=15, tail=500, runner=None):
             raise CaptureError("LOG_CAPTURE_DIRECTORY_NOT_PREPARED")
         inspection_fd = writable_fd(output, len(output.nodes) - 1)
         try:
-            inspect_spool(output, inspection_fd)
+            # Another capture's temporary file is not an unrelated output.
+            # Wait for its bounded publication/cleanup before inspecting.
+            with spool_lock(inspection_fd, deadline=deadline):
+                inspect_spool(output, inspection_fd)
         finally:
             os.close(inspection_fd)
         # Force the local default context without reading user registry auth or
@@ -407,7 +461,9 @@ def capture(values, *, confirm=False, minutes=15, tail=500, runner=None):
         if len(payload) > MAX_CAPTURE_BYTES:
             raise CaptureError("LOG_CAPTURE_BYTE_LIMIT")
         file_id, published = (
-            publish(output, payload) if records else (None, False)
+            publish(output, payload, deadline=deadline)
+            if records
+            else (None, False)
         )
         output.verify()
     return {

@@ -17,7 +17,10 @@ text = replace(text, r'(?i)(?:https?|s3)://[^\s/@]+:[^\s/@]+@', "[REDACTED_URL_U
 text = replace(text, r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', "[IP]")
 if sensitive { text = "[REDACTED: sensitive log content]" }
 logger = string!(.logger)
-if match(logger, r'\b(?:AKIA|ASIA)[A-Z0-9]{16}\b') || match(logger, r'\bsk-[A-Za-z0-9_-]{16,}\b') || !match(logger, r'^[A-Za-z0-9_.:-]{1,128}$') { logger = "redacted" }
+# Logger/target is untrusted metadata too. A colon is valid in a module path,
+# but must not allow a credential assignment to escape message redaction.
+logger_sensitive = match(logger, r'(?i)\b(?:authorization|proxy-authorization|cookie|set-cookie|password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|secret[_-]?key|aws_access_key_id|aws_secret_access_key|aws_session_token|secret[_-]?access[_-]?key|access[_-]?key[_-]?id|session[_-]?token|client[_-]?secret|access[_-]?token|refresh[_-]?token|id[_-]?token)\b\s*[:=]') || match(logger, r'(?i)\b(?:bearer|basic)\s*:')
+if logger_sensitive || match(logger, r'\b(?:AKIA|ASIA)[A-Z0-9]{16}\b') || match(logger, r'\bsk-[A-Za-z0-9_-]{16,}\b') || !match(logger, r'^[A-Za-z0-9_.:-]{1,128}$') { logger = "redacted" }
 raw = truncate(string!(.level_raw), limit: 32)
 if raw != "" && !match(raw, r'(?i)^(TRACE|DEBUG[1-5]?|INFO|WARN|WARNING|ERROR|FATAL|CRITICAL|LOG|NOTICE|PANIC|I|W|E|F|[.\-*#])$') { raw = "[UNRECOGNIZED_REDACTED]" }
 lines = to_int!(.line_count)

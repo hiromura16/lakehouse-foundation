@@ -1115,6 +1115,86 @@
         "http_status": null,
         "record_start": false
       }
+    },
+    {
+      "name": "logger-assignment-password",
+      "kind": "redaction",
+      "message": "synthetic message",
+      "logger": "password:unit-marker",
+      "expected_message": "synthetic message",
+      "expected_logger": "redacted"
+    },
+    {
+      "name": "logger-assignment-token",
+      "kind": "redaction",
+      "message": "synthetic message",
+      "logger": "token:unit-marker",
+      "expected_message": "synthetic message",
+      "expected_logger": "redacted"
+    },
+    {
+      "name": "logger-assignment-secret",
+      "kind": "redaction",
+      "message": "synthetic message",
+      "logger": "secret:unit-marker",
+      "expected_message": "synthetic message",
+      "expected_logger": "redacted"
+    },
+    {
+      "name": "logger-assignment-api_key",
+      "kind": "redaction",
+      "message": "synthetic message",
+      "logger": "api_key:unit-marker",
+      "expected_message": "synthetic message",
+      "expected_logger": "redacted"
+    },
+    {
+      "name": "logger-assignment-authorization",
+      "kind": "redaction",
+      "message": "synthetic message",
+      "logger": "Authorization:unit-marker",
+      "expected_message": "synthetic message",
+      "expected_logger": "redacted"
+    },
+    {
+      "name": "logger-assignment-cookie",
+      "kind": "redaction",
+      "message": "synthetic message",
+      "logger": "Cookie:unit-marker",
+      "expected_message": "synthetic message",
+      "expected_logger": "redacted"
+    },
+    {
+      "name": "logger-assignment-clientsecret",
+      "kind": "redaction",
+      "message": "synthetic message",
+      "logger": "clientSecret:unit-marker",
+      "expected_message": "synthetic message",
+      "expected_logger": "redacted"
+    },
+    {
+      "name": "logger-assignment-accesskeyid",
+      "kind": "redaction",
+      "message": "synthetic message",
+      "logger": "accessKeyId:unit-marker",
+      "expected_message": "synthetic message",
+      "expected_logger": "redacted"
+    },
+    {
+      "name": "logger-safe-unit-password_manager",
+      "kind": "redaction",
+      "message": "synthetic message",
+      "logger": "unit.password_manager",
+      "expected_message": "synthetic message",
+      "expected_logger": "unit.password_manager"
+    },
+    {
+      "name": "logger-safe-module--target",
+      "kind": "redaction",
+      "message": "synthetic message",
+      "logger": "module::target",
+      "expected_message": "synthetic message",
+      "expected_logger": "module::target"
     }
   ]
 }

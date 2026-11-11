@@ -296,6 +296,32 @@ class VectorConfigTests(unittest.TestCase):
             self.assertIn("sample", parser)
             self.assertIn("fallback", parser)
 
+    def test_logger_assignments_are_redacted_in_native_fixture_expectations(
+        self,
+    ):
+        """Inspect metadata leak regressions; this does not execute VRL."""
+        redaction = (DIRECTORY / "transforms/redact.vrl").read_text()
+        self.assertIn("logger_sensitive = match(logger,", redaction)
+        self.assertIn("if logger_sensitive ||", redaction)
+        cases = json.loads((DIRECTORY / "tests/cases.json").read_text())
+        selected = [
+            case
+            for case in cases["cases"]
+            if case["name"].startswith("logger-assignment-")
+        ]
+        self.assertEqual(len(selected), 8)
+        for case in selected:
+            self.assertEqual(case["expected_logger"], "redacted")
+            self.assertEqual(case["expected_message"], "synthetic message")
+        safe = [
+            case
+            for case in cases["cases"]
+            if case["name"].startswith("logger-safe-")
+        ]
+        self.assertEqual(len(safe), 2)
+        for case in safe:
+            self.assertEqual(case["logger"], case["expected_logger"])
+
 
 @unittest.skipUnless(os.geteuid() != 0, "Requires an unprivileged test UID.")
 class EntryPointTests(unittest.TestCase):

@@ -3618,6 +3618,406 @@ tests:
         assert_eq!(.http_status, null)
 
         assert_eq!(.record_start, false)'
+- name: logger-assignment-password
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 5f241eec5564d5a9b1aa6adf128bdbbdb5529ad99af91e7cd2ded2107e5ea3e2
+      stream: stdout
+      message: synthetic message
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: password:unit-marker
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "synthetic message")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "redacted")'
+- name: logger-assignment-token
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 5f241eec5564d5a9b1aa6adf128bdbbdb5529ad99af91e7cd2ded2107e5ea3e2
+      stream: stdout
+      message: synthetic message
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: token:unit-marker
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "synthetic message")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "redacted")'
+- name: logger-assignment-secret
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 5f241eec5564d5a9b1aa6adf128bdbbdb5529ad99af91e7cd2ded2107e5ea3e2
+      stream: stdout
+      message: synthetic message
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: secret:unit-marker
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "synthetic message")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "redacted")'
+- name: logger-assignment-api_key
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 5f241eec5564d5a9b1aa6adf128bdbbdb5529ad99af91e7cd2ded2107e5ea3e2
+      stream: stdout
+      message: synthetic message
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: api_key:unit-marker
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "synthetic message")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "redacted")'
+- name: logger-assignment-authorization
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 5f241eec5564d5a9b1aa6adf128bdbbdb5529ad99af91e7cd2ded2107e5ea3e2
+      stream: stdout
+      message: synthetic message
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: Authorization:unit-marker
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "synthetic message")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "redacted")'
+- name: logger-assignment-cookie
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 5f241eec5564d5a9b1aa6adf128bdbbdb5529ad99af91e7cd2ded2107e5ea3e2
+      stream: stdout
+      message: synthetic message
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: Cookie:unit-marker
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "synthetic message")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "redacted")'
+- name: logger-assignment-clientsecret
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 5f241eec5564d5a9b1aa6adf128bdbbdb5529ad99af91e7cd2ded2107e5ea3e2
+      stream: stdout
+      message: synthetic message
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: clientSecret:unit-marker
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "synthetic message")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "redacted")'
+- name: logger-assignment-accesskeyid
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 5f241eec5564d5a9b1aa6adf128bdbbdb5529ad99af91e7cd2ded2107e5ea3e2
+      stream: stdout
+      message: synthetic message
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: accessKeyId:unit-marker
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "synthetic message")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "redacted")'
+- name: logger-safe-unit-password_manager
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 5f241eec5564d5a9b1aa6adf128bdbbdb5529ad99af91e7cd2ded2107e5ea3e2
+      stream: stdout
+      message: synthetic message
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: unit.password_manager
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "synthetic message")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "unit.password_manager")'
+- name: logger-safe-module--target
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 5f241eec5564d5a9b1aa6adf128bdbbdb5529ad99af91e7cd2ded2107e5ea3e2
+      stream: stdout
+      message: synthetic message
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: module::target
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "synthetic message")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "module::target")'
 - name: envelope-ansi-before-severity
   inputs:
   - insert_at: envelope

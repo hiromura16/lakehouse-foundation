@@ -145,6 +145,38 @@ class HarnessPlanTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "CLEANUP_FAILED"):
                 INVOKE.run_trial()
 
+    def test_nonzero_exit_or_failed_receipt_cannot_be_reported_as_success(
+        self,
+    ):
+        for exit_code, status in ((7, "passed"), (0, "failed")):
+            calls = []
+
+            def fake(command, **options):
+                calls.append(command)
+                if "run" in command:
+                    options["stdout"].write(
+                        json.dumps(
+                            {
+                                "schema_version": 1,
+                                "status": status,
+                            }
+                        ).encode()
+                    )
+                    return SimpleNamespace(returncode=exit_code)
+                return SimpleNamespace(returncode=0)
+
+            output = io.StringIO()
+            with (
+                mock.patch.object(INVOKE.subprocess, "run", side_effect=fake),
+                mock.patch.object(sys, "argv", ["invoke", "--run"]),
+                contextlib.redirect_stdout(output),
+            ):
+                self.assertEqual(INVOKE.main(), 1)
+            result = json.loads(output.getvalue())
+            self.assertNotEqual(result["status"], "passed")
+            self.assertEqual(result["container_exit_code"], exit_code)
+            self.assertTrue(any("rm" in command for command in calls))
+
     def test_binary_stages_are_exact_pins_without_package_or_rust_build(self):
         text = (DIRECTORY / "Dockerfile").read_text()
         for key in ("vector", "loki", "python"):
