@@ -3,6 +3,8 @@
 -- TargetDatabase, InstallationId (32 lower hex), OwnershipHash (SHA-256 hex).
 -- Values are supplied privately. No runtime app receives administrator auth.
 -- No existing dbo/legacy object, login, password, Swarm or deployment is changed.
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 DECLARE @ExpectedDatabase nvarchar(4000) = N'$(TargetDatabase)';
@@ -59,7 +61,8 @@ IF EXISTS (
         N'lh_demo_erp.sales_orders',N'lh_demo_erp.shipments',
         N'lh_demo_mes.events',N'lh_demo_mes.downtime',
         N'lh_demo_ctl.installation',N'lh_demo_ctl.demo_runs',
-        N'lh_demo_ctl.batch_watermarks'
+        N'lh_demo_ctl.batch_watermarks',
+        N'lh_demo_ctl.check_write_safety_v1'
       )
 )
     THROW 51005, 'Unexpected fixed-schema objects exist; preserve them.', 1;
@@ -87,6 +90,58 @@ IF EXISTS (
 -- A distinct control principal keeps checkpoint writes out of SOURCE auth.
 IF OBJECT_ID(N'lh_demo_ctl.installation',N'U') IS NULL
     THROW 51009, 'Apply the schema/table installation first.', 1;
+-- This fixed no-argument checker reads metadata as dbo, never business data.
+-- Do not adopt/overwrite any existing module, even a same-version mismatch.
+DECLARE @SafetyDefinition nvarchar(max) = N'CREATE PROCEDURE [lh_demo_ctl].[check_write_safety_v1]
+WITH EXECUTE AS ''dbo''
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT CAST(CASE WHEN USER_ID()=DATABASE_PRINCIPAL_ID(N''dbo'')
+        AND (SELECT COUNT_BIG(*) FROM sys.tables t
+             JOIN sys.schemas s ON t.schema_id=s.schema_id
+             WHERE s.name+N''.''+t.name IN (
+                 N''lh_demo_erp.products'',N''lh_demo_erp.work_orders'',
+                 N''lh_demo_erp.sales_orders'',N''lh_demo_erp.shipments'',
+                 N''lh_demo_mes.events'',N''lh_demo_mes.downtime'',
+                 N''lh_demo_ctl.installation'',N''lh_demo_ctl.demo_runs'',
+                 N''lh_demo_ctl.batch_watermarks''))=9
+        AND NOT EXISTS (
+            SELECT 1 FROM sys.triggers tr
+            JOIN sys.objects o ON tr.parent_id=o.object_id
+            JOIN sys.schemas s ON o.schema_id=s.schema_id
+            WHERE tr.is_disabled=0
+              AND s.name IN (N''lh_demo_erp'',N''lh_demo_mes'',N''lh_demo_ctl''))
+        AND NOT EXISTS (
+            SELECT 1 FROM sys.foreign_keys fk
+            JOIN sys.objects p ON fk.parent_object_id=p.object_id
+            JOIN sys.schemas ps ON p.schema_id=ps.schema_id
+            JOIN sys.objects r ON fk.referenced_object_id=r.object_id
+            JOIN sys.schemas rs ON r.schema_id=rs.schema_id
+            WHERE ps.name IN (N''lh_demo_erp'',N''lh_demo_mes'',N''lh_demo_ctl'')
+               OR rs.name IN (N''lh_demo_erp'',N''lh_demo_mes'',N''lh_demo_ctl''))
+        THEN 1 ELSE 0 END AS bit) AS safe;
+END';
+IF SCHEMA_ID(N'lh_demo_ctl') IS NULL OR NOT EXISTS (
+    SELECT 1 FROM sys.schemas WHERE name=N'lh_demo_ctl'
+      AND principal_id=DATABASE_PRINCIPAL_ID(N'dbo')
+)
+    THROW 51018, 'Safety checker schema must be owned by dbo.', 1;
+IF OBJECT_ID(N'lh_demo_ctl.check_write_safety_v1') IS NULL
+    EXEC sys.sp_executesql @SafetyDefinition;
+IF NOT EXISTS (
+    SELECT 1 FROM sys.sql_modules m JOIN sys.objects o
+    ON m.object_id=o.object_id JOIN sys.schemas s ON o.schema_id=s.schema_id
+    WHERE o.object_id=OBJECT_ID(N'lh_demo_ctl.check_write_safety_v1',N'P')
+      AND o.is_ms_shipped=0
+      AND COALESCE(o.principal_id,s.principal_id)=DATABASE_PRINCIPAL_ID(N'dbo')
+      AND m.execute_as_principal_id=DATABASE_PRINCIPAL_ID(N'dbo')
+      AND m.uses_ansi_nulls=1 AND m.uses_quoted_identifier=1
+      AND DATALENGTH(m.definition)=DATALENGTH(@SafetyDefinition)
+      AND m.definition COLLATE Latin1_General_100_BIN2
+          = @SafetyDefinition COLLATE Latin1_General_100_BIN2
+)
+    THROW 51019, 'Safety checker identity/definition mismatch; preserve it.', 1;
 DECLARE @Writer nvarchar(4000)=N'$(DemoWriterUser)';
 DECLARE @Reader nvarchar(4000)=N'$(SourceReaderUser)';
 DECLARE @Control nvarchar(4000)=N'$(ControlWriterUser)';
@@ -113,6 +168,10 @@ IF DATABASE_PRINCIPAL_ID(N'lh_demo_control_writer') IS NULL
 -- No old permission/role is revoked to force the application checks to pass.
 DECLARE @AllowedGrants TABLE (role_name sysname, object_name nvarchar(257), permission_name sysname);
 INSERT INTO @AllowedGrants VALUES
+    (N'lh_demo_writer',N'lh_demo_ctl.check_write_safety_v1',N'EXECUTE'),
+    (N'lh_demo_writer',N'lh_demo_ctl.check_write_safety_v1',N'VIEW DEFINITION'),
+    (N'lh_demo_control_writer',N'lh_demo_ctl.check_write_safety_v1',N'EXECUTE'),
+    (N'lh_demo_control_writer',N'lh_demo_ctl.check_write_safety_v1',N'VIEW DEFINITION'),
     (N'lh_demo_writer',N'lh_demo_erp.products',N'VIEW DEFINITION'),
     (N'lh_demo_writer',N'lh_demo_erp.work_orders',N'VIEW DEFINITION'),
     (N'lh_demo_writer',N'lh_demo_erp.sales_orders',N'VIEW DEFINITION'),
@@ -208,7 +267,10 @@ GRANT SELECT ON OBJECT::[lh_demo_ctl].[installation] TO [lh_demo_reader];
 GRANT SELECT ON OBJECT::[lh_demo_ctl].[installation] TO [lh_demo_control_writer];
 GRANT SELECT, INSERT, UPDATE ON OBJECT::[lh_demo_ctl].[demo_runs] TO [lh_demo_writer];
 GRANT SELECT, INSERT, UPDATE ON OBJECT::[lh_demo_ctl].[batch_watermarks] TO [lh_demo_control_writer];
--- Object-scoped metadata visibility makes trigger/FK checks fail closed.
+-- Only this exact read-only dbo checker may be executed by runtime writers.
+GRANT EXECUTE, VIEW DEFINITION ON OBJECT::[lh_demo_ctl].[check_write_safety_v1] TO [lh_demo_writer];
+GRANT EXECUTE, VIEW DEFINITION ON OBJECT::[lh_demo_ctl].[check_write_safety_v1] TO [lh_demo_control_writer];
+-- Local metadata visibility is retained for diagnostics, not completeness.
 GRANT VIEW DEFINITION ON OBJECT::[lh_demo_erp].[products] TO [lh_demo_writer];
 GRANT VIEW DEFINITION ON OBJECT::[lh_demo_erp].[work_orders] TO [lh_demo_writer];
 GRANT VIEW DEFINITION ON OBJECT::[lh_demo_erp].[sales_orders] TO [lh_demo_writer];

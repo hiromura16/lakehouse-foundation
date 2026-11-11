@@ -159,12 +159,19 @@ class FixedSqlContractTests(unittest.TestCase):
     ):
         sql = source("003_demo_permissions.sql")
         grants = re.findall(r"GRANT (.*?) ON (.*?) TO \[([a-z_]+)\];", sql)
-        self.assertEqual(len(grants), 25)
+        self.assertEqual(len(grants), 27)
         for permissions, target, role in grants:
             self.assertTrue(target.startswith("OBJECT::[lh_demo_"))
             self.assertTrue(
                 set(permissions.split(", "))
-                <= {"SELECT", "INSERT", "UPDATE", "DELETE", "VIEW DEFINITION"}
+                <= {
+                    "SELECT",
+                    "INSERT",
+                    "UPDATE",
+                    "DELETE",
+                    "VIEW DEFINITION",
+                    "EXECUTE",
+                }
             )
             if "installation" in target:
                 self.assertEqual(permissions, "SELECT")
@@ -172,7 +179,9 @@ class FixedSqlContractTests(unittest.TestCase):
                 self.assertEqual(permissions, "SELECT")
             if role == "lh_demo_control_writer":
                 self.assertTrue(
-                    "installation" in target or "batch_watermarks" in target
+                    "installation" in target
+                    or "batch_watermarks" in target
+                    or "check_write_safety_v1" in target
                 )
         self.assertNotRegex(
             sql, r"(?i)\bCREATE\s+(LOGIN|USER)\b|\bREVOKE\b|\bPASSWORD\b"
@@ -183,6 +192,43 @@ class FixedSqlContractTests(unittest.TestCase):
         self.assertIn("three distinct existing database users", sql)
         self.assertIn("QUOTENAME(@Writer)", sql)
         self.assertIn("An existing role has unexpected permissions", sql)
+
+    def test_privileged_checker_is_fixed_read_only_and_exactly_pinned(self):
+        sql = (DIRECTORY / "003_demo_permissions.sql").read_text()
+        literal = re.search(
+            r"DECLARE @SafetyDefinition nvarchar\(max\) = N'((?:[^']|'')*)';",
+            sql,
+        )
+        self.assertIsNotNone(literal)
+        self.assertEqual(
+            literal.group(1).replace("''", "'"), DEMO.SAFETY_DEFINITION
+        )
+        checker = DEMO.SAFETY_DEFINITION
+        self.assertIn("WITH EXECUTE AS 'dbo'", checker)
+        self.assertIn("USER_ID()=DATABASE_PRINCIPAL_ID(N'dbo')", checker)
+        self.assertIn("fk.parent_object_id", checker)
+        self.assertIn("fk.referenced_object_id", checker)
+        self.assertIn("tr.is_disabled=0", checker)
+        self.assertIn("))=9", checker)
+        self.assertNotRegex(
+            checker,
+            r"(?i)\b(INSERT|UPDATE|DELETE|MERGE|ALTER|DROP|GRANT|REVOKE)\b",
+        )
+        self.assertNotIn("@", checker)
+        self.assertNotIn("sp_executesql", checker)
+        self.assertIn("DATALENGTH(m.definition)", sql)
+        self.assertIn("m.execute_as_principal_id", sql)
+        self.assertIn("COALESCE(o.principal_id,s.principal_id)", sql)
+        self.assertNotIn("CREATE OR ALTER", sql)
+        for permissions, target, role in re.findall(
+            r"GRANT (.*?) ON (.*?) TO \[([a-z_]+)\];",
+            source("003_demo_permissions.sql"),
+        ):
+            if "EXECUTE" in permissions:
+                self.assertEqual(
+                    target, "OBJECT::[lh_demo_ctl].[check_write_safety_v1]"
+                )
+                self.assertNotEqual(role, "lh_demo_reader")
 
     def test_validation_does_not_print_ownership_or_mutate_data(self):
         sql = source("006_demo_validation.sql")

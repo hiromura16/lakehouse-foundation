@@ -26,6 +26,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_VERSION = 1
+SAFETY_CHECKER = "lh_demo_ctl.check_write_safety_v1"
+SAFETY_DEFINITION = (
+    Path(__file__)
+    .with_name("sqlserver_safety.sql")
+    .read_text(encoding="utf-8")
+    .rstrip("\n")
+)
 SCHEMAS = {
     "ERP": "lh_demo_erp",
     "MES": "lh_demo_mes",
@@ -314,63 +321,36 @@ def ownership(cursor, values, role="demo"):
 
 
 def side_effects_safe(cursor, role="demo"):
-    """Reject DML triggers, foreign keys and views before a source mutation.
+    """Trust only the exact DBA-installed, read-only dbo metadata checker.
 
-    VIEW DEFINITION on each writable object is required so missing metadata
-    is not silently interpreted as the absence of a trigger. No trigger or
-    foreign key is disabled or altered to make this diagnostic pass.
+    Caller metadata can omit inbound legacy FKs. Never fall back to the
+    caller's catalog views if this checker is missing, changed or fails.
     """
     if role == "source":
         return True
-    targets = ["lh_demo_ctl.batch_watermarks"]
-    if role == "demo":
-        targets = [
-            item["schema"] + "." + item["table"] for item in TABLES.values()
-        ] + ["lh_demo_ctl.demo_runs"]
-    for target in targets:
-        cursor.execute(
-            "SELECT HAS_PERMS_BY_NAME(%s,N'OBJECT',N'VIEW DEFINITION')",
-            (target,),
-        )
-        if cursor.fetchone() != (1,):
-            return False
-    placeholders = ",".join("%s" for _ in targets)
     cursor.execute(
-        "SELECT COUNT_BIG(*) FROM sys.tables t JOIN sys.schemas s "
-        "ON t.schema_id=s.schema_id WHERE s.name+N'.'+t.name IN ("
-        + placeholders
-        + ")",
-        tuple(targets),
+        "SELECT m.definition, "
+        "CASE WHEN m.execute_as_principal_id=DATABASE_PRINCIPAL_ID(N'dbo') "
+        "AND COALESCE(o.principal_id,s.principal_id)="
+        "DATABASE_PRINCIPAL_ID(N'dbo') AND m.uses_ansi_nulls=1 "
+        "AND m.uses_quoted_identifier=1 THEN 1 ELSE 0 END "
+        "FROM sys.sql_modules m JOIN sys.objects o "
+        "ON m.object_id=o.object_id JOIN sys.schemas s "
+        "ON o.schema_id=s.schema_id "
+        "WHERE o.object_id=OBJECT_ID(%s,N'P') AND o.is_ms_shipped=0",
+        (SAFETY_CHECKER,),
     )
-    if cursor.fetchone() != (len(targets),):
+    row = cursor.fetchone()
+    if (
+        not row
+        or len(row) != 2
+        or row[1] != 1
+        or not isinstance(row[0], str)
+        or row[0].replace("\r\n", "\n") != SAFETY_DEFINITION
+    ):
         return False
-    cursor.execute(
-        "SELECT TOP (1) tr.object_id FROM sys.triggers tr "
-        "JOIN sys.objects o ON tr.parent_id=o.object_id "
-        "JOIN sys.schemas s ON o.schema_id=s.schema_id "
-        "WHERE tr.is_disabled=0 AND s.name+N'.'+o.name IN ("
-        + placeholders
-        + ")",
-        tuple(targets),
-    )
-    if cursor.fetchone():
-        return False
-    # Reject all FK relationships involving writable fixed tables, including
-    # a legacy child that could receive cascading DELETE/UPDATE side effects.
-    cursor.execute(
-        "SELECT TOP (1) fk.object_id FROM sys.foreign_keys fk "
-        "JOIN sys.objects po ON fk.parent_object_id=po.object_id "
-        "JOIN sys.schemas ps ON po.schema_id=ps.schema_id "
-        "JOIN sys.objects ro ON fk.referenced_object_id=ro.object_id "
-        "JOIN sys.schemas rs ON ro.schema_id=rs.schema_id "
-        "WHERE ps.name+N'.'+po.name IN ("
-        + placeholders
-        + ") OR rs.name+N'.'+ro.name IN ("
-        + placeholders
-        + ")",
-        tuple([*targets, *targets]),
-    )
-    return cursor.fetchone() is None
+    cursor.execute("EXEC [lh_demo_ctl].[check_write_safety_v1]", ())
+    return cursor.fetchone() == (1,) and cursor.fetchone() is None
 
 
 def permissions_safe(cursor, role="demo"):
@@ -467,7 +447,7 @@ def permissions_safe(cursor, role="demo"):
         "INSERT": writable,
         "UPDATE": writable,
         "DELETE": deletable,
-        "EXECUTE": [],
+        "EXECUTE": [SAFETY_CHECKER] if role != "source" else [],
         "ALTER": [],
         "CONTROL": [],
         "TAKE OWNERSHIP": [],
@@ -509,6 +489,40 @@ def permissions_safe(cursor, role="demo"):
             "sys.schemas s ON o.schema_id=s.schema_id WHERE "
             "o.is_ms_shipped=0 AND o.type IN "
             + kinds
+            + " AND ("
+            + clause
+            + ")",
+            tuple(arguments),
+        )
+        if cursor.fetchone():
+            return False
+    # Object probes miss column-only grants, including those inherited
+    # through roles and column GRANT overriding an object-level DENY.
+    # Evaluate effective permissions, not only direct catalog grants.
+    for operation in ("SELECT", "UPDATE"):
+        if operation not in allowed_by_operation:
+            continue
+        allowed = allowed_by_operation[operation]
+        check = (
+            "HAS_PERMS_BY_NAME(QUOTENAME(s.name)+N'.'+QUOTENAME(o.name),"
+            " N'OBJECT', %s, c.name, N'COLUMN')"
+        )
+        clause = check + " IS NULL OR (" + check + " = 1"
+        arguments = [operation, operation]
+        if allowed:
+            clause += (
+                " AND s.name+N'.'+o.name NOT IN ("
+                + ",".join("%s" for _ in allowed)
+                + ")"
+            )
+            arguments += allowed
+        clause += ")"
+        cursor.execute(
+            "SELECT TOP (1) o.object_id, c.column_id FROM sys.columns c "
+            "JOIN sys.objects o ON c.object_id=o.object_id "
+            "JOIN sys.schemas s ON o.schema_id=s.schema_id WHERE "
+            "o.is_ms_shipped=0 AND o.type IN "
+            + ("('U','V','IF','TF')" if operation == "SELECT" else "('U','V')")
             + " AND ("
             + clause
             + ")",

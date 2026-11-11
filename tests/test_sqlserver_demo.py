@@ -555,61 +555,65 @@ class WriteTests(unittest.TestCase):
 
 
 class SideEffectTests(unittest.TestCase):
-    """Refuse indirect writes or incomplete trigger metadata before DML."""
+    """Mock protocol checks; live SQL Server acceptance is still required."""
 
-    def cursor(
-        self,
-        *,
-        trigger=False,
-        foreign_key=False,
-        view_definition=True,
-        table_count=None,
-    ):
+    def cursor(self, *, definition=None, identity=1, safe=1, missing=False):
         cursor = mock.Mock()
-        result = [None]
-
-        def execute(statement, arguments=()):
-            if "VIEW DEFINITION" in statement:
-                result[0] = (int(view_definition),)
-            elif "SELECT COUNT_BIG(*) FROM sys.tables" in statement:
-                result[0] = (
-                    len(arguments) if table_count is None else table_count,
-                )
-            elif "FROM sys.triggers" in statement:
-                result[0] = (999,) if trigger else None
-            elif "FROM sys.foreign_keys" in statement:
-                result[0] = (999,) if foreign_key else None
-            else:
-                raise AssertionError("Unexpected metadata query")
-
-        cursor.execute.side_effect = execute
-        cursor.fetchone.side_effect = lambda: result[0]
+        definition = (
+            DEMO.SAFETY_DEFINITION if definition is None else definition
+        )
+        cursor.fetchone.side_effect = [
+            None if missing else (definition, identity),
+            (safe,),
+            None,
+        ]
         return cursor
 
-    def test_active_trigger_and_legacy_cascade_are_refused(self):
-        for options in ({"trigger": True}, {"foreign_key": True}):
-            with self.subTest(options=options):
-                self.assertFalse(
-                    DEMO.side_effects_safe(self.cursor(**options))
-                )
-        self.assertTrue(DEMO.side_effects_safe(self.cursor()))
-
-    def test_hidden_metadata_or_view_in_place_of_table_is_not_safe(self):
-        self.assertFalse(
-            DEMO.side_effects_safe(self.cursor(view_definition=False))
-        )
-        self.assertFalse(DEMO.side_effects_safe(self.cursor(table_count=6)))
-
-    def test_control_writer_checks_only_its_watermark_table(self):
+    def test_exact_dbo_checker_is_required(self):
         cursor = self.cursor()
-        self.assertTrue(DEMO.side_effects_safe(cursor, role="control"))
-        targets = [
-            argument
-            for call in cursor.execute.call_args_list
-            for argument in call.args[1]
-        ]
-        self.assertTrue(targets)
-        self.assertEqual(set(targets), {"lh_demo_ctl.batch_watermarks"})
+        self.assertTrue(DEMO.side_effects_safe(cursor))
+        self.assertEqual(
+            cursor.execute.call_args_list[-1].args,
+            ("EXEC [lh_demo_ctl].[check_write_safety_v1]", ()),
+        )
+
+    def test_missing_modified_hidden_or_non_dbo_checker_is_refused(self):
+        for options in (
+            {"missing": True},
+            {"definition": ""},
+            {"definition": DEMO.SAFETY_DEFINITION + "--tampered"},
+            {"identity": 0},
+            {"identity": None},
+        ):
+            with self.subTest(options=options):
+                cursor = self.cursor(**options)
+                self.assertFalse(DEMO.side_effects_safe(cursor))
+                self.assertEqual(cursor.execute.call_count, 1)
+
+    def test_hidden_legacy_cascade_or_active_trigger_is_refused(self):
+        # The caller need not see the legacy child. The dbo checker reports
+        # unsafe with complete metadata, regardless of caller visibility.
+        for role in ("demo", "control"):
+            with self.subTest(role=role):
+                self.assertFalse(
+                    DEMO.side_effects_safe(self.cursor(safe=0), role)
+                )
+                self.assertTrue(DEMO.side_effects_safe(self.cursor(), role))
+
+    def test_unknown_extra_rows_and_checker_failure_never_pass(self):
+        self.assertFalse(DEMO.side_effects_safe(self.cursor(safe=None)))
+        cursor = self.cursor()
+        cursor.fetchone.side_effect = [(DEMO.SAFETY_DEFINITION, 1), (1,), (1,)]
+        self.assertFalse(DEMO.side_effects_safe(cursor))
+        cursor = self.cursor()
+        cursor.execute.side_effect = [None, RuntimeError("checker failed")]
+        with self.assertRaises(RuntimeError):
+            DEMO.side_effects_safe(cursor)
+
+    def test_source_reader_does_not_execute_checker(self):
+        cursor = mock.Mock()
+        self.assertTrue(DEMO.side_effects_safe(cursor, role="source"))
+        cursor.execute.assert_not_called()
 
 
 class PermissionTests(unittest.TestCase):
@@ -622,6 +626,7 @@ class PermissionTests(unittest.TestCase):
         dangerous=False,
         unknown=False,
         denied_object=None,
+        column_permission=None,
         role="demo",
     ):
         cursor = mock.Mock()
@@ -639,6 +644,23 @@ class PermissionTests(unittest.TestCase):
                 )
             elif "fn_my_permissions" in statement:
                 result[0] = [("CONTROL",)] if dangerous else []
+            elif "FROM sys.sql_modules m" in statement:
+                result[0] = (DEMO.SAFETY_DEFINITION, 1)
+            elif statement.startswith("EXEC "):
+                result[0] = (1,)
+            elif "FROM sys.columns c" in statement:
+                # Effective column-only role grant; the object probe below
+                # still reports no object-level permission.
+                result[0] = None
+                if column_permission:
+                    operation, name, column, effective = column_permission
+                    self.assertIn("c.name, N'COLUMN'", statement)
+                    self.assertIn(" IS NULL OR ", statement)
+                    if operation == arguments[0] and (
+                        effective is None
+                        or (effective == 1 and name not in arguments[2:])
+                    ):
+                        result[0] = (999, 1)
             elif "sys.objects o" in statement:
                 operation = arguments[0]
                 name = denied_object[1] if denied_object else None
@@ -661,7 +683,14 @@ class PermissionTests(unittest.TestCase):
                 result[0] = (1,)
 
         cursor.execute.side_effect = execute
-        cursor.fetchone.side_effect = lambda: result[0]
+
+        def fetchone():
+            value = result[0]
+            if statements and statements[-1][0].startswith("EXEC "):
+                result[0] = None
+            return value
+
+        cursor.fetchone.side_effect = fetchone
         cursor.fetchall.side_effect = lambda: result[0]
         cursor.statements = statements
         return cursor
@@ -689,6 +718,87 @@ class PermissionTests(unittest.TestCase):
                         self.cursor(denied_object=(operation, target))
                     )
                 )
+
+    def test_execute_exception_is_only_the_fixed_checker_for_writers(self):
+        for role, target, expected in (
+            ("demo", DEMO.SAFETY_CHECKER, True),
+            ("control", DEMO.SAFETY_CHECKER, True),
+            ("source", DEMO.SAFETY_CHECKER, False),
+            ("demo", "legacy.any_procedure", False),
+        ):
+            with self.subTest(role=role, target=target):
+                self.assertEqual(
+                    DEMO.permissions_safe(
+                        self.cursor(denied_object=("EXECUTE", target)),
+                        role=role,
+                    ),
+                    expected,
+                )
+
+    def test_column_grants_cannot_tamper_with_ownership(self):
+        for column in ("ownership_hash", "installation_id", "schema_version"):
+            with self.subTest(column=column):
+                self.assertFalse(
+                    DEMO.permissions_safe(
+                        self.cursor(
+                            column_permission=(
+                                "UPDATE",
+                                "lh_demo_ctl.installation",
+                                column,
+                                1,
+                            )
+                        )
+                    )
+                )
+
+    def test_legacy_column_only_grants_are_denied(self):
+        for operation in ("SELECT", "UPDATE"):
+            with self.subTest(operation=operation):
+                self.assertFalse(
+                    DEMO.permissions_safe(
+                        self.cursor(
+                            column_permission=(
+                                operation,
+                                "legacy.orders",
+                                "amount",
+                                1,
+                            )
+                        )
+                    )
+                )
+
+    def test_fixed_column_permissions_follow_roles(self):
+        for role, operation, target, expected in (
+            ("demo", "UPDATE", "lh_demo_erp.products", True),
+            ("control", "UPDATE", "lh_demo_ctl.batch_watermarks", True),
+            ("source", "SELECT", "legacy.orders", True),
+            ("source", "UPDATE", "lh_demo_erp.products", False),
+            ("control", "UPDATE", "lh_demo_erp.products", False),
+        ):
+            with self.subTest(role=role, operation=operation):
+                self.assertEqual(
+                    DEMO.permissions_safe(
+                        self.cursor(
+                            column_permission=(operation, target, "value", 1)
+                        ),
+                        role=role,
+                    ),
+                    expected,
+                )
+
+    def test_unknown_column_permission_fails_closed(self):
+        self.assertFalse(
+            DEMO.permissions_safe(
+                self.cursor(
+                    column_permission=(
+                        "UPDATE",
+                        "lh_demo_erp.products",
+                        "name",
+                        None,
+                    )
+                )
+            )
+        )
 
     def test_source_dml_and_control_business_dml_are_denied(self):
         for role in ("source", "control"):

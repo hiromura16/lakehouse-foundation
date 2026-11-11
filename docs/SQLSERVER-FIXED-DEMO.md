@@ -96,6 +96,40 @@ DBAはSSMSで承認済み開発DBへ接続し、Query → SQLCMD Modeを有効�
 
 初回ownership設定は空状態・既存オブジェクト・versionを確認してから行います。既存データを消して作り直す初期化はありません。別用途の同名オブジェクトがあれば停止し、強制上書きしません。新しいログインやパスワードを作らず、既存DB principalへ業務6表と必要な制御表だけの権限を付与します。`db_owner`、`db_datawriter`、schema全体のCONTROLをruntimeへ渡しません。
 
+### Runtime metadata safety checker
+
+The DBA permission script installs the fixed, no-argument
+`lh_demo_ctl.check_write_safety_v1` procedure with `EXECUTE AS 'dbo'`.
+It reads metadata only and returns one safety bit. The dbo context can see
+legacy child tables and inbound cascading foreign keys that a restricted
+writer cannot see. Runtime writers receive EXECUTE and VIEW DEFINITION only
+on this checker, not database-wide metadata privileges or new data access.
+The SOURCE reader receives neither permission.
+
+The [canonical checker definition](../scripts/sqlserver_safety.sql) is pinned
+by both the installation script and runtime. A missing or changed definition,
+wrong owner/execution identity, hidden definition, unsafe result, or execution
+failure blocks mutations. Existing same-name procedures are never overwritten.
+The DBA must apply the updated permission script before writes resume; there
+is no fallback to incomplete caller-visible metadata.
+
+Effective column SELECT/UPDATE permissions are also checked, including grants
+inherited through roles and column grants overriding object DENYs.
+Installation ownership columns remain read-only. Legacy column access outside
+the role's allowlist is refused; the SOURCE reader may retain SELECT only.
+
+The metadata check runs within the same connection and transaction as the
+mutation. This does not fully prevent concurrent DDL after the check. Stop
+runtime writers during DBA schema, trigger, FK, or permission changes, then
+rerun diagnostics before resuming. Do not modify the checker to bypass a
+failed diagnostic.
+
+These regressions are mock-driver and static SQL checks, not live SQL Server
+acceptance. In an approved disposable database, verify an inherited column
+UPDATE on installation.ownership_hash, legacy column SELECT/UPDATE, a hidden
+legacy child with ON DELETE CASCADE, and a missing/altered checker. Each unsafe
+writer must be refused before DML.
+
 ## 3. GUIで診断して素材を投入する
 
 1. private設定とDokploy側を整合させ、承認済み手順でアプリへ反映します。GUIのSaveだけでは稼働設定は変わりません。
