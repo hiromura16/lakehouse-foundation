@@ -68,6 +68,9 @@ jobs:
     - name: Test source-only generation and publication checks
       run: python -m unittest discover -s tests
     - name: Check monitoring templates and official Prometheus configuration
+      # Independent native diagnostics remain useful after a unit-test failure.
+      # Their execution never changes the earlier failed result to success.
+      if: ${{ !cancelled() }}
       run: |
         python scripts/compose_inventory.py --check
         python infra/monitoring/vector/tests/build_fixtures.py --check

@@ -223,7 +223,7 @@ class GrafanaControlTests(unittest.TestCase):
         """Run the real control parser with fake Docker and Grafana calls."""
         with tempfile.TemporaryDirectory() as directory:
             parent = Path(directory)
-            path = parent / "site.env"
+            path = parent / "private" / "site.env"
             configure = ROOT / "scripts/configure.py"
             with (
                 mock.patch.dict(sys.modules, {"settings": SETTINGS}),
@@ -234,19 +234,45 @@ class GrafanaControlTests(unittest.TestCase):
             ):
                 runpy.run_path(str(configure), run_name="__main__")
             landing = parent / "landing"
-            landing.mkdir()
+            landing.mkdir(mode=0o700)
+            spool = parent / "log-spool"
+            spool.mkdir(mode=0o700)
             lines = []
             for line in path.read_text().splitlines():
                 if line.startswith("LANDING_DIR="):
                     line = "LANDING_DIR=" + str(landing)
                 if line.startswith("COMPOSE_PROFILES="):
                     line = "COMPOSE_PROFILES=" + profiles
+                if line.startswith("MONITORING_LOG_DIR="):
+                    line = "MONITORING_LOG_DIR=" + str(spool)
                 lines.append(line)
             path.write_text("\n".join(lines) + "\n")
             setup = mock.Mock(return_value={"status": "exists"})
             fake_module = types.SimpleNamespace(setup=setup)
             control = ROOT / "scripts/control.py"
+            with mock.patch.object(
+                sys, "path", [str(ROOT / "scripts"), *sys.path]
+            ):
+                import notebook_workspace
+            original_safe = notebook_workspace.parent_safe
+
+            def synthetic_root(metadata, selected, uid):
+                # Model normal root/tmp ownership only in this disposable
+                # fixture when the sandbox maps those fixed ancestors to
+                # nobody. Selected spool metadata and production stay strict.
+                if str(selected) in {"/", "/tmp"} and metadata.st_uid == 65534:
+                    metadata = types.SimpleNamespace(
+                        st_uid=0, st_mode=metadata.st_mode
+                    )
+                return original_safe(metadata, selected, uid)
+
             with (
+                mock.patch.object(
+                    sys, "path", [str(ROOT / "scripts"), *sys.path]
+                ),
+                mock.patch.object(
+                    notebook_workspace, "parent_safe", synthetic_root
+                ),
                 mock.patch.dict(
                     sys.modules,
                     {"settings": SETTINGS, "grafana_setup": fake_module},
