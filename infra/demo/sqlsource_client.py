@@ -43,7 +43,7 @@ def public_result(value):
         or not 0 <= value["sql_statements"] <= 1000
     ):
         raise ValueError("Invalid SQL batch completion.")
-    return {
+    result = {
         key: value[key]
         for key in (
             "batch_id",
@@ -55,6 +55,23 @@ def public_result(value):
             "sql_statements",
         )
     }
+    # Only the source-side adapter can confirm its separate SQL transaction.
+    # Worker acknowledgements naturally omit this field and default to false.
+    checkpointed = value.get("checkpointed", False)
+    if type(checkpointed) is not bool:
+        raise ValueError("Invalid checkpoint status.")
+    result["checkpointed"] = checkpointed
+    for key in ("changed_counts", "current_counts"):
+        counts = value.get(key)
+        if counts is not None:
+            if (
+                not isinstance(counts, dict)
+                or set(counts) != CONTRACT_IDS
+                or any(type(n) is not int or n < 0 for n in counts.values())
+            ):
+                raise ValueError("Invalid optional row counts.")
+            result[key] = counts
+    return result
 
 
 def send_batch(token, batch_id, observed_at):

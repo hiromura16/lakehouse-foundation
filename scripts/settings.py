@@ -83,6 +83,17 @@ def validate_sql_source_policy(values):
         values.setdefault(key, "true")
         if values[key] != "true":
             raise ValueError("SQL source encryption must remain enabled.")
+    for suffix, default, minimum, maximum in (
+        ("OVERLAP_SECONDS", "300", 1, 86400),
+        ("SAFETY_LAG_SECONDS", "5", 0, 3600),
+    ):
+        key = "SOURCE_SQLSERVER_BATCH_" + suffix
+        values.setdefault(key, default)
+        if (
+            not values[key].isdigit()
+            or not minimum <= int(values[key]) <= maximum
+        ):
+            raise ValueError("Invalid bounded SQL batch interval: " + key)
     for suffix, schema in (
         ("ERP_SCHEMA", "lh_demo_erp"),
         ("MES_SCHEMA", "lh_demo_mes"),

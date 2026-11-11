@@ -318,3 +318,7 @@ APIの待機timeout、workerのエラー、Trinoのquery取消は別の状態で
 ## 固定SQLの診断が拒否する
 
 [固定SQL source](SQLSERVER-FIXED-DEMO.md) のDB・固定schema・installation/version・所有権・限定権限を順に確認します。旧PoCロールや制御schema全体のINSERT/UPDATEを持つwriterは、安全条件を満たさない場合があります。アプリから権限を緩めずDBAに影響を確認します。型不正は原値JSONに残りますが、不正PKは投入を拒否します。driverの生例外はAPIへ返しません。
+
+### SQL増分のbaseline・世代・結果不明
+
+まずcontrol付きsnapshotの `checkpointed=true` と6表のbaselineを確認します。限定control principalがない、3 identityが重複する、checkpointの世代がworkerと違う、全件置換が未完なら増分を強行しません。worker timeoutは終了の証拠ではありません。状態を再確認し、必要ならcontrol付きフルsnapshotで照合します。更新窓の外の遅延commitと物理DELETEは通常増分だけで検出できません。[保証範囲](SQLSERVER-FIXED-DEMO.md#6-watermark増分バッチ)

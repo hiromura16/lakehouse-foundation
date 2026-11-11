@@ -344,3 +344,7 @@ API仕様は `openapi.json` をクライアント生成の入力にできます�
 ### SQL snapshotの明示処理
 
 `POST /sql-source/batches/snapshot` は `{"confirm": true}` だけを受け付ける非同期jobです。SOURCE readerで固定6表を読み、共有Landingの検査済みJSONをworkerへ渡します。workerへ送るのは固定action・batch ID・観測時刻だけで、SQL認証は含みません。全6表・派生SQL・件数照合後に完了し、timeoutは結果不明とします。[再実行と切り戻し](SQLSERVER-FIXED-DEMO.md#5-フルスナップショットを取り込む)
+
+### 増分とcheckpoint
+
+`POST /sql-source/batches/incremental` はstrictな同意だけを受け付け、6表のbaselineと別control writerを必要とします。snapshotはcontrol未設定でも利用できますが、その場合は `checkpointed=false` です。増分の成功は `checkpointed=true` を含む応答で確認します。抽出窓件数と変更件数・反映後件数を区別し、物理DELETEや窓を超える遅延を完全検出したとは扱いません。[順序と限界](SQLSERVER-FIXED-DEMO.md#6-watermark増分バッチ)

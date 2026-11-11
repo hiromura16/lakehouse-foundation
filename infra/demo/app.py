@@ -486,9 +486,22 @@ def render_settings():
         "COMPOSE_PROFILES": "追加機能（カンマ区切り）",
         "SOURCE_SQLSERVER_HOST": "業務参照元SQL Server",
         "SOURCE_SQLSERVER_DATABASE": "業務参照元のDB名",
+        "SOURCE_SQLSERVER_USER": "参照元reader（SELECT専用）",
+        "SOURCE_SQLSERVER_CONTROL_USER": "checkpoint専用ユーザー",
+        "SOURCE_SQLSERVER_CONTROL_PASSWORD": "checkpoint専用パスワード",
+        "SOURCE_SQLSERVER_BATCH_OVERLAP_SECONDS": "増分で重ねて読む秒数",
+        "SOURCE_SQLSERVER_BATCH_SAFETY_LAG_SECONDS": "増分の安全遅延（秒）",
         "DEMO_SQLSERVER_HOST": "ダミー投入用SQL Server",
         "DEMO_SQLSERVER_DATABASE": "ダミー投入専用DB名",
         "DEMO_SQLSERVER_USER": "ダミー投入用ユーザー",
+        "DEMO_SQLSERVER_ALLOW_SHARED_SOURCE_DATABASE": "共有source DB許可",
+        "DEMO_SQLSERVER_INSTALLATION_ID": "導入ID（既存環境では保持）",
+        "DEMO_SQLSERVER_OWNERSHIP_TOKEN": "所有権鍵（既存環境では保持）",
+        "DEMO_SQLSERVER_ERP_SCHEMA": "固定ERP schema（変更不可）",
+        "DEMO_SQLSERVER_MES_SCHEMA": "固定MES schema（変更不可）",
+        "DEMO_SQLSERVER_CONTROL_SCHEMA": "固定制御schema（変更不可）",
+        "DEMO_SQLSERVER_TRUST_SERVER_CERTIFICATE": "DEMO:証明書検証省略",
+        "SOURCE_SQLSERVER_TRUST_SERVER_CERTIFICATE": "SOURCE:証明書検証省略",
         "N8N_SSRF_PROTECTION_ENABLED": "n8nのSSRF保護（true/false）",
         "N8N_SSRF_BLOCKED_IP_RANGES": "拒否するIP範囲（defaultは製品既定）",
         "N8N_SSRF_ALLOWED_IP_RANGES": "例外として許可するIP範囲",
@@ -540,7 +553,7 @@ def render_settings():
         with st.expander("資格情報を更新する（空欄は保持）"):
             for key in sorted(secret_keys):
                 entered = st.text_input(
-                    key,
+                    labels.get(key, key),
                     value="",
                     type="password",
                     help=("設定済み。" if key in configured else "未設定。")

@@ -412,5 +412,512 @@ class SnapshotReadTests(unittest.TestCase):
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
 
+class WindowCursor(Cursor):
+    """Model only the fixed composite range predicate, not a SQL engine."""
+
+    def execute(self, statement, parameters=None):
+        super().execute(statement, parameters)
+        if "WHERE ([updated_at]" not in statement:
+            return
+        name = next(
+            name
+            for name, table in TABLES.items()
+            if "[" + table["schema"] + "].[" + table["table"] + "]"
+            in statement
+        )
+        lower, _, key, upper = parameters
+        lower, upper = (
+            BATCH.canonical_timestamp(value) for value in (lower, upper)
+        )
+        rows = [
+            row
+            for row in self.data[name]
+            if (
+                BATCH.canonical_timestamp(row[2]) > lower
+                or (
+                    BATCH.canonical_timestamp(row[2]) == lower and row[0] > key
+                )
+            )
+            and BATCH.canonical_timestamp(row[2]) <= upper
+        ]
+        rows.sort(key=lambda row: (row[2], row[0]))
+        self.pending = [(len(rows),)] if "COUNT_BIG" in statement else rows
+
+
+class ControlCursor:
+    """Stage watermark changes until a simulated transaction commits."""
+
+    def __init__(self, connection):
+        self.connection = connection
+        self.pending = []
+        self.rowcount = -1
+        self.statements = []
+
+    def execute(self, statement, parameters=None):
+        self.statements.append((statement, parameters))
+        connection = self.connection
+        if statement.startswith("SET "):
+            return
+        if statement.startswith("SELECT "):
+            if connection.busy:
+                raise RuntimeError("synthetic-private-lock-error")
+            connection.leased = True
+            self.pending = [
+                (
+                    name,
+                    row["timestamp"].removesuffix("Z")
+                    if row["timestamp"]
+                    else None,
+                    row["primary_key"],
+                    row["snapshot_id"],
+                )
+                for name, row in sorted(connection.working.items())
+            ][:7]
+            return
+        if statement.startswith("INSERT "):
+            name, stamp, key, batch_id = parameters
+            if name in connection.working:
+                raise RuntimeError("synthetic-duplicate-checkpoint")
+        elif statement.startswith("UPDATE "):
+            (
+                stamp,
+                key,
+                batch_id,
+                name,
+                previous,
+                _,
+                previous_key,
+                _,
+                (previous_batch),
+            ) = parameters
+            expected = {
+                "timestamp": BATCH.canonical_timestamp(previous)
+                if previous
+                else None,
+                "primary_key": previous_key,
+                "snapshot_id": previous_batch,
+            }
+            if (
+                connection.cas_failure
+                or connection.working.get(name) != expected
+            ):
+                self.rowcount = 0
+                return
+        else:
+            raise AssertionError("Unexpected control statement")
+        connection.events.append("control-dml:" + name)
+        if connection.fail_table == name:
+            raise RuntimeError("synthetic-private-control-write-error")
+        connection.working[name] = {
+            "timestamp": BATCH.canonical_timestamp(stamp) if stamp else None,
+            "primary_key": key,
+            "snapshot_id": batch_id,
+        }
+        self.rowcount = 1
+
+    def fetchmany(self, size):
+        result = self.pending[:size]
+        del self.pending[:size]
+        return result
+
+
+class ControlConnection:
+    """Verify client transactions without database integration."""
+
+    def __init__(self):
+        self.committed = {}
+        self.working = {}
+        self.events = []
+        self.leased = False
+        self.busy = False
+        self.cas_failure = False
+        self.fail_table = None
+        self.commits = 0
+        self.rollbacks = 0
+        self.handle = ControlCursor(self)
+
+    def cursor(self):
+        return self.handle
+
+    def commit(self):
+        self.events.append("control-commit")
+        self.committed = copy.deepcopy(self.working)
+        self.commits += 1
+        self.leased = False
+
+    def rollback(self):
+        self.events.append("control-rollback")
+        self.working = copy.deepcopy(self.committed)
+        self.rollbacks += 1
+        self.leased = False
+
+
+class WatermarkBatchTests(unittest.TestCase):
+    """Exercise separate roles, composite windows and commit gates."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="sql-window-test-")
+        self.addCleanup(temporary.cleanup)
+        self.landing = Path(temporary.name) / "landing"
+        self.values = dict(
+            VALUES,
+            DEMO_SQLSERVER_USER="example_writer",
+            SOURCE_SQLSERVER_CONTROL_USER="example_control",
+            SOURCE_SQLSERVER_CONTROL_PASSWORD="synthetic-control-value",
+        )
+        self.control = ControlConnection()
+        self.source = WindowCursor(fixture_data())
+        self.source_handle = SimpleNamespace(
+            cursor=lambda: self.source,
+            commit=mock.Mock(
+                side_effect=lambda: self.control.events.append(
+                    "source-read-commit"
+                )
+            ),
+        )
+        self.roles = []
+
+        @contextlib.contextmanager
+        def connection(values, *, role):
+            del values
+            self.roles.append(role)
+            if role == "source":
+                yield self.source_handle
+            else:
+                self.assertEqual(role, "control")
+                self.control.working = copy.deepcopy(self.control.committed)
+                try:
+                    yield self.control
+                except Exception:
+                    self.control.rollback()
+                    raise
+
+        def validate(values, *, role):
+            if role == "control":
+                names = [
+                    values.get(key)
+                    for key in (
+                        "SOURCE_SQLSERVER_USER",
+                        "DEMO_SQLSERVER_USER",
+                        "SOURCE_SQLSERVER_CONTROL_USER",
+                    )
+                ]
+                if (
+                    not all(names)
+                    or len(set(names)) != 3
+                    or not values.get("SOURCE_SQLSERVER_CONTROL_PASSWORD")
+                ):
+                    raise BATCH.BatchError(
+                        "Separate control credentials required."
+                    )
+            return values
+
+        self.adapter = SimpleNamespace(
+            TABLES=TABLES,
+            validate_settings=mock.Mock(side_effect=validate),
+            connection=connection,
+            ownership=mock.Mock(),
+            permissions_safe=mock.Mock(return_value=True),
+            table_name=lambda name: (
+                "["
+                + TABLES[name]["schema"]
+                + "].["
+                + TABLES[name]["table"]
+                + "]"
+            ),
+        )
+        self.seen = []
+
+    def worker(self, batch_id, observed_at):
+        """Confirm the exact exported contract without a fake live service."""
+        self.assertTrue(self.control.leased)
+        self.assertIn("source-read-commit", self.control.events)
+        self.control.events.append("worker-ack")
+        body = json.loads(
+            (self.landing / "sql-batches" / (batch_id + ".json")).read_bytes()
+        )
+        self.seen.append(body)
+        return {
+            "batch_id": batch_id,
+            "observed_at": observed_at,
+            "apply_id": BATCH.apply_identifier(batch_id, observed_at),
+            "completed": True,
+            "counts": {
+                name: len(table["rows"])
+                for name, table in body["tables"].items()
+            },
+            "skipped": False,
+            "sql_statements": 14,
+        }
+
+    def snapshot(self, worker=None):
+        return BATCH.run_snapshot(
+            self.values,
+            self.landing,
+            worker or self.worker,
+            adapter=self.adapter,
+        )
+
+    def incremental(self, worker=None):
+        return BATCH.run_incremental(
+            self.values,
+            self.landing,
+            worker or self.worker,
+            adapter=self.adapter,
+        )
+
+    def test_snapshot_seeds_all_six_only_after_exact_worker_completion(self):
+        result = self.snapshot()
+        self.assertTrue(result["checkpointed"])
+        self.assertEqual(self.roles, ["control", "source"])
+        self.assertEqual(set(self.control.committed), set(TABLES))
+        self.assertEqual(self.control.commits, 1)
+        events = self.control.events
+        self.assertLess(
+            events.index("source-read-commit"), events.index("worker-ack")
+        )
+        self.assertLess(
+            events.index("worker-ack"),
+            events.index("control-dml:erp_products"),
+        )
+        self.assertEqual(events[-1], "control-commit")
+        for row in self.control.committed.values():
+            self.assertEqual(row["timestamp"], UPDATED + "Z")
+            self.assertEqual(row["primary_key"], "K1")
+            self.assertEqual(row["snapshot_id"], result["batch_id"])
+        control_sql = [sql for sql, _ in self.control.handle.statements]
+        self.assertTrue(
+            any("WITH (UPDLOCK, HOLDLOCK)" in sql for sql in control_sql)
+        )
+        self.assertTrue(
+            all(
+                sql.startswith(("SET ", "SELECT ", "INSERT "))
+                for sql in control_sql
+            )
+        )
+        self.assertTrue(
+            all(
+                sql.startswith(("SET ", "SELECT "))
+                for sql, _ in self.source.statements
+            )
+        )
+
+    def test_incremental_needs_all_baselines_and_never_falls_back_to_reader(
+        self,
+    ):
+        for update in (
+            {
+                "SOURCE_SQLSERVER_CONTROL_USER": "",
+                "SOURCE_SQLSERVER_CONTROL_PASSWORD": "",
+            },
+            {"SOURCE_SQLSERVER_CONTROL_PASSWORD": ""},
+            {"SOURCE_SQLSERVER_CONTROL_USER": VALUES["SOURCE_SQLSERVER_USER"]},
+        ):
+            with self.subTest(configuration=tuple(update)):
+                with self.assertRaises(BATCH.BatchError):
+                    BATCH.run_incremental(
+                        {**self.values, **update},
+                        self.landing,
+                        self.worker,
+                        adapter=self.adapter,
+                    )
+        self.assertEqual(self.roles, [])
+        with self.assertRaises(BATCH.BatchError):
+            self.incremental()
+        self.assertNotIn("source", self.roles)
+        self.assertFalse(self.landing.exists())
+
+    def test_equal_timestamp_pk_tie_overlap_late_arrival_and_safety_lag(self):
+        self.snapshot()
+        product = self.source.data["erp_products"][0]
+        original = json.loads(product[1])
+        extra = []
+        for key, stamp in (
+            ("K2", UPDATED),
+            ("LATE", "2026-04-01T10:59:30.7654321"),
+            ("OUTSIDE", "2026-04-01T10:50:00.7654321"),
+            ("DEFERRED", "2026-04-01T11:59:58.0000001"),
+        ):
+            extra.append(
+                (
+                    key,
+                    json.dumps({**original, "product_id": key}),
+                    stamp,
+                    RUN_ID,
+                )
+            )
+        self.source.data["erp_products"] += extra
+        result = self.incremental()
+        body = self.seen[-1]
+        self.assertEqual(body["mode"], "incremental")
+        self.assertEqual(body["overlap_seconds"], 300)
+        self.assertEqual(body["safety_lag_seconds"], 5)
+        self.assertEqual(body["upper_bound"], "2026-04-01T11:59:55.1234567Z")
+        selected = body["tables"]["erp_products"]["rows"]
+        self.assertEqual(
+            {row["source_pk"] for row in selected}, {"K1", "K2", "LATE"}
+        )
+        self.assertEqual(result["counts"]["erp_products"], 3)
+        checkpoint = self.control.committed["erp_products"]
+        self.assertEqual(checkpoint["timestamp"], UPDATED + "Z")
+        self.assertEqual(checkpoint["primary_key"], "K2")
+        self.assertTrue(
+            all(
+                sql.startswith(("SET ", "SELECT "))
+                for sql, _ in self.source.statements
+            )
+        )
+
+    def test_overlap_cannot_regress_the_composite_checkpoint(self):
+        self.snapshot()
+        previous = copy.deepcopy(self.control.committed)
+        self.source.data["erp_products"][0] = (
+            self.source.data["erp_products"][0][0],
+            self.source.data["erp_products"][0][1],
+            "2026-04-01T10:59:30.0000001",
+            RUN_ID,
+        )
+        self.incremental()
+        for name in TABLES:
+            self.assertEqual(
+                self.control.committed[name]["timestamp"],
+                previous[name]["timestamp"],
+            )
+            self.assertEqual(
+                self.control.committed[name]["primary_key"],
+                previous[name]["primary_key"],
+            )
+
+    def test_worker_unknown_or_invalid_ack_rolls_back_every_checkpoint(self):
+        self.snapshot()
+        before = copy.deepcopy(self.control.committed)
+        commits = self.control.commits
+
+        class WorkerUnknown(RuntimeError):
+            """Represent a safe unknown-worker-outcome exception."""
+
+        def unknown(*_):
+            raise WorkerUnknown("worker outcome unknown")
+
+        with self.assertRaises(WorkerUnknown):
+            self.incremental(unknown)
+        self.assertEqual(self.control.committed, before)
+        with self.assertRaises(BATCH.BatchError):
+            self.incremental(lambda *_: {"completed": True})
+        self.assertEqual(self.control.committed, before)
+        self.assertEqual(self.control.commits, commits)
+        self.assertGreaterEqual(self.control.rollbacks, 2)
+
+    def test_partial_control_dml_failure_and_cas_conflict_preserve_baseline(
+        self,
+    ):
+        self.snapshot()
+        before = copy.deepcopy(self.control.committed)
+        commits = self.control.commits
+        self.control.fail_table = "erp_sales_orders"
+        with self.assertRaises(BATCH.BatchError) as error:
+            self.incremental()
+        self.assertNotIn(
+            "synthetic-private-control-write-error", str(error.exception)
+        )
+        self.assertEqual(self.control.committed, before)
+        self.assertEqual(self.control.commits, commits)
+        self.control.fail_table = None
+        self.control.cas_failure = True
+        with self.assertRaises(BATCH.BatchError):
+            self.incremental()
+        self.assertEqual(self.control.committed, before)
+
+    def test_busy_control_lease_does_not_read_or_publish_source(self):
+        self.control.busy = True
+        with self.assertRaises(BATCH.BatchError) as error:
+            self.snapshot()
+        self.assertNotIn("synthetic-private-lock-error", str(error.exception))
+        self.assertEqual(self.source.statements, [])
+        self.assertFalse(self.landing.exists())
+
+    def test_partial_or_unknown_checkpoint_rows_are_not_repaired_silently(
+        self,
+    ):
+        self.control.committed = {
+            "erp_products": {
+                "timestamp": UPDATED + "Z",
+                "primary_key": "K1",
+                "snapshot_id": "a" * 64,
+            }
+        }
+        with self.assertRaises(BATCH.BatchError):
+            self.snapshot()
+        self.assertEqual(self.source.statements, [])
+
+    def test_empty_snapshot_seeds_null_positions_then_accepts_first_rows(self):
+        self.source.data = {name: [] for name in TABLES}
+        self.snapshot()
+        self.assertEqual(set(self.control.committed), set(TABLES))
+        self.assertTrue(
+            all(
+                row["timestamp"] is None and row["primary_key"] is None
+                for row in self.control.committed.values()
+            )
+        )
+        self.source.data = fixture_data()
+        self.incremental()
+        self.assertTrue(
+            all(
+                row["timestamp"] == UPDATED + "Z"
+                for row in self.control.committed.values()
+            )
+        )
+
+    def test_reader_failure_preserves_control_and_never_calls_worker(self):
+        self.snapshot()
+        before = copy.deepcopy(self.control.committed)
+        self.source.fail_table = "mes_events"
+        with self.assertRaises(BATCH.BatchError):
+            self.incremental()
+        self.assertEqual(self.control.committed, before)
+        self.assertEqual(len(self.seen), 1)
+
+    def test_policy_enforces_documented_timing_boundaries(self):
+        overlap = "SOURCE_SQLSERVER_BATCH_OVERLAP_SECONDS"
+        lag = "SOURCE_SQLSERVER_BATCH_SAFETY_LAG_SECONDS"
+        for delay in ("0", "3600"):
+            with self.subTest(delay=delay):
+                self.assertEqual(
+                    BATCH.batch_policy({overlap: "86400", lag: delay}),
+                    (86400, int(delay)),
+                )
+        for policy in (
+            {overlap: "86400", lag: "3601"},
+            {overlap: "86400", lag: "86400"},
+            {overlap: "86401", lag: "3600"},
+            {overlap: "3599", lag: "3600"},
+        ):
+            with self.subTest(policy=policy):
+                with self.assertRaises(BATCH.BatchError):
+                    BATCH.batch_policy(policy)
+
+    def test_policy_is_strict_and_preserves_seventh_digit_in_subtraction(self):
+        self.assertEqual(BATCH.batch_policy({}), (300, 5))
+        self.assertEqual(
+            BATCH.subtract_seconds(OBSERVED, 5), "2026-04-01T11:59:55.1234567Z"
+        )
+        for changes in (
+            {"SOURCE_SQLSERVER_BATCH_OVERLAP_SECONDS": "0"},
+            {"SOURCE_SQLSERVER_BATCH_OVERLAP_SECONDS": "yes"},
+            {"SOURCE_SQLSERVER_BATCH_SAFETY_LAG_SECONDS": "-1"},
+            {"SOURCE_SQLSERVER_BATCH_OVERLAP_SECONDS": "3"},
+        ):
+            with self.subTest(policy=tuple(changes)):
+                with self.assertRaises(BATCH.BatchError):
+                    BATCH.run_incremental(
+                        {**self.values, **changes},
+                        self.landing,
+                        self.worker,
+                        adapter=self.adapter,
+                    )
+        self.assertEqual(self.roles, [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -101,13 +101,17 @@ def sqlsource_router(store, jobs, authorize):
         dependencies=[Depends(authorize)],
     )
 
-    @router.post("/batches/snapshot", status_code=202)
-    def snapshot(body: BatchConsent):
-        """Queue a read-only source snapshot and worker materialization."""
-        del body  # Validation already required explicit processing consent.
-        values = store.reader_settings()
+    @router.post("/batches/{mode}", status_code=202)
+    def batch(mode: Literal["snapshot", "incremental"], body: BatchConsent):
+        """Queue reader extraction, worker load and separate checkpoint auth.
 
-        def run_snapshot(_):
+        Snapshot remains usable without control credentials. Incremental
+        requires a committed six-table baseline and separate narrow writer.
+        """
+        del body  # Validation already required explicit processing consent.
+        values = store.reader_settings(include_control=True)
+
+        def run_batch(_):
             """Return success only after a matching worker acknowledgement."""
             try:
 
@@ -117,19 +121,28 @@ def sqlsource_router(store, jobs, authorize):
                         store.applied.get("WORKER_TOKEN", ""), batch_id, stamp
                     )
 
-                return public_result(
-                    batch_module().run_snapshot(values, jobs.output, callback)
+                module = batch_module()
+                runner = (
+                    module.run_snapshot
+                    if mode == "snapshot"
+                    else module.run_incremental
                 )
+                result = public_result(runner(values, jobs.output, callback))
+                if mode == "incremental" and not result["checkpointed"]:
+                    raise ValueError(
+                        "Incremental checkpoint was not confirmed."
+                    )
+                return result
             except OperationFailure:
                 raise
             except Exception:
                 raise OperationFailure(
-                    "SQL_SNAPSHOT_FAILED",
+                    "SQL_BATCH_FAILED",
                     "SOURCEの読取権限・所有権・型とworkerの状態を確認します。",
                 ) from None
 
         try:
-            return jobs.submit_pipeline("sql-snapshot", run_snapshot)
+            return jobs.submit_pipeline("sql-" + mode, run_batch)
         except JobConflict:
             raise HTTPException(
                 409,
