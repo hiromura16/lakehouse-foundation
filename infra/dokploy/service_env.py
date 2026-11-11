@@ -81,12 +81,14 @@ def wait_ready(timeout=120, clock=time.monotonic, sleep=time.sleep):
         service = json.loads(
             docker(["service", "inspect", "dokploy"], remaining)
         )[0]
+        # Service name filters are prefixes, not regular expressions.
+        # The full inspected ID selects only this service, not its siblings.
         replicas = docker(
             [
                 "service",
                 "ls",
                 "--filter",
-                "name=^dokploy$",
+                "id=" + service["ID"],
                 "--format",
                 "{{.Replicas}}",
             ],
