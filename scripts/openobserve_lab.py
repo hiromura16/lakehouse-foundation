@@ -207,7 +207,12 @@ def validate_config(values, require_token=True):
 
 
 def _read_body(response, deadline):
-    """Bound total response time and bytes even when bytes arrive slowly."""
+    """Bound body reads and bytes with one shared monotonic budget.
+
+    Initial header parsing happens inside urllib.open and has an idle socket
+    timeout, not a strict wall-clock deadline. Do not report this body guard
+    as a hard total-request guarantee against a slow-header server.
+    """
     payload = bytearray()
     while True:
         remaining = deadline - time.monotonic()

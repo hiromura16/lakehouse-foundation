@@ -16,6 +16,8 @@
 
 この変更は**source・mock・静的検証まで**です。imageのbuild／起動、実API、実配送、Grafana表示、保持による削除、24時間の容量・欠損・重複・性能は未実施です。Dockerへの接続を再試行して受入結果を作ったものではありません。以下の配置操作は、対象hostで別途許可された場合だけ実行します。
 
+管理helperのHTTP本文は共有の15秒budget・分割読取・1MiB上限で検査します。初期headerの受信はurllibのidle socket timeout（3秒）で、低速headerに対する厳密な総15秒wall-clock保証ではありません。固定loopback以外へ接続せず、この境界を無期限停止への耐性や実API成功として報告しません。
+
 ## 1. 通常監視との境界
 
 通常の `monitoring` はLoki-onlyです。`openobserve-lab` を選択した時だけVectorが追加設定を読み、redactionの後の同じeventを第二sinkへ渡します。Loki、Prometheus、GrafanaからOpenObserveへの起動依存は追加しません。Lab停止で既存監視を停止させない設計です。[Vectorの配送・損失の境界](VECTOR.md)
