@@ -73,7 +73,7 @@ jobs:
         python infra/monitoring/vector/tests/build_fixtures.py --check
         python scripts/sail_benchmark.py plan
         python scripts/monitoring_assets.py --check
-        python scripts/validate_observability.py --run
+        python scripts/validate_observability.py --run --public-diagnostics
     - name: Check generated report figures and offline gallery
       run: python scripts/render_report_assets.py --check
     - name: Check Markdown roles, manifest and local links

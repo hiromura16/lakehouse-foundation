@@ -94,7 +94,7 @@ def jobs():
     return selected
 
 
-def execute(job):
+def execute(job, *, public_diagnostics=False):
     """Bound execution and hide log bodies; report failed cleanup."""
     name, image, entrypoint, arguments = job
     container = None
@@ -145,6 +145,12 @@ def execute(job):
                 "ALL",
                 "--security-opt",
                 "no-new-privileges:true",
+                "--log-driver",
+                "json-file",
+                "--log-opt",
+                "max-size=1m",
+                "--log-opt",
+                "max-file=1",
                 "--user",
                 "65534:65534",
                 "--tmpfs",
@@ -203,6 +209,21 @@ def execute(job):
             check=False,
         )
         outcome["status"] = "passed" if result.returncode == 0 else "failed"
+        if result.returncode and public_diagnostics:
+            # Only this fresh, network-none validator receives public source
+            # plus the empty synthetic token above. Never read application
+            # logs or reuse an operator container/real private configuration.
+            diagnostic = subprocess.run(
+                ["docker", "logs", "--tail", "100", container],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                timeout=5,
+                check=False,
+            )
+            if diagnostic.returncode == 0:
+                outcome["public_diagnostic"] = diagnostic.stdout.decode(
+                    "utf-8", errors="replace"
+                )[-8192:]
         return outcome
     except (OSError, subprocess.TimeoutExpired):
         outcome["status"] = "unavailable-or-timeout"
@@ -233,6 +254,11 @@ def main():
     """Default to a public plan; never confuse planned checks with passes."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", action="store_true")
+    parser.add_argument(
+        "--public-diagnostics",
+        action="store_true",
+        help="失敗した使い捨てvalidatorの公開入力だけの診断を最大8KiB表示",
+    )
     args = parser.parse_args()
     selected = jobs()
     if not args.run:
@@ -253,7 +279,10 @@ def main():
             )
         )
         return
-    results = [execute(job) for job in selected]
+    results = [
+        execute(job, public_diagnostics=args.public_diagnostics)
+        for job in selected
+    ]
     print(json.dumps({"results": results}))
     if any(item["status"] != "passed" for item in results):
         raise SystemExit(1)

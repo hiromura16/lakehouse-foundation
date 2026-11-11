@@ -361,3 +361,43 @@ class MonitoringPathAndValidatorTests(unittest.TestCase):
         ):
             result = validator.execute(validator.jobs()[0])
         self.assertEqual(result["status"], "cleanup-failed")
+
+    def test_failed_public_validator_diagnostics_are_opt_in_and_bounded(self):
+        import subprocess
+
+        import validate_observability as validator
+
+        calls = []
+
+        def fake(command, **kwargs):
+            calls.append(command)
+            if command[1] == "create":
+                return subprocess.CompletedProcess(command, 0, b"a" * 64)
+            if command[1] == "start":
+                return subprocess.CompletedProcess(command, 1)
+            if command[1] == "logs":
+                self.assertEqual(
+                    command,
+                    [
+                        "docker",
+                        "logs",
+                        "--tail",
+                        "100",
+                        "a" * 64,
+                    ],
+                )
+                return subprocess.CompletedProcess(command, 0, b"x" * 20000)
+            return subprocess.CompletedProcess(command, 0)
+
+        with mock.patch.object(validator.subprocess, "run", side_effect=fake):
+            result = validator.execute(
+                validator.jobs()[0], public_diagnostics=True
+            )
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(len(result["public_diagnostic"]), 8192)
+        self.assertEqual(calls[-1], ["docker", "rm", "--force", "a" * 64])
+        calls.clear()
+        with mock.patch.object(validator.subprocess, "run", side_effect=fake):
+            result = validator.execute(validator.jobs()[0])
+        self.assertNotIn("public_diagnostic", result)
+        self.assertFalse(any(command[1] == "logs" for command in calls))
