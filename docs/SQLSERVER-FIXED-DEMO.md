@@ -256,7 +256,7 @@ connector名とdata prefixは `lakehouse-demo-sqlserver`、consumer groupは `la
 
 Rawは `iceberg.sqlcdc_events.events` です。Kafkaのtopic/partition/offsetをevent IDにし、key/envelope原文、before/after、op、tombstone、LSN、transaction ID、source時刻、run IDを追記します。同じ配送位置の同一内容は再追記せず、内容が変われば拒否します。source identityを表propertyに固定し、別sourceの履歴へ自動相乗りしません。Rawは不変履歴、現在値は別の再構築可能な派生物です。Raw保持だけでCurrent StateやKafka offsetの処理完了を示しません。
 
-Phase 4のfixed consumerはRaw保存後に停止し、Current Stateの再構築やKafka offsetの完了を行いません。継続処理とreplay/materializationは後続Phase 5の実装・受入が必要です。この段階を単独で常時運転しません。
+現行のfixed consumerは常駐し、Raw保存→Current Stateのstage→Icebergへの派生状態反映→local完了offset記録→Kafka同期commitの順に処理します。途中失敗ではmaintenanceへ入り、通常の取込・ackを止めて明示rebuildと再照合を待ちます。Current State・replay・GUI監視は§8のとおり実装済みですが、会社環境でのSQL Server→Kafka→Iceberg連携受入は未実施です。実装済みの機能と、実機で確認できた範囲を分けて判断してください。
 
 ### CAと配置を混同しない
 
