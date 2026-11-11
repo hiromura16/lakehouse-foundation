@@ -467,6 +467,11 @@ def render_settings():
     st.caption(
         "変更は非公開の設定へ保存します。反映に再配置が必要な項目があります。"
     )
+    st.caption(
+        "monitoringは通常監視です。hostの読取りはmonitoring-hostを追加した"
+        "場合だけ有効になり、monitoringも必要です。sail-labにはcomputeも"
+        "必要です。保存後、配置側でも同じprofileを明示して再配置します。"
+    )
     result = call_api("/settings")
     if result is None:
         return

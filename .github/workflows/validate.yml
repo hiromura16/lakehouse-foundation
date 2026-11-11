@@ -107,6 +107,8 @@ jobs:
         root = Path(os.environ['RUNNER_TEMP'])
         landing = root / 'lakehouse-ci-landing'
         landing.mkdir(mode=0o700, exist_ok=True)
+        docker_root = root / 'lakehouse-ci-docker-root'
+        docker_root.mkdir(mode=0o700, exist_ok=True)
         env_file = root / 'lakehouse-ci-private/site.env'
         token_file = root / 'lakehouse-ci-private' / 'openobserve-token.json'
         token_file.write_text('{"token":"o2oi_' + 's' * 32 + '"}\n')
@@ -116,7 +118,9 @@ jobs:
             if line.startswith('LANDING_DIR='):
                 line = 'LANDING_DIR=' + str(landing)
             if line.startswith('COMPOSE_PROFILES='):
-                line = 'COMPOSE_PROFILES=automation,monitoring,compute,orchestration,demo,cdc,bi,notebooks,vector,lineage,mcp,openobserve-lab,sail-lab'
+                line = 'COMPOSE_PROFILES=automation,monitoring,monitoring-host,compute,orchestration,demo,cdc,bi,notebooks,vector,lineage,mcp,openobserve-lab,sail-lab'
+            if line.startswith('CADVISOR_DOCKER_DATA_ROOT='):
+                line = 'CADVISOR_DOCKER_DATA_ROOT=' + str(docker_root)
             if line.startswith('OPENOBSERVE_INGEST_TOKEN_FILE='):
                 line = 'OPENOBSERVE_INGEST_TOKEN_FILE=' + str(token_file)
             lines.append(line)

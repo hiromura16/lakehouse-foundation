@@ -332,7 +332,7 @@ rebuildの202は完了ではありません。同じrequest IDを再照会し、
 
 Notebook workspaceのread-only計画と承認後のapply/probe、既存projectを明示したSpark検証、機械可読な結果は [compute配置前・検証手順](COMPUTE-VALIDATION.md) を参照します。通常Deployでspark-checkが常駐しないのは正常です。local tagのpull方針はFROM/uv/JAR通信や未解決のBuildKit auth session timeoutを修復する保証ではありません。
 
-監視拡張のhost権限・GUI保持・検証未了事項は [段階的な監視基盤](OBSERVABILITY.md) を参照してください。既存monitoringの更新でも、新規host mountは配置前に承認が必要です。
+通常monitoringは専用spoolの準備が必要です。host root/PIDの読取りは別opt-inの `monitoring-host` だけで、配置前に承認します。GUI保持・検証未了事項は [段階的な監視基盤](OBSERVABILITY.md) を参照してください。
 
 ## SQL Server error 468 / checker error 51019
 
@@ -344,10 +344,12 @@ Notebook workspaceのread-only計画と承認後のapply/probe、既存project�
 
 | 症状 | 最初に確認すること | 取り違えないこと |
 | --- | --- | --- |
-| monitoringのplanが拒否される | `CADVISOR_DOCKER_DATA_ROOT`、専用 `MONITORING_LOG_DIR`、host alias、事前承認 | 空のrootを推測値で埋めたり、Docker socketをcollectorへ渡したりしない |
+| monitoringのplanが拒否される | 専用 `MONITORING_LOG_DIR`、host alias。`monitoring-host` を追加する場合だけDocker rootとhost読取り承認 | 空のrootを推測値で埋めたり、Docker socketをcollectorへ渡したりしない |
 | OpenObserve Labだけ起動・配送できない | Lab profile、loopback port、専用volume、管理者と取り込みtokenの分離、Git外0600 token file | 通常Lokiの停止・削除やGrafana上書きで回避しない |
 | OpenObserveでmetricsが見えない | 今回はログ `_json` のみ。metrics比較は後続Phase | UI portやログtokenをPrometheus datasource/remote_writeへ流用しない |
 | Sail clientのbuildが失敗する | [Sail手順](SAIL-LAB.md) の共通Spark image事前buildとprivate project tag | cold build順序は実機未検証。registryからlocal tagを代用pullしない |
 | Sailが通常Deploy後に終了/未起動 | `sail-benchmark` はreplicas 0の明示検証用 | benchmark未実行を性能・互換性の成功としない |
 
 詳細な配送・損失・bufferの境界は [Vector](VECTOR.md)、Labの停止は [OpenObserve](OPENOBSERVE.md) と [Sail](SAIL-LAB.md) にあります。実値やtoken、rawログを公開Issueへ添付しません。
+
+`monitoring-host` 単独、または `compute` なしの `sail-lab` は設定検査で拒否します。前者は `monitoring,monitoring-host`、後者は `compute,sail-lab` を選び、必要資源・権限を確認してから既存managerへ反映します。通常monitoringだけでhost root/PIDを読ませません。

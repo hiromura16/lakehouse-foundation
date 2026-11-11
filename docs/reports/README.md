@@ -50,7 +50,7 @@ HTMLはダウンロードしてブラウザーで開くと、14枚のSVGをオ�
 
 | 図 | 内容・報告書の用途 | 編集用 |
 | --- | --- | --- |
-| [01 詳細配置](figures/01-platform-detail.svg) | 全41service・13profile・core/常駐/one-shot/smoke。技術付録に | [Mermaid](mermaid/01-platform-detail.mmd) |
+| [01 詳細配置](figures/01-platform-detail.svg) | 全41service・14profile・core/常駐/one-shot/smoke。技術付録に | [Mermaid](mermaid/01-platform-detail.mmd) |
 | [02 バッチ経路](figures/02-batch-flow.svg) | SELECT/Samba/GUI→ready→原本/Bronze→明示変換 | [Mermaid](mermaid/02-batch-flow.mmd) |
 | [03 メダリオン](figures/03-medallion.svg) | 最新候補・妥当性・隔離・粒度・合成fixtureの件数 | [Mermaid](mermaid/03-medallion.mmd) |
 | [04 CDC確定順](figures/04-cdc-sequence.svg) | Debezium→Kafka→raw→現在値→派生表→checkpoint→offset | [Mermaid](mermaid/04-cdc-sequence.mmd) |

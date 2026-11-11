@@ -207,12 +207,12 @@ def validate_ssrf(values):
 def validate_monitoring_paths(values, settings_path):
     """Check selected host mounts without preparing or correcting the host.
 
-    Empty Docker root keeps config-only plans possible but is never runtime
-    acceptance. Nonempty paths must be literal external directories, distinct
-    from notebooks, landing and private settings. Never include their value in
-    validation errors.
+    Host exporters require an explicit Docker root only when opted in.
+    Paths must be literal external directories, distinct from notebooks,
+    landing and private settings. Errors never include their values.
     """
-    if "monitoring" not in values.get("COMPOSE_PROFILES", "").split(","):
+    profiles = set(values.get("COMPOSE_PROFILES", "").split(","))
+    if "monitoring" not in profiles:
         return
     # A public alias is deliberately independent of the host's real name.
     values.setdefault("MONITORING_HOST_ALIAS", "local")
@@ -220,18 +220,27 @@ def validate_monitoring_paths(values, settings_path):
         r"[a-z][a-z0-9_-]{0,31}", values["MONITORING_HOST_ALIAS"]
     ):
         raise ValueError("Use a short sanitized MONITORING_HOST_ALIAS.")
-    for key, default in (
-        ("CADVISOR_DOCKER_DATA_ROOT", ""),
-        ("MONITORING_LOG_DIR", "/srv/lakehouse/log-spool"),
-    ):
+    mounts = [("MONITORING_LOG_DIR", "/srv/lakehouse/log-spool")]
+    if "monitoring-host" in profiles:
+        if not values.get("CADVISOR_DOCKER_DATA_ROOT"):
+            raise ValueError(
+                "Select an explicit CADVISOR_DOCKER_DATA_ROOT for "
+                "monitoring-host."
+            )
+        mounts.append(("CADVISOR_DOCKER_DATA_ROOT", ""))
+    for key, default in mounts:
         selected = values.get(key, default)
         if selected:
             _validate_monitoring_mount(selected, values, settings_path)
     docker_root = values.get("CADVISOR_DOCKER_DATA_ROOT", "")
     spool = values.get("MONITORING_LOG_DIR", "/srv/lakehouse/log-spool")
-    if docker_root and (
-        Path(spool).is_relative_to(Path(docker_root))
-        or Path(docker_root).is_relative_to(Path(spool))
+    if (
+        "monitoring-host" in profiles
+        and docker_root
+        and (
+            Path(spool).is_relative_to(Path(docker_root))
+            or Path(docker_root).is_relative_to(Path(spool))
+        )
     ):
         raise ValueError("Separate log spool and Docker data root.")
 
@@ -417,6 +426,7 @@ def load(path, *, private_mount=None):
     if not profiles <= {
         "automation",
         "monitoring",
+        "monitoring-host",
         "compute",
         "orchestration",
         "demo",
@@ -430,10 +440,17 @@ def load(path, *, private_mount=None):
         "sail-lab",
     }:
         raise ValueError(
-            "Profiles may be automation, monitoring, compute, "
+            "Profiles may be automation, monitoring, monitoring-host, "
+            "compute, "
             "orchestration, demo, cdc, bi, notebooks, vector, lineage, mcp, "
             "openobserve-lab, sail-lab."
         )
+    for profile, required in (
+        ("monitoring-host", "monitoring"),
+        ("sail-lab", "compute"),
+    ):
+        if profile in profiles and required not in profiles:
+            raise ValueError("Select " + required + " with " + profile + ".")
     if profiles & {"demo", "mcp"}:
         if not re.fullmatch(
             r"[A-Za-z0-9]{20,128}", values.get("CONTROL_API_TOKEN", "")

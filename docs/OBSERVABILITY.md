@@ -18,7 +18,7 @@
 
 ## 1. 既存の監視と追加する権限
 
-`monitoring` はPrometheus・Grafana・Node Exporter・cAdvisor・Loki・Vectorを含みます。core-onlyは6サービスのままです。exporterにhost公開portはなく、PrometheusはCompose内部DNSへ15秒間隔、10秒timeoutで接続します。既存のworker/self job、15日/2GB保持、Grafana/Prometheus volumeは維持します。通知先は設定しません。
+`monitoring` はPrometheus・Grafana・Loki・Vectorの4serviceです。host root/PIDを読むNode ExporterとcAdvisorは別opt-inの `monitoring-host` へ分離しています。`monitoring-host` は `monitoring` が必須で、旧monitoringの再配置だけでは有効になりません。core-onlyは6サービスのままです。exporterにhost公開portはなく、PrometheusはCompose内部DNSへ15秒間隔、10秒timeoutで接続します。既存のworker/self job、15日/2GB保持、Grafana/Prometheus volumeは維持します。通知先は設定しません。
 
 | 追加対象 | 初期メモリ上限 | 読取り・制約 | 未確認の受入項目 |
 | --- | --- | --- | --- |
@@ -31,9 +31,11 @@ Node Exporterはcollectorのallowlistを使用します。root/PIDを渡して�
 
 ## 2. 配置前の確認
 
+通常監視でも専用 `MONITORING_LOG_DIR` が事前に必要です。spoolの存在、path/全祖先がsymlinkでないこと、`WORKER_UID:GID` と一致する所有者、mode 0700または0750、親directoryの安全性とVectorの通過権限を確認します。未作成なら配置を止め、host管理者による別承認の準備を待ちます。更新手順からmkdir・自動chown/chmodはしません。[既存環境のpreflightとregistry確認](COMPANY-UPDATE.md#監視を更新する前の追加preflight)
+
 承認済みcommitと既存project/volume prefixを確認します。Git外private設定は既存値を保持し、`configure.py --upgrade` が必要な場合だけ使用します。同名backupがあると停止する既存保護を維持します。[更新手順](COMPANY-UPDATE.md)
 
-Dockerの保存先は仮定しません。operatorが対象hostで確認し、`CADVISOR_DOCKER_DATA_ROOT` へ絶対パスを登録します。
+`monitoring-host` を使う場合だけ、Dockerの保存先を確認します。保存先は仮定しません。operatorが対象hostで確認し、`CADVISOR_DOCKER_DATA_ROOT` へ絶対パスを登録します。
 
 **Bash / Zsh共通**
 
@@ -44,7 +46,7 @@ docker info --format '{{.DockerRootDir}}'
 
 未指定時のCompose fallbackは空の公開placeholderであり、Docker保存先の代替ではありません。実際の保存先・アクセス・metadataの受入が済むまでcontainer監視を成功扱いにしません。既存のNotebook/landing/private設定をmount先に流用しません。
 
-通常の`plan`は設定検査だけです。`predeploy`のNotebook検査と、今回のhost mount/collector権限確認は別に扱います。raw Dokploy Composeも同じ9ファイルを結合します。新しいlifecycle managerを追加しません。[Dokploy](DOKPLOY.md)
+通常の`plan`は設定検査だけでhostの存在・modeまでは調べません。CLIの `up` / `predeploy` はmonitoring有効時、Composeを呼ぶ前にspoolのmetadataを検査し、不一致なら停止します。directory作成・権限変更・書込みprobe・ログ内容/全ファイル一覧の検査は行いません。monitoring無効時はspoolのhost要件を追加しません。Notebook検査と、`monitoring-host` のhost root/collector権限確認も別に扱います。raw Dokploy Composeも同じ9ファイルを結合します。新しいlifecycle managerを追加しません。[Dokploy](DOKPLOY.md)
 
 ## 3. GUIのダッシュボード
 
@@ -74,13 +76,13 @@ python3 scripts/validate_observability.py
 python3 scripts/validate_observability.py --run
 ```
 
-validatorはnetworkなし・bind mountなし・capabilityなし・非rootの一時containerへ**公開設定だけ**をコピーします。停止中のCOPYのため一時rootfsは書込み可能で、host mountはありません。失敗時は未検証のまま残し、無効なルールを運用へ適用しません。この作業環境ではDocker APIへの接続がsandboxにより拒否されたため、promtool・実image healthcheck・exporter実測は未実行です。
+validatorはnetworkなし・bind mountなし・capabilityなし・非rootの一時containerへ**公開設定だけ**をコピーします。停止中のCOPYのため一時rootfsは書込み可能で、host mountはありません。失敗時は未検証のまま残し、無効なルールを運用へ適用しません。ローカル作業環境ではDocker APIへの接続がsandboxにより拒否され、ネイティブvalidatorは未実行でした。別のGitHub Actionsでは、公式Prometheus imageのconfig・rule・fixture検査とLoki imageのconfig検査が成功した記録があります。Prometheusの成功はhost profile分離前の静的nodes構成に対するもので、分離後のDNS/profile切替を含む構成は再検証待ちです。これはnetworkなしの公開設定検証であり、実hostのmount・exporter指標・ログ配送・GUI・24時間運転の受入ではありません。Vectorのネイティブ検査は別の結果として追跡します。
 
 ## 5. 受入・容量・ロールバック
 
 配置許可後にのみ、対象hostの観測とCPU/RAM/filesystem/IO、実ラベル、各`up`、alertとGUIを照合します。既存operationsをGUI編集してから通常Redeployし、その内容が残ることを確認します。collector停止中もworker・既存metricsが利用できることを確認します。会社DBや業務tableへ書込みません。
 
-現在のmetrics部分はPrometheus384MiB＋Grafana384MiB＋exporter128/256MiB＝metrics **上限計1152MiB**、Loki512MiB＋Vector512MiBを加えたmonitoring全体は**2176MiB**です。使用RSSの実測ではありません。host読取り・build・OS/cache・各sinkの512MiB disk bufferと専用capture最大1GiBは別途必要です。MemAvailableが3GiB未満またはswapが継続増加する場合、追加labの配置を止めて影響を報告します。自動的に他サービスの制限を変更しません。
+通常 `monitoring` はPrometheus384MiB＋Grafana384MiB＋Loki512MiB＋Vector512MiB＝**上限計1792MiB**です。明示opt-inの `monitoring-host` はexporter128/256MiBの**追加384MiB**で、両方を合わせると**2176MiB**です。使用RSSの実測ではありません。host読取り・build・OS/cache・各sinkの512MiB disk bufferと専用capture最大1GiBは別途必要です。MemAvailableが3GiB未満またはswapが継続増加する場合、追加labの配置を止めて影響を報告します。自動的に他サービスの制限を変更しません。
 
 rollbackは承認済みcode/configを既存managerから戻し、新規serviceだけを停止するoperator手順です。Prometheus/Grafana/notebook/event/work/data volume、private設定、GUI内容を削除しません。`down -v`、prune、daemon再起動、再帰chown/chmod、firewall/public bind変更は通常手順に含めません。
 

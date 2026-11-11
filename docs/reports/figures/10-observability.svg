@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="10-observability-title 10-observability-description" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
 <title id="10-observability-title">監視・状態確認・業務品質を分ける</title>
-<desc id="10-observability-description">Prometheusはworker/self/node/cadvisor/Loki/Vectorの6job定義。Vectorのcurated有限capture・VRL秘匿化からLokiへ配送するsource実装。host権限・公式validator・実配送・GUI・容量は別受入。 根拠: infra/monitoring/prometheus.yml, scripts/admin.py, scripts/grafana_setup.py, infra/demo/poc_quality.py, infra/openobserve/compose.yaml, docs/OPENOBSERVE.md</desc>
+<desc id="10-observability-description">通常監視はPrometheus/Grafana/Loki/Vector。host root/PIDを読むexporterはmonitoring-hostの明示opt-in。curated有限capture・秘匿化・配送のsourceと、公式validator・実host/GUI・容量の受入を区別する。 根拠: infra/monitoring/prometheus.yml, scripts/admin.py, scripts/grafana_setup.py, infra/demo/poc_quality.py, infra/openobserve/compose.yaml, docs/OPENOBSERVE.md</desc>
 <defs>
 <marker id="10-observability-data" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#2469a8"/></marker>
 <marker id="10-observability-control" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#70608e"/></marker>
@@ -28,7 +28,7 @@
 <rect x="650" y="248" width="5" height="204" rx="2" fill="#126c59" stroke="none"/>
 <text x="674" y="272" fill="#152a43" font-size="27" font-weight="700">Prometheus</text>
 <image x="1105" y="248" width="46" height="46" preserveAspectRatio="xMidYMid meet" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbDpzcGFjZT0icHJlc2VydmUiIHdpZHRoPSIxMTMuMzMzIiBoZWlnaHQ9IjExMy4zMzEiIHZpZXdCb3g9IjAgMCAxMTMuMzMzIDExMy4zMzEiPjxwYXRoIGQ9Ik01Ni42NjcgMEMyNS4zNzIgMCAwIDI1LjM2OSAwIDU2LjY2NWMwIDMxLjI5NSAyNS4zNzIgNTYuNjY2IDU2LjY2NyA1Ni42NjZzNTYuNjY2LTI1LjM3MSA1Ni42NjYtNTYuNjY2QzExMy4zMzMgMjUuMzY5IDg3Ljk2MSAwIDU2LjY2NyAwWm0wIDEwNi4wNTVjLTguOTA0IDAtMTYuMTIzLTUuOTQ4LTE2LjEyMy0xMy4yODNINzIuNzljMCA3LjMzNC03LjIxOSAxMy4yODMtMTYuMTIzIDEzLjI4M3ptMjYuNjMtMTcuNjgySDMwLjAzNHYtOS42NThoNTMuMjY0djkuNjU4em0tLjE5MS0xNC42MjloLTUyLjkyYy0uMTc2LS4yMDMtLjM1Ni0uNDAzLS41MjYtLjYwOS01LjQ1Mi02LjYyLTYuNzM2LTEwLjA3Ni03Ljk4My0xMy41OTgtLjAyMS0uMTE2IDYuNjExIDEuMzU1IDExLjMxNCAyLjQxMyAwIDAgMi40Mi41NiA1Ljk1OCAxLjIwNS0zLjM5Ny0zLjk4Mi01LjQxNC05LjA0NC01LjQxNC0xNC4yMTggMC0xMS4zNTkgOC43MTItMjEuMjg1IDUuNTY5LTI5LjMwOCAzLjA1OS4yNDkgNi4zMzEgNi40NTYgNi41NTIgMTYuMTYxIDMuMjUyLTQuNDk0IDQuNjEzLTEyLjcwMSA0LjYxMy0xNy43MzMgMC01LjIxIDMuNDMzLTExLjI2MiA2Ljg2Ny0xMS40NjktMy4wNjEgNS4wNDUuNzkzIDkuMzcgNC4yMTkgMjAuMDk5IDEuMjg1IDQuMDMgMS4xMjEgMTAuODEyIDIuMTEzIDE1LjExMy4zMjktOC45MzMgMS44NjUtMjEuOTY3IDcuNTMyLTI2LjQ2Ny0yLjUgNS42NjcuMzcgMTIuNzU4IDIuMzMzIDE2LjE2N0M3Ni41IDM3IDc4LjQyIDQxLjE2NyA3OC40MiA0OS4wNDhjMCA1LjI4NC0xLjk1MSAxMC4yNTktNS4yNDIgMTQuMTQ4IDMuNzQyLS43MDIgNi4zMjYtMS4zMzUgNi4zMjYtMS4zMzVsMTIuMTUyLTIuMzcxYy4wMDEtLjAwMS0xLjc2NSA3LjI2MS04LjU1IDE0LjI1NHoiIHN0eWxlPSJmaWxsOiNlNjUyMmM7ZmlsbC1vcGFjaXR5OjEiLz48L3N2Zz4="/>
-<text x="674" y="317" fill="#152a43" font-size="23" font-weight="400">worker/self＋exporter/logの6job</text>
+<text x="674" y="317" fill="#152a43" font-size="23" font-weight="400">通常指標＋host opt-inの収集定義</text>
 <text x="674" y="349" fill="#152a43" font-size="23" font-weight="400">scrape interval：15秒</text>
 <text x="674" y="381" fill="#152a43" font-size="23" font-weight="400">保存：15日 / 2GBの設定</text>
 <text x="674" y="420" fill="#126c59" font-size="20" font-weight="600">monitoring</text>
@@ -68,7 +68,7 @@
 <rect x="1202.76" y="316" width="108.48" height="27" rx="3" fill="#fff" stroke="none"/>
 <g text-anchor="middle"><text x="1257" y="335" fill="#2469a8" font-size="18" font-weight="600">PromQL参照</text></g>
 <rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
-<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">host/cgroupはread承認後に受入。DB/SQL/Kafka固有指標は追加評価。任意OpenObserveはlog-only、metricsは後続。</text>
+<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">host/cgroupはmonitoring-hostの別opt-in・read承認後に受入。任意OpenObserveはlog-only、metricsは後続。</text>
 <text x="56" y="977" fill="#536780" font-size="20" font-weight="400">Grafana JSON exportはdashboard単体。利用者・権限・全設定の復元はDBと設定のバックアップで確認する。</text>
 <text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>

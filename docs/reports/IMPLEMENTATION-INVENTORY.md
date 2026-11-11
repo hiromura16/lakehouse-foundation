@@ -1,7 +1,7 @@
 # 報告書用の実装構成一覧
 
 <!-- doc-purpose:start -->
-> **役割:** 41サービス・13profile・port・volume・接続主体を公開定義から技術付録として照合する。
+> **役割:** 41サービス・14profile・port・volume・接続主体を公開定義から技術付録として照合する。
 >
 > **対象読者:** 基盤構築担当 / 開発・設計担当 / 評価・報告担当
 >
@@ -24,7 +24,7 @@
 | --- | --- | --- |
 | アプリのCompose | 9ファイル | lakehouse → compute → orchestration → demo → cdc → poc → mcp → openobserve → sailの順で同じprojectへ結合 |
 | service定義 | 41 | core 6＋追加定義35。41個の常駐アプリとは表現しない |
-| 任意profile | 13 | automation、monitoring、compute、orchestration、demo、cdc、bi、notebooks、vector、lineage、mcp、openobserve-lab、sail-lab |
+| 任意profile | 14 | automation、monitoring、monitoring-host、compute、orchestration、demo、cdc、bi、notebooks、vector、lineage、mcp、openobserve-lab、sail-lab |
 | 一時初期化 | 4service | catalog-migrate、spark-volumes-init、cdc-register、superset-init。正常時は終了コード0 |
 | 明示検証 | 2service | spark-check、sail-benchmark。通常upはreplicas=0、CLIから明示実行 |
 | buildを持つservice | 12 | worker、spark-volumes-init、airflow、demo-api、cdc-register、superset-init、jupyter、mcp、vector、openobserve、sail-server、sail-benchmark |
@@ -50,8 +50,8 @@ DokployはSwarm上の管理サービスと専用PostgreSQL、管理画面を制�
 | n8n-db | automation | workflow/credentials用PostgreSQL | なし |
 | n8n | automation | GUIのworkflowとworker依頼 | n8n-db healthy |
 | prometheus | monitoring | worker/self/node/cadvisorの指標をscrape | なし |
-| node-exporter | monitoring | host CPU/RAM/disk/process。network/TCP無効 | なし。host mount承認が必要 |
-| cadvisor | monitoring | socket-free cgroup。実指標/ラベル受入待ち | なし。host mount承認が必要 |
+| node-exporter | monitoring-host | host CPU/RAM/disk/process。network/TCP無効 | なし。host mount承認が必要 |
+| cadvisor | monitoring-host | socket-free cgroup。実指標/ラベル受入待ち | なし。host mount承認が必要 |
 | loki | monitoring | 7日保持の専用filesystem log store | なし |
 | vector | monitoring | curated fileから正規化/秘匿化。有界buffer | なし。専用spool準備が必要 |
 | grafana | monitoring | 指標可視化、GUI編集を保持 | なし |
@@ -82,6 +82,8 @@ DokployはSwarm上の管理サービスと専用PostgreSQL、管理画面を制�
 | openobserve | openobserve-lab | 秘匿済みログの任意比較、2GiB/2CPU | なし。Lokiから依存しない |
 | sail-server | sail-lab | wheel固定のnative比較server、2GiB/2CPU | catalog healthy、storage 開始 |
 | sail-benchmark | sail-lab | 合成fixtureの比較client、2GiB/2CPU | sail-server/trino healthy。通常replicas=0 |
+
+`monitoring-host` は `monitoring`、`sail-lab` は `compute` が必須です。通常監視の再配置だけではhost root/PID読取りを追加しません。
 
 `notebooks` だけならJupyterのSparkはlocal[2]です。`compute` も選ぶとstandalone Masterへ接続し、接続失敗を黙ってlocalへ切り替えません。`mcp` だけでもAPIは起動しますが、Streamlit画面には別途 `demo` が必要です。`cdc-consumer` は連続処理のプロセスですが、異常時の自動再起動は `restart: 'no'` です。[Spark実装](../../infra/poc/lakehouse_session.py)・[CDC Compose](../../infra/cdc/compose.yaml)
 
@@ -245,13 +247,14 @@ Qdrantの3点検索は合成数値の機能疎通で、意味検索精度の評�
 
 ## 9. 資源上限の見積もりに使う値
 
-以下はComposeの `mem_limit` をMiBへ換算して足した**設定上限**です。測定した常時使用量、必要RAMの保証、性能試験の結果ではありません。OS・Docker・Dokploy・build・ファイルcache等の使用量は含めません。ホスト容量と同時実行の可否は導入先で測定します。
+以下はComposeの `mem_limit` をMiBへ換算して足した**設定上限**です。表は役割ごとの構成要素を示し、`monitoring-host` の行はexporterだけ、`sail-lab` の行はserverだけを数えます。必須となる `monitoring` / `compute` の資源は別行で確認します。機械生成JSONのprofile別budgetはcoreと必須profileの推移的閉包を含むため、こちらの追加構成要素の行と混同しません。測定した常時使用量、必要RAMの保証、性能試験の結果ではありません。OS・Docker・Dokploy・build・ファイルcache等の使用量は含めません。ホスト容量と同時実行の可否は導入先で測定します。
 
 | 選択対象 | 常駐serviceの上限合計 MiB | one-shotの上限合計 MiB | 数える際の注意 |
 | --- | ---: | ---: | --- |
 | core | 4224 | 256 | 必須6定義、migrationを含む |
 | automation | 1408 | 0 | n8nと専用DB |
-| monitoring | 2176 | 0 | Prometheus/Grafana＋node/cadvisor/Loki/Vector。上限、実測ではない |
+| monitoring | 1792 | 0 | Prometheus/Grafana/Loki/Vector。spool事前準備、host root/PID読取りなし |
+| monitoring-host | 384 | 0 | node/cAdvisor。monitoringを必須とし、host読取りは別承認 |
 | compute | 5888 | 128 | smokeは通常起動しないため別枠 |
 | orchestration | 4480 | 0 | Airflow standaloneと専用DB |
 | demo | 1280 | 0 | demo-apiはmcpと共有 |

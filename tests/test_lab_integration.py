@@ -1,6 +1,7 @@
 """Check opt-in lab wiring with synthetic settings, never deployment."""
 
 import json
+import tempfile
 import unittest
 
 import yaml
@@ -88,9 +89,52 @@ class LabSettingsTests(PrivateSettingsFixture, unittest.TestCase):
         values["COMPOSE_PROFILES"] = "sail-lab"
         values.pop("OPENOBSERVE_ROOT_USER_PASSWORD")
         self.write_literal(values)
+        with self.assertRaisesRegex(ValueError, "compute"):
+            SETTINGS.load(self.env_file)
+        values["COMPOSE_PROFILES"] = "compute,sail-lab"
+        self.write_literal(values)
         self.assertEqual(
-            SETTINGS.load(self.env_file)["COMPOSE_PROFILES"], "sail-lab"
+            SETTINGS.load(self.env_file)["COMPOSE_PROFILES"],
+            "compute,sail-lab",
         )
+
+    def test_host_monitoring_requires_separate_explicit_profile(self):
+        values = self.read_literal()
+        values["COMPOSE_PROFILES"] = "monitoring-host"
+        self.write_literal(values)
+        with self.assertRaisesRegex(ValueError, "monitoring"):
+            SETTINGS.load(self.env_file)
+        values["COMPOSE_PROFILES"] = "monitoring"
+        values["CADVISOR_DOCKER_DATA_ROOT"] = "/"
+        self.write_literal(values)
+        # An inactive exporter path must not gain access or require inspection.
+        self.assertEqual(
+            SETTINGS.load(self.env_file)["COMPOSE_PROFILES"], "monitoring"
+        )
+        values["COMPOSE_PROFILES"] = "monitoring,monitoring-host"
+        self.write_literal(values)
+        with self.assertRaisesRegex(ValueError, "directory"):
+            SETTINGS.load(self.env_file)
+        values["CADVISOR_DOCKER_DATA_ROOT"] = ""
+        self.write_literal(values)
+        with self.assertRaisesRegex(ValueError, "CADVISOR_DOCKER_DATA_ROOT"):
+            SETTINGS.load(self.env_file)
+        with tempfile.TemporaryDirectory(prefix="cadvisor-fixture-") as root:
+            values["CADVISOR_DOCKER_DATA_ROOT"] = root
+            self.write_literal(values)
+            self.assertEqual(
+                SETTINGS.load(self.env_file)["COMPOSE_PROFILES"],
+                "monitoring,monitoring-host",
+            )
+
+    def test_gui_rejects_missing_profile_prerequisites_without_saving(self):
+        store = GUI_SETTINGS.SettingsStore(self.env_file)
+        original = self.env_file.read_bytes()
+        for profiles in ("monitoring-host", "sail-lab"):
+            with self.subTest(profiles=profiles):
+                with self.assertRaises(ValueError):
+                    store.save({"COMPOSE_PROFILES": profiles})
+                self.assertEqual(self.env_file.read_bytes(), original)
 
     def test_gui_reads_and_saves_with_only_the_relocated_private_mount(self):
         """Model the container view without creating any actual host path."""
@@ -110,6 +154,19 @@ class LabSettingsTests(PrivateSettingsFixture, unittest.TestCase):
         store = GUI_SETTINGS.SettingsStore(self.env_file)
         self.assertEqual(
             store.read()["OPENOBSERVE_INGEST_TOKEN_FILE"], host_token
+        )
+        public = store.public()
+        self.assertEqual(
+            public["values"]["OPENOBSERVE_INGEST_TOKEN_FILE"], host_token
+        )
+        self.assertNotIn(
+            "OPENOBSERVE_INGEST_TOKEN_FILE", public["secret_keys"]
+        )
+        self.assertNotIn(
+            "OPENOBSERVE_INGEST_TOKEN_FILE", public["configured_secrets"]
+        )
+        self.assertNotIn(
+            json.loads(token.read_text())["token"], json.dumps(public)
         )
         store.save({"MONITORING_HOST_ALIAS": "lab-alias"})
         saved = self.read_literal()

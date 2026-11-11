@@ -3,6 +3,32 @@
 rule_files: [foundation.yml]
 evaluation_interval: 1m
 tests:
+  # No discovered exporter (profile off) must not produce an ExporterDown.
+  - interval: 1m
+    input_series: []
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ExporterDownWarning
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: ExporterDownCritical
+        exp_alerts: []
+  # A discovered, unreachable exporter still triggers ordinary down alerts.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="node",instance="node-exporter:9100",host_alias="local"}'
+        values: '0+0x10'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ExporterDownWarning
+        exp_alerts:
+          - exp_labels: {job: node, instance: 'node-exporter:9100', host_alias: local, severity: warning}
+            exp_annotations: {summary: 'Exporter unreachable for two minutes'}
+      - eval_time: 6m
+        alertname: ExporterDownCritical
+        exp_alerts:
+          - exp_labels: {job: node, instance: 'node-exporter:9100', host_alias: local, severity: critical}
+            exp_annotations: {summary: 'Exporter unreachable for five minutes'}
   - interval: 1m
     input_series:
       - series: 'node_memory_MemTotal_bytes{host_alias="local"}'

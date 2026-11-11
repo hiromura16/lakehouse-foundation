@@ -30,7 +30,8 @@ COMPOSE_FILES = [
     )
 ]
 ALL_PROFILES = (
-    "automation,monitoring,compute,orchestration,demo,cdc,bi,notebooks,"
+    "automation,monitoring,monitoring-host,compute,orchestration,demo,cdc,"
+    "bi,notebooks,"
     "vector,lineage,mcp,openobserve-lab,sail-lab"
 )
 CORE_SERVICES = {

@@ -117,7 +117,7 @@
 | [図と出力スクリプトを変更する人へ](<reports/EDITING-GUIDE.md>) | figures.json、描画・exportコード、生成物の責務と変更後の検証を理解する。 | 図の意味・レイアウト・出力形式を変更し、生成差分を確認するとき。 | active |
 | [PoCの評価計画と受入条件](<reports/EVALUATION-PLAN.md>) | 配置・品質・CDC・AI・復旧の評価範囲と受入条件を、実施前に記入する。 | 会社PoCを始める前に、担当・条件・成功基準・残す証跡を決めるとき。 | template |
 | [報告する主張と根拠の対応表](<reports/EVIDENCE-MATRIX.md>) | 報告する主張を既存検証・合成fixture・導入先受入・未評価に分けて根拠へ結ぶ。 | 数値や成功を報告へ引用するときと、導入先の証跡台帳を作るとき。 | reference |
-| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 41サービス・13profile・port・volume・接続主体を公開定義から技術付録として照合する。 | 詳細図の箱と線を確認するときや、構成定義の数量と制約を引用するとき。 | reference |
+| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 41サービス・14profile・port・volume・接続主体を公開定義から技術付録として照合する。 | 詳細図の箱と線を確認するときや、構成定義の数量と制約を引用するとき。 | reference |
 | [データレイクハウスPoC 報告書テンプレート](<reports/POC-REPORT-TEMPLATE.md>) | 業務目的、評価条件、観測結果、残る条件、次段階の判断を報告書へ整理する。 | 評価計画と証跡が揃い、社内保存用の報告書原本を作成するとき。 | template |
 | [PoC説明用のスライド構成](<reports/PRESENTATION-OUTLINE.md>) | 読み手と持ち時間に合わせ、14図の選択・説明順・話す論点を組み立てる。 | 報告書の判断と根拠を、発表や引継ぎのスライドへ移すとき。 | template |
 | [PoC報告書・発表に使う図版と雛形](<reports/README.md>) | 用途別14図・キャプション・雛形を選び、PNG・PDF・PPTXへ書き出す。 | PoC報告書や説明スライドを準備し、必要な図と根拠を選ぶとき。 | active |
@@ -203,7 +203,7 @@
 | [症状から確認する](<TROUBLESHOOTING.md>) | 観測した症状から設定・起動・通信・job・データの失敗箇所を絞り込む。 |
 | [Vectorによる対象ログの整形と秘匿化](<VECTOR.md>) | 対象projectの有限capture・VRL重大度・秘匿化・有界配送と未検証項目を確認する。 |
 | [PoCの評価計画と受入条件](<reports/EVALUATION-PLAN.md>) | 配置・品質・CDC・AI・復旧の評価範囲と受入条件を、実施前に記入する。 |
-| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 41サービス・13profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
+| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 41サービス・14profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
 | [Vectorのログ正規化・転送設定](<../infra/monitoring/vector/README.md>) | 選択版の明示YAML合成、parser期待fixture、権限と配送上限を開発時に照合する。 |
 
 ### 評価・報告担当
@@ -224,7 +224,7 @@
 | [PoCの意思決定記録テンプレート](<reports/DECISION-RECORD-TEMPLATE.md>) | 選択肢・根拠・制約・承認・再評価条件を、後から追える意思決定記録に残す。 |
 | [PoCの評価計画と受入条件](<reports/EVALUATION-PLAN.md>) | 配置・品質・CDC・AI・復旧の評価範囲と受入条件を、実施前に記入する。 |
 | [報告する主張と根拠の対応表](<reports/EVIDENCE-MATRIX.md>) | 報告する主張を既存検証・合成fixture・導入先受入・未評価に分けて根拠へ結ぶ。 |
-| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 41サービス・13profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
+| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 41サービス・14profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
 | [データレイクハウスPoC 報告書テンプレート](<reports/POC-REPORT-TEMPLATE.md>) | 業務目的、評価条件、観測結果、残る条件、次段階の判断を報告書へ整理する。 |
 | [PoC説明用のスライド構成](<reports/PRESENTATION-OUTLINE.md>) | 読み手と持ち時間に合わせ、14図の選択・説明順・話す論点を組み立てる。 |
 | [PoC報告書・発表に使う図版と雛形](<reports/README.md>) | 用途別14図・キャプション・雛形を選び、PNG・PDF・PPTXへ書き出す。 |
@@ -296,7 +296,7 @@
 | [PoCの意思決定記録テンプレート](<reports/DECISION-RECORD-TEMPLATE.md>) | 選択肢・根拠・制約・承認・再評価条件を、後から追える意思決定記録に残す。 |
 | [図と出力スクリプトを変更する人へ](<reports/EDITING-GUIDE.md>) | figures.json、描画・exportコード、生成物の責務と変更後の検証を理解する。 |
 | [報告する主張と根拠の対応表](<reports/EVIDENCE-MATRIX.md>) | 報告する主張を既存検証・合成fixture・導入先受入・未評価に分けて根拠へ結ぶ。 |
-| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 41サービス・13profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
+| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 41サービス・14profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
 | [PoC報告書・発表に使う図版と雛形](<reports/README.md>) | 用途別14図・キャプション・雛形を選び、PNG・PDF・PPTXへ書き出す。 |
 | [Vectorのログ正規化・転送設定](<../infra/monitoring/vector/README.md>) | 選択版の明示YAML合成、parser期待fixture、権限と配送上限を開発時に照合する。 |
 

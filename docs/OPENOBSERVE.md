@@ -64,7 +64,7 @@ GUIの設定保存からLabを選ぶ場合、token fileはhostの `CONTROL_SETTI
 
 `openobserve-data` は専用named volumeで、`<prefix>_openobserve-data` としてSQLite metadata、WAL、ログ保存・cacheを保持します。既存のS3、Iceberg、DB、Grafana、Vectorのvolumeを流用しません。新規volume copy-up用のowner/modeをimage層へ設定し、runtimeは専用rootのUID/GID・0700・symlink不在を検査するだけです。不一致の既存volumeをchown/chmodしたり削除したりはしません。
 
-containerは非root、rootfs readonly、capabilityなし、no-new-privileges、host bindなし、socket・device・host PID/networkなしです。外部公開はせずUI/APIを127.0.0.1へbindします。メモリ上限2GiB・CPU2、tmpfs64MiB、memtable128MiB、DataFusion用256MiBは**構成上限**で、起動／負荷に十分という実測値ではありません。通常monitoringの上限2176MiBへLab分を加算し、OS/cache、disk buffer、spoolを別に見積もります。MemAvailable 3GiB未満やswap継続増加ならLab配置を止め、既存サービスの制限を勝手に変えません。
+containerは非root、rootfs readonly、capabilityなし、no-new-privileges、host bindなし、socket・device・host PID/networkなしです。外部公開はせずUI/APIを127.0.0.1へbindします。メモリ上限2GiB・CPU2、tmpfs64MiB、memtable128MiB、DataFusion用256MiBは**構成上限**で、起動／負荷に十分という実測値ではありません。通常monitoringの上限1792MiBへLab分を加算し、別opt-inのmonitoring-hostも使う場合は追加384MiBを見積もります。OS/cache、disk buffer、spoolも別枠です。MemAvailable 3GiB未満やswap継続増加ならLab配置を止め、既存サービスの制限を勝手に変えません。
 
 telemetryとtracingは無効、usage報告はlocalでerror内容の自己報告も無効にします。外部proxyやCAをLabへ自動注入しません。image取得には既存のdaemon／builder設定が別途必要です。通知、SMTP、外部AI、cloud連携は設定しません。
 

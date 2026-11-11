@@ -329,7 +329,7 @@ services:
       timeout: 5s
       retries: 30
 
-  # 既存のworker/self収集を維持し、承認後にhost/container exporterを追加する。
+  # 既存のworker/self収集を維持し、host exporterはmonitoring-hostで明示選択する。
   # exporter停止でもPrometheus自身は起動する。15日/2GBの保持上限は維持する。
   prometheus:
     restart: unless-stopped
@@ -386,12 +386,12 @@ services:
     ports:
       - ${BIND_IP:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000
 
-  # host root/proc/sysの読取りを追加するため、既存monitoring利用者も配置前に承認する。
+  # host root/proc/sysの読取りとhost PIDはmonitoring-hostの明示選択時だけ渡す。
   # netlinkや/proc/netがcontainer netnsを示す問題を避け、ネットワーク/TCPは未提供。
   # D-Bus・host network・追加capabilityは渡さない。systemd collectorは無効。
   node-exporter:
     image: ghcr.io/prometheus/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0
-    profiles: [monitoring]
+    profiles: [monitoring-host]
     restart: unless-stopped
     mem_limit: 128m
     cpus: 0.5
@@ -439,7 +439,7 @@ services:
   # DockerRootDirはoperatorが確認した絶対パスをprivate設定へ指定する。既定値を推測しない。
   cadvisor:
     image: ghcr.io/google/cadvisor:v0.60.6@sha256:b8e7d1093144fd088f425ff003d75a4aa405de075db78dae3bc563730b1bd07a
-    profiles: [monitoring]
+    profiles: [monitoring-host]
     restart: unless-stopped
     mem_limit: 256m
     cpus: 0.5

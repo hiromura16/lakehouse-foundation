@@ -380,6 +380,36 @@ class ActualPublicSourcesTests(unittest.TestCase):
         self.assertEqual(report["counts"]["core_services"], 6)
         self.assertEqual(set(report["all_profiles"]["services"]), set(names))
 
+    def test_opt_in_host_and_lab_budgets_include_required_profiles(self):
+        report = inventory.derive()
+        profiles = {row["profile"]: row for row in report["profiles"]}
+        self.assertEqual(report["counts"]["profiles"], 14)
+        monitoring = set(profiles["monitoring"]["services"])
+        host = set(profiles["monitoring-host"]["services"])
+        self.assertTrue({"node-exporter", "cadvisor"}.isdisjoint(monitoring))
+        self.assertEqual(host - monitoring, {"node-exporter", "cadvisor"})
+        self.assertEqual(
+            profiles["monitoring-host"]["required_profiles"], ["monitoring"]
+        )
+        self.assertEqual(
+            profiles["sail-lab"]["required_profiles"], ["compute"]
+        )
+        self.assertEqual(
+            profiles["openobserve-lab"]["required_profiles"], ["monitoring"]
+        )
+        self.assertTrue(
+            set(profiles["compute"]["services"])
+            <= set(profiles["sail-lab"]["services"])
+        )
+        self.assertEqual(
+            profiles["monitoring"]["additional_budget"]["resident_bytes"],
+            1792 * 1024**2,
+        )
+        self.assertEqual(
+            profiles["monitoring-host"]["additional_budget"]["resident_bytes"],
+            2176 * 1024**2,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

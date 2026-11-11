@@ -328,4 +328,4 @@ DBとS3が整合して読めること、GUI編集が残ること、鍵が一致�
 
 開発者がbackup自動化や保守APIを追加する場合は、任意shell・任意volume・任意保存先をそのままAPI化しません。権限、秘密値の非表示、排他、途中失敗、保存点、復元試験を設計し、通常の素材投入APIとは異なる管理権限として扱います。配置境界は [control.py](../scripts/control.py)、設定と正規化は [settings.py](../scripts/settings.py)、データ処理の確定点は [admin.py](../scripts/admin.py)、CDCのdurable状態は [state.py](../infra/cdc/state.py) が入口です。
 
-監視拡張のhost権限・GUI保持・検証未了事項は [段階的な監視基盤](OBSERVABILITY.md) を参照してください。既存monitoringの更新でも、新規host mountは配置前に承認が必要です。
+通常monitoringは専用spoolの準備が必要です。host root/PIDの読取りは別opt-inの `monitoring-host` だけで、配置前に承認します。GUI保持・検証未了事項は [段階的な監視基盤](OBSERVABILITY.md) を参照してください。

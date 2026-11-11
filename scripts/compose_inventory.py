@@ -36,6 +36,13 @@ COMPOSE_FILES = tuple(
 )
 MAX_MEMORY = 1024**4
 LIFECYCLES = ("resident", "one_shot", "explicit_only", "unknown")
+# These are explicit settings requirements, not automatic deployment choices.
+# Inventory includes them so a profile's budget describes a valid selection.
+PROFILE_REQUIREMENTS = {
+    "monitoring-host": ("monitoring",),
+    "openobserve-lab": ("monitoring",),
+    "sail-lab": ("compute",),
+}
 
 
 class InventoryError(ValueError):
@@ -253,9 +260,21 @@ def budget(rows):
     }
 
 
-def select_services(rows, profiles):
-    """Select core and a profile union without repeating shared users."""
+def effective_profiles(profiles):
+    """Include prerequisite profiles only for source budget derivation."""
     enabled = set(profiles)
+    pending = list(enabled)
+    while pending:
+        for required in PROFILE_REQUIREMENTS.get(pending.pop(), ()):
+            if required not in enabled:
+                enabled.add(required)
+                pending.append(required)
+    return enabled
+
+
+def select_services(rows, profiles):
+    """Select core and required profiles without repeating shared users."""
+    enabled = effective_profiles(profiles)
     known = {profile for row in rows for profile in row["profiles"]}
     if not enabled <= known:
         raise InventoryError("COMPOSE_PROFILE_UNKNOWN")
@@ -346,6 +365,10 @@ def derive(root=ROOT):
         profile_rows.append(
             {
                 "profile": "core" if profile is None else profile,
+                "required_profiles": sorted(
+                    effective_profiles([] if profile is None else [profile])
+                    - {profile}
+                ),
                 "service_count": len(chosen),
                 "additional_service_count": len(additional),
                 "services": [row["service"] for row in chosen],
@@ -382,7 +405,8 @@ def derive(root=ROOT):
             "Docker-binary-RAM-units-container-limits-not-observed-usage"
         ),
         "profile_semantics": (
-            "each-profile-includes-core-do-not-add-profile-totals"
+            "each-profile-includes-core-and-required-profiles-"
+            "do-not-add-profile-totals"
         ),
         "compose_sha256": hashes,
         "counts": {

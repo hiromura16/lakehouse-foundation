@@ -83,7 +83,7 @@ export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 | `LANDING_DIR` | `/srv/lakehouse/landing` | ホスト上の専用絶対パス。workerへ `/landing` として読み取り専用mountする。変更時は新しいディレクトリ・Samba共有先・UID/GIDを揃え、対象を再配置する | 社内 |
 | `WORKER_UID` | 生成利用者のUID | workerの実行ユーザーID。ランディングの読み取り権限に合わせる。ファイルの所有権を自動で直す設定ではない | 社内 |
 | `WORKER_GID` | 生成利用者のGID | workerの実行グループID。親ディレクトリの通過権限とACLも確認する | 社内 |
-| `COMPOSE_PROFILES` | 空 | coreに加える機能。`automation,monitoring,compute,orchestration,demo,cdc,bi,notebooks,vector,lineage,mcp,openobserve-lab,sail-lab` からカンマ区切りで選択。変更後は同じprivate設定で `up` を実行する | いいえ |
+| `COMPOSE_PROFILES` | 空 | coreに加える機能。`automation,monitoring,monitoring-host,compute,orchestration,demo,cdc,bi,notebooks,vector,lineage,mcp,openobserve-lab,sail-lab` からカンマ区切りで選択。変更後は同じprivate設定で `up` を実行する | いいえ |
 
 Dokployの `appName` はGUI側の項目であり、`site.env` に別の `APP_NAME` を作る仕組みではありません。Dokployは `-p <appName>` でComposeを実行するため、同じ環境をCLIでも操作する場合は `COMPOSE_PROJECT_NAME` をその `appName` に合わせます。画面のEnvironment名だけではデータは分離されません。[DOKPLOY.md](DOKPLOY.md)
 
@@ -163,15 +163,17 @@ n8nのownerアカウントやAirflowの画面ログインを、この表のDBパ
 | --- | --- | --- | --- |
 | `MONITORING_LOG_DIR` | `/srv/lakehouse/log-spool` | Vectorだけが読む専用curatedログspool。private設定・landing・Notebook・Dockerデータとは独立させ、配置前に管理者が存在・所有権・権限を確認する | 社内 |
 | `MONITORING_HOST_ALIAS` | `local` | host実名を公開しないための短い監視alias。小文字英字始まりの32文字以内で英数字・`_`・`-` | 社内 |
-| `CADVISOR_DOCKER_DATA_ROOT` | 空 | Dockerの実データrootの絶対パス。`monitoring` 有効時に必須。rootの自動検出や作成・権限変更はしない | 社内 |
+| `CADVISOR_DOCKER_DATA_ROOT` | 空 | Dockerの実データrootの絶対パス。`monitoring-host` 有効時に必須。rootの自動検出や作成・権限変更はしない | 社内 |
 | `OPENOBSERVE_PORT` | `5080` | `openobserve-lab` のUI/API。host loopback固定。metrics datasourceのportではない | 社内 |
 | `OPENOBSERVE_ROOT_USER_EMAIL` | `admin@example.invalid` | Labのbootstrap管理者ID。Labを使う時だけ設定し、外部メール送信には使わない | 社内 |
 | `OPENOBSERVE_ROOT_USER_PASSWORD` | 64文字のhexを自動生成 | Lab管理者のprivate秘密値。既存volumeの認証と整合させ、ログ配送資格情報と分離する | はい |
 | `OPENOBSERVE_INGEST_TOKEN_FILE` | 空 | Git外の絶対パス。所有者が同UIDで0600、symlinkなしのJSONに取り込みtokenだけを保持。内容を公開env・ログ・例外に出さない | はい |
 
+`monitoring` はPrometheus・Grafana・Loki・Vectorの4serviceです。`monitoring-host` を明示追加した時だけnode-exporter/cAdvisorを起動し、host root/PID読取りと実Docker rootの確認を必要とします。`monitoring-host` 単独は拒否し、`monitoring` と併用します。通常更新からhost読取りを自動追加しません。
+
 Lab無効時はOpenObserve資格情報・token fileを要求しません。`openobserve-lab` は `monitoring` と併用し、Vectorの秘匿化後のログを二重配送する任意機能です。Prometheus remote_writeとmetrics比較は後続Phaseで、今回のログAPIへ流用しません。[設定手順](OPENOBSERVE.md)
 
-Sail用の新しい接続体系・資格情報キーは追加しません。既存のS3/catalog設定を使い、`sail-lab` を明示した場合だけ専用serverと通常replicas 0の比較clientを定義します。先にSpark共通imageをbuildする手順と未検証範囲は [SAIL-LAB.md](SAIL-LAB.md) にあります。設定保存はhost mount作成・service再配置を行いません。
+Sail用の新しい接続体系・資格情報キーは追加しません。既存のS3/catalog設定を使い、`compute,sail-lab` を明示した場合だけ専用serverと通常replicas 0の比較clientを定義します。先にSpark共通imageをbuildする手順と未検証範囲は [SAIL-LAB.md](SAIL-LAB.md) にあります。設定保存はhost mount作成・service再配置を行いません。
 
 ## Airflow
 
@@ -457,4 +459,4 @@ Docker 29／Buildx Bake／社内proxyで判明した互換性修正の取り込�
 
 固定CDCのCA、専用topic、DBA適用・無効化の詳細は [固定SQL sourceのCDC](SQLSERVER-FIXED-DEMO.md#7-固定6表のcdc準備とraw履歴) にまとめています。fixed-demoではOS標準CAはSOURCEのCA欄を空にします。genericが従来使わないSOURCEの `system` sentinelを勝手にhost mountしません。PEMとJava truststoreは別に管理します。
 
-監視拡張のhost権限・GUI保持・検証未了事項は [段階的な監視基盤](OBSERVABILITY.md) を参照してください。既存monitoringの更新でも、新規host mountは配置前に承認が必要です。
+通常monitoringは専用spoolの準備が必要です。host root/PIDの読取りは別opt-inの `monitoring-host` だけで、配置前に承認します。GUI保持・検証未了事項は [段階的な監視基盤](OBSERVABILITY.md) を参照してください。

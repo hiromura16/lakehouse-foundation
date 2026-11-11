@@ -66,10 +66,15 @@ SETTING_KEYS = frozenset(
     "OPENOBSERVE_ROOT_USER_EMAIL OPENOBSERVE_ROOT_USER_PASSWORD "
     "OPENOBSERVE_INGEST_TOKEN_FILE".split()
 )
+# A token file path is editable metadata; its contents remain private.
+NON_SECRET_KEYS = {
+    "DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN",
+    "OPENOBSERVE_INGEST_TOKEN_FILE",
+}
 SECRET_KEYS = frozenset(
     key
     for key in SETTING_KEYS
-    if key != "DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN"
+    if key not in NON_SECRET_KEYS
     and re.search(
         r"PASSWORD|SECRET|TOKEN|ENCRYPTION_KEY|FERNET_KEY|API_KEY", key
     )

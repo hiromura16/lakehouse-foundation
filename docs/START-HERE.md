@@ -41,7 +41,7 @@ setopt INTERACTIVE_COMMENTS
 
 日常の配置担当を **DokployかCLIのどちらか一つ** に決めます。Dokploy管理なら配置・停止・再配置はDokployで行い、CLIは同じ環境の `plan` / `status` / `verify` / `grafana-init` 等の補助操作に使います。同じ環境へ別のCompose名で `up` すると、別DB・別volumeを作る原因になります。
 
-初回はcoreだけを確認し、その後 `demo,monitoring` を追加します。全機能は13profile・41service定義で、常駐serviceの上限メモリ合計は約35.94GiBです（実測ではありません）。Docker/Dokploy/OS/build用メモリも必要です。小さいVMでは段階ごとに使用量を確認し、全機能の同時起動を前提にしません。[容量と永続化](DEPLOYMENT.md)
+初回はcoreだけを確認し、その後 `demo,monitoring` を追加します。全機能は14profile・41service定義で、常駐serviceの上限メモリ合計は約35.94GiBです（実測ではありません）。Docker/Dokploy/OS/build用メモリも必要です。小さいVMでは段階ごとに使用量を確認し、全機能の同時起動を前提にしません。[容量と永続化](DEPLOYMENT.md)
 
 ## 1. ホストを準備する
 
@@ -202,7 +202,7 @@ Dokployを使用しない環境だけ、サーバー端末で実行します。
 
 ## 5. 操作GUI・監視を追加してブラウザーで開く
 
-先に [監視の準備](OBSERVABILITY.md) でhost mountの承認、`CADVISOR_DOCKER_DATA_ROOT`、専用 `MONITORING_LOG_DIR` と監視aliasを確認します。これらが未準備なら `demo` だけで先へ進み、monitoringは後から追加します。
+先に [監視の準備](OBSERVABILITY.md) で専用 `MONITORING_LOG_DIR` の存在・権限と監視aliasを確認します。node-exporter/cAdvisorは通常monitoringに含めません。必要な場合だけ、host root/PIDの読取りを承認し、`CADVISOR_DOCKER_DATA_ROOT` と `monitoring-host` を別途追加します。これらが未準備なら `demo` だけで先へ進み、monitoringは後から追加します。
 
 private設定を `COMPOSE_PROFILES=demo,monitoring` にします。Dokploy管理ならComposeサービスのEnvironmentにも同じ値を保存し、手順4Aの9ファイルのCommandを使ってDeployします。CLI管理だけが `./scripts/lakehouse.sh up` を使います。両管理方法で `./scripts/lakehouse.sh plan` は実行できます。
 
@@ -317,4 +317,4 @@ GUI操作だけを続ける人は [LEARNING-PATH](LEARNING-PATH.md) の操作担
 
 Notebook workspaceのread-only計画と承認後のapply/probe、既存projectを明示したSpark検証、機械可読な結果は [compute配置前・検証手順](COMPUTE-VALIDATION.md) を参照します。通常Deployでspark-checkが常駐しないのは正常です。local tagのpull方針はFROM/uv/JAR通信や未解決のBuildKit auth session timeoutを修復する保証ではありません。
 
-監視拡張のhost権限・GUI保持・検証未了事項は [段階的な監視基盤](OBSERVABILITY.md) を参照してください。既存monitoringの更新でも、新規host mountは配置前に承認が必要です。
+通常monitoringは専用spoolの準備が必要です。host root/PIDの読取りは別opt-inの `monitoring-host` だけで、配置前に承認します。GUI保持・検証未了事項は [段階的な監視基盤](OBSERVABILITY.md) を参照してください。

@@ -14,7 +14,7 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
-Sail Labは`COMPOSE_PROFILES`の`sail-lab`を明示的に選ぶ比較用機能です。
+Sail Labは`COMPOSE_PROFILES`の`compute,sail-lab`を明示的に選ぶ比較用機能です。
 既存Spark、Python worker、SQL Server/CDC、通常のGold表はそのまま使います。
 この実装はソース・合成fixture・模擬HTTP/エンジンの検証を提供します。
 コンテナbuild、Spark Connect接続、Lakekeeper/SeaweedFSへの実書込み、Trino照合、
@@ -95,7 +95,7 @@ native datetime2(7)/Iceberg timestampの連携受入を満たしたとは記録�
 
 1. 承認済commit、既存project名、既存private設定を確認。必要時だけ衝突防止付き`configure --upgrade`を使います。
 2. 通常Sparkの`spark-check`を同じprojectで明示実行し、その結果を保存します。3行の互換fixtureと本labは別物です。
-3. `sail-lab`追加のメモリ/CPU、named volume、private S3設定、loopback/internal通信、CA trustをレビューします。
+3. `compute,sail-lab`追加のメモリ/CPU、named volume、private S3設定、loopback/internal通信、CA trustをレビューします。
 4. Spark image ownerを先にbuildし、派生clientをbuildします。cold cacheではこの順序が必須です。
 5. 所有者が許可した後、既存managerの通常Deployでserverを追加します。fixture投入は自動起動しません。
 6. HTTP/TCP healthだけでなく、次の明示runでConnect・catalog・S3・Trinoを検査します。
@@ -114,7 +114,7 @@ compose_args=(
   -f infra/lakehouse/compose.yaml -f infra/compute/compose.yaml
   -f infra/orchestration/compose.yaml -f infra/demo/compose.yaml
   -f infra/cdc/compose.yaml -f infra/poc/compose.yaml
-  -f infra/mcp/compose.yaml -f infra/openobserve/compose.yaml -f infra/sail/compose.yaml --profile sail-lab
+  -f infra/mcp/compose.yaml -f infra/openobserve/compose.yaml -f infra/sail/compose.yaml --profile compute --profile sail-lab
 )
 docker compose "${compose_args[@]}" config --quiet
 ```
@@ -125,7 +125,7 @@ docker compose "${compose_args[@]}" config --quiet
 **Bash / Zsh共通**
 
 ```bash
-docker compose "${compose_args[@]}" --profile compute build spark-volumes-init
+docker compose "${compose_args[@]}" build spark-volumes-init
 docker compose "${compose_args[@]}" build sail-server sail-benchmark
 ```
 

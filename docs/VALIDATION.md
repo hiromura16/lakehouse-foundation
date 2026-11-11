@@ -184,6 +184,6 @@ CIにもBash/Zshの準備と全MDのshell検査を追加しています。新し
 
 ## 2026-11-11: 監視・任意比較Labの追加受入は未完了
 
-従来の34service・11profile等の記録は、記載日の実施範囲を保持しています。現在の公開sourceは9Compose・13profile・41service定義・20 named volumeです。現行数量とsource hashの正本は [生成台帳](reports/COMPOSE-INVENTORY.json) です。常駐上限約35.94GiBは設定値で、実使用量ではありません。
+従来の34service・11profile等の記録は、記載日の実施範囲を保持しています。現在の公開sourceは9Compose・14profile・41service定義・20 named volumeです。現行数量とsource hashの正本は [生成台帳](reports/COMPOSE-INVENTORY.json) です。常駐上限約35.94GiBは設定値で、実使用量ではありません。
 
-node-exporter/cAdvisor、Loki/Vector、任意OpenObserve log-only Lab、Sail合成比較のsource・fixture・mockと静的検査を追加しました。この記載は検査の最終件数や実runtime成功の確定記録ではなく、最終commitの検証結果を別途残すための追加範囲です。ネイティブVRL/Loki検査、image build/起動、実ログ配送、24時間容量・欠損・重複・耐久、Sailのcold build/Connect/catalog/S3/型・性能、会社受入は未実施です。Docker/host security設定を変更して結果を作っていません。
+node-exporter/cAdvisor、Loki/Vector、任意OpenObserve log-only Lab、Sail合成比較のsource・fixture・mockと静的検査を追加しました。この記載は検査の最終件数や実runtime成功の確定記録ではなく、最終commitの検証結果を別途残すための追加範囲です。ローカルsandboxではDocker API接続が拒否され、ネイティブvalidatorは未実行でした。別のGitHub Actionsで公式Prometheus config/rule/fixtureとLoki config validatorが成功した記録があります。Prometheusはhost profile分離前の静的nodes構成の結果で、今回のDNS/profile切替後の再検証は未完了です。VectorのネイティブVRL検査は別に追跡します。派生imageのbuild/配置、実ログ配送、24時間容量・欠損・重複・耐久、Sailのcold build/Connect/catalog/S3/型・性能、会社受入は未実施です。Docker/host security設定を変更して結果を作っていません。

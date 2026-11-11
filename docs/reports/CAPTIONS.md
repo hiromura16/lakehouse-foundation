@@ -37,7 +37,7 @@ captionは図の説明で、会社での実施結果の代筆ではありませ�
 
 **用途:** 基盤設計・導入レビュー
 
-**キャプション:** core6サービスに13種類のprofileを重ねる41定義の単一ホストPoC構成。監視拡張はsource-only検査であり、host権限と実機受入は別途必要。
+**キャプション:** core6サービスに14種類のprofileを重ねる41定義の単一ホストPoC構成。監視拡張はsource-only検査であり、host権限と実機受入は別途必要。
 
 [SVG](figures/01-platform-detail.svg) / [Mermaid](mermaid/01-platform-detail.mmd)
 
@@ -154,11 +154,11 @@ captionは図の説明で、会社での実施結果の代筆ではありませ�
 
 **用途:** 運用・品質レビュー
 
-**キャプション:** Prometheusはworker/self/node/cadvisor/Loki/Vectorの6job定義。Vectorのcurated有限capture・VRL秘匿化からLokiへ配送するsource実装。host権限・公式validator・実配送・GUI・容量は別受入。
+**キャプション:** 通常監視はPrometheus/Grafana/Loki/Vector。host root/PIDを読むexporterはmonitoring-hostの明示opt-in。curated有限capture・秘匿化・配送のsourceと、公式validator・実host/GUI・容量の受入を区別する。
 
 [SVG](figures/10-observability.svg) / [Mermaid](mermaid/10-observability.mmd)
 
-- host/cgroupはread承認後に受入。DB/SQL/Kafka固有指標は追加評価。任意OpenObserveはlog-only、metricsは後続。
+- host/cgroupはmonitoring-hostの別opt-in・read承認後に受入。任意OpenObserveはlog-only、metricsは後続。
 - Grafana JSON exportはdashboard単体。利用者・権限・全設定の復元はDBと設定のバックアップで確認する。
 
 **根拠:** [prometheus.yml](../../infra/monitoring/prometheus.yml)、[admin.py](../../scripts/admin.py)、[grafana_setup.py](../../scripts/grafana_setup.py)、[poc_quality.py](../../infra/demo/poc_quality.py)、[compose.yaml](../../infra/openobserve/compose.yaml)、[OPENOBSERVE.md](../../docs/OPENOBSERVE.md)

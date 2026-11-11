@@ -8,7 +8,7 @@
       "title": "全41サービスの配置と起動条件",
       "subtitle": "Docker Compose 9ファイルを同じprojectへ結合。coreに必要なprofileを追加する。",
       "audience": "基盤設計・導入レビュー",
-      "caption": "core6サービスに13種類のprofileを重ねる41定義の単一ホストPoC構成。監視拡張はsource-only検査であり、host権限と実機受入は別途必要。",
+      "caption": "core6サービスに14種類のprofileを重ねる41定義の単一ホストPoC構成。監視拡張はsource-only検査であり、host権限と実機受入は別途必要。",
       "sources": [
         "infra/lakehouse/compose.yaml",
         "infra/compute/compose.yaml",
@@ -129,15 +129,15 @@
           "y": 580,
           "width": 574,
           "height": 330,
-          "title": "monitoring｜監視",
+          "title": "monitoring / monitoring-host",
           "lines": [
-            "prometheus / grafana / node / cadvisor",
-            "loki / vector：専用volume・7日保持",
-            "worker/self＋host/logの6job。実機未受入",
-            "host read承認・有限curated capture"
+            "通常4：prometheus / grafana / loki / vector",
+            "host追加2：node-exporter / cadvisor",
+            "host root/PIDは別opt-in・事前承認",
+            "通常更新からhost読取りを追加しない"
           ],
           "tone": "teal",
-          "tag": "6定義",
+          "tag": "4定義 + 明示host 2定義",
           "logo": "grafana"
         },
         {
@@ -235,7 +235,7 @@
           "lines": [
             "sail-server：2GiB / sail-benchmark：明示2GiB",
             "clientは通常replicas 0。専用state volume",
-            "Spark共通imageの事前buildが必要",
+            "compute必須。Spark共通image事前build",
             "型・Connect・catalog/S3・性能は実機未受入"
           ],
           "tone": "purple",
@@ -248,7 +248,7 @@
         "Dokploy・Samba・daemon proxyはホスト側の別設定。SQL Serverは外部DB。",
         "初期化4定義と通常0の明示検証2定義を区別する。新規監視・比較Labの実機受入は別途必要。"
       ],
-      "mermaid": "flowchart TB\n  Host[\"ホスト: Dokploy / Samba / Docker proxy\"] --> Core[\"core: storage / catalog-db / catalog-migrate / catalog / trino / worker\"]\n  GUI[\"demo: demo / demo-api\"] --> Core\n  MCP[\"mcp + demo-api\"] --> Core\n  N8N[\"automation: n8n / n8n-db\"] --> Core\n  AF[\"orchestration: airflow / airflow-db\"] --> Core\n  CDC[\"cdc: kafka / connect / ui / register / consumer\"] --> Core\n  Compute[\"compute: master / worker / history / init / smoke\"] --- Core\n  NB[\"notebooks: jupyter\"] --> Compute\n  BI[\"bi: superset / db / redis / init\"] --> Core\n  Extra[\"vector: qdrant / lineage: marquez + db + web\"] --- Core\n  Mon[\"monitoring: prometheus / grafana / node-exporter / cadvisor / loki / vector\"] --> Core\n  Mon -.-> OO[\"openobserve-lab: 秘匿済みログのみ / metrics未実装\"]\n  Sail[\"sail-lab: native server / 明示benchmark通常0\"] --- Core\n",
+      "mermaid": "flowchart TB\n  Host[\"ホスト: Dokploy / Samba / Docker proxy\"] --> Core[\"core: storage / catalog-db / catalog-migrate / catalog / trino / worker\"]\n  GUI[\"demo: demo / demo-api\"] --> Core\n  MCP[\"mcp + demo-api\"] --> Core\n  N8N[\"automation: n8n / n8n-db\"] --> Core\n  AF[\"orchestration: airflow / airflow-db\"] --> Core\n  CDC[\"cdc: kafka / connect / ui / register / consumer\"] --> Core\n  Compute[\"compute: master / worker / history / init / smoke\"] --- Core\n  NB[\"notebooks: jupyter\"] --> Compute\n  BI[\"bi: superset / db / redis / init\"] --> Core\n  Extra[\"vector: qdrant / lineage: marquez + db + web\"] --- Core\n  Mon[\"monitoring: prometheus / grafana / loki / vector\"] --> Core\n  Mon -.-> OO[\"openobserve-lab: 秘匿済みログのみ / metrics未実装\"]\n  Sail[\"sail-lab: native server / 明示benchmark通常0\"] --- Core\n  HostMon[\"monitoring-host: node-exporter / cadvisor / 明示承認\"] --> Mon\n",
       "width": 2400,
       "height": 1850
     },
@@ -1644,7 +1644,7 @@
       "title": "監視・状態確認・業務品質を分ける",
       "subtitle": "メトリクス、到達性、業務件数、履歴の4種類を区別する。healthyだけではデータの正しさは分からない。",
       "audience": "運用・品質レビュー",
-      "caption": "Prometheusはworker/self/node/cadvisor/Loki/Vectorの6job定義。Vectorのcurated有限capture・VRL秘匿化からLokiへ配送するsource実装。host権限・公式validator・実配送・GUI・容量は別受入。",
+      "caption": "通常監視はPrometheus/Grafana/Loki/Vector。host root/PIDを読むexporterはmonitoring-hostの明示opt-in。curated有限capture・秘匿化・配送のsourceと、公式validator・実host/GUI・容量の受入を区別する。",
       "sources": [
         "infra/monitoring/prometheus.yml",
         "scripts/admin.py",
@@ -1678,7 +1678,7 @@
           "height": 240,
           "title": "Prometheus",
           "lines": [
-            "worker/self＋exporter/logの6job",
+            "通常指標＋host opt-inの収集定義",
             "scrape interval：15秒",
             "保存：15日 / 2GBの設定"
           ],
@@ -1766,10 +1766,10 @@
         }
       ],
       "notes": [
-        "host/cgroupはread承認後に受入。DB/SQL/Kafka固有指標は追加評価。任意OpenObserveはlog-only、metricsは後続。",
+        "host/cgroupはmonitoring-hostの別opt-in・read承認後に受入。任意OpenObserveはlog-only、metricsは後続。",
         "Grafana JSON exportはdashboard単体。利用者・権限・全設定の復元はDBと設定のバックアップで確認する。"
       ],
-      "mermaid": "flowchart LR\n  W[\"worker metrics\"] --> P[\"Prometheus / 15s / 6job（実機未受入）\"]\n  P --> G[\"Grafana / GUI保存\"]\n  P --> P\n  Portal[\"ポータル\"] --> Health[\"固定health / 到達性\"]\n  Portal --> Quality[\"固定品質SQL / Gold preview\"]\n  Portal --> Jobs[\"最新20job / 非永続\"]\n  Native[\"n8n / Airflow / Spark\"] --> Logs[\"各実行履歴・保存先\"]\n  Capture[\"明示curated capture\"] --> Vector[\"Vector / 正規化・秘匿化\"]\n  Vector --> Loki[\"Loki / 専用volume7日\"]\n  Loki --> G\n  Vector -.-> OO[\"任意OpenObserve log-only / 独立volume / metrics後続\"]\n",
+      "mermaid": "flowchart LR\n  W[\"worker metrics\"] --> P[\"Prometheus / 15s / host opt-in\"]\n  P --> G[\"Grafana / GUI保存\"]\n  P --> P\n  Portal[\"ポータル\"] --> Health[\"固定health / 到達性\"]\n  Portal --> Quality[\"固定品質SQL / Gold preview\"]\n  Portal --> Jobs[\"最新20job / 非永続\"]\n  Native[\"n8n / Airflow / Spark\"] --> Logs[\"各実行履歴・保存先\"]\n  Capture[\"明示curated capture\"] --> Vector[\"Vector / 正規化・秘匿化\"]\n  Vector --> Loki[\"Loki / 専用volume7日\"]\n  Loki --> G\n  Vector -.-> OO[\"任意OpenObserve log-only / 独立volume / metrics後続\"]\n  OptIn[\"monitoring-host: 明示opt-in / host root・PID承認\"] --> P\n",
       "width": 1920,
       "height": 1080
     },

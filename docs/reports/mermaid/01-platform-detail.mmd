@@ -9,6 +9,7 @@ flowchart TB
   NB["notebooks: jupyter"] --> Compute
   BI["bi: superset / db / redis / init"] --> Core
   Extra["vector: qdrant / lineage: marquez + db + web"] --- Core
-  Mon["monitoring: prometheus / grafana / node-exporter / cadvisor / loki / vector"] --> Core
+  Mon["monitoring: prometheus / grafana / loki / vector"] --> Core
   Mon -.-> OO["openobserve-lab: 秘匿済みログのみ / metrics未実装"]
   Sail["sail-lab: native server / 明示benchmark通常0"] --- Core
+  HostMon["monitoring-host: node-exporter / cadvisor / 明示承認"] --> Mon

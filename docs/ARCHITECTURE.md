@@ -34,7 +34,8 @@
 | 分散計算 | Spark 4.1.4 / Iceberg 1.12.0 | 常駐Master/Worker/History。Jupyterからremote投入も可能 |
 | 操作 | Streamlit 1.67.0 / FastAPI 0.162.2 | 設定保存・合成素材・処理開始・状態・catalog・診断・Swagger |
 | 実行の自動化 | n8n 2.46.7、Airflow 3.4.0 | 同梱の手動workflow/DAGからworkerへ依頼。定期担当は一つに決める |
-| 監視 | Grafana / Prometheus、node-exporter / cAdvisor、Loki / Vector | 指標とcuratedログを分離。Dashboardはcreate-only初期化後GUI所有 |
+| 通常監視 | Grafana / Prometheus、Loki / Vector | `monitoring`。curated spoolを使い、host root/PIDは読まない。DashboardはGUI所有 |
+| host監視 | node-exporter / cAdvisor | `monitoring-host` の追加opt-in。`monitoring` 必須、root/PID読取りを事前承認 |
 | 任意の比較Lab | OpenObserve、Sail / Spark | ログ二重配送と合成エンジン比較。source定義あり、実runtime・性能は未検証 |
 | 分析拡張 | Superset / Jupyter / Qdrant / Marquez | 別profileで追加。初期化と保存先は [PoCツール](POC-TOOLS.md) |
 | AIの入口 | snapshot固定context、LangChain例、MCP 2.3.0 | 上限付き固定データ参照。MCPは既定read-only |
@@ -145,6 +146,6 @@ PoCは単一ホスト・一部内部サービス共通資格情報の構成で�
 
 ## 監視と比較Labの境界
 
-通常監視はPrometheusの指標と、明示captureした専用spool→Vector→秘匿化→Loki→Grafana Logsです。Docker socketやDockerRootDir全体をVectorへ渡しません。host/cgroup読み取りは配置前の承認が必要です。Grafanaのdatasourceは設定配布しますが、dashboardは初回作成後にGUIのDBを正本にします。[監視設計](OBSERVABILITY.md)
+通常監視はPrometheusの指標と、明示captureした専用spool→Vector→秘匿化→Loki→Grafana Logsです。Docker socketやDockerRootDir全体をVectorへ渡しません。host/cgroup読み取りは別opt-inの `monitoring-host` だけに分離し、配置前の承認が必要です。Grafanaのdatasourceは設定配布しますが、dashboardは初回作成後にGUIのDBを正本にします。[監視設計](OBSERVABILITY.md)
 
-`openobserve-lab` だけが秘匿化後の共通ログを第二sinkへ送ります。Lokiからの依存やmetrics remote_writeは追加しません。`sail-lab` は専用namespaceとstate volumeで同じ合成データを比較し、server 2GiB/client 2GiB、clientは通常replicas 0です。Spark共通imageの事前buildが必要です。両Labともsource/mock検査は実連携・24時間運転・性能の証明ではありません。[OpenObserve](OPENOBSERVE.md)・[Sail](SAIL-LAB.md)
+`openobserve-lab` だけが秘匿化後の共通ログを第二sinkへ送ります。Lokiからの依存やmetrics remote_writeは追加しません。`sail-lab` は `compute` を必須とし、専用namespaceとstate volumeで同じ合成データを比較し、server 2GiB/client 2GiB、clientは通常replicas 0です。Spark共通imageの事前buildが必要です。両Labともsource/mock検査は実連携・24時間運転・性能の証明ではありません。[OpenObserve](OPENOBSERVE.md)・[Sail](SAIL-LAB.md)

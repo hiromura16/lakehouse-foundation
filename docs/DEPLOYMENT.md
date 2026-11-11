@@ -135,7 +135,7 @@ python3 scripts/configure.py --output /absolute/private/site.env
 | `PROMETHEUS_PORT` | `9090`。monitoring有効時のみ使用 |
 | `N8N_PORT` | `5678`。automation有効時のみ使用 |
 | `AIRFLOW_PORT` | `8081`。orchestration有効時のみ使用 |
-| `COMPOSE_PROFILES` | 初期は空。`automation,monitoring,compute,orchestration,demo,cdc,bi,notebooks,vector,lineage,mcp,openobserve-lab,sail-lab` から必要なものをカンマ区切り |
+| `COMPOSE_PROFILES` | 初期は空。`automation,monitoring,monitoring-host,compute,orchestration,demo,cdc,bi,notebooks,vector,lineage,mcp,openobserve-lab,sail-lab` から必要なものをカンマ区切り |
 | `S3_BUCKET_RAW` | `lakehouse-raw` |
 | `S3_BUCKET_WAREHOUSE` | `lakehouse-warehouse` |
 | `WAREHOUSE_NAME` | `lakehouse` |
@@ -316,7 +316,7 @@ python3 scripts/mark-ready.py /srv/lakehouse/landing/csv/erp_products.csv
 
 ## 6. 任意のプロファイルを追加する
 
-`monitoring` 追加前に [host mount・専用spoolの準備](OBSERVABILITY.md) を確認し、`CADVISOR_DOCKER_DATA_ROOT` と `MONITORING_LOG_DIR` を設定します。承認・準備が未了ならautomationだけにします。private envの `COMPOSE_PROFILES` を編集します。
+`monitoring` 追加前に [専用spoolの準備](OBSERVABILITY.md) を確認し、`MONITORING_LOG_DIR` を設定します。node-exporter/cAdvisorは別opt-inの `monitoring-host` で、承認と `CADVISOR_DOCKER_DATA_ROOT` の設定後だけ追加します。spool未準備ならautomationだけにします。private envの `COMPOSE_PROFILES` を編集します。
 
 ```dotenv
 COMPOSE_PROFILES=automation,monitoring
@@ -330,7 +330,7 @@ COMPOSE_PROFILES=automation,monitoring
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env up
 ```
 
-`automation` はn8nと専用DB、`monitoring` はGrafana・Prometheus・node-exporter・cAdvisor・Loki・Vectorを追加します。先に [host mountとspoolの準備](OBSERVABILITY.md) を確認します。n8nの初回利用者登録や、通知先・業務ワークフローの設定は別途行います。Grafanaの初期資格情報は生成されたprivate envを参照し、公開文書に貼り付けません。
+`automation` はn8nと専用DB、`monitoring` はGrafana・Prometheus・Loki・Vectorの4serviceを追加します。host root/PID読取りは別profileの `monitoring-host` だけです。先に [専用spoolと任意host監視の準備](OBSERVABILITY.md) を確認します。n8nの初回利用者登録や、通知先・業務ワークフローの設定は別途行います。Grafanaの初期資格情報は生成されたprivate envを参照し、公開文書に貼り付けません。
 
 n8nの提供テンプレートをimportし、手動トリガーからワーカーの `/run` へ `medallion` を依頼できます。n8nの資格情報画面でHeader Authを作り、`Authorization` に `Bearer <WORKER_TOKEN>` を設定します。実トークンはprivate envの値を使い、テンプレートへ保存しません。列のマッピングや型変換の規則はSQLを編集し、GUIでは開始条件や接続を設定します。
 
@@ -544,4 +544,4 @@ Composeの `mem_limit` は設定上限で、実測RSSや必要host RAMの保証�
 
 Notebook workspaceのread-only計画と承認後のapply/probe、既存projectを明示したSpark検証、機械可読な結果は [compute配置前・検証手順](COMPUTE-VALIDATION.md) を参照します。通常Deployでspark-checkが常駐しないのは正常です。local tagのpull方針はFROM/uv/JAR通信や未解決のBuildKit auth session timeoutを修復する保証ではありません。
 
-監視拡張のhost権限・GUI保持・検証未了事項は [段階的な監視基盤](OBSERVABILITY.md) を参照してください。既存monitoringの更新でも、新規host mountは配置前に承認が必要です。
+通常monitoringは専用spoolの準備が必要です。host root/PIDの読取りは別opt-inの `monitoring-host` だけで、配置前に承認します。GUI保持・検証未了事項は [段階的な監視基盤](OBSERVABILITY.md) を参照してください。

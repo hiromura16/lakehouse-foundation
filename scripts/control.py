@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import socket
+import stat
 import subprocess
 from pathlib import Path
 
@@ -137,6 +138,82 @@ if args.action == "spark-check":
 def run(parts, **kwargs):
     """Run Compose with the selected private environment and fail clearly."""
     return subprocess.run(compose + parts, env=env, check=True, **kwargs)
+
+
+def inspect_monitoring_spool(selected_values):
+    """Check only selected spool/ancestor metadata, never create or probe.
+
+    The capture helper additionally checks file inventory/capacity as its
+    publishing precondition. Deployment must allow an existing full spool
+    to be consumed, so this guard deliberately inspects directories only.
+    Classic mode checks cannot establish ACL, mount or runtime behavior.
+    """
+    enabled = "monitoring" in selected_values.get(
+        "COMPOSE_PROFILES", ""
+    ).split(",")
+    result = {
+        "setting": "MONITORING_LOG_DIR",
+        "enabled": enabled,
+        "ready": not enabled,
+        "inspection": "metadata_only",
+        "probe": "not_run",
+        "mutated": False,
+        "reason": None,
+    }
+    if not enabled:
+        return result
+    from notebook_workspace import (
+        WorkspaceError,
+        mode_access,
+        parent_safe,
+        selected,
+        walk,
+    )
+
+    try:
+        path, uid, gid = selected(
+            {
+                **selected_values,
+                "NOTEBOOKS_DIR": selected_values.get(
+                    "MONITORING_LOG_DIR", "/srv/lakehouse/log-spool"
+                ),
+            },
+            ROOT,
+        )
+        with walk(path) as handle:
+            if handle.missing:
+                raise WorkspaceError("MONITORING_DIRECTORY_MISSING")
+            for _, descriptor, _, ancestor in handle.nodes[:-1]:
+                metadata = os.fstat(descriptor)
+                if not parent_safe(metadata, ancestor, uid):
+                    raise WorkspaceError("MONITORING_PARENT_UNSAFE")
+                if not mode_access(metadata, uid, gid, 1):
+                    raise WorkspaceError("MONITORING_PARENT_NOT_TRAVERSABLE")
+            metadata = os.fstat(handle.nodes[-1][1])
+            if (metadata.st_uid, metadata.st_gid) != (uid, gid):
+                raise WorkspaceError("MONITORING_DIRECTORY_OWNER_MISMATCH")
+            if stat.S_IMODE(metadata.st_mode) not in {0o700, 0o750}:
+                raise WorkspaceError("MONITORING_DIRECTORY_MODE_MISMATCH")
+            handle.verify()
+            result["ready"] = True
+    except WorkspaceError as error:
+        result["reason"] = error.code
+    except OSError:
+        result["reason"] = "MONITORING_DIRECTORY_INSPECTION_FAILED"
+    return result
+
+
+# A configuration-only plan deliberately does not require prepared host binds.
+# Host predeploy/CLI up do: reject before build/up or even Compose config.
+if args.action in {"predeploy", "up"}:
+    monitoring_spool = inspect_monitoring_spool(values)
+    if monitoring_spool["enabled"]:
+        print(json.dumps(monitoring_spool))
+    if not monitoring_spool["ready"]:
+        raise SystemExit(
+            "MONITORING_LOG_DIR is not ready. Review its private directory "
+            "ownership and mode before deployment."
+        )
 
 
 if args.action == "source-check":

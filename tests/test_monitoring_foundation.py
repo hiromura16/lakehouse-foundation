@@ -61,14 +61,19 @@ class MonitoringFoundationTests(unittest.TestCase):
             for name, service in self.services.items()
             if "monitoring" in service.get("profiles", [])
         }
-        self.assertEqual(set(selected), {"prometheus", "grafana", "loki", "vector"})
+        self.assertEqual(
+            set(selected), {"prometheus", "grafana", "loki", "vector"}
+        )
         for service in selected.values():
             self.assertNotEqual(service.get("pid"), "host")
             for mount in service.get("volumes", []):
                 if isinstance(mount, dict):
-                    self.assertNotIn(mount.get("source"), {"/", "/proc", "/sys"})
+                    self.assertNotIn(
+                        mount.get("source"), {"/", "/proc", "/sys"}
+                    )
         host = {
-            name for name, service in self.services.items()
+            name
+            for name, service in self.services.items()
             if "monitoring-host" in service.get("profiles", [])
         }
         self.assertEqual(host, {"node-exporter", "cadvisor"})
@@ -152,7 +157,9 @@ class MonitoringFoundationTests(unittest.TestCase):
             alerts["TrinoMemoryFailureEvidence"]["expr"],
         )
 
-    def test_optional_exporters_use_fixed_dns_discovery_not_absent_targets(self):
+    def test_optional_exporters_use_fixed_dns_discovery_not_absent_targets(
+        self,
+    ):
         """DNS absence creates no static up=0 target for an opt-out host."""
         config = yaml.safe_load(
             (ROOT / "infra/monitoring/prometheus.yml").read_text()
@@ -164,14 +171,27 @@ class MonitoringFoundationTests(unittest.TestCase):
         ):
             job = jobs[name]
             self.assertNotIn("static_configs", job)
-            self.assertEqual(job["dns_sd_configs"], [{
-                "names": [target], "type": "A", "port": port,
-                "refresh_interval": "15s",
-            }])
-            self.assertEqual(job["relabel_configs"], [
-                {"target_label": "host_alias", "replacement": "local"},
-                {"target_label": "instance", "replacement": f"{target}:{port}"},
-            ])
+            self.assertEqual(
+                job["dns_sd_configs"],
+                [
+                    {
+                        "names": [target],
+                        "type": "A",
+                        "port": port,
+                        "refresh_interval": "15s",
+                    }
+                ],
+            )
+            self.assertEqual(
+                job["relabel_configs"],
+                [
+                    {"target_label": "host_alias", "replacement": "local"},
+                    {
+                        "target_label": "instance",
+                        "replacement": f"{target}:{port}",
+                    },
+                ],
+            )
         for name in ("prometheus", "lakehouse", "loki", "vector"):
             self.assertIn("static_configs", jobs[name])
             self.assertNotIn("dns_sd_configs", jobs[name])
@@ -279,6 +299,7 @@ class MonitoringPathAndValidatorTests(unittest.TestCase):
 
         values = {
             "COMPOSE_PROFILES": "monitoring,monitoring-host",
+            "CADVISOR_DOCKER_DATA_ROOT": "/srv/lab/docker-root",
             "LANDING_DIR": "/srv/lab/landing",
             "NOTEBOOKS_DIR": "/srv/lab/notebooks",
         }

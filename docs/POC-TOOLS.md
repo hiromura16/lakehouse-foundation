@@ -587,6 +587,6 @@ Notebook workspaceのread-only計画と承認後のapply/probe、既存project�
 | 比較する問い | profileと入口 | 資源・停止境界 | 現時点の証拠 |
 | --- | --- | --- | --- |
 | 同じ秘匿済みログを別UIで比較できるか | `monitoring,openobserve-lab`、loopback 5080 | OpenObserve 2GiB/2CPU・専用volume。Lokiは独立 | source/mock。実配送・保持・24時間・metrics比較は未実施 |
-| 同じ合成ERP/MESでSpark/Sailの型と結果は一致するか | `sail-lab`、内部Connectのみ | server 2GiB/client明示2GiB、通常client 0 replica・専用state | source/fixture/mock。cold build・Connect・S3/catalog・性能は未実施 |
+| 同じ合成ERP/MESでSpark/Sailの型と結果は一致するか | `compute,sail-lab`、内部Connectのみ | server 2GiB/client明示2GiB、通常client 0 replica・専用state | source/fixture/mock。cold build・Connect・S3/catalog・性能は未実施 |
 
 操作は [OpenObserve Lab](OPENOBSERVE.md) と [Sail Lab](SAIL-LAB.md) に従います。Sailでは共通Spark imageを先にbuildし、通常のDeployだけでbenchmarkを開始しません。実行・24時間・性能の未実施を、unit testの成功で埋めないでください。

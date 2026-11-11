@@ -114,7 +114,7 @@ else
 fi
 ```
 
-private設定をエディターで開き、`LANDING_DIR`、`WORKER_UID/GID`、portを確認します。最初は `COMPOSE_PROFILES` を空にしてcoreを確認し、その後、[監視のhost mount・spool準備](docs/OBSERVABILITY.md) を済ませて `demo,monitoring` を追加すると操作画面と監視を使えます。未準備なら `demo` だけで進めます。既存環境では生成済みの秘密値・暗号鍵を保持します。
+private設定をエディターで開き、`LANDING_DIR`、`WORKER_UID/GID`、portを確認します。最初は `COMPOSE_PROFILES` を空にしてcoreを確認し、その後、[監視の専用spool準備](docs/OBSERVABILITY.md) を済ませて `demo,monitoring` を追加すると操作画面と監視を使えます。未準備なら `demo` だけで進めます。既存環境では生成済みの秘密値・暗号鍵を保持します。
 
 ### Dokployで管理する場合
 
@@ -194,16 +194,17 @@ python3 scripts/generate-demo.py --destination landing \
 
 | profile | 用途 |
 | --- | --- |
-| `demo` / `monitoring` | 操作ハブ・API / Prometheus・Grafana・node-exporter・cAdvisor・Loki・Vector |
+| `demo` / `monitoring` | 操作ハブ・API / Prometheus・Grafana・Loki・Vector |
+| `monitoring-host` | 明示承認したhost root/PID読取り。node-exporter・cAdvisor。`monitoring` 必須 |
 | `cdc` / `automation` | SQL Server CDC・Kafbat / n8n |
 | `compute` / `orchestration` | 常駐Spark Master・Worker・History / Airflow手動DAG |
 | `bi` / `notebooks` | Superset / JupyterLab + Spark |
 | `vector` / `lineage` | Qdrant / Marquez |
 | `mcp` | AIクライアント向けMCP。内部APIを一緒に起動 |
 | `openobserve-lab` | 任意のログ比較。秘匿済みeventをLokiとOpenObserveへ分岐。metrics比較は後続Phase |
-| `sail-lab` | 合成データだけでSpark/Sailを比較。benchmarkは通常0 replica |
+| `sail-lab` | `compute` と併用し合成データだけでSpark/Sailを比較。benchmarkは通常0 replica |
 
-`monitoring` はhostのread-only mountと専用log spoolの準備が必要です。既存環境への追加時も [監視の事前確認](docs/OBSERVABILITY.md) を先に読みます。OpenObserveは別volume・2GiB/2CPU、Sailはserver 2GiBと明示client 2GiBを確保する任意Labです。両Labの実build・配送・連携・24時間運転・性能は未検証で、標準起動には含めません。[OpenObserve](docs/OPENOBSERVE.md) · [Sail比較](docs/SAIL-LAB.md)
+`monitoring` は専用log spoolの準備が必要です。host root/PIDを読むexporterは含まず、別opt-inの `monitoring-host` を承認後に追加します。既存環境への追加時も [監視の事前確認](docs/OBSERVABILITY.md) を先に読みます。OpenObserveは別volume・2GiB/2CPU、Sailはserver 2GiBと明示client 2GiBを確保する任意Labです。両Labの実build・配送・連携・24時間運転・性能は未検証で、標準起動には含めません。[OpenObserve](docs/OPENOBSERVE.md) · [Sail比較](docs/SAIL-LAB.md)
 
 追加profileには専用の秘密設定・workspace・メモリが必要です。[PoCツールの起動条件](docs/POC-TOOLS.md)を確認し、設定を保存した後に再配置します。GUIの「保存済み」は反映済みを意味しません。
 

@@ -65,7 +65,7 @@
     "infra/cdc/compose.yaml": "567d8e3e19cb0b8c600123e4bd24436c49e16dd4ba368fc219e2377043918d0f",
     "infra/compute/compose.yaml": "6eed40242d839056f812b22e8e277d51c8cd074cf75afb05f3303c5443fda163",
     "infra/demo/compose.yaml": "773458b2f143ad0f4185a85c82dee7e728a498ad9f7593756e24b9f2ebf541cd",
-    "infra/lakehouse/compose.yaml": "59770e3beb9151a9d6e39a4771dff261e12cf048a28bc971aeb032e122cc97db",
+    "infra/lakehouse/compose.yaml": "6402275c945d193057fc3f49b283ac4b34a0b97d5d29f3beee221b1df2e38e9d",
     "infra/mcp/compose.yaml": "5cf687b6a1ccc474460ea0d79a8bb622ad102e0cf2457443002279b85d4bc15e",
     "infra/openobserve/compose.yaml": "2519b278586fee6c341585536a226c79aadf290035c4ccfd3ef56a640e556124",
     "infra/orchestration/compose.yaml": "33b4a36efc7b972aab6fce16bc1f65bdbfa87a0b944e73d61229897679ffcdf5",
@@ -80,7 +80,7 @@
     "local_images": 12,
     "named_volume_service_references": 28,
     "named_volumes": 20,
-    "profiles": 13,
+    "profiles": 14,
     "services": 41,
     "unknown_lifecycles": 0
   },
@@ -202,7 +202,7 @@
     }
   ],
   "memory_semantics": "Docker-binary-RAM-units-container-limits-not-observed-usage",
-  "profile_semantics": "each-profile-includes-core-do-not-add-profile-totals",
+  "profile_semantics": "each-profile-includes-core-and-required-profiles-do-not-add-profile-totals",
   "profiles": [
     {
       "additional_budget": {
@@ -246,6 +246,7 @@
         "trino"
       ],
       "profile": "core",
+      "required_profiles": [],
       "service_count": 6,
       "services": [
         "catalog",
@@ -300,6 +301,7 @@
         "trino"
       ],
       "profile": "automation",
+      "required_profiles": [],
       "service_count": 8,
       "services": [
         "catalog",
@@ -355,6 +357,7 @@
         "trino"
       ],
       "profile": "bi",
+      "required_profiles": [],
       "service_count": 10,
       "services": [
         "catalog",
@@ -413,6 +416,7 @@
         "trino"
       ],
       "profile": "cdc",
+      "required_profiles": [],
       "service_count": 11,
       "services": [
         "catalog",
@@ -472,6 +476,7 @@
         "trino"
       ],
       "profile": "compute",
+      "required_profiles": [],
       "service_count": 11,
       "services": [
         "catalog",
@@ -529,6 +534,7 @@
         "trino"
       ],
       "profile": "demo",
+      "required_profiles": [],
       "service_count": 8,
       "services": [
         "catalog",
@@ -584,6 +590,7 @@
         "trino"
       ],
       "profile": "lineage",
+      "required_profiles": [],
       "service_count": 9,
       "services": [
         "catalog",
@@ -639,6 +646,7 @@
         "trino"
       ],
       "profile": "mcp",
+      "required_profiles": [],
       "service_count": 8,
       "services": [
         "catalog",
@@ -648,6 +656,67 @@
         "mcp",
         "storage",
         "trino",
+        "worker"
+      ]
+    },
+    {
+      "additional_budget": {
+        "all_declared_operations_limit_bytes": 1879048192,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 0,
+        "one_shot_instances": 0,
+        "one_shot_services": 0,
+        "resident_bytes": 1879048192,
+        "resident_instances": 4,
+        "resident_services": 4,
+        "startup_plus_resident_limit_bytes": 1879048192,
+        "steady_resident_limit_bytes": 1879048192,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "additional_service_count": 4,
+      "budget_including_core": {
+        "all_declared_operations_limit_bytes": 6576668672,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 268435456,
+        "one_shot_instances": 1,
+        "one_shot_services": 1,
+        "resident_bytes": 6308233216,
+        "resident_instances": 9,
+        "resident_services": 9,
+        "startup_plus_resident_limit_bytes": 6576668672,
+        "steady_resident_limit_bytes": 6308233216,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "named_volumes": [
+        "catalog-db",
+        "grafana",
+        "loki",
+        "prometheus",
+        "storage",
+        "trino",
+        "vector-data"
+      ],
+      "profile": "monitoring",
+      "required_profiles": [],
+      "service_count": 10,
+      "services": [
+        "catalog",
+        "catalog-db",
+        "catalog-migrate",
+        "grafana",
+        "loki",
+        "prometheus",
+        "storage",
+        "trino",
+        "vector",
         "worker"
       ]
     },
@@ -696,7 +765,10 @@
         "trino",
         "vector-data"
       ],
-      "profile": "monitoring",
+      "profile": "monitoring-host",
+      "required_profiles": [
+        "monitoring"
+      ],
       "service_count": 12,
       "services": [
         "cadvisor",
@@ -757,6 +829,7 @@
         "trino"
       ],
       "profile": "notebooks",
+      "required_profiles": [],
       "service_count": 8,
       "services": [
         "catalog",
@@ -771,55 +844,66 @@
     },
     {
       "additional_budget": {
-        "all_declared_operations_limit_bytes": 2147483648,
+        "all_declared_operations_limit_bytes": 4026531840,
         "explicit_only_bytes": 0,
         "explicit_only_instances": 0,
         "explicit_only_services": 0,
         "one_shot_bytes": 0,
         "one_shot_instances": 0,
         "one_shot_services": 0,
-        "resident_bytes": 2147483648,
-        "resident_instances": 1,
-        "resident_services": 1,
-        "startup_plus_resident_limit_bytes": 2147483648,
-        "steady_resident_limit_bytes": 2147483648,
+        "resident_bytes": 4026531840,
+        "resident_instances": 5,
+        "resident_services": 5,
+        "startup_plus_resident_limit_bytes": 4026531840,
+        "steady_resident_limit_bytes": 4026531840,
         "unknown_bytes": 0,
         "unknown_instances": 0,
         "unknown_services": 0
       },
-      "additional_service_count": 1,
+      "additional_service_count": 5,
       "budget_including_core": {
-        "all_declared_operations_limit_bytes": 6845104128,
+        "all_declared_operations_limit_bytes": 8724152320,
         "explicit_only_bytes": 0,
         "explicit_only_instances": 0,
         "explicit_only_services": 0,
         "one_shot_bytes": 268435456,
         "one_shot_instances": 1,
         "one_shot_services": 1,
-        "resident_bytes": 6576668672,
-        "resident_instances": 6,
-        "resident_services": 6,
-        "startup_plus_resident_limit_bytes": 6845104128,
-        "steady_resident_limit_bytes": 6576668672,
+        "resident_bytes": 8455716864,
+        "resident_instances": 10,
+        "resident_services": 10,
+        "startup_plus_resident_limit_bytes": 8724152320,
+        "steady_resident_limit_bytes": 8455716864,
         "unknown_bytes": 0,
         "unknown_instances": 0,
         "unknown_services": 0
       },
       "named_volumes": [
         "catalog-db",
+        "grafana",
+        "loki",
         "openobserve-data",
+        "prometheus",
         "storage",
-        "trino"
+        "trino",
+        "vector-data"
       ],
       "profile": "openobserve-lab",
-      "service_count": 7,
+      "required_profiles": [
+        "monitoring"
+      ],
+      "service_count": 11,
       "services": [
         "catalog",
         "catalog-db",
         "catalog-migrate",
+        "grafana",
+        "loki",
         "openobserve",
+        "prometheus",
         "storage",
         "trino",
+        "vector",
         "worker"
       ]
     },
@@ -867,6 +951,7 @@
         "trino"
       ],
       "profile": "orchestration",
+      "required_profiles": [],
       "service_count": 8,
       "services": [
         "airflow",
@@ -881,36 +966,36 @@
     },
     {
       "additional_budget": {
-        "all_declared_operations_limit_bytes": 4294967296,
-        "explicit_only_bytes": 2147483648,
+        "all_declared_operations_limit_bytes": 12750684160,
+        "explicit_only_bytes": 4294967296,
         "explicit_only_instances": 0,
-        "explicit_only_services": 1,
-        "one_shot_bytes": 0,
-        "one_shot_instances": 0,
-        "one_shot_services": 0,
-        "resident_bytes": 2147483648,
-        "resident_instances": 1,
-        "resident_services": 1,
-        "startup_plus_resident_limit_bytes": 2147483648,
-        "steady_resident_limit_bytes": 2147483648,
+        "explicit_only_services": 2,
+        "one_shot_bytes": 134217728,
+        "one_shot_instances": 1,
+        "one_shot_services": 1,
+        "resident_bytes": 8321499136,
+        "resident_instances": 4,
+        "resident_services": 4,
+        "startup_plus_resident_limit_bytes": 8455716864,
+        "steady_resident_limit_bytes": 8321499136,
         "unknown_bytes": 0,
         "unknown_instances": 0,
         "unknown_services": 0
       },
-      "additional_service_count": 2,
+      "additional_service_count": 7,
       "budget_including_core": {
-        "all_declared_operations_limit_bytes": 8992587776,
-        "explicit_only_bytes": 2147483648,
+        "all_declared_operations_limit_bytes": 17448304640,
+        "explicit_only_bytes": 4294967296,
         "explicit_only_instances": 0,
-        "explicit_only_services": 1,
-        "one_shot_bytes": 268435456,
-        "one_shot_instances": 1,
-        "one_shot_services": 1,
-        "resident_bytes": 6576668672,
-        "resident_instances": 6,
-        "resident_services": 6,
-        "startup_plus_resident_limit_bytes": 6845104128,
-        "steady_resident_limit_bytes": 6576668672,
+        "explicit_only_services": 2,
+        "one_shot_bytes": 402653184,
+        "one_shot_instances": 2,
+        "one_shot_services": 2,
+        "resident_bytes": 12750684160,
+        "resident_instances": 9,
+        "resident_services": 9,
+        "startup_plus_resident_limit_bytes": 13153337344,
+        "steady_resident_limit_bytes": 12750684160,
         "unknown_bytes": 0,
         "unknown_instances": 0,
         "unknown_services": 0
@@ -918,17 +1003,27 @@
       "named_volumes": [
         "catalog-db",
         "sail-lab-state",
+        "spark-events",
+        "spark-work",
         "storage",
         "trino"
       ],
       "profile": "sail-lab",
-      "service_count": 8,
+      "required_profiles": [
+        "compute"
+      ],
+      "service_count": 13,
       "services": [
         "catalog",
         "catalog-db",
         "catalog-migrate",
         "sail-benchmark",
         "sail-server",
+        "spark-check",
+        "spark-history",
+        "spark-master",
+        "spark-volumes-init",
+        "spark-worker",
         "storage",
         "trino",
         "worker"
@@ -977,6 +1072,7 @@
         "trino"
       ],
       "profile": "vector",
+      "required_profiles": [],
       "service_count": 7,
       "services": [
         "catalog",
@@ -1049,7 +1145,7 @@
       "named_volumes": [],
       "owns_build": false,
       "profiles": [
-        "monitoring"
+        "monitoring-host"
       ],
       "pull_policy": "compose-default",
       "replicas": 1,
@@ -1462,7 +1558,7 @@
       "named_volumes": [],
       "owns_build": false,
       "profiles": [
-        "monitoring"
+        "monitoring-host"
       ],
       "pull_policy": "compose-default",
       "replicas": 1,

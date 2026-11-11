@@ -14,7 +14,7 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
-Loki 3.7.9を単一binary・filesystem・専用named volumeで使用します。通常の`monitoring`へ追加しますが、新規host権限と実機受入は [段階導入](OBSERVABILITY.md) で承認してから配置します。Vectorは [秘匿化と配送境界](VECTOR.md) に従います。実環境への配置やログ取込は、この実装作業では行っていません。
+Loki 3.7.9を単一binary・filesystem・専用named volumeで使用します。通常の`monitoring`へ追加します。host root/PIDを読むexporterは別の`monitoring-host`です。専用spoolと実機受入は [段階導入](OBSERVABILITY.md) で承認してから配置します。Vectorは [秘匿化と配送境界](VECTOR.md) に従います。実環境への配置やログ取込は、この実装作業では行っていません。
 
 ## 構成
 
@@ -22,7 +22,7 @@ Compose内部の`http://loki:3100`だけを使用し、host 3100は公開しま�
 
 `loki` volumeは既存projectまたは明示DATA_VOLUME_PREFIXの名前を使います。TSDB/v13 schema・24時間index・filesystem chunks/index/cache/compactorを`/loki`へ保存します。rootfs readonly、非root10001、capabilityなしで、初期budgetは512MiB/0.5CPUです。1GiB等への変更は実測と承認に基づいて判断します。budgetは使用量の実証ではありません。
 
-公式distroless imageにshell/curlを仮定しません。選択版が実装する`/usr/bin/loki -health -health.url=http://127.0.0.1:3100/ready`をhealthcheckとします。config検査は`-config.file=... -verify-config=true`です。公式sourceでflagを確認しましたが、実imageでの実行は未検証です。digestは公式publisherの固定Compose sourceから採用し、直接registry応答との再照合は未了です。[pin出典](https://github.com/grafana/loki/blob/4c66e9a54851299caa1d7469e02aa398b3296807/production/docker/docker-compose.yaml)
+公式distroless imageにshell/curlを仮定しません。選択版が実装する`/usr/bin/loki -health -health.url=http://127.0.0.1:3100/ready`をhealthcheckとします。config検査は`-config.file=... -verify-config=true`です。公式sourceでflagを確認し、別のGitHub Actionsで公式imageによるconfig validatorは成功しました。ローカルsandboxのDocker実行と、配置後healthcheck・実ログ配送は別で未受入です。digestは公式publisherの固定Compose sourceから採用し、直接registry応答との再照合は未了です。[pin出典](https://github.com/grafana/loki/blob/4c66e9a54851299caa1d7469e02aa398b3296807/production/docker/docker-compose.yaml)
 
 ## 保持期間・reject
 
@@ -64,6 +64,6 @@ volume backupは停止/整合性の取れる時点、index/chunks/WAL/compactor 
 
 rollbackは既存managerから承認されたcode/configを戻し、追加collectorだけを所有者承認のもとで停止します。named volumeを残し、旧Lokiが新schema/dataを読めると確認せずimageだけを戻しません。`down -v`、prune、volume削除、再帰chown/chmod、daemon logging変更は行いません。
 
-公式config validator、VRL実行、合成tagのVector→Loki→scoped query→Grafana、restart重複/欠落、volume persistence、停止時の通常application logging、容量・24時間比較は未実行です。source/static testをこれらの代用として成功扱いにしません。
+公式Loki config validatorはGitHub Actionsで成功しました。VRL実行はVector側で別追跡し、合成tagのVector→Loki→scoped query→Grafana、restart重複/欠落、volume persistence、停止時の通常application logging、容量・24時間比較は未実行です。source/static testをこれらの代用として成功扱いにしません。
 
 一次資料: [Loki 3.7.9 source](https://github.com/grafana/loki/tree/v3.7.9)・[filesystem](https://grafana.com/docs/loki/latest/operations/storage/filesystem/)・[retention](https://grafana.com/docs/loki/latest/operations/storage/retention/)・[configuration](https://grafana.com/docs/loki/latest/configure/)。
