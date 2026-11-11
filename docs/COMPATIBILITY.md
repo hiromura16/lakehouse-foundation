@@ -337,3 +337,10 @@ Sparkの受入ではlocal smokeとremote実行を両方記録します。local s
 ## 固定SQL sourceとCDCの検証範囲
 
 SQL Server 2022向けDDLは型・PK・所有権・固定captureを静的検査し、SQLFluffで全文parseします。Debezium 3.7.1.Finalの設定は3.7公式仕様に合わせ、fixed-demoだけexclusive初回snapshot、adaptive日時、decimal文字列を使います。Pythonの合成イベント・in-memory catalogueによるreplay試験と、実SQL Server→Kafka→Icebergの受入試験は別です。実接続・Agent・外部Proxy・Java/PythonのCA検証・イメージbuildは導入先で確認します。[固定source手順と制約](SQLSERVER-FIXED-DEMO.md)
+
+
+## SQL Server catalog/databaseの混在collation
+
+固定sourceの003/004/005は、catalog/table variable等の異なる由来の文字列を両辺`Latin1_General_100_BIN2`で比較します。混在例`Latin1_General_CI_AS_KS_WS`/`Latin1_General_CI_AS`やcase-sensitive DBを対象にした合成fixtureを用意しています。実SQL Server 2022での互換性試験は未実行で、AST/SQLFluff成功から動作保証しません。006・canonical checker・runtime完全一致は維持しています。
+
+Go sqlcmd v1.10.0の`:r`は引用符をfile名から除去しない公式実装のため、ODBC版/一般資料と扱いを区別します。会社で使用中の版は未確認です。実行file/版を記録し、合成includeで空白入りpathを確認してから使います。wrapperはprivate directoryを作業場所にし、相対basenameを`:r`へ渡す例とします。[失敗後の診断・client互換性](SQLSERVER-DDL-RECOVERY.md)

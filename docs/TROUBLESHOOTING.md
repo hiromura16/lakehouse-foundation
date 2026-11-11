@@ -328,3 +328,10 @@ APIの待機timeout、workerのエラー、Trinoのquery取消は別の状態で
 まず `CDC_SOURCE_MODE` と保存先を確認します。genericの `cdc_*` とfixed-demoの `sqlcdc_*` は別です。Source reader、固定capture、private CA/Java truststore、既存connector設定を順に照合します。空payloadはtombstoneではなく、Raw保存後の解釈エラーとして止まる場合があります。
 
 rebuildの202は完了ではありません。同じrequest IDを再照会し、欠落Raw、offset gap、source identity不一致、query取消未確定を確認します。Rawやstateの削除、イベントのskip、offsetの手動巻戻しを成功への近道にしません。Icebergの複数表は独立commitなので、途中失敗後は利用を止め、保全した履歴から再照合します。[再生条件と保存境界](SQLSERVER-FIXED-DEMO.md#8-current-statereplaygui監視)
+
+
+## SQL Server error 468 / checker error 51019
+
+003のrole/permission、004/005のcapture/index/column比較でsystem/catalogと対象DBのcollation差が現れる場合、承認済み修正版の両辺BIN2比較を使います。server/database collation変更、`DATABASE_DEFAULT`での回避、安全gate解除はしません。006は読取り監査で同型の異種列競合を確認していません。
+
+失敗後はchecker・role・grant・CDC captureが残っていないと推測せず、新しい専用DBA sessionで読取り専用preflightを行います。51019は未知の同名checkerを保護する停止です。自動DROPや定義の強制更新を行いません。003成功とrole割当が既に確認できた場合は006へ進み、修正版004の承認後に004→006とします。003未確認ならpreflight→必要な003→006で止めて照合します。005は明示的なrollback専用です。[残存診断・Windows sqlcmd・部分完了の再開](SQLSERVER-DDL-RECOVERY.md)

@@ -9,6 +9,13 @@
 -- SQLCMD uses textual substitution: never supply untrusted variable strings.
 -- Values are supplied privately. No runtime app receives administrator auth.
 -- No existing dbo/legacy object, login, password, Swarm or deployment is changed.
+-- Refuse a caller-owned transaction before changing session options.
+-- RAISERROR does not honor XACT_ABORT; THROW could abort the caller's work.
+IF @@TRANCOUNT <> 0
+BEGIN
+    RAISERROR('Use a dedicated DBA session without an outer transaction.',16,1);
+    RETURN;
+END;
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 DECLARE @ExpectedDatabase nvarchar(4000) = N'$(TargetDatabase)';
@@ -26,10 +33,12 @@ IF LEN(@InstallationId) <> 32
     OR LEN(@OwnershipHash) <> 64
     OR @OwnershipHash COLLATE Latin1_General_100_BIN2 LIKE N'%[^0-9a-f]%'
     THROW 51001, 'Supply the private installation identity and ownership hash.', 1;
-IF @@TRANCOUNT <> 0
-    THROW 51100, 'Use a dedicated DBA session without an outer transaction.', 1;
 SET IMPLICIT_TRANSACTIONS OFF;
 DECLARE @HasCdcLock bit=0, @LockResult int;
+DECLARE @CaptureSnapshotReady bit=0, @CdcMutationAttempted bit=0;
+DECLARE @PreflightCapturePresence TABLE (
+    capture_instance sysname PRIMARY KEY, was_present bit NOT NULL
+);
 BEGIN TRY
 BEGIN TRANSACTION;
 -- Read the marker only after checking its columns. Never claim old tables.
@@ -216,16 +225,20 @@ IF EXISTS (SELECT 1 FROM @Targets WHERE source_object_id IS NULL)
 IF EXISTS (
     SELECT 1 FROM @Targets t WHERE
         OBJECT_SCHEMA_NAME(t.source_object_id) COLLATE Latin1_General_100_BIN2
-            <> t.source_schema COLLATE Latin1_General_100_BIN2
+           <> t.source_schema COLLATE Latin1_General_100_BIN2
         OR OBJECT_NAME(t.source_object_id) COLLATE Latin1_General_100_BIN2
-            <> t.source_table COLLATE Latin1_General_100_BIN2
+           <> t.source_table COLLATE Latin1_General_100_BIN2
 )
     THROW 51107, 'Fixed source identifiers must match their exact case.', 1;
+-- All cross-source string comparisons and EXCEPT projections below use
+-- the same explicit BIN2 collation on both operands. Catalog/database
+-- collation differences must not change identifier or permission meaning.
 -- Only the declared source columns may be captured. Extra/renamed/computed
 -- columns require a new reviewed schema/capture version, not automatic DDL.
 IF EXISTS (
     SELECT 1 FROM @Targets t JOIN @ExpectedColumns e
-      ON e.capture_instance=t.capture_instance
+      ON e.capture_instance COLLATE Latin1_General_100_BIN2
+         = t.capture_instance COLLATE Latin1_General_100_BIN2
     LEFT JOIN sys.columns c ON c.object_id=t.source_object_id
       AND c.name COLLATE Latin1_General_100_BIN2
           =e.column_name COLLATE Latin1_General_100_BIN2
@@ -235,7 +248,8 @@ IF EXISTS (
         SELECT 1 FROM @Targets t JOIN sys.columns c
           ON c.object_id=t.source_object_id
         WHERE NOT EXISTS (SELECT 1 FROM @ExpectedColumns e
-          WHERE e.capture_instance=t.capture_instance
+          WHERE e.capture_instance COLLATE Latin1_General_100_BIN2
+             = t.capture_instance COLLATE Latin1_General_100_BIN2
             AND e.column_name COLLATE Latin1_General_100_BIN2
                 =c.name COLLATE Latin1_General_100_BIN2)
     )
@@ -306,7 +320,10 @@ INSERT INTO @ExpectedSourceTypes VALUES
 -- published source type contract is the same as 002_demo_tables.sql.
 IF EXISTS (
     SELECT 1 FROM @ExpectedSourceTypes e JOIN @Targets t
-      ON t.source_schema=e.source_schema AND t.source_table=e.source_table
+      ON t.source_schema COLLATE Latin1_General_100_BIN2
+         = e.source_schema COLLATE Latin1_General_100_BIN2
+      AND t.source_table COLLATE Latin1_General_100_BIN2
+         = e.source_table COLLATE Latin1_General_100_BIN2
     LEFT JOIN sys.columns c ON c.object_id=t.source_object_id
       AND c.name COLLATE Latin1_General_100_BIN2
           =e.column_name COLLATE Latin1_General_100_BIN2
@@ -346,27 +363,45 @@ IF EXISTS (
     WHERE i.index_id IN (0,1) AND d.type='PS'
 )
     THROW 51110, 'Partitioned fixed sources require a separate reviewed design.', 1;
--- Never add a second capture version to a table already managed elsewhere.
+-- Never add a second capture version or adopt a case-only alias.
+-- OBJECT_ID deliberately uses catalog identifier resolution to discover
+-- aliases on unrelated sources. Additional case-fold discovery rejects
+-- ASCII fixed-name aliases even when object/CDC collations differ. This
+-- is not general Unicode identifier equivalence. Only the original exact
+-- BIN2 name may be reused or mutated by the lifecycle queries below.
 IF EXISTS (
     SELECT 1 FROM cdc.change_tables ct JOIN @Targets t
       ON ct.source_object_id=t.source_object_id
+      OR ct.object_id=OBJECT_ID(
+          N'cdc.'+QUOTENAME(t.capture_instance+N'_CT'),N'U')
+      OR UPPER(
+          ct.capture_instance COLLATE Latin1_General_100_BIN2
+      ) COLLATE Latin1_General_100_BIN2
+         = UPPER(
+             t.capture_instance COLLATE Latin1_General_100_BIN2
+         ) COLLATE Latin1_General_100_BIN2
     WHERE ct.capture_instance COLLATE Latin1_General_100_BIN2
-        <> t.capture_instance COLLATE Latin1_General_100_BIN2
+       <> t.capture_instance COLLATE Latin1_General_100_BIN2
 )
-    THROW 51111, 'Another capture version exists on a fixed table; preserve it.', 1;
+    THROW 51111, 'A conflicting fixed capture identity exists; preserve it.', 1;
 -- Validate every existing fixed capture before changing any of the six.
 IF EXISTS (
     SELECT 1 FROM cdc.change_tables ct JOIN @Targets t
-      ON ct.capture_instance=t.capture_instance
+      ON ct.capture_instance COLLATE Latin1_General_100_BIN2
+         = t.capture_instance COLLATE Latin1_General_100_BIN2
     WHERE ct.capture_instance COLLATE Latin1_General_100_BIN2
-            <> t.capture_instance COLLATE Latin1_General_100_BIN2
+       <> t.capture_instance COLLATE Latin1_General_100_BIN2
        OR ct.source_object_id<>t.source_object_id
        OR ct.role_name IS NULL
-       OR ct.role_name COLLATE Latin1_General_100_BIN2<>N'lh_demo_cdc_reader'
+       OR ct.role_name COLLATE Latin1_General_100_BIN2
+          <> N'lh_demo_cdc_reader' COLLATE Latin1_General_100_BIN2
        OR COALESCE(ct.supports_net_changes,1)<>0
        OR COALESCE(ct.has_drop_pending,1)<>0
-       OR (ct.index_name IS NOT NULL AND ct.index_name<>t.primary_index)
-       OR OBJECT_SCHEMA_NAME(ct.object_id)<>N'cdc'
+       OR (ct.index_name IS NOT NULL
+           AND ct.index_name COLLATE Latin1_General_100_BIN2
+              <> t.primary_index COLLATE Latin1_General_100_BIN2)
+       OR OBJECT_SCHEMA_NAME(ct.object_id) COLLATE Latin1_General_100_BIN2
+          <> N'cdc' COLLATE Latin1_General_100_BIN2
        OR OBJECT_NAME(ct.object_id) COLLATE Latin1_General_100_BIN2
           <> (t.capture_instance+N'_CT') COLLATE Latin1_General_100_BIN2
 )
@@ -380,28 +415,36 @@ DECLARE @ActualColumns TABLE (
 INSERT INTO @ActualColumns
 SELECT ct.capture_instance,cc.column_ordinal,cc.column_name
 FROM cdc.change_tables ct JOIN @Targets t
-    ON ct.capture_instance=t.capture_instance
+    ON ct.capture_instance COLLATE Latin1_General_100_BIN2
+       = t.capture_instance COLLATE Latin1_General_100_BIN2
 JOIN cdc.captured_columns cc ON cc.object_id=ct.object_id;
 IF EXISTS (
-    SELECT e.capture_instance,e.column_ordinal,e.column_name
+    SELECT e.capture_instance COLLATE Latin1_General_100_BIN2,
+        e.column_ordinal,e.column_name COLLATE Latin1_General_100_BIN2
     FROM @ExpectedColumns e JOIN cdc.change_tables ct
-      ON ct.capture_instance=e.capture_instance
-    EXCEPT SELECT capture_instance,column_ordinal,column_name FROM @ActualColumns
+      ON ct.capture_instance COLLATE Latin1_General_100_BIN2
+         = e.capture_instance COLLATE Latin1_General_100_BIN2
+    EXCEPT SELECT capture_instance COLLATE Latin1_General_100_BIN2,column_ordinal,
+        column_name COLLATE Latin1_General_100_BIN2 FROM @ActualColumns
 ) OR EXISTS (
-    SELECT capture_instance,column_ordinal,column_name FROM @ActualColumns
-    EXCEPT SELECT capture_instance,column_ordinal,column_name FROM @ExpectedColumns
+    SELECT capture_instance COLLATE Latin1_General_100_BIN2,column_ordinal,
+        column_name COLLATE Latin1_General_100_BIN2 FROM @ActualColumns
+    EXCEPT SELECT capture_instance COLLATE Latin1_General_100_BIN2,column_ordinal,
+        column_name COLLATE Latin1_General_100_BIN2 FROM @ExpectedColumns
 )
     THROW 51113, 'Existing captured-column set or order differs.', 1;
 -- Compare source and change-table scalar storage types without assuming that
 -- CT nullability equals source nullability (CDC permits nullable before data).
 IF EXISTS (
     SELECT 1 FROM cdc.change_tables ct JOIN @Targets t
-      ON ct.capture_instance=t.capture_instance
+      ON ct.capture_instance COLLATE Latin1_General_100_BIN2
+         = t.capture_instance COLLATE Latin1_General_100_BIN2
     JOIN cdc.captured_columns cc ON cc.object_id=ct.object_id
     LEFT JOIN sys.columns src ON src.object_id=t.source_object_id
       AND src.column_id=cc.column_id
     LEFT JOIN sys.columns changed ON changed.object_id=ct.object_id
-      AND changed.name=cc.column_name
+      AND changed.name COLLATE Latin1_General_100_BIN2
+         = cc.column_name COLLATE Latin1_General_100_BIN2
     WHERE src.column_id IS NULL OR changed.column_id IS NULL
       OR COALESCE(cc.is_computed,1)<>0
       OR changed.name COLLATE Latin1_General_100_BIN2
@@ -415,8 +458,11 @@ IF EXISTS (
     THROW 51114, 'Existing capture scalar types differ from the fixed source.', 1;
 IF EXISTS (
     SELECT 1 FROM cdc.change_tables ct
-    WHERE ct.role_name=N'lh_demo_cdc_reader' AND NOT EXISTS (
-        SELECT 1 FROM @Targets t WHERE t.capture_instance=ct.capture_instance
+    WHERE ct.role_name COLLATE Latin1_General_100_BIN2
+       = N'lh_demo_cdc_reader' COLLATE Latin1_General_100_BIN2 AND NOT EXISTS (
+        SELECT 1 FROM @Targets t
+        WHERE t.capture_instance COLLATE Latin1_General_100_BIN2
+           = ct.capture_instance COLLATE Latin1_General_100_BIN2
     )
 )
     THROW 51115, 'The fixed gating role is already used by another capture.', 1;
@@ -430,7 +476,8 @@ SELECT N'cdc.fn_cdc_get_all_changes_'+capture_instance FROM @Targets;
 IF DATABASE_PRINCIPAL_ID(N'lh_demo_cdc_reader') IS NOT NULL
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM sys.database_principals r
-        WHERE r.name COLLATE Latin1_General_100_BIN2=N'lh_demo_cdc_reader'
+        WHERE r.name COLLATE Latin1_General_100_BIN2
+           = N'lh_demo_cdc_reader' COLLATE Latin1_General_100_BIN2
           AND r.type='R'
           AND r.owning_principal_id=DATABASE_PRINCIPAL_ID(N'dbo'))
         THROW 51116, 'The fixed CDC role has an unrelated kind or owner.', 1;
@@ -445,7 +492,8 @@ BEGIN
         SELECT 1 FROM sys.database_permissions p
         WHERE p.grantee_principal_id=DATABASE_PRINCIPAL_ID(N'lh_demo_cdc_reader')
           AND (p.class<>1 OR p.minor_id<>0 OR p.state<>'G'
-              OR p.permission_name<>N'SELECT' OR NOT EXISTS (
+              OR p.permission_name COLLATE Latin1_General_100_BIN2
+                 <> N'SELECT' COLLATE Latin1_General_100_BIN2 OR NOT EXISTS (
                   SELECT 1 FROM @AllowedReadObjects a
                   WHERE OBJECT_ID(a.object_name)=p.major_id
               ))
@@ -464,18 +512,23 @@ END
 -- An independent existing capture keeps this from being the first CDC table,
 -- which would implicitly create shared SQL Agent capture/cleanup jobs.
 IF EXISTS (SELECT 1 FROM @Targets t WHERE NOT EXISTS (
-    SELECT 1 FROM cdc.change_tables ct WHERE ct.capture_instance=t.capture_instance
+    SELECT 1 FROM cdc.change_tables ct
+    WHERE ct.capture_instance COLLATE Latin1_General_100_BIN2
+       = t.capture_instance COLLATE Latin1_General_100_BIN2
 )) AND NOT EXISTS (SELECT 1 FROM cdc.change_tables ct JOIN sys.tables independent
     ON independent.object_id=ct.source_object_id
     WHERE independent.is_tracked_by_cdc=1 AND COALESCE(ct.has_drop_pending,1)=0
     AND NOT EXISTS (
-        SELECT 1 FROM @Targets t WHERE t.capture_instance=ct.capture_instance
+        SELECT 1 FROM @Targets t
+        WHERE t.capture_instance COLLATE Latin1_General_100_BIN2
+           = ct.capture_instance COLLATE Latin1_General_100_BIN2
 ))
     THROW 51119, 'Prepare an independent CDC capture and shared jobs separately.', 1;
 SELECT N'fixed_demo_cdc_preflight' AS check_name,
     COUNT_BIG(*) AS fixed_capture_count
 FROM cdc.change_tables ct JOIN @Targets t
-  ON ct.capture_instance=t.capture_instance;
+  ON ct.capture_instance COLLATE Latin1_General_100_BIN2
+     = t.capture_instance COLLATE Latin1_General_100_BIN2;
 IF DATABASE_PRINCIPAL_ID(N'lh_demo_cdc_reader') IS NULL
     CREATE ROLE [lh_demo_cdc_reader] AUTHORIZATION [dbo];
 IF NOT EXISTS (SELECT 1 FROM sys.database_role_members
@@ -491,6 +544,15 @@ END;
 GRANT SELECT ON OBJECT::[cdc].[change_tables] TO [lh_demo_cdc_reader];
 GRANT SELECT ON OBJECT::[cdc].[captured_columns] TO [lh_demo_cdc_reader];
 GRANT SELECT ON OBJECT::[cdc].[lsn_time_mapping] TO [lh_demo_cdc_reader];
+-- Record observed fixed capture presence before the autocommit lifecycle.
+-- A later difference is an observation, not proof that this caller caused it.
+INSERT INTO @PreflightCapturePresence (capture_instance,was_present)
+SELECT t.capture_instance,
+    CONVERT(bit,CASE WHEN ct.object_id IS NULL THEN 0 ELSE 1 END)
+FROM @Targets t LEFT JOIN cdc.change_tables ct
+  ON ct.capture_instance COLLATE Latin1_General_100_BIN2
+     = t.capture_instance COLLATE Latin1_General_100_BIN2;
+SET @CaptureSnapshotReady=1;
 COMMIT TRANSACTION;
 -- Validation and role changes use a transaction; CDC procedure calls below
 -- deliberately run in autocommit after preflight COMMIT. Microsoft documents
@@ -508,15 +570,20 @@ OPEN FixedCdcTargets;
 FETCH NEXT FROM FixedCdcTargets INTO @Schema,@Table,@Capture,@CapturedColumns;
 WHILE @@FETCH_STATUS=0
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM cdc.change_tables WHERE capture_instance=@Capture)
+    IF NOT EXISTS (SELECT 1 FROM cdc.change_tables
+        WHERE capture_instance COLLATE Latin1_General_100_BIN2
+           = @Capture COLLATE Latin1_General_100_BIN2)
     BEGIN
         IF NOT EXISTS (SELECT 1 FROM cdc.change_tables ct JOIN sys.tables independent
             ON independent.object_id=ct.source_object_id
             WHERE independent.is_tracked_by_cdc=1
               AND COALESCE(ct.has_drop_pending,1)=0 AND NOT EXISTS (
-                SELECT 1 FROM @Targets t WHERE t.capture_instance=ct.capture_instance
+                SELECT 1 FROM @Targets t
+                WHERE t.capture_instance COLLATE Latin1_General_100_BIN2
+                   = ct.capture_instance COLLATE Latin1_General_100_BIN2
             ))
             THROW 51120, 'Independent CDC capture disappeared; stop and review.', 1;
+        SET @CdcMutationAttempted=1;
         EXEC @Result=sys.sp_cdc_enable_table
             @source_schema=@Schema,@source_name=@Table,
             @capture_instance=@Capture,@role_name=N'lh_demo_cdc_reader',
@@ -525,7 +592,8 @@ BEGIN
         -- SQL Server ignores switch=0 on unpartitioned tables (warning 22857).
         -- Preflight rejects partitioned sources; do not demand stored zero.
         IF @Result<>0 OR NOT EXISTS (SELECT 1 FROM cdc.change_tables
-            WHERE capture_instance=@Capture
+            WHERE capture_instance COLLATE Latin1_General_100_BIN2
+               = @Capture COLLATE Latin1_General_100_BIN2
               AND source_object_id=OBJECT_ID(QUOTENAME(@Schema)+N'.'+QUOTENAME(@Table)))
             THROW 51121, 'Fixed capture enablement failed; inspect private state.', 1;
     END;
@@ -538,22 +606,28 @@ BEGIN
     FETCH NEXT FROM FixedCdcTargets INTO @Schema,@Table,@Capture,@CapturedColumns;
 END;
 IF (SELECT COUNT_BIG(*) FROM cdc.change_tables ct JOIN @Targets t
-    ON ct.capture_instance=t.capture_instance)<>6
+    ON ct.capture_instance COLLATE Latin1_General_100_BIN2
+       = t.capture_instance COLLATE Latin1_General_100_BIN2)<>6
     THROW 51122, 'Not all fixed captures are present; retain partial state.', 1;
 -- Revalidate the full published metadata after all new captures exist.
 -- Validate every existing fixed capture before changing any of the six.
 IF EXISTS (
     SELECT 1 FROM cdc.change_tables ct JOIN @Targets t
-      ON ct.capture_instance=t.capture_instance
+      ON ct.capture_instance COLLATE Latin1_General_100_BIN2
+         = t.capture_instance COLLATE Latin1_General_100_BIN2
     WHERE ct.capture_instance COLLATE Latin1_General_100_BIN2
-            <> t.capture_instance COLLATE Latin1_General_100_BIN2
+       <> t.capture_instance COLLATE Latin1_General_100_BIN2
        OR ct.source_object_id<>t.source_object_id
        OR ct.role_name IS NULL
-       OR ct.role_name COLLATE Latin1_General_100_BIN2<>N'lh_demo_cdc_reader'
+       OR ct.role_name COLLATE Latin1_General_100_BIN2
+          <> N'lh_demo_cdc_reader' COLLATE Latin1_General_100_BIN2
        OR COALESCE(ct.supports_net_changes,1)<>0
        OR COALESCE(ct.has_drop_pending,1)<>0
-       OR (ct.index_name IS NOT NULL AND ct.index_name<>t.primary_index)
-       OR OBJECT_SCHEMA_NAME(ct.object_id)<>N'cdc'
+       OR (ct.index_name IS NOT NULL
+           AND ct.index_name COLLATE Latin1_General_100_BIN2
+              <> t.primary_index COLLATE Latin1_General_100_BIN2)
+       OR OBJECT_SCHEMA_NAME(ct.object_id) COLLATE Latin1_General_100_BIN2
+          <> N'cdc' COLLATE Latin1_General_100_BIN2
        OR OBJECT_NAME(ct.object_id) COLLATE Latin1_General_100_BIN2
           <> (t.capture_instance+N'_CT') COLLATE Latin1_General_100_BIN2
 )
@@ -565,28 +639,36 @@ DELETE FROM @ActualColumns;
 INSERT INTO @ActualColumns
 SELECT ct.capture_instance,cc.column_ordinal,cc.column_name
 FROM cdc.change_tables ct JOIN @Targets t
-    ON ct.capture_instance=t.capture_instance
+    ON ct.capture_instance COLLATE Latin1_General_100_BIN2
+       = t.capture_instance COLLATE Latin1_General_100_BIN2
 JOIN cdc.captured_columns cc ON cc.object_id=ct.object_id;
 IF EXISTS (
-    SELECT e.capture_instance,e.column_ordinal,e.column_name
+    SELECT e.capture_instance COLLATE Latin1_General_100_BIN2,
+        e.column_ordinal,e.column_name COLLATE Latin1_General_100_BIN2
     FROM @ExpectedColumns e JOIN cdc.change_tables ct
-      ON ct.capture_instance=e.capture_instance
-    EXCEPT SELECT capture_instance,column_ordinal,column_name FROM @ActualColumns
+      ON ct.capture_instance COLLATE Latin1_General_100_BIN2
+         = e.capture_instance COLLATE Latin1_General_100_BIN2
+    EXCEPT SELECT capture_instance COLLATE Latin1_General_100_BIN2,column_ordinal,
+        column_name COLLATE Latin1_General_100_BIN2 FROM @ActualColumns
 ) OR EXISTS (
-    SELECT capture_instance,column_ordinal,column_name FROM @ActualColumns
-    EXCEPT SELECT capture_instance,column_ordinal,column_name FROM @ExpectedColumns
+    SELECT capture_instance COLLATE Latin1_General_100_BIN2,column_ordinal,
+        column_name COLLATE Latin1_General_100_BIN2 FROM @ActualColumns
+    EXCEPT SELECT capture_instance COLLATE Latin1_General_100_BIN2,column_ordinal,
+        column_name COLLATE Latin1_General_100_BIN2 FROM @ExpectedColumns
 )
     THROW 51113, 'Existing captured-column set or order differs.', 1;
 -- Compare source and change-table scalar storage types without assuming that
 -- CT nullability equals source nullability (CDC permits nullable before data).
 IF EXISTS (
     SELECT 1 FROM cdc.change_tables ct JOIN @Targets t
-      ON ct.capture_instance=t.capture_instance
+      ON ct.capture_instance COLLATE Latin1_General_100_BIN2
+         = t.capture_instance COLLATE Latin1_General_100_BIN2
     JOIN cdc.captured_columns cc ON cc.object_id=ct.object_id
     LEFT JOIN sys.columns src ON src.object_id=t.source_object_id
       AND src.column_id=cc.column_id
     LEFT JOIN sys.columns changed ON changed.object_id=ct.object_id
-      AND changed.name=cc.column_name
+      AND changed.name COLLATE Latin1_General_100_BIN2
+         = cc.column_name COLLATE Latin1_General_100_BIN2
     WHERE src.column_id IS NULL OR changed.column_id IS NULL
       OR COALESCE(cc.is_computed,1)<>0
       OR changed.name COLLATE Latin1_General_100_BIN2
@@ -601,7 +683,8 @@ IF EXISTS (
 
 SELECT N'fixed_demo_cdc_enabled' AS check_name,COUNT_BIG(*) AS fixed_capture_count
 FROM cdc.change_tables ct JOIN @Targets t
-  ON ct.capture_instance=t.capture_instance;
+  ON ct.capture_instance COLLATE Latin1_General_100_BIN2
+     = t.capture_instance COLLATE Latin1_General_100_BIN2;
 CLOSE FixedCdcTargets;
 DEALLOCATE FixedCdcTargets;
 IF @HasCdcLock=1
@@ -613,6 +696,74 @@ END
 END TRY
 BEGIN CATCH
     IF XACT_STATE()<>0 ROLLBACK TRANSACTION;
+    -- Keep the original failure even when metadata inspection itself fails.
+    -- Output only six public fixed names and state flags, never private input
+    -- or ERROR_MESSAGE(). A partial change must not trigger automatic cleanup.
+    DECLARE @FailureNumber int=ERROR_NUMBER();
+    BEGIN TRY
+        DECLARE @CurrentPresenceReadable bit=0;
+        DECLARE @CurrentCapturePresence TABLE (
+            capture_instance sysname PRIMARY KEY
+        );
+        IF @HasCdcLock=1 AND OBJECT_ID(N'cdc.change_tables',N'U') IS NOT NULL
+        BEGIN
+            -- Dynamic SELECT defers binding missing CDC metadata until here.
+            INSERT INTO @CurrentCapturePresence (capture_instance)
+            EXEC sys.sp_executesql N'
+                SELECT fixed.capture_instance
+                FROM (VALUES
+                    (N''lh_demo_erp_products_v1''),
+                    (N''lh_demo_erp_work_orders_v1''),
+                    (N''lh_demo_erp_sales_orders_v1''),
+                    (N''lh_demo_erp_shipments_v1''),
+                    (N''lh_demo_mes_events_v1''),
+                    (N''lh_demo_mes_downtime_v1'')
+                ) fixed(capture_instance)
+                JOIN cdc.change_tables ct
+                  ON ct.capture_instance COLLATE Latin1_General_100_BIN2
+                     = fixed.capture_instance COLLATE Latin1_General_100_BIN2';
+            SET @CurrentPresenceReadable=1;
+        END;
+        SELECT N'fixed_demo_cdc_enable_failure_state' AS check_name,
+            fixed.capture_instance, @FailureNumber AS original_error_number,
+            @CdcMutationAttempted AS cdc_mutation_attempted,
+            CASE WHEN @CaptureSnapshotReady=0 OR before_state.was_present IS NULL
+                    THEN N'unknown'
+                 WHEN before_state.was_present=1 THEN N'present'
+                 ELSE N'absent' END AS preflight_presence,
+            CASE WHEN @CurrentPresenceReadable=0 THEN N'unknown'
+                 WHEN now_state.capture_instance IS NULL THEN N'absent'
+                 ELSE N'present' END AS current_presence,
+            CASE WHEN @CaptureSnapshotReady=0 OR @CurrentPresenceReadable=0
+                      OR before_state.was_present IS NULL
+                    THEN N'unknown'
+                 WHEN before_state.was_present=0
+                      AND now_state.capture_instance IS NOT NULL
+                    THEN N'became_present'
+                 WHEN before_state.was_present=1
+                      AND now_state.capture_instance IS NULL
+                    THEN N'became_absent'
+                 ELSE N'unchanged' END AS observed_change,
+            N'preserve_state_and_review_before_rerun' AS next_action
+        FROM (VALUES
+            (N'lh_demo_erp_products_v1'),(N'lh_demo_erp_work_orders_v1'),
+            (N'lh_demo_erp_sales_orders_v1'),(N'lh_demo_erp_shipments_v1'),
+            (N'lh_demo_mes_events_v1'),(N'lh_demo_mes_downtime_v1')
+        ) fixed(capture_instance)
+        LEFT JOIN @PreflightCapturePresence before_state
+          ON before_state.capture_instance COLLATE Latin1_General_100_BIN2
+             = fixed.capture_instance COLLATE Latin1_General_100_BIN2
+        LEFT JOIN @CurrentCapturePresence now_state
+          ON now_state.capture_instance COLLATE Latin1_General_100_BIN2
+             = fixed.capture_instance COLLATE Latin1_General_100_BIN2
+        ORDER BY fixed.capture_instance COLLATE Latin1_General_100_BIN2;
+    END TRY
+    BEGIN CATCH
+        SELECT N'fixed_demo_cdc_failure_diagnostic_unavailable' AS check_name,
+            @FailureNumber AS original_error_number,
+            N'manual_metadata_review_required' AS next_action;
+    END CATCH;
+
     IF CURSOR_STATUS('local','FixedCdcTargets')>=0 CLOSE FixedCdcTargets;
     IF CURSOR_STATUS('local','FixedCdcTargets')>=-1 DEALLOCATE FixedCdcTargets;
     IF @HasCdcLock=1

@@ -3,6 +3,14 @@
 -- TargetDatabase, InstallationId (32 lower hex), OwnershipHash (SHA-256 hex).
 -- Values are supplied privately. No runtime app receives administrator auth.
 -- No existing dbo/legacy object, login, password, Swarm or deployment is changed.
+-- Refuse a caller-owned transaction before any setting or THROW. RAISERROR
+-- deliberately does not honor XACT_ABORT, including an inherited ON setting.
+IF @@TRANCOUNT<>0
+BEGIN
+    RAISERROR('Use a dedicated DBA session without an outer transaction.',16,1);
+    RETURN;
+END;
+SET IMPLICIT_TRANSACTIONS OFF;
 SET ANSI_NULLS ON;
 SET QUOTED_IDENTIFIER ON;
 SET NOCOUNT ON;
@@ -22,6 +30,13 @@ IF LEN(@InstallationId) <> 32
     OR LEN(@OwnershipHash) <> 64
     OR @OwnershipHash COLLATE Latin1_General_100_BIN2 LIKE N'%[^0-9a-f]%'
     THROW 51001, 'Supply the private installation identity and ownership hash.', 1;
+-- A dedicated session avoids rolling back a caller's unrelated transaction.
+-- Runtime errors caught below are rolled back, then observed again. Compile
+-- errors, client cancellation and disconnects still require separate preflight.
+DECLARE @CheckerCreatedThisAttempt bit=0;
+DECLARE @CheckerExistedBefore bit=CASE
+    WHEN OBJECT_ID(N'lh_demo_ctl.check_write_safety_v1') IS NULL THEN 0 ELSE 1 END;
+BEGIN TRY
 BEGIN TRANSACTION;
 -- Read the marker only after checking its columns. Never claim old tables.
 IF OBJECT_ID(N'lh_demo_ctl.installation', N'U') IS NOT NULL
@@ -129,7 +144,10 @@ IF SCHEMA_ID(N'lh_demo_ctl') IS NULL OR NOT EXISTS (
 )
     THROW 51018, 'Safety checker schema must be owned by dbo.', 1;
 IF OBJECT_ID(N'lh_demo_ctl.check_write_safety_v1') IS NULL
+BEGIN
     EXEC sys.sp_executesql @SafetyDefinition;
+    SET @CheckerCreatedThisAttempt=1;
+END;
 IF NOT EXISTS (
     SELECT 1 FROM sys.sql_modules m JOIN sys.objects o
     ON m.object_id=o.object_id JOIN sys.schemas s ON o.schema_id=s.schema_id
@@ -157,6 +175,26 @@ IF DATABASE_PRINCIPAL_ID(@Writer) IS NULL
     OR DATABASE_PRINCIPAL_ID(@Writer)=DATABASE_PRINCIPAL_ID(@Control)
     OR DATABASE_PRINCIPAL_ID(@Reader)=DATABASE_PRINCIPAL_ID(@Control)
     THROW 51010, 'Provide three distinct existing database users.', 1;
+-- Resolve catalog IDs under their native rules, then reject case aliases.
+-- Do not silently attach grants to a differently spelled existing identity.
+IF EXISTS (
+    SELECT 1 FROM (VALUES (@Writer),(@Reader),(@Control)) requested(user_name)
+    JOIN sys.database_principals actual
+      ON actual.principal_id=DATABASE_PRINCIPAL_ID(requested.user_name)
+    WHERE actual.name COLLATE Latin1_General_100_BIN2
+          <> requested.user_name COLLATE Latin1_General_100_BIN2
+)
+    THROW 51021, 'Use the exact existing database principal spelling.', 1;
+IF EXISTS (
+    SELECT 1 FROM sys.database_principals r
+    WHERE r.principal_id IN (
+        DATABASE_PRINCIPAL_ID(N'lh_demo_writer'),
+        DATABASE_PRINCIPAL_ID(N'lh_demo_reader'),
+        DATABASE_PRINCIPAL_ID(N'lh_demo_control_writer'))
+      AND r.name COLLATE Latin1_General_100_BIN2 NOT IN (
+        N'lh_demo_writer',N'lh_demo_reader',N'lh_demo_control_writer')
+)
+    THROW 51022, 'A fixed role resolves to a case alias; preserve it.', 1;
 -- These roles are fixed and owned by dbo. Existing grants/members are not
 -- removed. Runtime diagnosis rejects legacy broad roles or external grants.
 IF DATABASE_PRINCIPAL_ID(N'lh_demo_writer') IS NULL
@@ -233,7 +271,12 @@ IF EXISTS (
     WHERE r.name IN (N'lh_demo_writer',N'lh_demo_reader',N'lh_demo_control_writer')
       AND (p.class<>1 OR p.minor_id<>0 OR p.state<>'G' OR NOT EXISTS (
         SELECT 1 FROM @AllowedGrants a
-        WHERE a.role_name=r.name AND a.permission_name=p.permission_name
+        -- Both columns are implicit-collation expressions from different
+        -- sources. Fix the comparison, never server/database collation.
+        WHERE a.role_name COLLATE Latin1_General_100_BIN2
+              = r.name COLLATE Latin1_General_100_BIN2
+          AND a.permission_name COLLATE Latin1_General_100_BIN2
+              = p.permission_name COLLATE Latin1_General_100_BIN2
           AND OBJECT_ID(a.object_name)=p.major_id
       ))
 )
@@ -308,3 +351,34 @@ SELECT N'fixed_demo_roles' AS check_name, COUNT_BIG(*) AS role_count
 FROM sys.database_principals WHERE name IN
     (N'lh_demo_writer',N'lh_demo_reader',N'lh_demo_control_writer');
 COMMIT TRANSACTION;
+END TRY
+BEGIN CATCH
+    -- This is best-effort observation, not proof that every error rolled back.
+    -- Never drop/update an existing checker or echo definition/private values.
+    IF XACT_STATE()<>0 ROLLBACK TRANSACTION;
+    BEGIN TRY
+        SELECT N'fixed_demo_permissions_failed' AS check_name,
+            ERROR_NUMBER() AS error_number,
+            @CheckerExistedBefore AS checker_existed_before,
+            @CheckerCreatedThisAttempt AS checker_created_this_attempt,
+            CONVERT(bit,CASE WHEN OBJECT_ID(
+                N'lh_demo_ctl.check_write_safety_v1') IS NULL
+                THEN 0 ELSE 1 END) AS checker_present_after_failure,
+            (SELECT COUNT_BIG(*) FROM sys.database_principals
+             WHERE name IN (N'lh_demo_writer',N'lh_demo_reader',
+                            N'lh_demo_control_writer')) AS fixed_role_count,
+            (SELECT COUNT_BIG(*) FROM sys.database_permissions p
+             WHERE p.grantee_principal_id IN (
+                DATABASE_PRINCIPAL_ID(N'lh_demo_writer'),
+                DATABASE_PRINCIPAL_ID(N'lh_demo_reader'),
+                DATABASE_PRINCIPAL_ID(N'lh_demo_control_writer')))
+                AS fixed_role_permission_rows,
+            N'Run the read-only permissions preflight; preserve mismatches.'
+                AS next_action;
+    END TRY
+    BEGIN CATCH
+        SELECT N'fixed_demo_permissions_diagnostic_unavailable' AS check_name;
+    END CATCH;
+    -- Preserve the original error even if diagnostic metadata was unavailable.
+    THROW;
+END CATCH;
