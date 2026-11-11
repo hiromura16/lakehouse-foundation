@@ -333,3 +333,7 @@ Sparkの受入ではlocal smokeとremote実行を両方記録します。local s
 | PostgreSQL更新後に起動しない | 既存data directoryのmajor版と移行手順 | 旧volumeを新majorへそのまま接続する |
 
 実装の対応先は [SparkSession helper](../infra/poc/lakehouse_session.py)、[Spark daemon](../infra/compute/spark_cluster.py)、[Airflow Dockerfile](../infra/orchestration/Dockerfile)、[worker FileIO](../scripts/admin.py) です。障害の切分けは [TROUBLESHOOTING.md](TROUBLESHOOTING.md) を使います。
+
+## 固定SQL sourceとCDCの検証範囲
+
+SQL Server 2022向けDDLは型・PK・所有権・固定captureを静的検査し、SQLFluffで全文parseします。Debezium 3.7.1.Finalの設定は3.7公式仕様に合わせ、fixed-demoだけexclusive初回snapshot、adaptive日時、decimal文字列を使います。Pythonの合成イベント・in-memory catalogueによるreplay試験と、実SQL Server→Kafka→Icebergの受入試験は別です。実接続・Agent・外部Proxy・Java/PythonのCA検証・イメージbuildは導入先で確認します。[固定source手順と制約](SQLSERVER-FIXED-DEMO.md)

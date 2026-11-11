@@ -16,9 +16,11 @@ import os
 import sys
 import time
 from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
 
-from config import CONTRACTS, mappings, settings, topic_names
+from config import CONTRACTS, selected_mapping, settings, topic_names
+from fixed_source import preflight
 from state import State, assignment_offset
 
 RAW_COLUMNS = [
@@ -30,16 +32,29 @@ RAW_COLUMNS = [
     "envelope_json",
     "ingested_at",
 ]
+FIXED_RAW_COLUMNS = RAW_COLUMNS + [
+    "operation",
+    "tombstone",
+    "before_json",
+    "after_json",
+    "commit_lsn",
+    "change_lsn",
+    "event_serial_no",
+    "transaction_id",
+    "source_ts_ms",
+    "run_id",
+]
 
 
-def raw_rows(records):
+def raw_rows(records, *, fixed=False):
     """Kafka位置・key・envelopeを、raw表用の文字列行へ変換して返す。
 
     topic/partition/offsetをevent IDにし、同じ配送位置を識別する。
-    tombstoneもkeyと空envelopeで残す。DELETE本体との混同や破棄をしない。
+    fixedではnull envelopeと空文字列を別々に保持し、DELETE本体とも区別する。
+    genericの既存raw schemaと空envelopeの表現は互換性のため維持する。
     この変換自体はDB・Icebergへ書き込まない。
     """
-    return [
+    rows = [
         {
             "event_id": json.dumps(
                 [record["topic"], record["partition"], record["offset"]],
@@ -54,9 +69,79 @@ def raw_rows(records):
         }
         for record in records
     ]
+    if fixed:
+        for row, record in zip(rows, records, strict=True):
+            row["key_json"] = record["key"]
+            row["envelope_json"] = record["value"]
+            # Malformed envelopes are still retained. Interpretation failure
+            # must not destroy evidence or acknowledge offsets.
+            try:
+                envelope = json.loads(record["value"] or "null")
+            except (TypeError, ValueError):
+                envelope = None
+            envelope = envelope if isinstance(envelope, dict) else {}
+            source = envelope.get("source") or {}
+            source = source if isinstance(source, dict) else {}
+            transaction = envelope.get("transaction") or {}
+            transaction = transaction if isinstance(transaction, dict) else {}
+            current = envelope.get("after") or envelope.get("before") or {}
+            current = current if isinstance(current, dict) else {}
+            tombstone = record["value"] is None
+            operation = "tombstone" if tombstone else envelope.get("op")
+            row.update(
+                operation=operation if isinstance(operation, str) else None,
+                tombstone="true" if tombstone else "false",
+                before_json=json.dumps(
+                    envelope.get("before"), ensure_ascii=False
+                ),
+                after_json=json.dumps(
+                    envelope.get("after"), ensure_ascii=False
+                ),
+                commit_lsn=source.get("commit_lsn"),
+                change_lsn=source.get("change_lsn"),
+                event_serial_no=(
+                    str(source["event_serial_no"])
+                    if "event_serial_no" in source
+                    else None
+                ),
+                transaction_id=transaction.get("id"),
+                source_ts_ms=(
+                    str(source["ts_ms"])
+                    if source.get("ts_ms") is not None
+                    else None
+                ),
+                run_id=current.get("run_id"),
+            )
+            # Convenience columns supplement the untouched envelope_json.
+            for name in FIXED_RAW_COLUMNS:
+                if row.get(name) is not None and not isinstance(
+                    row[name], str
+                ):
+                    row[name] = json.dumps(row[name], ensure_ascii=False)
+    return rows
 
 
-def append_raw(catalog, records):
+def message_record(message):
+    """Decode one bounded Kafka message without collapsing empty bytes.
+
+    A null value is a Kafka tombstone. Empty bytes are an invalid JSON value
+    whose original representation must remain distinguishable in fixed raw.
+    """
+    payload = message.value()
+    key = message.key()
+    if len(payload if payload is not None else b"") > 16 * 1024 * 1024:
+        raise ValueError("CDC event exceeds the 16 MiB limit.")
+    return {
+        "topic": message.topic(),
+        "partition": message.partition(),
+        "offset": message.offset(),
+        "key": key.decode("utf-8") if key is not None else None,
+        "value": payload.decode("utf-8") if payload is not None else None,
+        "ingested_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def append_raw(catalog, records, *, namespace="cdc_events", identity=None):
     """イベントの業務解釈より前に、未保存の配送位置をrawへcommitする。
 
     既存表と今回batchの両方でevent IDを重複除去し、追記件数を返す。
@@ -66,32 +151,60 @@ def append_raw(catalog, records):
     import pyarrow as pa
     from pyiceberg.expressions import In
 
-    if not catalog.namespace_exists("cdc_events"):
-        catalog.create_namespace("cdc_events")
-    identifier = "cdc_events.events"
+    if not records:
+        return 0
+    if namespace not in {"cdc_events", "sqlcdc_events"}:
+        raise ValueError("Unsupported CDC raw namespace.")
+    fixed = namespace == "sqlcdc_events"
+    if fixed and (not isinstance(identity, str) or len(identity) != 64):
+        raise ValueError("Fixed CDC raw history needs its source identity.")
+    columns = FIXED_RAW_COLUMNS if fixed else RAW_COLUMNS
+    if not catalog.namespace_exists(namespace):
+        catalog.create_namespace(namespace)
+    identifier = namespace + ".events"
+    properties = {"format-version": "2"}
+    if fixed:
+        properties["lakehouse.fixed-cdc.identity"] = identity
     if not catalog.table_exists(identifier):
         catalog.create_table(
             identifier,
-            schema=pa.schema([(name, pa.string()) for name in RAW_COLUMNS]),
-            properties={"format-version": "2"},
+            schema=pa.schema([(name, pa.string()) for name in columns]),
+            properties=properties,
         )
     table = catalog.load_table(identifier)
-    rows = raw_rows(records)
+    if fixed and (
+        table.properties.get("lakehouse.fixed-cdc.identity") != identity
+        or table.schema().as_arrow().names != columns
+    ):
+        raise ValueError("Fixed CDC raw table ownership or schema differs.")
+    rows = raw_rows(records, fixed=fixed)
     # 再配送と同batch内の重複を区別せず、配送位置で一度だけrawへ追記する。
     existing = (
         table.scan(
             row_filter=In("event_id", [row["event_id"] for row in rows]),
-            selected_fields=("event_id",),
+            selected_fields=("event_id", "key_json", "envelope_json")
+            if fixed
+            else ("event_id",),
         )
         .to_arrow()
         .to_pylist()
     )
-    seen = {row["event_id"] for row in existing}
+    seen = {row["event_id"]: row for row in existing}
     pending = []
     for row in rows:
-        if row["event_id"] not in seen:
+        previous = seen.get(row["event_id"])
+        if (
+            fixed
+            and previous is not None
+            and any(
+                previous[column] != row[column]
+                for column in ("key_json", "envelope_json")
+            )
+        ):
+            raise ValueError("A fixed CDC delivery position changed payload.")
+        if previous is None:
             pending.append(row)
-            seen.add(row["event_id"])
+            seen[row["event_id"]] = row
     if pending:
         table.append(
             pa.Table.from_pylist(pending, schema=table.schema().as_arrow())
@@ -99,7 +212,7 @@ def append_raw(catalog, records):
     return len(pending)
 
 
-def materialize(admin, state):
+def materialize(admin, state, *, prefix="cdc_"):
     """SQLite現在値からcdc_bronzeの6表を置換し、CDC派生SQLを実行する。
 
     戻り値はメダリオンの完了文数。各表は独立してcommitされるため、途中失敗で
@@ -108,19 +221,21 @@ def materialize(admin, state):
     """
     import pyarrow as pa
 
-    admin.ensure_tables("cdc_")
+    if prefix not in {"cdc_", "sqlcdc_"}:
+        raise ValueError("Unsupported CDC materialization prefix.")
+    admin.ensure_tables(prefix)
     catalog = admin.catalog()
     for contract in CONTRACTS:
         target = contract["table"]
-        table = catalog.load_table("cdc_bronze." + target)
+        table = catalog.load_table(prefix + "bronze." + target)
         arrow = pa.Table.from_pylist(
             state.rows(target), schema=table.schema().as_arrow()
         )
         table.overwrite(arrow)
-    return admin.medallion("cdc_")
+    return admin.medallion(prefix)
 
 
-def process(admin, state, records, mapping, topics):
+def process(admin, state, records, mapping, topics, *, values=None):
     """1batchをraw→現在値stage→派生表→local完了位置の順に反映する。
 
     完了済みoffsetは再適用せず、state内のLSN判定で改訂・削除の順序を守る。
@@ -128,7 +243,22 @@ def process(admin, state, records, mapping, topics):
     Trinoの取消未確定はstateにもblockedを保存し、再起動で見失わない。
     """
     # 工程1: 原本を先に確定する。後段の検証失敗でも調査用rawは残り得る。
-    count = append_raw(admin.catalog(), records)
+    fixed = values is not None and values.get("CDC_SOURCE_MODE") == (
+        "fixed-demo"
+    )
+    if fixed:
+        count = append_raw(
+            admin.catalog(),
+            records,
+            namespace="sqlcdc_events",
+            identity=identity_digest(source_identity(values, mapping)),
+        )
+        # Phase 4 retains raw events safely. Fixed current-state decoding is
+        # introduced with the separately tested replay/materialization phase.
+        if not getattr(state, "fixed_source", False):
+            raise ValueError("Fixed CDC current-state support is not ready.")
+    else:
+        count = append_raw(admin.catalog(), records)
     contracts = {item["table"]: item["columns"] for item in CONTRACTS}
     for record in records:
         target = topics.get(record["topic"])
@@ -140,13 +270,22 @@ def process(admin, state, records, mapping, topics):
             continue
         if record["value"] is not None:
             source = json.loads(record["value"]).get("source", {})
-            if source.get("db") != os.environ["CDC_SQLSERVER_DATABASE"]:
+            database = (
+                values["CDC_SQLSERVER_DATABASE"]
+                if values is not None
+                else os.environ["CDC_SQLSERVER_DATABASE"]
+            )
+            if source.get("db") != database:
                 raise ValueError("CDC event database does not match settings.")
         # 工程2: LSN/削除版を現在値へ反映。完了offsetはまだ進めない。
         state.stage(record, target, mapping[target], contracts[target])
     try:
         # 工程3: 現在値6表と派生表を再構築する。1表ずつのcommitになる。
-        result = materialize(admin, state)
+        result = (
+            materialize(admin, state, prefix="sqlcdc_")
+            if fixed
+            else materialize(admin, state)
+        )
     except Exception:
         if admin.STATE.get("blocked"):
             state.set("blocked", "true")
@@ -156,7 +295,7 @@ def process(admin, state, records, mapping, topics):
     return {"raw_events_appended": count, **result}
 
 
-def refuse_lost_state(admin, state):
+def refuse_lost_state(admin, state, *, fixed=False):
     """local state不在なのにraw/currentがある場合、整合不明の再開を拒否する。
 
     初回の空環境だけinitializedを記録する。Kafka側の配送位置だけを使い、
@@ -165,8 +304,10 @@ def refuse_lost_state(admin, state):
     if state.get("initialized"):
         return
     catalog = admin.catalog()
-    identifiers = ["cdc_events.events"] + [
-        "cdc_bronze." + item["table"] for item in CONTRACTS
+    raw = "sqlcdc_events.events" if fixed else "cdc_events.events"
+    prefix = "sqlcdc_" if fixed else "cdc_"
+    identifiers = [raw] + [
+        prefix + "bronze." + item["table"] for item in CONTRACTS
     ]
     for identifier in identifiers:
         if catalog.table_exists(identifier):
@@ -176,6 +317,29 @@ def refuse_lost_state(admin, state):
                     "Restore the CDC state volume before resuming."
                 )
     state.set("initialized", "true")
+
+
+def source_identity(values, mapping):
+    """Keep generic identities and bind fixed state to its installation."""
+    identity = {
+        "database": values["CDC_SQLSERVER_DATABASE"],
+        "host": values["CDC_SQLSERVER_HOST"],
+        "port": values["CDC_SQLSERVER_PORT"],
+        "prefix": values["CDC_TOPIC_PREFIX"],
+        "mapping": mapping,
+    }
+    if values.get("CDC_SOURCE_MODE") == "fixed-demo":
+        identity.update(
+            source_mode="fixed-demo",
+            schema_version=1,
+            installation_id=values["DEMO_SQLSERVER_INSTALLATION_ID"],
+        )
+    return identity
+
+
+def identity_digest(identity):
+    """Use the same canonical digest as SQLite's existing identity guard."""
+    return sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
 
 def run(directory, mapping_file):
@@ -190,23 +354,20 @@ def run(directory, mapping_file):
     from confluent_kafka import Consumer, KafkaError, TopicPartition
 
     values = settings()
-    mapping = mappings(mapping_file)
+    mapping = selected_mapping(values, mapping_file)
     topics = topic_names(values, mapping)
+    fixed = values.get("CDC_SOURCE_MODE") == "fixed-demo"
+    if fixed:
+        preflight(values, mapping)
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     lock = (directory / "consumer.lock").open("a")
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     # 同じstateを別DB/mapへ流用しない。identityの一致検査はStateが担う。
-    identity = {
-        "database": values["CDC_SQLSERVER_DATABASE"],
-        "host": values["CDC_SQLSERVER_HOST"],
-        "port": values["CDC_SQLSERVER_PORT"],
-        "prefix": values["CDC_TOPIC_PREFIX"],
-        "mapping": mapping,
-    }
+    identity = source_identity(values, mapping)
     state = State(directory / "state.sqlite3", identity)
     if state.get("blocked") == "true":
         raise RuntimeError("CDC is blocked pending query cancellation review.")
-    refuse_lost_state(admin, state)
+    refuse_lost_state(admin, state, fixed=fixed)
     consumer = Consumer(
         {
             "bootstrap.servers": "cdc-kafka:9092",
@@ -248,31 +409,16 @@ def run(directory, mapping_file):
                         ):
                             continue
                         raise RuntimeError("Kafka returned a consumer error.")
-                    payload = message.value()
-                    key = message.key()
-                    if len(payload or b"") > 16 * 1024 * 1024:
-                        raise ValueError("CDC event exceeds the 16 MiB limit.")
-                    records.append(
-                        {
-                            "topic": message.topic(),
-                            "partition": message.partition(),
-                            "offset": message.offset(),
-                            "key": key.decode("utf-8") if key else None,
-                            "value": payload.decode("utf-8")
-                            if payload
-                            else None,
-                            "ingested_at": datetime.now(
-                                timezone.utc
-                            ).isoformat(),
-                        }
-                    )
+                    records.append(message_record(message))
                 if time.monotonic() >= deadline:
                     break
             if not records:
                 continue
             # 工程5: Icebergとlocal完了位置より先にKafkaをackしない。
             # broker応答だけ失敗しても、再開位置はlocal checkpointから決める。
-            result = process(admin, state, records, mapping, topics)
+            result = process(
+                admin, state, records, mapping, topics, values=values
+            )
             offsets = {}
             for record in records:
                 key = (record["topic"], record["partition"])

@@ -218,3 +218,42 @@ private設定の `SOURCE_SQLSERVER_CONTROL_USER/PASSWORD` に、DBAが用意し�
 ### 日時精度の正本
 
 7桁を完全保持する正本は、raw/original JSONと `_source_updated_at` 等の文字列です。既存Silverの業務日時は `FROM_ISO8601_TIMESTAMP` による `TIMESTAMP(3) WITH TIME ZONE` で、ミリ秒の解析型です。全層の型付き日時で7桁を保つとは説明しません。7桁での時系列比較が必要な業務は、原本文字列を利用するか、Iceberg/Trinoの型・format互換性を実機検証した別のschema変更として扱います。[採用Trino 481の日時関数](https://github.com/trinodb/trino/blob/481/docs/src/main/sphinx/functions/datetime.md)
+
+
+## 7. 固定6表のCDC準備とRaw履歴
+
+このモードは `CDC_SOURCE_MODE=fixed-demo` です。既定の `generic` は従来の外部mappingを使い、変更しません。fixed-demoは `SOURCE_SQLSERVER_*` のread-only接続を再利用し、DEMO writerやcontrol writerの資格情報をDebeziumへ渡しません。runtime readerに管理者権限を付けません。
+
+| 設定 | 既定 | fixed-demoでの意味 |
+| --- | --- | --- |
+| `CDC_SOURCE_MODE` | `generic` | 固定sourceでは `fixed-demo` を明示 |
+| `CDC_STATE_VOLUME_NAME` | 空 | 空なら既存のCompose volume名。既存genericのstateと分ける場合だけ新しい専用volume名を指定 |
+| `SOURCE_SQLSERVER_CA_FILE` | 既存値を維持 | fixed-demoのOS標準CAは空欄。旧sentinelの `system` はこのモードでは拒否 |
+| `SOURCE_SQLSERVER_TRUST_SERVER_CERTIFICATE` | `false` | 承認済み合成PoCのみ `true`。暗号化は維持するが証明書検証を省略する |
+
+### DBAが適用する順序
+
+1. 001→002→003→006で固定sourceの所有権・型・限定権限を確認します。
+2. DB単位CDC、SQL Server Agent、既存の独立captureとcapture/cleanup jobが既に正常であることをDBAが確認します。今回のSQLはDB全体のCDCを有効化せず、jobや保持期間を変更しません。
+3. private SQLCMD入力と [004_demo_cdc_enable.sql](../infra/sqlserver/004_demo_cdc_enable.sql) を同じ専用DBA sessionで実行します。接続先DBはクライアント側でも明示し、`sqlcmd -b` 相当でエラー時に停止します。
+4. 出力の6 captureと固定reader roleを確認し、006の診断も再実行します。旧capture instanceが残っていること、Agentの処理が進むことはDBAが別途観測します。
+
+004は固定6表だけを対象とし、capture名を `<schema>_<table>_v1`、gating roleを `lh_demo_cdc_reader`、net changesを無効に固定します。既存の同名captureは列・型・PK・role・optionを比較し、一致すれば保持、違えば停止します。readerの既存roleやパスワードを変更しません。既存DB principalへ、この6 captureと必要metadataの読取だけを追加します。
+
+Microsoftの手続きは、最初の表の有効化や最後の表の無効化でDB共通jobのライフサイクルへ影響する場合があります。このDDLは独立した既存capture/jobが残ることを要求します。新しい空のCDC DBにはそのまま適用せず、DBAがjobライフサイクルを別に準備します。role/grantの検査後、CDC手続きは表単位のautocommitです。途中失敗を全6表rollback済みとは扱わず、metadataを確認して同じ004を再実行します。
+
+無効化は通常更新に含めません。[005_demo_cdc_disable.sql](../infra/sqlserver/005_demo_cdc_disable.sql) は同じ所有権・capture定義を再確認し、別途 `ConfirmDisableCdc=1` の明示を要求します。生成するSQLCMD入力の既定は `0` です。005は固定6captureだけを無効化し、DB全体、旧capture、schema、業務表、ユーザー、roleを削除しません。無効化で失われるcapture履歴を先に保全し、保持中の独立capture/jobをDBAが確認します。
+
+### Kafka・Icebergを分離する
+
+connector名とdata prefixは `lakehouse-demo-sqlserver`、consumer groupは `lakehouse-demo-sqlserver-consumer` に固定します。6表のdata topicとschema-history topicを従来のgeneric sourceから分けます。Kafka Connect worker自体のconfig/offset/status topicは既存基盤を共有し、これらを新しく分離したとは説明しません。既存connectorの設定差分は自動PUTせず、登録を拒否します。既存offset/history/stateを削除してやり直す操作を提供しません。
+
+登録前とconsumer起動前に、SOURCE readerで所有権、read-only有効権限、固定6captureと列・datetime2(7)をSELECT診断します。初回snapshotはfixed-demoのみ `exclusive` isolationとし、線形なsnapshot/stream履歴を得る代わりに固定sourceの更新を一時的に待たせます。投入を停止したメンテナンス窓で開始します。DBのsnapshot isolation設定を変更しません。日時はadaptive、decimalは文字列、transaction metadataを有効にします。NanoTimestampの表現範囲外などの変換失敗は停止して調査し、欠損を成功として扱いません。[Debezium 3.7 SQL Server仕様](https://debezium.io/documentation/reference/3.7/connectors/sqlserver.html)
+
+Rawは `iceberg.sqlcdc_events.events` です。Kafkaのtopic/partition/offsetをevent IDにし、key/envelope原文、before/after、op、tombstone、LSN、transaction ID、source時刻、run IDを追記します。同じ配送位置の同一内容は再追記せず、内容が変われば拒否します。source identityを表propertyに固定し、別sourceの履歴へ自動相乗りしません。Rawは不変履歴、現在値は別の再構築可能な派生物です。Raw保持だけでCurrent StateやKafka offsetの処理完了を示しません。
+
+### CAと配置を混同しない
+
+Python登録器/consumerのPEMと、Java Connectのtruststoreは別です。標準CAだけなら `SOURCE_SQLSERVER_CA_FILE` を空にします。custom PEMでは、公開Composeの0byte placeholderをprivate Compose overrideで `/run/source-certs/source-ca.pem` のread-only bindへ置き換えます。対象は `cdc-register` と `cdc-consumer` の2サービスです。host path、実CAはcheckout外に置き、Dokployのprivate File Mountsでoverrideを作り、Run Commandへその `-f` を加えます。placeholderのままcustom CAを選ぶとpreflightが拒否します。Java側は従来の `CDC_SQLSERVER_TRUSTSTORE_FILE` と `CDC_SQLSERVER_TRUSTSTORE` を使います。custom SOURCE PEMで証明書検証を行う場合、Java truststoreも明示しない設定はplanで拒否します。runtimeの再診断はcapture列・日時精度を含みますが、全scalar型・PKの検査はDBAの004と、その後にDDLを変更しない運用が前提です。認証情報やCAを公開Composeへ書きません。
+
+profile追加は実装のテスト成功だけで判断せず、会社側でsnapshot・増分の受入完了後に行います。`demo,monitoring,bi,cdc` のメモリ・Swap・保持期間を計測し、connector RUNNING、Raw、Current、Gold、offsetを順番に確認します。ローカルunit/static試験だけからSQL Server Agentや実CDCが正常とは報告しません。

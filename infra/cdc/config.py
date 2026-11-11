@@ -5,6 +5,12 @@ import os
 import re
 from pathlib import Path
 
+from fixed_source import (
+    select_settings,
+    table_mapping,
+    validate_state_volume,
+)
+
 IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
 NAME = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,62}")
 ROOT = Path(__file__).resolve().parents[2]
@@ -44,6 +50,12 @@ def read_env(path):
 def settings(values=None):
     """Select CDC credentials and validate transport and namespace settings."""
     values = dict(os.environ if values is None else values)
+    mode = values.setdefault("CDC_SOURCE_MODE", "generic")
+    if mode not in {"generic", "fixed-demo"}:
+        raise ValueError("CDC_SOURCE_MODE must be generic or fixed-demo.")
+    validate_state_volume(values.get("CDC_STATE_VOLUME_NAME", ""))
+    if mode == "fixed-demo":
+        values = select_settings(values)
     for suffix in ["HOST", "DATABASE", "USER", "PASSWORD"]:
         if not values.get("CDC_SQLSERVER_" + suffix):
             raise ValueError("Complete the separate CDC_SQLSERVER settings.")
@@ -91,6 +103,15 @@ def settings(values=None):
     ):
         raise ValueError("Certificate bypass is limited to loopback demo DBs.")
     return values
+
+
+def selected_mapping(values, path):
+    """Use built-in tables for fixed CDC and the original map for generic."""
+    return (
+        table_mapping()
+        if values.get("CDC_SOURCE_MODE") == "fixed-demo"
+        else mappings(path)
+    )
 
 
 def reject_duplicate_keys(pairs):

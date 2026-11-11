@@ -7,6 +7,20 @@ import httpx
 from poc_catalog import SERVICES
 
 
+def required_settings(item, values):
+    """Use SOURCE reader identities for the fixed CDC mode only."""
+    if item.id == "kafbat" and values.get("CDC_SOURCE_MODE") == "fixed-demo":
+        return (
+            "SOURCE_SQLSERVER_HOST",
+            "SOURCE_SQLSERVER_DATABASE",
+            "SOURCE_SQLSERVER_USER",
+            "SOURCE_SQLSERVER_PASSWORD",
+            "DEMO_SQLSERVER_INSTALLATION_ID",
+            "DEMO_SQLSERVER_OWNERSHIP_TOKEN",
+        )
+    return item.required
+
+
 def probe_services(values: dict[str, str]) -> dict[str, bool]:
     """Check enabled, configured services concurrently with a short timeout."""
     profiles = set(values.get("COMPOSE_PROFILES", "").split(","))
@@ -14,7 +28,7 @@ def probe_services(values: dict[str, str]) -> dict[str, bool]:
         item
         for item in SERVICES
         if (not item.profiles or set(item.profiles) & profiles)
-        and all(values.get(key) for key in item.required)
+        and all(values.get(key) for key in required_settings(item, values))
     ]
     with httpx.Client(
         timeout=0.8, trust_env=False, follow_redirects=False
@@ -49,7 +63,11 @@ def service_cards(values, health):
     result = []
     for item in SERVICES:
         enabled = not item.profiles or bool(set(item.profiles) & profiles)
-        missing = [key for key in item.required if not values.get(key)]
+        missing = [
+            key
+            for key in required_settings(item, values)
+            if not values.get(key)
+        ]
         state = "not_enabled"
         if enabled:
             state = (

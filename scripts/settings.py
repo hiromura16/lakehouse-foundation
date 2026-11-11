@@ -103,6 +103,31 @@ def validate_sql_source_policy(values):
         values.setdefault(key, schema)
         if values[key] != schema:
             raise ValueError("Only the fixed SQL demo schemas are allowed.")
+    values.setdefault("CDC_SOURCE_MODE", "generic")
+    if values["CDC_SOURCE_MODE"] not in {"generic", "fixed-demo"}:
+        raise ValueError("CDC_SOURCE_MODE must be generic or fixed-demo.")
+    volume = values.setdefault("CDC_STATE_VOLUME_NAME", "")
+    if volume and not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", volume
+    ):
+        raise ValueError("Use a literal Docker volume name for CDC state.")
+    if values["CDC_SOURCE_MODE"] == "fixed-demo" and (
+        "cdc" in values.get("COMPOSE_PROFILES", "").split(",")
+        and values.get("SOURCE_SQLSERVER_CA_FILE") == "system"
+    ):
+        raise ValueError(
+            "Use an empty SOURCE_SQLSERVER_CA_FILE for system CA."
+        )
+    if (
+        values["CDC_SOURCE_MODE"] == "fixed-demo"
+        and "cdc" in values.get("COMPOSE_PROFILES", "").split(",")
+        and values.get("SOURCE_SQLSERVER_CA_FILE")
+        and values.get("SOURCE_SQLSERVER_TRUST_SERVER_CERTIFICATE") != "true"
+        and not values.get("CDC_SQLSERVER_TRUSTSTORE")
+    ):
+        raise ValueError(
+            "Custom SOURCE PEM also needs an approved Java CDC truststore."
+        )
 
 
 def normalize_no_proxy(values):

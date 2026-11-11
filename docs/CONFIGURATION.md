@@ -213,6 +213,8 @@ CDCはSOURCEの全件SELECTと別の選択機能です。DB担当がSQL Server�
 
 | 項目 | 既定・未設定時 | 意味と変更時の影響 | 秘密 |
 | --- | --- | --- | --- |
+| `CDC_SOURCE_MODE` | `generic` | `fixed-demo` はSOURCE readerと固定6表を使用。genericの接続・mappingは従来通り | いいえ |
+| `CDC_STATE_VOLUME_NAME` | 空 | 既存の既定volume名を保持。別source用には新しい専用volume名を明示し、旧stateは保全 | 社内 |
 | `CDC_CONFIG_DIR` | 生成先private dir配下の `cdc` | hostのprivate CDC設定dir。6表のtable-map.jsonを登録/consumer用へread-only mountする。Connectへdir全体を渡さない。変更はmountの再配置が必要 | 社内 |
 | `CDC_SQLSERVER_HOST` | 空 | CDCを読むSQL Server。SOURCE/DEMOとは独立した接続先 | 社内 |
 | `CDC_SQLSERVER_PORT` | `1433` | CDCソースのTCP port | 社内 |
@@ -433,3 +435,5 @@ Docker 29／Buildx Bake／社内proxyで判明した互換性修正の取り込�
 ### SQLバッチの制御principalと窓
 
 `SOURCE_SQLSERVER_CONTROL_USER/PASSWORD` は空が既定で、SOURCE readerやDEMO writerとは異なる既存principalを指定します。接続先とTLSはSOURCEの設定を使います。重なり窓 `SOURCE_SQLSERVER_BATCH_OVERLAP_SECONDS=300`（1〜86400）、安全遅延 `SOURCE_SQLSERVER_BATCH_SAFETY_LAG_SECONDS=5`（0〜3600）はprivate設定・GUIで保存し、再配置後に反映します。単に窓を広げても完全CDCやDELETE検出にはなりません。[baseline・checkpoint・復旧](SQLSERVER-FIXED-DEMO.md#6-watermark増分バッチ)
+
+固定CDCのCA、専用topic、DBA適用・無効化の詳細は [固定SQL sourceのCDC](SQLSERVER-FIXED-DEMO.md#7-固定6表のcdc準備とraw履歴) にまとめています。fixed-demoではOS標準CAはSOURCEのCA欄を空にします。genericが従来使わないSOURCEの `system` sentinelを勝手にhost mountしません。PEMとJava truststoreは別に管理します。

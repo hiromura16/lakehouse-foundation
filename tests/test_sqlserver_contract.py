@@ -23,8 +23,11 @@ FILES = (
     "001_demo_schemas.sql",
     "002_demo_tables.sql",
     "003_demo_permissions.sql",
+    "004_demo_cdc_enable.sql",
+    "005_demo_cdc_disable.sql",
     "006_demo_validation.sql",
 )
+CDC_FILES = ("004_demo_cdc_enable.sql", "005_demo_cdc_disable.sql")
 
 
 def source(filename):
@@ -269,6 +272,203 @@ class FixedSqlContractTests(unittest.TestCase):
         self.assertNotIn("ownership_hash", validation)
         self.assertNotIn("original_values", validation)
         self.assertIn("OBJECT_ID(N'cdc.change_tables'", validation)
+
+    def test_cdc_target_and_captured_columns_are_exactly_the_six_contracts(
+        self,
+    ):
+        """Check SQL allowlists without executing a CDC procedure."""
+        expected_targets = []
+        expected_columns = []
+        for ordinal, (contract, item) in enumerate(DEMO.TABLES.items(), 1):
+            capture = DEMO.CAPTURE_INSTANCES[contract]
+            columns = [
+                *item["columns"],
+                "created_at",
+                "run_id",
+                "original_values",
+            ]
+            expected_targets.append(
+                (
+                    str(ordinal),
+                    item["schema"],
+                    item["table"],
+                    capture,
+                    item["pk"],
+                    ",".join("[" + name + "]" for name in columns),
+                )
+            )
+            expected_columns.extend(
+                (capture, str(index), name)
+                for index, name in enumerate(columns, 1)
+            )
+        for filename in CDC_FILES:
+            with self.subTest(filename=filename):
+                sql = source(filename)
+                targets = re.findall(
+                    r"\((\d+),N'([^']+)',N'([^']+)',\s*"
+                    r"N'([^']+)',N'([^']+)',\s*N'([^']+)'\)",
+                    sql,
+                )
+                self.assertEqual(targets, expected_targets)
+                columns = re.findall(
+                    r"\(N'(lh_demo_[a-z_]+_v1)',(\d+),N'([^']+)'\)", sql
+                )
+                self.assertEqual(columns, expected_columns)
+                self.assertIn("i.is_primary_key=1", sql)
+                self.assertIn("ic.key_ordinal=1", sql)
+                self.assertIn("ic.key_ordinal>0)<>1", sql)
+                self.assertIn("c.is_computed=1", sql)
+                self.assertIn("d.type='PS'", sql)
+
+    def test_cdc_existing_identity_columns_and_types_fail_before_changes(self):
+        """Check guards before any existing capture could be replaced."""
+        for filename in CDC_FILES:
+            with self.subTest(filename=filename):
+                sql = source(filename)
+                mutation = sql.index("EXEC @Result=sys.sp_cdc_")
+                for error in (
+                    "THROW 51108",
+                    "THROW 51109",
+                    "THROW 51110",
+                    "THROW 51111",
+                    "THROW 51112",
+                    "THROW 51113",
+                    "THROW 51114",
+                    "THROW 51115",
+                    "THROW 51116",
+                    "THROW 51117",
+                    "THROW 51118",
+                    "THROW 51128",
+                ):
+                    self.assertLess(sql.index(error), mutation)
+                for check in (
+                    "ct.source_object_id<>t.source_object_id",
+                    "ct.role_name IS NULL",
+                    "COALESCE(ct.supports_net_changes,1)<>0",
+                    "COALESCE(ct.has_drop_pending,1)<>0",
+                    "ct.index_name IS NOT NULL",
+                    "FROM @ExpectedColumns e JOIN cdc.change_tables ct",
+                    "FROM @ActualColumns",
+                    "src.column_id IS NULL",
+                    "src.system_type_id<>changed.system_type_id",
+                    "src.max_length<>changed.max_length",
+                    "src.[precision]<>changed.[precision]",
+                    "src.[scale]<>changed.[scale]",
+                    "c.is_nullable<>e.nullable_value",
+                    "TYPE_NAME(c.user_type_id)",
+                ):
+                    self.assertIn(check, sql)
+                # Match both CDC scripts against the reviewed 002 type rows.
+                type_pattern = r"^    \(N'lh_demo_(?:erp|mes)'[^\n]+"
+                expected_types = re.findall(
+                    type_pattern, source("002_demo_tables.sql"), re.MULTILINE
+                )
+                actual_types = re.findall(type_pattern, sql, re.MULTILINE)
+                self.assertEqual(
+                    [row.rstrip(",;") for row in actual_types],
+                    [row.rstrip(",;") for row in expected_types],
+                )
+
+    def test_cdc_role_is_owned_narrow_read_only_and_never_changes_logins(self):
+        """The adapter reader gains fixed CDC access, never write authority."""
+        for filename in CDC_FILES:
+            with self.subTest(filename=filename):
+                sql = source(filename)
+                self.assertIn("$(SourceReaderUser)", sql)
+                self.assertIn("DATABASE_PRINCIPAL_ID(@Reader) IS NULL", sql)
+                self.assertIn("r.type='R'", sql)
+                self.assertIn(
+                    "r.owning_principal_id=DATABASE_PRINCIPAL_ID(N'dbo')", sql
+                )
+                self.assertIn("m.member_principal_id", sql)
+                self.assertIn("p.permission_name<>N'SELECT'", sql)
+                self.assertIn("p.class<>1 OR p.minor_id<>0", sql)
+                self.assertIn("p.state<>'G'", sql)
+                self.assertIn("@AllowedReadObjects", sql)
+                self.assertNotRegex(
+                    sql, r"(?i)\bCREATE\s+(LOGIN|USER)\b|\bPASSWORD\b"
+                )
+                self.assertNotRegex(
+                    sql,
+                    r"(?i)\bGRANT\s+(?:CONTROL|ALTER|INSERT|UPDATE|DELETE|"
+                    r"EXECUTE|VIEW)\b|\bON\s+SCHEMA::|\bdb_datawriter\b",
+                )
+        enabled = source(CDC_FILES[0])
+        self.assertIn("QUOTENAME(@Reader)", enabled)
+        self.assertIn(
+            "CREATE ROLE [lh_demo_cdc_reader] AUTHORIZATION [dbo]", enabled
+        )
+        self.assertEqual(
+            set(
+                re.findall(
+                    r"GRANT SELECT ON OBJECT::\[cdc\]\.\[([^]]+)\]", enabled
+                )
+            ),
+            {"change_tables", "captured_columns", "lsn_time_mapping"},
+        )
+        self.assertNotRegex(
+            source(CDC_FILES[1]), r"(?i)\bGRANT\b|\bALTER\s+ROLE\b"
+        )
+
+    def test_cdc_jobs_are_preserved_and_partial_retry_is_explicit(self):
+        """Check safety contracts without claiming live SQL behavior."""
+        for filename in CDC_FILES:
+            with self.subTest(filename=filename):
+                sql = source(filename)
+                raw = (DIRECTORY / filename).read_text()
+                self.assertIn("@@TRANCOUNT <> 0", sql)
+                self.assertIn("SET IMPLICIT_TRANSACTIONS OFF", sql)
+                self.assertIn("sys.sp_getapplock", sql)
+                self.assertIn("@LockOwner=N'Session'", sql)
+                self.assertIn("sys.sp_releaseapplock", sql)
+                self.assertIn("is_cdc_enabled=1", sql)
+                self.assertGreaterEqual(
+                    sql.count("independent.is_tracked_by_cdc=1"), 2
+                )
+                self.assertGreaterEqual(
+                    sql.count("independent.object_id=ct.source_object_id"), 2
+                )
+                self.assertLess(
+                    sql.index("COMMIT TRANSACTION"),
+                    sql.index("EXEC @Result=sys.sp_cdc_"),
+                )
+                self.assertIn("Partial completion can remain", raw)
+                self.assertIn("SQL Server 2022 compilation", raw)
+                self.assertIn("actual CDC execution remain unverified", raw)
+                self.assertNotRegex(
+                    sql,
+                    r"(?i)\bALTER\s+DATABASE\b|sp_cdc_(?:enable_db|disable_db|"
+                    r"add_job|drop_job|change_job|start_job|stop_job)|"
+                    r"\bUPDATE\s+(?:msdb|cdc)\.|\bsp_update_job\b",
+                )
+                self.assertIn(
+                    "o.is_ms_shipped=0 AND o.parent_object_id=0", sql
+                )
+        enabled = source(CDC_FILES[0])
+        # Full identity/column/type checks run again after new captures exist.
+        self.assertEqual(enabled.count("THROW 51112"), 2)
+        self.assertEqual(enabled.count("THROW 51113"), 2)
+        self.assertEqual(enabled.count("THROW 51114"), 2)
+        self.assertIn("@supports_net_changes=0", enabled)
+        self.assertIn("@captured_column_list=@CapturedColumns", enabled)
+        self.assertIn("@allow_partition_switch=0", enabled)
+
+    def test_cdc_disable_requires_separate_exact_confirmation(self):
+        """The destructive CDC-history operation has no broad/all option."""
+        sql = source(CDC_FILES[1])
+        self.assertIn("$(ConfirmDisableCdc)", sql)
+        self.assertIn("DATALENGTH(@ConfirmDisableCdc)<>2", sql)
+        self.assertIn(
+            "@ConfirmDisableCdc COLLATE Latin1_General_100_BIN2<>N'1'", sql
+        )
+        self.assertLess(
+            sql.index("THROW 51123"), sql.index("BEGIN TRANSACTION")
+        )
+        self.assertIn("@capture_instance=@Capture", sql)
+        self.assertNotRegex(sql, r"(?i)@capture_instance\s*=\s*N?'all'")
+        self.assertNotIn("sp_cdc_enable_table", sql)
+        self.assertIn("THROW 51129", sql)
+        self.assertNotRegex(sql, r"(?i)\bDELETE\s+FROM\s+\[lh_demo_")
 
 
 if __name__ == "__main__":
