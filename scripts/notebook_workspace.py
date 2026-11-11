@@ -72,7 +72,47 @@ class WorkspaceError(ValueError):
         super().__init__(code)
 
 
-def selected(values, root):
+def reject_private_overlap(path, values, *, settings_path=None):
+    """Reject workspace/private overlap without opening private contents.
+
+    Both directions matter: mounting an ancestor exposes settings too. The
+    selected env file can live outside CONTROL_SETTINGS_DIR, so callers must
+    supply its location as a second independent boundary. Private-path links
+    are rejected rather than resolved into an apparently safe destination.
+    """
+    # Configuration/GUI validation cannot rely on the later CLI inode walk:
+    # a workspace alias could otherwise point into private settings when raw
+    # Compose binds it. The mutation path still pins/verifies every inode.
+    try:
+        if any(part.is_symlink() for part in (path, *path.parents)):
+            raise WorkspaceError("UNSAFE_OR_INACCESSIBLE_COMPONENT")
+    except OSError:
+        raise WorkspaceError("UNSAFE_OR_INACCESSIBLE_COMPONENT") from None
+    private = values.get("CONTROL_SETTINGS_DIR", "")
+    boundaries = []
+    if private:
+        if not isinstance(private, str):
+            raise WorkspaceError("INVALID_PRIVATE_SETTINGS_PATH")
+        boundaries.append(Path(private))
+    if settings_path is not None:
+        boundaries.append(Path(settings_path).expanduser().absolute().parent)
+    for boundary in boundaries:
+        if not boundary.is_absolute() or any(
+            component in {".", ".."} for component in boundary.parts
+        ):
+            raise WorkspaceError("INVALID_PRIVATE_SETTINGS_PATH")
+        if path.is_relative_to(boundary) or boundary.is_relative_to(path):
+            raise WorkspaceError("WORKSPACE_OVERLAPS_PRIVATE_SETTINGS")
+        try:
+            if any(
+                part.is_symlink() for part in (boundary, *boundary.parents)
+            ):
+                raise WorkspaceError("UNSAFE_PRIVATE_SETTINGS_PATH")
+        except OSError:
+            raise WorkspaceError("UNSAFE_PRIVATE_SETTINGS_PATH") from None
+
+
+def selected(values, root, *, settings_path=None):
     """Validate literal paths and identities without resolving symlinks."""
     if os.name != "posix" or not all(
         hasattr(os, name) for name in ("O_NOFOLLOW", "O_DIRECTORY", "O_PATH")
@@ -108,8 +148,9 @@ def selected(values, root):
     ):
         raise WorkspaceError("PROTECTED_WORKSPACE_PATH")
     root = Path(root).absolute()
-    if path == root or root in path.parents:
+    if path.is_relative_to(root) or root.is_relative_to(path):
         raise WorkspaceError("WORKSPACE_INSIDE_CHECKOUT")
+    reject_private_overlap(path, values, settings_path=settings_path)
     if raw in PROTECTED_LEAVES or any(
         raw == prefix or raw.startswith(prefix + "/")
         for prefix in PROTECTED_PREFIXES
@@ -326,13 +367,13 @@ def enabled(values):
     return isinstance(profiles, str) and "notebooks" in profiles.split(",")
 
 
-def inspect_workspace(values, *, root=ROOT):
+def inspect_workspace(values, *, root=ROOT, settings_path=None):
     """Return a mutation-free plan with fixed codes and no private values."""
     result = base_report(enabled(values))
     if not result["enabled"]:
         return result
     try:
-        path, uid, gid = selected(values, root)
+        path, uid, gid = selected(values, root, settings_path=settings_path)
         with walk(path) as handle:
             result.update(assess(handle, uid, gid))
     except WorkspaceError as error:
@@ -606,18 +647,22 @@ def run_probe(handle, uid, gid):
     return result
 
 
-def prepare_workspace(values, *, apply=False, probe=False, root=ROOT):
+def prepare_workspace(
+    values, *, apply=False, probe=False, root=ROOT, settings_path=None
+):
     """Plan by default; require explicit apply/probe for host mutations."""
     if type(apply) is not bool or type(probe) is not bool:
         raise WorkspaceError("INVALID_WORKSPACE_OPERATION")
     if not apply and not probe:
-        return inspect_workspace(values, root=root)
+        return inspect_workspace(
+            values, root=root, settings_path=settings_path
+        )
     result = base_report(enabled(values))
     if not result["enabled"]:
         return result
     metadata_complete = False
     try:
-        path, uid, gid = selected(values, root)
+        path, uid, gid = selected(values, root, settings_path=settings_path)
         with walk(path) as handle:
             result.update(assess(handle, uid, gid))
             before = {
@@ -701,7 +746,10 @@ def main():
         from settings import load
 
         result = prepare_workspace(
-            load(args.env_file), apply=args.apply, probe=args.probe
+            load(args.env_file),
+            apply=args.apply,
+            probe=args.probe,
+            settings_path=args.env_file,
         )
     except (ValueError, OSError):
         result = base_report(True)

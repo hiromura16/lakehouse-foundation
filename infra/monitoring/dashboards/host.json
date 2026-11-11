@@ -476,7 +476,7 @@
     },
     {
       "id": 18,
-      "title": "Network / TCP / systemd: acceptance pending",
+      "title": "Network / TCP / systemd: out of scope",
       "type": "text",
       "gridPos": {
         "x": 12,

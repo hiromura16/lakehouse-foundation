@@ -107,6 +107,23 @@ JARは次のMaven Central URLからビルド時に取得します。公式のSHA
 - [Spark runtime JAR](https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-4.1_2.13/1.12.0/iceberg-spark-runtime-4.1_2.13-1.12.0.jar) / [SHA-512](https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-4.1_2.13/1.12.0/iceberg-spark-runtime-4.1_2.13-1.12.0.jar.sha512)
 - [AWS bundle JAR](https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-aws-bundle/1.12.0/iceberg-aws-bundle-1.12.0.jar) / [SHA-512](https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-aws-bundle/1.12.0/iceberg-aws-bundle-1.12.0.jar.sha512)
 
+### Iceberg RESTのOAuth2・signer警告（Issue #24）
+
+成功中の接続設定はこの変更では維持します。実認証・table config応答・Spark/Notebookの読書きを再検証していないため、警告を消す目的でtokenや認証方式を変更しません。実際のtoken、接続資格情報、catalogの応答内容を公開記録へ保存しません。
+
+| 警告 | 固定版ソースから確認した発生条件 | 対応方針 |
+| --- | --- | --- |
+| `Inferring rest.auth.type=oauth2` | Iceberg 1.12.0は方式未指定でtoken/credentialがあるとOAuth2を推論。Spark smoke・Notebook session・Sail benchmarkのSpark側の設定で説明可能 | 認証なしと確認できた環境ではtoken除去と`rest.auth.type=none`が正式な候補。今回は変更しない |
+| OAuth2 server URI不足 | OAuth2Managerにtoken/credentialがあり`oauth2-server-uri`がないと警告。警告だけでtoken取得失敗とは判断しない | OAuth2を実際に使う場合だけ、承認済みIdPのtoken endpointを指定する |
+| `signer.uri is deprecated` | S3 signerのpropertiesにキーが存在すると警告。remote signingの既定falseだけでは発生しない | Lakekeeperのtable configが有力な供給元。実応答は未確認 |
+| `signer.endpoint is deprecated` | 同上。Lakekeeper v0.14.3はremote signing時に両キーを生成する | 単純なproperty名の置換はしない。catalog/clientの標準signing対応を合わせて確認 |
+
+根拠はIceberg 1.12.0の[AuthManagers](https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/core/src/main/java/org/apache/iceberg/rest/auth/AuthManagers.java)、[AuthProperties/none](https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/core/src/main/java/org/apache/iceberg/rest/auth/AuthProperties.java)、[OAuth2Manager](https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/core/src/main/java/org/apache/iceberg/rest/auth/OAuth2Manager.java#L294)、[S3 signer](https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/aws/src/main/java/org/apache/iceberg/aws/s3/signer/S3V4RestSignerClient.java#L237)、[Lakekeeper v0.14.3の生成処理](https://github.com/lakekeeper/lakekeeper/blob/v0.14.3/crates/lakekeeper/src/service/storage/s3.rs#L630)です。実際のserver応答を調べていないため、signer警告の供給元は推論と区別します。
+
+[RESTCatalogProperties](https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/core/src/main/java/org/apache/iceberg/rest/RESTCatalogProperties.java#L111)は両signerキーを1.12.0で非推奨、1.13.0で削除予定、直接のreplacementなしとしています。`rest.remote-signing.endpoint`/`rest.remote-signing.config`はclientが設定する内部値で、利用者の後継設定として追加しません。正式な移行先は[REST応答のremote-signing-configと標準table sign endpoint](https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/open-api/rest-catalog-open-api.yaml#L4251)です。削除予定を、特定日に必ずエラー化する保証とは扱いません。方式推論そのものの削除予定は固定版ソースに明記されていません。OAuth2 URI未指定時のfallbackは将来版で削除予定ですが、時期は未確定で、REST仕様の旧OAuth endpointの2.0削除予定とも別です。
+
+次回のIceberg/Lakekeeper更新では、(1)実際の認証方式、(2)応答に旧signerキーがあるか、(3)remote-signing-configと標準sign endpointの互換、(4)Spark smoke・Notebookのread/write・Sail benchmarkのSpark側・Trinoの読戻し、(5)四つの警告の有無を記録します。公開記録はキー存在や成功/失敗に限定し、値を含むログは出しません。認証なしのSpark候補は`spark.sql.catalog.lakehouse.rest.auth.type=none`です。Lakekeeperのallowallは認可設定なので、それ単独で実認証なしとは判断しません。Sail Connectは別catalog経路、Trino 484は[別体系のiceberg.rest-catalog.security/oauth2.server-uri](https://github.com/trinodb/trino/blob/484/docs/src/main/sphinx/object-storage/metastores.md#L489)であり、Sparkのpropertyを混用しません。
+
 ### 常駐SparkとJupyterからの利用
 
 `compute` profileはMaster・Worker・History Serverの3サービスを常駐させます。

@@ -5,6 +5,7 @@ proxies are disabled. Error bodies/URLs are never surfaced. Namespace
 creation is the only REST mutation and requires the runner's write consent.
 """
 
+import http.client
 import json
 import os
 import re
@@ -72,7 +73,13 @@ def json_request(opener, request, deadline, *, allow_missing=False):
         if allow_missing and error.code == 404:
             return None
         raise LabFailure("CATALOG_UNAVAILABLE") from None
-    except (OSError, ValueError, TimeoutError, urllib.error.URLError):
+    except (
+        OSError,
+        ValueError,
+        TimeoutError,
+        urllib.error.URLError,
+        http.client.HTTPException,
+    ):
         raise LabFailure("CATALOG_UNAVAILABLE") from None
 
 
@@ -314,6 +321,12 @@ def trino_rows(engine, table, *, opener=None):
                 with opener.open(cancel, timeout=2) as response:
                     if not 200 <= response.status < 300:
                         raise LabFailure("TRINO_READ_FAILED")
-            except (LabFailure, OSError, ValueError, urllib.error.URLError):
+            except (
+                LabFailure,
+                OSError,
+                ValueError,
+                urllib.error.URLError,
+                http.client.HTTPException,
+            ):
                 pass
         raise LabFailure("TRINO_READ_FAILED") from None

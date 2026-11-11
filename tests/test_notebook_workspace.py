@@ -109,6 +109,51 @@ class SelectionTests(unittest.TestCase):
         self.assertFalse(MODULE.mode_access(owner, 3456, 2345, 2))
         self.assertFalse(MODULE.mode_access(owner, 3456, 4567, 1))
 
+    def test_private_settings_overlap_is_blocked_before_any_walk_or_apply(
+        self,
+    ):
+        """Neither a private root nor either overlap direction is mountable."""
+        boundary = Path("/srv/synthetic/private")
+        for source in ("control", "env-file"):
+            for candidate in (boundary, boundary.parent, boundary / "books"):
+                selected = values(candidate)
+                options = {}
+                if source == "control":
+                    selected["CONTROL_SETTINGS_DIR"] = str(boundary)
+                else:
+                    options["settings_path"] = boundary / "site.env"
+                for operation in ({}, {"apply": True}, {"probe": True}):
+                    with self.subTest(source=source, operation=operation):
+                        with mock.patch.object(
+                            MODULE, "walk", side_effect=AssertionError
+                        ):
+                            result = MODULE.prepare_workspace(
+                                selected, **options, **operation
+                            )
+                        self.assertEqual(result["action"], "blocked")
+                        self.assertEqual(
+                            result["reason"],
+                            "WORKSPACE_OVERLAPS_PRIVATE_SETTINGS",
+                        )
+                        self.assertFalse(result["mutation_attempted"])
+
+    def test_private_alias_and_checkout_ancestor_are_not_adopted(self):
+        """Reject alias ambiguity and a workspace containing the checkout."""
+        with tempfile.TemporaryDirectory() as folder:
+            parent = Path(folder)
+            workspace = parent / "workspace"
+            workspace.mkdir()
+            alias = parent / "alias"
+            alias.symlink_to(workspace, target_is_directory=True)
+            with mock.patch.object(MODULE, "walk", side_effect=AssertionError):
+                result = MODULE.inspect_workspace(
+                    values(workspace, CONTROL_SETTINGS_DIR=str(alias))
+                )
+            self.assertEqual(result["reason"], "UNSAFE_PRIVATE_SETTINGS_PATH")
+        with mock.patch.object(MODULE, "walk", side_effect=AssertionError):
+            result = MODULE.inspect_workspace(values(ROOT.parent))
+        self.assertEqual(result["reason"], "WORKSPACE_INSIDE_CHECKOUT")
+
     def test_unsafe_parent_ownership_and_write_bits_are_not_repaired(self):
         uid = os.geteuid() or 1000
         for owner, mode in ((uid + 2000, 0o755), (uid, 0o775), (uid, 0o777)):

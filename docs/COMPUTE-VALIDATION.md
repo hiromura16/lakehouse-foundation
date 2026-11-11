@@ -30,7 +30,7 @@ ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 
 最初は変更しません。`exists`、所有者/modeの一致、親の安全性、推定access、create/fix/none/blockedをJSONで確認します。pathやenv全文は出しません。`plan` はCompose構成だけ、`predeploy` は同じworkspace検査も行います。書込みprobeはどちらも未実施です。notebooks無効時は設定・filesystem操作を要求しません。
 
-symlink（祖先・末端・dangling）、`..`、checkout内、filesystem/mount root、home root、private設定領域、通常file、危険な親を拒否します。descriptor/no-followとinode/mount identityで置換を検出し、resolveでsymlinkを通過してから変更する方法は使いません。既存の親やNotebook本文を再帰修正しません。
+symlink（祖先・末端・dangling）、`..`、checkout内、filesystem/mount root、home root、private設定領域（選択envファイルの親・CONTROL_SETTINGS_DIRと同一/祖先/子孫になる場所）、通常file、危険な親を拒否します。descriptor/no-followとinode/mount identityで置換を検出し、resolveでsymlinkを通過してから変更する方法は使いません。既存の親やNotebook本文を再帰修正しません。
 
 ## 2. operatorが承認した後だけapplyとprobe
 
@@ -62,7 +62,7 @@ core、migration、Spark volume initが完了した既存projectを対象にし�
   --project-name selected-project spark-check
 ```
 
-`selected-project` は実際の承認済みappNameへ置き換えます。明示project指定はspark-checkだけで有効です。Composeの `--project-name` とimage/volumeのCOMPOSE_PROJECT_NAME展開を同じ値にし、secret/NO_PROXYはprivate envを優先します。shellに残ったCOMPOSE_PROJECT_NAMEで取り違えません。元のenvは書き換えません。
+`selected-project` は実際の承認済みappNameへ置き換えます。明示project指定はspark-checkだけで有効です。Composeの `--project-name` とimage/volumeのCOMPOSE_PROJECT_NAME展開を同じ値にし、secret/NO_PROXYはprivate envを優先します。shellのCOMPOSE_PROJECT_NAMEと選択値が不一致なら操作前に停止します。古いshell値は`unset COMPOSE_PROJECT_NAME`で解除します。元のenvは書き換えません。
 
 preflight→common imageのbuild担当 `spark-volumes-init` → `run --rm --no-deps spark-check` の順です。既存coreとMaster/Workerの状態が不正ならbuild前に停止します。container内でも固定Master/Worker JSONと登録Workerの対応を確認し、失敗をlocalへfallbackしません。
 

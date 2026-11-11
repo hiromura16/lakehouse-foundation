@@ -539,9 +539,19 @@ def load(path, *, private_mount=None):
             not workspace.is_absolute()
             or ".." in workspace.parts
             or workspace.is_relative_to(ROOT)
+            or ROOT.is_relative_to(workspace)
             or workspace == Path("/")
         ):
             raise ValueError("Use an external absolute NOTEBOOKS_DIR.")
+        # Share the same private-directory boundary with standalone workspace
+        # preparation. Loading by file also works for GUI/spec-loaded modules
+        # without depending on the caller's ambient PYTHONPATH.
+        specification = importlib.util.spec_from_file_location(
+            "notebook_site_validation", ROOT / "scripts/notebook_workspace.py"
+        )
+        notebook = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(notebook)
+        notebook.reject_private_overlap(workspace, values, settings_path=path)
     if values.get("MCP_ENABLE_MUTATIONS", "false") not in {"true", "false"}:
         raise ValueError("MCP_ENABLE_MUTATIONS must be true or false.")
     ca_file = values.get("CORPORATE_CA_FILE", "")

@@ -329,7 +329,7 @@ def child_result(lines, expected):
 
 
 def stop_owned_run(name, run_id, values, env, runner):
-    """On timeout, stop only the exact ephemeral container we just requested.
+    """On uncertain completion, stop only our exact ephemeral container.
 
     A missing container or failed inspection is unknown, not successful
     cleanup. Stop uses its inspected immutable ID, never a reusable name.
@@ -486,16 +486,24 @@ def run_check(
                 "/opt/lakehouse/spark_smoke.py",
                 "--local-only",
             ]
-        outcome = runner(compose + arguments, env, timeout=600, capture=False)
-        if outcome.error:
+        try:
+            outcome = runner(
+                compose + arguments, env, timeout=600, capture=False
+            )
+            if outcome.error:
+                raise CheckFailure("CONTAINER_RESULT_UNKNOWN")
+            result.update(child_result(outcome.records, result))
+            if outcome.returncode:
+                raise CheckFailure("CONTAINER_FAILED")
+        except (ValueError, OSError, TypeError, KeyError):
+            # An ordinary nonzero CLI exit can follow an attach transport
+            # error after the container started. --rm is not stop evidence.
+            # Missing/malformed records likewise leave execution uncertain.
             result["container_cleanup"] = stop_owned_run(
                 name, result["run_id"], values, env, runner
             )
             result["cleanup"]["artifact"] = "unknown"
-            raise CheckFailure("CONTAINER_RESULT_UNKNOWN")
-        result.update(child_result(outcome.records, result))
-        if outcome.returncode:
-            raise CheckFailure("CONTAINER_FAILED")
+            raise
         result["host_stages"][current]["status"] = "passed"
         result["container_cleanup"] = "compose_run_rm"
     except (ValueError, OSError, TypeError, KeyError):

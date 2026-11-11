@@ -353,3 +353,8 @@ Notebook workspaceのread-only計画と承認後のapply/probe、既存project�
 詳細な配送・損失・bufferの境界は [Vector](VECTOR.md)、Labの停止は [OpenObserve](OPENOBSERVE.md) と [Sail](SAIL-LAB.md) にあります。実値やtoken、rawログを公開Issueへ添付しません。
 
 `monitoring-host` 単独、または `compute` なしの `sail-lab` は設定検査で拒否します。前者は `monitoring,monitoring-host`、後者は `compute,sail-lab` を選び、必要資源・権限を確認してから既存managerへ反映します。通常monitoringだけでhost root/PIDを読ませません。
+
+
+## CLIがproject名の不一致で停止する（Issue #23）
+
+shellの`COMPOSE_PROJECT_NAME`はCLIの対象変更には使えません。private設定、またはspark-checkの`--project-name`と不一致なら、status/verify/grafana-init/spark-checkを含め操作前に停止します。`unset COMPOSE_PROJECT_NAME`で古い値を解除し、private設定を実appNameへ合わせます。明示project指定はspark-checkだけです。資格情報や他のenv値を公開ログへ出して切り分けません。

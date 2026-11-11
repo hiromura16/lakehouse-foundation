@@ -266,6 +266,48 @@ class ComputeOrchestrationTests(unittest.TestCase):
             )
         )
 
+    def test_attach_failure_or_invalid_result_checks_owned_cleanup(self):
+        """Nonzero attach exits may leave a running container behind."""
+        original = self.docker
+        for returncode, records in ((1, ()), (0, (b"malformed",))):
+            for foreign in (False, True):
+                self.docker = SyntheticDocker(self.values)
+                current = self.docker
+                if foreign:
+                    current.foreign.add("spark-check")
+
+                def runner(command, env, **options):
+                    outcome = current(command, env, **options)
+                    if "run" in command:
+                        return CHECK.CommandResult(returncode, records=records)
+                    return outcome
+
+                with self.subTest(returncode=returncode, foreign=foreign):
+                    output = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        code = CHECK.run_check(
+                            self.compose, self.values, {}, runner=runner
+                        )
+                    result = json.loads(output.getvalue().split("=", 1)[1])
+                    self.assertEqual(code, 1)
+                    self.assertEqual(result["cleanup"]["artifact"], "unknown")
+                    self.assertEqual(
+                        result["container_cleanup"],
+                        "unknown" if foreign else "stopped_owned_one_shot",
+                    )
+                    stops = [
+                        call[0]
+                        for call in current.calls
+                        if call[0][:2] == ["docker", "stop"]
+                    ]
+                    self.assertEqual(
+                        stops,
+                        []
+                        if foreign
+                        else [["docker", "stop", "--time", "10", "c" * 64]],
+                    )
+        self.docker = original
+
     def test_selected_project_replaces_shell_but_preserves_private_bypass(
         self,
     ):

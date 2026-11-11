@@ -105,7 +105,9 @@ class ControlEnvironmentTests(ControlFixture, unittest.TestCase):
             mock.patch.object(
                 compute_check, "run_check", return_value=0
             ) as run,
-            mock.patch.dict(os.environ, {"COMPOSE_PROJECT_NAME": "stale-app"}),
+            mock.patch.dict(
+                os.environ, {"COMPOSE_PROJECT_NAME": "selected-app"}
+            ),
         ):
             code, process, _, _ = self.invoke(
                 [
@@ -125,6 +127,123 @@ class ControlEnvironmentTests(ControlFixture, unittest.TestCase):
         self.assertEqual(values["COMPOSE_PROJECT_NAME"], "selected-app")
         self.assertEqual(environment["COMPOSE_PROJECT_NAME"], "selected-app")
         self.assertEqual(environment["NO_PROXY"], environment["no_proxy"])
+
+    def test_project_shell_conflict_fails_before_any_action(self):
+        """Issue23: refuse ambiguity without exposing project/secret values."""
+        with mock.patch.object(
+            sys, "path", [str(ROOT / "scripts"), *sys.path]
+        ):
+            import compute_check
+        for action in ("status", "verify", "grafana-init", "spark-check"):
+            for explicit in (
+                (False, True) if action == "spark-check" else (False,)
+            ):
+                arguments = ["--env-file", str(self.env_file)]
+                if explicit:
+                    arguments += ["--project-name", "selected-app"]
+                arguments.append(action)
+                with (
+                    self.subTest(action=action, explicit=explicit),
+                    mock.patch.dict(
+                        os.environ, {"COMPOSE_PROJECT_NAME": "stale-app"}
+                    ),
+                    mock.patch.object(compute_check, "run_check") as smoke,
+                ):
+                    code, process, output, errors = self.invoke(arguments)
+                self.assertIsNotNone(code)
+                process.assert_not_called()
+                smoke.assert_not_called()
+                diagnostic = str(code) + errors
+                self.assertIn("COMPOSE_PROJECT_NAME", diagnostic)
+                self.assertNotIn("stale-app", diagnostic + output)
+                if action == "spark-check":
+                    self.assertIn("LAKEHOUSE_SPARK_RESULT=", output)
+
+    def test_private_notebook_overlap_refused_before_compose_or_metadata(self):
+        """Raw Compose/GUI plans must reject the same private boundaries."""
+        original = self.env_file.read_text()
+        control = self.env_file.parent.parent / "other-private"
+        for candidate in (
+            self.env_file.parent,
+            self.env_file.parent / "books",
+            self.env_file.parent.parent,
+            control,
+            control / "books",
+        ):
+            text = []
+            updates = {
+                "COMPOSE_PROFILES": "notebooks",
+                "NOTEBOOKS_DIR": str(candidate),
+                "CONTROL_SETTINGS_DIR": str(control),
+            }
+            for line in original.splitlines():
+                key = line.partition("=")[0]
+                text.append(
+                    key + "=" + updates[key] if key in updates else line
+                )
+            self.env_file.write_text("\n".join(text) + "\n")
+            with self.assertRaisesRegex(ValueError, "PRIVATE_SETTINGS"):
+                SETTINGS.load(self.env_file)
+            for action in ("plan", "predeploy", "up", "notebook-workspace"):
+                code, process, _, _ = self.invoke(
+                    ["--env-file", str(self.env_file), action]
+                )
+                self.assertIsNotNone(code)
+                process.assert_not_called()
+        self.env_file.write_text(original)
+
+    def test_matching_and_unset_shell_project_keep_existing_actions(self):
+        """The ambiguity guard must not change ordinary explicit selection."""
+        project = SETTINGS.load(self.env_file)["COMPOSE_PROJECT_NAME"]
+        with mock.patch.object(
+            sys, "path", [str(ROOT / "scripts"), *sys.path]
+        ):
+            import compute_check
+        fake_grafana = SimpleNamespace(
+            setup=mock.Mock(return_value={"status": "disabled"})
+        )
+        for action in ("status", "verify", "grafana-init", "spark-check"):
+            for inherited in (None, project):
+                with (
+                    self.subTest(action=action, inherited=inherited),
+                    mock.patch.dict(os.environ, {}, clear=True),
+                    mock.patch.dict(
+                        sys.modules, {"grafana_setup": fake_grafana}
+                    ),
+                    mock.patch.object(
+                        compute_check, "run_check", return_value=0
+                    ),
+                ):
+                    if inherited is not None:
+                        os.environ["COMPOSE_PROJECT_NAME"] = inherited
+                    code, _, _, errors = self.invoke(
+                        ["--env-file", str(self.env_file), action]
+                    )
+                self.assertIn(code, (None, 0))
+                self.assertEqual(errors, "")
+
+    def test_notebook_alias_cannot_bypass_private_boundary_in_settings(self):
+        """Reject leaf/ancestor links before GUI or raw Compose can bind."""
+        original = self.env_file.read_text()
+        alias = self.env_file.parent.parent / "notebook-alias"
+        alias.symlink_to(self.env_file.parent, target_is_directory=True)
+        for candidate in (alias, alias / "books"):
+            lines = []
+            for line in original.splitlines():
+                if line.startswith("COMPOSE_PROFILES="):
+                    line = "COMPOSE_PROFILES=notebooks"
+                if line.startswith("NOTEBOOKS_DIR="):
+                    line = "NOTEBOOKS_DIR=" + str(candidate)
+                lines.append(line)
+            self.env_file.write_text("\n".join(lines) + "\n")
+            with self.assertRaisesRegex(ValueError, "INACCESSIBLE_COMPONENT"):
+                SETTINGS.load(self.env_file)
+            code, process, _, _ = self.invoke(
+                ["--env-file", str(self.env_file), "plan"]
+            )
+            self.assertIsNotNone(code)
+            process.assert_not_called()
+        self.env_file.write_text(original)
 
     def test_workspace_profile_off_apply_probe_is_a_nonmutating_noop(self):
         """Explicit preparation cannot require an inactive notebook path."""

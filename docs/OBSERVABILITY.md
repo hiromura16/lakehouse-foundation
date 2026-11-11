@@ -27,7 +27,9 @@
 
 root読取りは機密ファイルを含む範囲へのアクセスです。readonlyは情報漏えいの防止を保証しません。**operatorがmountと用途を承認してから**既存managerで配置します。host network、D-Bus、`/dev/kmsg`、追加capability、Docker socketを追加してpanelを埋める手順は提供しません。socketの`:ro`はDocker APIの権限を制限しません。
 
-Node Exporterはcollectorのallowlistを使用します。root/PIDを渡してもnetlinkや`/proc/net`がhost network namespaceを示すとは限らないため、network/TCP/systemdは無効です。対応するpanelは未提供を明示します。cAdvisorにComposeラベルが出ない場合、selectorは空になります。架空のラベルやゼロ値で補いません。厳密なcontainer別監視が必要なら、socket-free受入結果を確認し、別途権限設計を判断します。
+Issue #22の採否として、**この構成ではhostのnetwork RX/TX・error/drop、TCP接続数、systemd unit状態を対象外**とします。「受入待ち」ではありません。host network・D-Bus・追加capabilityを渡さず、同梱のhost dashboard templateも対象外と表示し、これらの指標へのalertは定義しません。cAdvisorのnetwork値はcontainer単位で、host NIC値の代替ではありません。Docker/Dokploy側の稼働は既存のstatusと実際に取得できるcontainer情報で確認しますが、systemd unit監視と同等の検知範囲とは扱いません。既存のGUI dashboardは上書きしないため、作成済みの場合は運用担当が該当text panelの見出しを「Network / TCP / systemd: out of scope」へ手動変更します。dashboard全体の置換は不要です。
+
+Node Exporterはcollectorのallowlistを使用します。root/PIDを渡してもnetlinkや`/proc/net`がhost network namespaceを示すとは限らないため、network/TCP/systemd collectorは無効です。対応するpanelは未提供を明示します。cAdvisorにComposeラベルが出ない場合、selectorは空になります。架空のラベルやゼロ値で補いません。厳密なcontainer別監視が必要なら、socket-free受入結果を確認し、別途権限設計を判断します。
 
 ## 2. 配置前の確認
 
@@ -66,7 +68,7 @@ start-time変化はrestart counterではありません。JVM working setの高�
 
 CPUは5分平均80%/10分平均90%と、その後の2分継続を分けています。MemAvailable 3GiB/1.5GiB未満、swap使用2GiB/3GiB超、filesystem/inode 80%/90%超、exporter停止2分/5分、有限container limit 85%/95%を初期ルールとします。これは実測容量の推奨値ではありません。zero/unlimited limitとroot/aggregate cgroupは比率判定へ混入させません。
 
-host exporterの2jobは固定名のDNS service discoveryを使います。`monitoring-host` を選ばない場合、collectorの起動・host読取り権限は追加しません。ただしDNS再解決の設定は残り、上位resolverへの転送や同名の誤解決の可能性を排除しません。[DNS discoveryの注意](VECTOR.md#6-検証の現状)を含め、TargetsとCompose内の対応を確認します。Vectorはこのprofileが正確に選択された時だけ `host-expected.yaml` を読み、15秒ごとに `lakehouse_host_collection_expected=1` を公開します。この値は「選択中」の宣言であり、collectorの正常性を示す値ではありません。
+host exporterの2jobは固定名のDNS service discoveryを使います。`monitoring-host` を選ばない場合、collectorの起動・host読取り権限は追加しません。ただしDNS再解決の設定は残り、上位resolverへの転送や同名の誤解決の可能性を排除しません。[DNS discoveryの注意](VECTOR.md#5-配送保証と停止時の扱い)を含め、TargetsとCompose内の対応を確認します。Vectorはこのprofileが正確に選択された時だけ `host-expected.yaml` を読み、15秒ごとに `lakehouse_host_collection_expected=1` を公開します。この値は「選択中」の宣言であり、collectorの正常性を示す値ではありません。
 
 `foundation:host_exporter_unavailable:bool` は、個別node/cAdvisorの `up=0` とDNS targetの消失を合わせ、expected=1かつVector自身のup=1で有効化します。そのため明示選択中でVectorが利用可能なら、seriesの不在もExporterDownの対象です。profileを外した時はexpected signalがなく、host向けalertは出しません。Vectorが利用不能ならhostの判定はunknownで、5分のLogTransportDownが別の通知条件になります。起動前・再配置直後のscrape遅延・Vector停止中までhost状態を保証せず、欠測をhealthyやゼロと読み替えません。DNSや実collectorの動作は引き続き配置先で受入します。[DNS SD仕様](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#dns_sd_config)
 

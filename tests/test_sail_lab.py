@@ -1,6 +1,7 @@
 """Synthetic contracts and fakes, never live Spark/Sail/Iceberg acceptance."""
 
 import copy
+import http.client
 import io
 import json
 import os
@@ -418,6 +419,28 @@ class CatalogTests(unittest.TestCase):
             self.assertEqual(len(opener.requests), 2)
             self.assertEqual(opener.requests[-1].full_url, continuation)
             self.assertEqual(opener.requests[-1].get_method(), "DELETE")
+
+    def test_partial_http_failure_cancels_only_approved_trino_query(self):
+        """Protocol errors must take the same bounded failure/cleanup path."""
+        uri = "http://trino:8080/v1/statement/synthetic/1"
+        for cancellation in ({}, http.client.BadStatusLine("synthetic")):
+            opener = Opener(
+                [
+                    {"nextUri": uri},
+                    http.client.IncompleteRead(b"synthetic-private-fragment"),
+                    cancellation,
+                ]
+            )
+            with self.assertRaises(contract.LabFailure) as caught:
+                catalog.trino_rows(
+                    "sail", "silver_erp_products", opener=opener
+                )
+            self.assertEqual(str(caught.exception), "TRINO_READ_FAILED")
+            self.assertEqual(
+                [request.get_method() for request in opener.requests],
+                ["POST", "GET", "DELETE"],
+            )
+            self.assertEqual(opener.requests[-1].full_url, uri)
 
 
 class FakeFrame:

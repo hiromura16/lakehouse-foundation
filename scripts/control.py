@@ -7,6 +7,7 @@ import os
 import socket
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 from settings import ROOT, environment, load
@@ -104,6 +105,26 @@ if args.action == "spark-check":
                 local_only=args.local_only, result_dir=args.result_dir
             )
         ) from None
+# A stale shell name must not silently select, or appear to select, a project.
+# Compare after the narrow explicit smoke override; never echo private values.
+shell_project = os.environ.get("COMPOSE_PROJECT_NAME")
+if (
+    shell_project is not None
+    and shell_project != values["COMPOSE_PROJECT_NAME"]
+):
+    message = (
+        "COMPOSE_PROJECT_NAME conflicts with the selected project. "
+        "Unset the shell variable and select the private setting, or use "
+        "--project-name for spark-check only."
+    )
+    if args.action == "spark-check":
+        print(message, file=sys.stderr)
+        raise SystemExit(
+            settings_failure(
+                local_only=args.local_only, result_dir=args.result_dir
+            )
+        )
+    raise SystemExit(message)
 compose = [
     "docker",
     "compose",
@@ -239,7 +260,9 @@ elif args.action == "plan":
 elif args.action == "notebook-workspace":
     from notebook_workspace import prepare_workspace
 
-    result = prepare_workspace(values, apply=args.apply, probe=args.probe)
+    result = prepare_workspace(
+        values, apply=args.apply, probe=args.probe, settings_path=args.env_file
+    )
     print(json.dumps(result))
     if result.get("action") == "blocked" or (
         args.probe
@@ -251,7 +274,7 @@ elif args.action == "predeploy":
     from notebook_workspace import inspect_workspace
 
     run(["config", "--quiet"])
-    result = inspect_workspace(values)
+    result = inspect_workspace(values, settings_path=args.env_file)
     print(json.dumps(result))
     if result.get("enabled") and result.get("action") != "none":
         raise SystemExit(1)
@@ -264,7 +287,12 @@ elif args.action == "up":
     if "notebooks" in values.get("COMPOSE_PROFILES", "").split(","):
         from notebook_workspace import inspect_workspace
 
-        if inspect_workspace(values).get("action") != "none":
+        if (
+            inspect_workspace(values, settings_path=args.env_file).get(
+                "action"
+            )
+            != "none"
+        ):
             raise SystemExit(
                 "Review notebook-workspace plan and approved apply/probe "
                 "first."

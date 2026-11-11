@@ -125,6 +125,8 @@ lakehouse-foundation          Project
 
 **期待結果:** Generalタブの **Deploy Settings** に `Compose` と表示されます。`Stack` は選びません。本構成はローカルbuild、Compose依存条件、inline configsを使用します。Dokploy自身がSwarmで動くことと、アプリをStackで配置することは別です。[0.31.0のCompose Type定義](https://github.com/Dokploy/dokploy/blob/v0.31.0/packages/server/src/db/schema/compose.ts)
 
+CLIのproject選択にshellの`COMPOSE_PROJECT_NAME`指定は使えません。private設定（spark-checkの明示`--project-name`があればその値）とshell値が食い違うと、操作前に停止します。shell変数を`unset COMPOSE_PROJECT_NAME`で解除し、private設定を実appNameへ合わせてください。`--project-name`はspark-check専用です。raw Composeの補間優先順位とは区別します。
+
 ## 3. General → Provider → Gitへ公開URLを登録する
 
 Generalタブの **Provider** カードで **Git** タブを選びます。GitHubのURLを直接入力する場合も、選ぶのはこの **Git** です。

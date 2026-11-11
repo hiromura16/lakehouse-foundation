@@ -175,7 +175,7 @@ def templates():
     host_panels.append(
         notice(
             len(host_panels) + 1,
-            "Network / TCP / systemd: acceptance pending",
+            "Network / TCP / systemd: out of scope",
             "Host root/PID access does not prove host network namespace "
             "access. "
             "Network/TCP and systemd collectors are deliberately disabled. "
