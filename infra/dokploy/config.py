@@ -15,8 +15,23 @@ import re
 import stat
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(ROOT / "scripts"))
+from settings import (  # noqa: E402
+    BYPASS_KEYS,
+    buildkit_client_token_mode,
+    normalize_no_proxy,
+)
+
+PROXY_KEYS = ("HTTP_PROXY", "HTTPS_PROXY")
+SERVICE_INPUT_KEYS = (
+    *PROXY_KEYS,
+    *BYPASS_KEYS,
+    "DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN",
+)
 SETTING_KEYS = (
     "DOKPLOY_BIND_IP",
     "DOKPLOY_ALLOWED_CIDRS",
@@ -105,13 +120,16 @@ def read_env(path):
             )
         # Other settings can include source credentials and proxy passwords.
         # Do not interpret, emit, or import them into this environment.
-        if key not in SETTING_KEYS:
+        if key not in (*SETTING_KEYS, *SERVICE_INPUT_KEYS):
             continue
-        if key in values or not re.fullmatch(r"[A-Za-z0-9.,:/_-]*", value):
+        if value.startswith("'") and value.endswith("'"):
+            value = value[1:-1]
+        if key in values or any(ord(c) < 32 or ord(c) > 126 for c in value):
             raise ValueError(
                 f"Invalid or duplicate Dokploy configuration at line {number}."
             )
         values[key] = value
+    service_environment(values)  # Validate private settings even for dry-run.
     optional = {"DOKPLOY_ADMIN_PORT", "DOCKER_BRIDGE_CIDR"}
     for key in SETTING_KEYS:
         if not values.get(key) and key not in optional:
@@ -161,6 +179,41 @@ def read_env(path):
     else:
         values["DOCKER_BRIDGE_CIDR"] = ""
     return values
+
+
+def service_environment(values):
+    """Select seven managed names, with no ambient shell configuration.
+
+    Uppercase proxy inputs are authoritative; both client conventions get
+    identical values. Empty inputs remove managed keys during reconciliation.
+    The canonical bypass union always preserves internal service destinations.
+    """
+    result = {}
+    for key in PROXY_KEYS:
+        value = values.get(key, "")
+        if not value:
+            continue
+        try:
+            parsed = urlsplit(value)
+            valid = (
+                parsed.scheme in {"http", "https"}
+                and parsed.hostname
+                and parsed.port
+                and not parsed.query
+                and not parsed.fragment
+                and parsed.path in {"", "/"}
+                and not any(c.isspace() or c in "\\\"'`$" for c in value)
+            )
+        except ValueError:
+            valid = False
+        if not valid:
+            raise ValueError("Invalid private proxy URL; values withheld.")
+        result[key] = result[key.lower()] = value
+    if result or any(values.get(key) for key in BYPASS_KEYS):
+        result["NO_PROXY"] = result["no_proxy"] = normalize_no_proxy(values)
+    if buildkit_client_token_mode(values) == "1":
+        result["BUILDKIT_NO_CLIENT_TOKEN"] = "1"
+    return result
 
 
 def validate_swarm(swarm, pool, subnet):
@@ -260,6 +313,8 @@ def arguments(argv=None):
     read.add_argument(
         "path", type=Path, help="Git外の通常envファイル。権限0600以下"
     )
+    plan = commands.add_parser("service-plan", help="秘密値なしの状態のみ表示")
+    plan.add_argument("path", type=Path)
     swarm = commands.add_parser(
         "swarm",
         help="標準入力のSwarm Cluster JSONと既定poolを照合",
@@ -334,6 +389,16 @@ def main(argv=None):
         values = read_env(args.path)
         for key in SETTING_KEYS:
             print(values[key])
+    elif args.command == "service-plan":
+        selected = service_environment(read_env(args.path))
+        proxy = "SET" if any(k in selected for k in PROXY_KEYS) else "NOT_SET"
+        mode = (
+            "enabled"
+            if "BUILDKIT_NO_CLIENT_TOKEN" in selected
+            else ("disabled")
+        )
+        print("Dokploy service proxy: " + proxy)
+        print("Dokploy BuildKit client token mode: " + mode)
     elif args.command == "swarm":
         validate_swarm(json.load(sys.stdin), args.pool, args.subnet)
     elif args.command == "ports":
@@ -356,4 +421,11 @@ if __name__ == "__main__":
     try:
         main()
     except (ValueError, OSError) as error:
-        raise SystemExit(str(error)) from None
+        # Address parsers and OS exceptions can contain private input values.
+        message = (
+            "Invalid private Dokploy configuration; values withheld."
+            if len(sys.argv) > 1
+            and sys.argv[1] in {"read-env", "service-plan"}
+            else str(error)
+        )
+        raise SystemExit(message) from None

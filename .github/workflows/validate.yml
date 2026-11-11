@@ -60,6 +60,11 @@ jobs:
         ruff check .
         ruff format --check .
         pycodestyle --max-line-length=79 scripts tests infra
+    - name: Check installer and Python syntax without applying configuration
+      run: |
+        bash -n infra/dokploy/install.sh
+        python -m compileall -q scripts infra medallion
+    # unittest discovery also includes all Dokploy environment regressions.
     - name: Test source-only generation and publication checks
       run: python -m unittest discover -s tests
     - name: Check generated report figures and offline gallery

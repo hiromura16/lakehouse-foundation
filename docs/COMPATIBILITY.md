@@ -262,6 +262,23 @@ Airflow自身がデータを生成したり外部DBへ書き込んだりはし�
 
 PostgreSQL 18のデータボリュームはイメージの規約に合わせて `/var/lib/postgresql` へマウントします。既存の17系データを18のコンテナへそのまま付け替えることはメジャーアップグレードの手順になりません。既存データがある場合は、dump/restoreまたは正式なアップグレード手順と復元試験を先に確定します。
 
+## Dokploy 0.31.0・Docker29のproxy変更の検証境界
+
+今回の変更は既存の採用image/digest、Docker29の `docker info --format '{{json .Swarm.Cluster}}'`、optional CA placeholder、canonical NO_PROXYを維持し、Dokploy本体の管理env同期を追加します。daemon proxyと本体env、アプリbuild/runtimeの三層を混同しません。[適用面と診断](COMPANY-PROXY.md#dokploy配置で確認する3つのproxy適用面)
+
+| 検証の種類 | この変更で確認する内容 | 別途必要な受入 |
+| --- | --- | --- |
+| unit / 合成private設定 | 0/1既定・upgrade保持、不正値拒否、6変数とNO_PROXY、重複修復・no-op、timeout・秘密非表示 | 実proxyの認証方式・CA・許可先 |
+| CLI/Compose静的検査 | Bash構文、dry-run無変更、全profileの補間、既存Docker29/CA/bypass回帰 | 同じhostでのimage buildとservice起動 |
+| 本体serviceの現地受入 | 今回のローカル変更では未実施 | ownershipの一致、更新specの収束、Git clone、registry/token疎通 |
+| BuildKit効果 | `DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN=1` を標準名へ渡す契約まで | キャッシュにない固定baseでのauth/metadata再試験。解消保証なし |
+
+BuildKit switchはclient token取得経路の変更候補です。上流masterの [authprovider実装](https://github.com/moby/buildkit/blob/master/session/auth/authprovider/authprovider.go) から、採用Docker/Composeに同梱された実装と同じだと断定しません。company proxyで失敗を直した実績や認証回避機能としては扱いません。[Docker service updateのenv仕様](https://docs.docker.com/reference/cli/docker/service/update/)
+
+### 将来提案: 完成imageの事前build
+
+中期案として、CIでworker/demo/Superset/CDC/MCPの完成imageをbuildし、GHCR・GitLab Container Registry・Harbor等へ保管してComposeからdigest固定で使う方式を検討します。配置先でのBuildKit依存を減らせますが、registry到達・CA・資格情報・image配布範囲の設計は残ります。これは文書内の将来提案に留め、今回の変更では公開Issue作成、CIからのimage公開、既存ローカルbuild方式の切替を行いません。
+
 ## プロキシと確認状態
 
 各任意イメージのbuildへ渡す変数は、`HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` とその小文字の **6項目** です。一方、private `site.env` の生成・upgradeでは **7項目目の `LAKEHOUSE_NO_PROXY`** も保存します。この専用キーへ必須内部名と利用者の追加先をまとめ、大小文字のNO_PROXYと同期します。CLIは選択したprivate設定から正規化し、Dokployのraw配置では生成・upgrade済みの専用キーをサービスEnvironmentにも転記します。

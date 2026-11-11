@@ -272,6 +272,7 @@ SSL_CERT_FILE、REQUESTS_CA_BUNDLE、AWS_CA_BUNDLE、CURL_CA_BUNDLEはimage内�
 
 | 項目 | 生成時の既定 | 意味と変更時の影響 | 秘密 |
 | --- | --- | --- | --- |
+| `DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN` | `1` | Dokploy本体へ標準名 `BUILDKIT_NO_CLIENT_TOKEN=1` を渡す検証未了の対策候補。0で管理する標準名を削除。空欄・0/1以外はplanで拒否。設定保存後はinstallerのdry-runと本体への反映が必要 | いいえ |
 | `DOKPLOY_BIND_IP` | 空 | Dokploy UI/Traefikを公開する限定IPv4。ホストに割り当て済みの値を使う | 社内 |
 | `DOKPLOY_ALLOWED_CIDRS` | 空 | 許可するprivate/loopbackクライアントCIDRをカンマ区切り。全開放を指定する欄ではない | 社内 |
 | `DOKPLOY_ADMIN_PORT` | `3100` | 管理画面のhost port。既存サービスとSwarm portを避ける | 社内 |
@@ -281,6 +282,8 @@ SSL_CERT_FILE、REQUESTS_CA_BUNDLE、AWS_CA_BUNDLE、CURL_CA_BUNDLEはimage内�
 | `DOCKER_BRIDGE_CIDR` | 空（既存bridgeから検査） | `docker_gwbridge` の想定CIDRを指定する任意項目。値を書くだけでDocker daemonのbridgeを作り替える機能ではない | 社内 |
 
 既存Swarmや同名の管理外リソースが見つかった場合、導入ツールは強制離脱・再初期化・削除で回避しません。会社の既存管理基盤を維持するのか、このinstallerで新設するのかを先に決めます。[DOKPLOY.md](DOKPLOY.md)
+
+Dokploy installerもprivate `HTTP_PROXY` / `HTTPS_PROXY` を読み、値がある入力だけ対応する大文字・小文字へ同値で渡します。NO_PROXYは共通settingsの和集合を標準名の両caseへ渡します。サービスへ独自の `LAKEHOUSE_NO_PROXY` は渡しません。上のBuildKit switchは名前にTOKENを含みますが秘密値ではなく、設定GUIから0/1を保存できます。proxy URLは引き続き秘密欄です。保存だけではDokploy本体もアプリも変更しません。[Dokploy本体の反映手順](COMPANY-UPDATE.md#dokployサービス自身へproxyとbuildkit設定を同期する)
 
 ## アプリのproxy設定とcanonical bypass
 

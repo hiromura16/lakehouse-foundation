@@ -122,6 +122,85 @@ class PrivateSettingsCompatibilityTests(
 ):
     """Keep deployment choices and credentials through proxy normalization."""
 
+    def test_buildkit_default_is_generated_and_not_a_secret(self):
+        """Persist a strict private switch without treating it as a token."""
+        values = self.read_literal()
+        self.assertEqual(values["DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN"], "1")
+        public = GUI_SETTINGS.SettingsStore(self.env_file).public()
+        self.assertEqual(
+            public["values"]["DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN"], "1"
+        )
+        self.assertNotIn(
+            "DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN", public["secret_keys"]
+        )
+
+    def test_upgrade_adds_buildkit_switch_without_rotating_existing_secrets(
+        self,
+    ):
+        """Upgrade an old site's missing switch while keeping every value."""
+        before = self.read_literal()
+        before.pop("DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN")
+        before.update(
+            SOURCE_SQLSERVER_PASSWORD="synthetic-source-secret",
+            DEMO_SQLSERVER_PASSWORD="synthetic-demo-secret",
+            CUSTOM_PRESERVED_VALUE="synthetic-custom-choice",
+            HTTP_PROXY=(
+                "http://example:synthetic-secret@proxy.example.invalid:3128"
+            ),
+        )
+        self.write_literal(before)
+        original = self.env_file.read_bytes()
+        result = self.configure("--upgrade")
+        after = self.read_literal()
+        self.assertEqual(after["DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN"], "1")
+        for key, value in before.items():
+            self.assertEqual(after[key], value, "Changed key: " + key)
+        self.assertEqual(
+            self.env_file.with_name("site.env.before-upgrade").read_bytes(),
+            original,
+        )
+        self.assertNotIn("synthetic-secret", result.stdout + result.stderr)
+        saved = self.env_file.read_bytes()
+        self.configure("--upgrade")
+        self.assertEqual(self.env_file.read_bytes(), saved)
+
+    def test_upgrade_preserves_explicit_buildkit_disable(self):
+        """Adding later keys must not re-enable an operator's zero setting."""
+        before = self.read_literal()
+        before["DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN"] = "0"
+        self.write_literal(before)
+        self.configure("--upgrade")
+        self.assertEqual(
+            self.read_literal()["DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN"], "0"
+        )
+
+    def test_plan_loader_rejects_invalid_buildkit_flag_before_docker(self):
+        """The normal CLI loader rejects ambiguous boolean-like strings."""
+        before = self.read_literal()
+        for value in ("", "true", "yes please", "2"):
+            with self.subTest(value=value):
+                self.write_literal(
+                    {**before, "DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN": value}
+                )
+                with self.assertRaisesRegex(ValueError, "must be 0 or 1"):
+                    SETTINGS.load(self.env_file)
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(ROOT / "scripts/control.py"),
+                        "--env-file",
+                        str(self.env_file),
+                        "plan",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("must be 0 or 1", result.stderr)
+                self.assertNotIn("yes please", result.stderr)
+
     def test_cli_ignores_stale_shell_bypass_and_merges_private_variants(self):
         """The selected file determines CLI routing, including legacy sites."""
         self.write_literal(self.legacy_values())
