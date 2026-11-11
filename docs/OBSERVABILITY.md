@@ -66,6 +66,10 @@ start-time変化はrestart counterではありません。JVM working setの高�
 
 CPUは5分平均80%/10分平均90%と、その後の2分継続を分けています。MemAvailable 3GiB/1.5GiB未満、swap使用2GiB/3GiB超、filesystem/inode 80%/90%超、exporter停止2分/5分、有限container limit 85%/95%を初期ルールとします。これは実測容量の推奨値ではありません。zero/unlimited limitとroot/aggregate cgroupは比率判定へ混入させません。
 
+host exporterの2jobは固定名のDNS service discoveryを使います。`monitoring-host` を選ばない場合はtargetを持たず、host監視を暗黙に起動しません。Vectorはこのprofileが正確に選択された時だけ `host-expected.yaml` を読み、15秒ごとに `lakehouse_host_collection_expected=1` を公開します。この値は「選択中」の宣言であり、collectorの正常性を示す値ではありません。
+
+`foundation:host_exporter_unavailable:bool` は、個別node/cAdvisorの `up=0` とDNS targetの消失を合わせ、expected=1かつVector自身のup=1で有効化します。そのため明示選択中でVectorが利用可能なら、seriesの不在もExporterDownの対象です。profileを外した時はexpected signalがなく、host向けalertは出しません。Vectorが利用不能ならhostの判定はunknownで、5分のLogTransportDownが別の通知条件になります。起動前・再配置直後のscrape遅延・Vector停止中までhost状態を保証せず、欠測をhealthyやゼロと読み替えません。DNSや実collectorの動作は引き続き配置先で受入します。[DNS SD仕様](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#dns_sd_config)
+
 Pythonのunit/static testはPromQLや実imageを実行しません。公式の固定Prometheus imageを使うvalidatorは次のように別実行します。既定はplanのみです。
 
 **Bash / Zsh共通**
@@ -76,7 +80,7 @@ python3 scripts/validate_observability.py
 python3 scripts/validate_observability.py --run
 ```
 
-validatorはnetworkなし・bind mountなし・capabilityなし・非rootの一時containerへ**公開設定だけ**をコピーします。停止中のCOPYのため一時rootfsは書込み可能で、host mountはありません。失敗時は未検証のまま残し、無効なルールを運用へ適用しません。ローカル作業環境ではDocker APIへの接続がsandboxにより拒否され、ネイティブvalidatorは未実行でした。別のGitHub Actionsでは、公式Prometheus imageのconfig・rule・fixture検査とLoki imageのconfig検査が成功した記録があります。Prometheusの成功はhost profile分離前の静的nodes構成に対するもので、分離後のDNS/profile切替を含む構成は再検証待ちです。これはnetworkなしの公開設定検証であり、実hostのmount・exporter指標・ログ配送・GUI・24時間運転の受入ではありません。Vectorのネイティブ検査は別の結果として追跡します。
+validatorはnetworkなし・bind mountなし・capabilityなし・非rootの一時containerへ**公開設定だけ**をコピーします。停止中のCOPYのため一時rootfsは書込み可能で、host mountはありません。`ab5a50f` の[GitHub Actions](https://github.com/hiromura16/lakehouse-foundation/actions/runs/43016741384)では922件のunittestを実行（921成功・skip 1）し、公式Prometheus config/rules/fixtures、Loki config、Vector base/host/OpenObserve fanoutの4構成と92合成テストが成功しました。host expected signalとalert gateのfixtureもこの検査に含みます。ローカルDocker APIへの過去の拒否は再試行・迂回していません。これは公開設定と合成データの検証であり、実hostのmount・exporter指標・ログ配送・GUI・24時間運転の受入ではありません。CIのCompose config検査は実際には5.1.3で実行され、対象5.6.1でのcold/warm build順序・実配置は未検証です。
 
 ## 5. 受入・容量・ロールバック
 
@@ -95,4 +99,4 @@ rollbackは承認済みcode/configを既存managerから戻し、新規service�
 
 image lockのdigestは公式registry公開metadataとの照合です。対象imageのpull/実行・機能互換性の実測とは区別します。
 
-ログ整形・収集権限は [Vector](VECTOR.md)、保存・検索・保持期間は [Loki](LOKI.md) を確認します。通常監視はLoki-onlyで、継続capture・実配送・公式VRL実行は未受入です。
+ログ整形・収集権限は [Vector](VECTOR.md)、保存・検索・保持期間は [Loki](LOKI.md) を確認します。通常監視はLoki-onlyです。公式VRLの合成テストはCIで成功し、継続capture・実配送は未受入です。

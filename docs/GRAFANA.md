@@ -209,3 +209,5 @@ Dashboardの受入ではGUI変更→Save→再読込→同じvolumeで再起動�
 既存UIDのdashboardはGUI保存が正本です。テンプレート更新は新しいsourceの提案であり、再配置や `grafana-init` がGUIの編集を上書きすることはありません。新規host/log panelの実指標・VRL配送・長期容量は導入先で受入します。
 
 `monitoring-host` を選ばない場合、node/cAdvisorによるhost/container panelは未観測です。通常monitoringはhost rootやPID namespaceへアクセスしません。値をゼロで補ったり、panelを埋めるため暗黙にexporterを有効にしたりしません。
+
+明示選択したhost監視では、Vectorが公開するexpected signalとVector自身のupを条件に、node/cAdvisorの停止だけでなくDNS target消失もExporterDownとして扱います。Vector停止時はhost判定unknownで、LogTransportDownの別条件を見ます。profile未選択や欠測をhealthy/0と表示する保証はありません。[判定の境界](OBSERVABILITY.md#4-アラートと検証の境界)
