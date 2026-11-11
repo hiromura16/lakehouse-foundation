@@ -384,7 +384,7 @@
     {
       "path": "docs/DOKPLOY.md",
       "title": "Dokploy 0.31.0でGitから配置する",
-      "purpose": "Dokploy 0.31.0の画面で、生成appName・個別Environment・7つのComposeを揃えて配置する。",
+      "purpose": "Dokploy 0.31.0の画面で、生成appName・個別Environment・9つのComposeを揃えて配置する。",
       "audience": [
         "基盤構築担当",
         "運用担当"
@@ -632,7 +632,9 @@
       ],
       "next": [
         "docs/AI-READINESS.md",
-        "docs/CUSTOMIZATION.md"
+        "docs/CUSTOMIZATION.md",
+        "docs/OPENOBSERVE.md",
+        "docs/SAIL-LAB.md"
       ],
       "status": "active"
     },
@@ -971,7 +973,7 @@
     {
       "path": "docs/reports/IMPLEMENTATION-INVENTORY.md",
       "title": "報告書用の実装構成一覧",
-      "purpose": "38サービス・11profile・port・volume・接続主体を公開定義から技術付録として照合する。",
+      "purpose": "41サービス・13profile・port・volume・接続主体を公開定義から技術付録として照合する。",
       "audience": [
         "基盤構築担当",
         "開発・設計担当",
@@ -1141,7 +1143,8 @@
       ],
       "next": [
         "docs/GRAFANA.md",
-        "docs/OPERATIONS.md"
+        "docs/OPERATIONS.md",
+        "docs/OPENOBSERVE.md"
       ],
       "status": "active"
     },
@@ -1219,6 +1222,47 @@
       "next": [
         "docs/TROUBLESHOOTING.md",
         "docs/COMPATIBILITY.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/OPENOBSERVE.md",
+      "title": "OpenObserveを任意の比較Labとして追加する",
+      "purpose": "通常のLoki経路を保ち、秘匿済みログを任意のOpenObserve Labへ分岐する設定と未検証範囲を整理する。",
+      "audience": [
+        "基盤構築担当",
+        "運用担当",
+        "評価・報告担当"
+      ],
+      "when_to_use": "ログ比較Labの導入前に、資格情報・保存先・独立停止・受入条件を確認するとき。",
+      "category": "05 運用・保守",
+      "prerequisites": [
+        "docs/OBSERVABILITY.md",
+        "docs/VECTOR.md"
+      ],
+      "next": [
+        "docs/LOKI.md",
+        "docs/TROUBLESHOOTING.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/SAIL-LAB.md",
+      "title": "SailとSparkを同じ合成データで比較する",
+      "purpose": "任意のSail LabでSparkと合成データの型・結果・再実行を比較し、未検証事項と測定条件を記録する。",
+      "audience": [
+        "開発・設計担当",
+        "基盤構築担当"
+      ],
+      "when_to_use": "Sparkの既存検証後、独立したnamespaceと有限fixtureで別エンジンの比較を準備するとき。",
+      "category": "04 設計・拡張",
+      "prerequisites": [
+        "docs/COMPATIBILITY.md",
+        "docs/DEPLOYMENT.md"
+      ],
+      "next": [
+        "docs/VALIDATION.md",
+        "docs/OPERATIONS.md"
       ],
       "status": "active"
     }

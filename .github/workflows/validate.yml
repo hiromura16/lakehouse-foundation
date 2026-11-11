@@ -71,6 +71,7 @@ jobs:
       run: |
         python scripts/compose_inventory.py --check
         python infra/monitoring/vector/tests/build_fixtures.py --check
+        python infra/sail/runner.py plan
         python scripts/monitoring_assets.py --check
         python scripts/validate_observability.py --run
     - name: Check generated report figures and offline gallery
@@ -107,12 +108,17 @@ jobs:
         landing = root / 'lakehouse-ci-landing'
         landing.mkdir(mode=0o700, exist_ok=True)
         env_file = root / 'lakehouse-ci-private/site.env'
+        token_file = root / 'lakehouse-ci-private' / 'openobserve-token.json'
+        token_file.write_text('{"token":"o2oi_' + 's' * 32 + '"}\n')
+        token_file.chmod(0o600)
         lines = []
         for line in env_file.read_text(encoding='utf-8').splitlines():
             if line.startswith('LANDING_DIR='):
                 line = 'LANDING_DIR=' + str(landing)
             if line.startswith('COMPOSE_PROFILES='):
-                line = 'COMPOSE_PROFILES=automation,monitoring,compute,orchestration,demo,cdc,bi,notebooks,vector,lineage,mcp'
+                line = 'COMPOSE_PROFILES=automation,monitoring,compute,orchestration,demo,cdc,bi,notebooks,vector,lineage,mcp,openobserve-lab,sail-lab'
+            if line.startswith('OPENOBSERVE_INGEST_TOKEN_FILE='):
+                line = 'OPENOBSERVE_INGEST_TOKEN_FILE=' + str(token_file)
             lines.append(line)
         env_file.write_text('\n'.join(lines) + '\n', encoding='utf-8')
         PY
@@ -124,4 +130,6 @@ jobs:
           -f infra/demo/compose.yaml \
           -f infra/cdc/compose.yaml \
           -f infra/poc/compose.yaml \
-          -f infra/mcp/compose.yaml config --quiet
+          -f infra/mcp/compose.yaml \
+          -f infra/openobserve/compose.yaml \
+          -f infra/sail/compose.yaml config --quiet

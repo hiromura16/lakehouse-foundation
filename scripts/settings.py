@@ -2,6 +2,7 @@
 
 import base64
 import binascii
+import importlib.util
 import ipaddress
 import os
 import re
@@ -29,6 +30,9 @@ REQUIRED_NO_PROXY = (
     "cadvisor",
     "loki",
     "vector",
+    "openobserve",
+    "sail-server",
+    "sail-benchmark",
     "spark-volumes-init",
     "spark-master",
     "spark-worker",
@@ -273,7 +277,7 @@ def _validate_monitoring_mount(selected, values, settings_path):
         raise ValueError("Monitoring mount could not be inspected.") from None
 
 
-def load(path):
+def load(path, *, private_mount=None):
     """Parse private settings literally and validate deployment boundaries."""
     path = Path(path).expanduser().resolve()
     if path.is_relative_to(ROOT):
@@ -317,6 +321,7 @@ def load(path):
         raise ValueError(
             "BIND_IP must be a specific local/private IPv4 address."
         )
+    profiles = set(filter(None, values.get("COMPOSE_PROFILES", "").split(",")))
     port_defaults = {
         "TRINO_PORT": "8080",
         "CATALOG_PORT": "8181",
@@ -338,13 +343,15 @@ def load(path):
         "SPARK_MASTER_UI_PORT": "8082",
         "SPARK_WORKER_UI_PORT": "8085",
         "SPARK_HISTORY_UI_PORT": "18080",
+        "OPENOBSERVE_PORT": "5080",
     }
     for key, default in port_defaults.items():
         # New inactive profiles remain compatible with older site settings.
         values.setdefault(key, default)
+        if key == "OPENOBSERVE_PORT" and "openobserve-lab" not in profiles:
+            continue
         if not values[key].isdigit() or not 1024 <= int(values[key]) <= 65535:
             raise ValueError("Invalid port: " + key)
-    profiles = set(filter(None, values.get("COMPOSE_PROFILES", "").split(",")))
     port_profiles = {
         "GRAFANA_PORT": {"monitoring"},
         "PROMETHEUS_PORT": {"monitoring"},
@@ -363,6 +370,7 @@ def load(path):
         "SPARK_MASTER_UI_PORT": {"compute"},
         "SPARK_WORKER_UI_PORT": {"compute"},
         "SPARK_HISTORY_UI_PORT": {"compute"},
+        "OPENOBSERVE_PORT": {"openobserve-lab"},
     }
     # An inactive profile publishes no port and must not break an older site.
     ports = [
@@ -418,10 +426,13 @@ def load(path):
         "vector",
         "lineage",
         "mcp",
+        "openobserve-lab",
+        "sail-lab",
     }:
         raise ValueError(
             "Profiles may be automation, monitoring, compute, "
-            "orchestration, demo, cdc, bi, notebooks, vector, lineage, mcp."
+            "orchestration, demo, cdc, bi, notebooks, vector, lineage, mcp, "
+            "openobserve-lab, sail-lab."
         )
     if profiles & {"demo", "mcp"}:
         if not re.fullmatch(
@@ -471,6 +482,40 @@ def load(path):
             or not values.get("WORKER_GID", "").isdigit()
         ):
             raise ValueError("Compute UID must be non-root; GID numeric.")
+    if "openobserve-lab" in profiles:
+        if "monitoring" not in profiles:
+            raise ValueError("Select monitoring with openobserve-lab.")
+        # Reuse the narrowly scoped, offline validator. Importing this helper
+        # never runs its CLI, opens a socket or creates a token.
+        specification = importlib.util.spec_from_file_location(
+            "openobserve_site_validation", ROOT / "scripts/openobserve_lab.py"
+        )
+        lab = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(lab)
+        lab_values = values
+        if private_mount is not None:
+            # GUI containers see only the existing dedicated private mount.
+            # Map one sibling token basename, never an arbitrary host path.
+            mount = Path(private_mount)
+            host = Path(values.get("CONTROL_SETTINGS_DIR", ""))
+            token = Path(values.get("OPENOBSERVE_INGEST_TOKEN_FILE", ""))
+            if (
+                not mount.is_absolute()
+                or mount != Path(path).absolute().parent
+                or not host.is_absolute()
+                or not token.is_absolute()
+                or token.parent != host
+                or ".." in token.parts
+                or token.name == values.get("CONTROL_SETTINGS_NAME")
+            ):
+                raise ValueError(
+                    "Keep the lab token beside site settings for GUI access."
+                )
+            lab_values = {
+                **values,
+                "OPENOBSERVE_INGEST_TOKEN_FILE": str(mount / token.name),
+            }
+        lab.validate_config(lab_values, require_token=True)
     if "notebooks" in profiles:
         workspace = Path(values.get("NOTEBOOKS_DIR", ""))
         if (

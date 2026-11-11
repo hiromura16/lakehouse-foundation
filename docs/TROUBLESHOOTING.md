@@ -236,7 +236,7 @@ SSRFの設定値、内部workerの例外、NO_PROXYとの違い、GUI保存と�
 | 順序 | 配置担当が見るもの | 成功の意味 | 失敗したら |
 | --- | --- | --- | --- |
 | 1 | 開いているDokploy Environment／アプリ、配置commit、private設定の選択 | 目的の環境を見ている | 別環境の再起動やデータ操作を中止 |
-| 2 | `plan` | 選択値と7Composeの構成検査が通る | missing file、権限、値、profile、portを修正。まだ再配置しない |
+| 2 | `plan` | 選択値と9Composeの構成検査が通る | missing file、権限、値、profile、portを修正。まだ再配置しない |
 | 3 | `status`／Dokployサービス状態 | コンテナの起動状態が分かる | failed initと常駐サービスを区別し、対象ログを非公開で確認 |
 | 4 | GUIの「状態」、API `/health` | APIの準備状態や到達性が分かる | mount・token・内部API設定を確認 |
 | 5 | 既存ジョブのGETとworkerのbusy／blocked | 再投入できるかを判断する材料が揃う | 不明結果なら既存処理を調べ、POSTを繰り返さない |
@@ -339,3 +339,15 @@ Notebook workspaceのread-only計画と承認後のapply/probe、既存project�
 003のrole/permission、004/005のcapture/index/column比較でsystem/catalogと対象DBのcollation差が現れる場合、承認済み修正版の両辺BIN2比較を使います。server/database collation変更、`DATABASE_DEFAULT`での回避、安全gate解除はしません。006は読取り監査で同型の異種列競合を確認していません。
 
 失敗後はchecker・role・grant・CDC captureが残っていないと推測せず、新しい専用DBA sessionで読取り専用preflightを行います。51019は未知の同名checkerを保護する停止です。自動DROPや定義の強制更新を行いません。003成功とrole割当が既に確認できた場合は006へ進み、修正版004の承認後に004→006とします。003未確認ならpreflight→必要な003→006で止めて照合します。005は明示的なrollback専用です。[残存診断・Windows sqlcmd・部分完了の再開](SQLSERVER-DDL-RECOVERY.md)
+
+## 任意Labの追加で迷った場合
+
+| 症状 | 最初に確認すること | 取り違えないこと |
+| --- | --- | --- |
+| monitoringのplanが拒否される | `CADVISOR_DOCKER_DATA_ROOT`、専用 `MONITORING_LOG_DIR`、host alias、事前承認 | 空のrootを推測値で埋めたり、Docker socketをcollectorへ渡したりしない |
+| OpenObserve Labだけ起動・配送できない | Lab profile、loopback port、専用volume、管理者と取り込みtokenの分離、Git外0600 token file | 通常Lokiの停止・削除やGrafana上書きで回避しない |
+| OpenObserveでmetricsが見えない | 今回はログ `_json` のみ。metrics比較は後続Phase | UI portやログtokenをPrometheus datasource/remote_writeへ流用しない |
+| Sail clientのbuildが失敗する | [Sail手順](SAIL-LAB.md) の共通Spark image事前buildとprivate project tag | cold build順序は実機未検証。registryからlocal tagを代用pullしない |
+| Sailが通常Deploy後に終了/未起動 | `sail-benchmark` はreplicas 0の明示検証用 | benchmark未実行を性能・互換性の成功としない |
+
+詳細な配送・損失・bufferの境界は [Vector](VECTOR.md)、Labの停止は [OpenObserve](OPENOBSERVE.md) と [Sail](SAIL-LAB.md) にあります。実値やtoken、rawログを公開Issueへ添付しません。

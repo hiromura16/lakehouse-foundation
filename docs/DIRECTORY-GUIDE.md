@@ -73,7 +73,7 @@
 | 相談・変更 | 最初に読む実装 | 一緒に読むもの |
 | --- | --- | --- |
 | 設定項目や初期値 | [configure.py](../scripts/configure.py)、[settings.py](../scripts/settings.py) | GUI SettingsStore、CONFIGURATION、company compatibility tests |
-| CLI起動/検証の入口 | [control.py](../scripts/control.py) | 7Compose、private設定の読み方 |
+| CLI起動/検証の入口 | [control.py](../scripts/control.py) | 9Compose、private設定の読み方 |
 | 取込・原本・SQL実行 | [admin.py](../scripts/admin.py) | sources.json、Silver/隔離/Gold SQL、worker protocol tests |
 | GUIボタンや非同期進捗 | [app.py](../infra/demo/app.py)、[api.py](../infra/demo/api.py) | client、job_manager、API/UI tests |
 | 異常素材を増やす | [source_scenarios.py](../scripts/source_scenarios.py) | 生成器、GUI catalog、独立した期待値 |
@@ -112,7 +112,7 @@ Composeのタグだけでなく、digest、対応する依存lock、`COMPATIBILI
 
 ## 公開しないもの
 
-CLIの保守・追加機能では7ファイルを同じ順で結合します。Dokployの初回core-only既定Commandはcore1ファイルだけでも動きますが、標準ガイドは初回から7ファイルを指定します。標準CLIは自動で結合します。[7ファイルのコマンド](DOKPLOY.md) を部分的に削らないでください。
+CLIの保守・追加機能では9ファイルを同じ順で結合します。Dokployの初回core-only既定Commandはcore1ファイルだけでも動きますが、標準ガイドは初回から9ファイルを指定します。標準CLIは自動で結合します。[9ファイルのコマンド](DOKPLOY.md) を部分的に削らないでください。
 
 実際の `site.env`、企業CA、管理APIキー、実データ、volume、バックアップ、GUI exportの未レビュー原本を公開しません。これらはGit外の専用ディレクトリに保存します。過去の非公開環境のGit履歴を、この公開リポジトリへ取り込みません。
 

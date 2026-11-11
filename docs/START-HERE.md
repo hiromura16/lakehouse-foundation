@@ -41,7 +41,7 @@ setopt INTERACTIVE_COMMENTS
 
 日常の配置担当を **DokployかCLIのどちらか一つ** に決めます。Dokploy管理なら配置・停止・再配置はDokployで行い、CLIは同じ環境の `plan` / `status` / `verify` / `grafana-init` 等の補助操作に使います。同じ環境へ別のCompose名で `up` すると、別DB・別volumeを作る原因になります。
 
-初回はcoreだけを確認し、その後 `demo,monitoring` を追加します。全機能は11profile・38service定義で、全コンテナの上限メモリを同時に確保すると20GiBを超えます。Docker/Dokploy/OS/build用メモリも必要です。小さいVMでは段階ごとに使用量を確認し、全機能の同時起動を前提にしません。[容量と永続化](DEPLOYMENT.md)
+初回はcoreだけを確認し、その後 `demo,monitoring` を追加します。全機能は13profile・41service定義で、常駐serviceの上限メモリ合計は約35.94GiBです（実測ではありません）。Docker/Dokploy/OS/build用メモリも必要です。小さいVMでは段階ごとに使用量を確認し、全機能の同時起動を前提にしません。[容量と永続化](DEPLOYMENT.md)
 
 ## 1. ホストを準備する
 
@@ -168,7 +168,7 @@ sudo bash infra/dokploy/install.sh --env-file "$LAKEHOUSE_ENV_FILE" --apply
 9. `Auto Deploy` は初回OFFのまま `Deploy` を押し、Deploymentの完了とサービスの状態を確認します。
 
 ```text
-compose -p APP_NAME_FROM_HEADER --env-file infra/lakehouse/.env -f infra/lakehouse/compose.yaml -f infra/compute/compose.yaml -f infra/orchestration/compose.yaml -f infra/demo/compose.yaml -f infra/cdc/compose.yaml -f infra/poc/compose.yaml -f infra/mcp/compose.yaml up -d --build --remove-orphans --wait --wait-timeout 600
+compose -p APP_NAME_FROM_HEADER --env-file infra/lakehouse/.env -f infra/lakehouse/compose.yaml -f infra/compute/compose.yaml -f infra/orchestration/compose.yaml -f infra/demo/compose.yaml -f infra/cdc/compose.yaml -f infra/poc/compose.yaml -f infra/mcp/compose.yaml -f infra/openobserve/compose.yaml -f infra/sail/compose.yaml up -d --build --remove-orphans --wait --wait-timeout 600
 ```
 
 欄には `compose` から入力します。Dokployが `docker` を付けるため、`docker compose` は入力しません。7つの `-f` は追加機能が未選択でも残します。ここはshellスクリプト欄ではなく、pipe・`&&`・複数コマンドは使えません。profileはEnvironmentの `COMPOSE_PROFILES` で選びます。
@@ -202,7 +202,9 @@ Dokployを使用しない環境だけ、サーバー端末で実行します。
 
 ## 5. 操作GUI・監視を追加してブラウザーで開く
 
-private設定を `COMPOSE_PROFILES=demo,monitoring` にします。Dokploy管理ならComposeサービスのEnvironmentにも同じ値を保存し、手順4Aの7ファイルのCommandを使ってDeployします。CLI管理だけが `./scripts/lakehouse.sh up` を使います。両管理方法で `./scripts/lakehouse.sh plan` は実行できます。
+先に [監視の準備](OBSERVABILITY.md) でhost mountの承認、`CADVISOR_DOCKER_DATA_ROOT`、専用 `MONITORING_LOG_DIR` と監視aliasを確認します。これらが未準備なら `demo` だけで先へ進み、monitoringは後から追加します。
+
+private設定を `COMPOSE_PROFILES=demo,monitoring` にします。Dokploy管理ならComposeサービスのEnvironmentにも同じ値を保存し、手順4Aの9ファイルのCommandを使ってDeployします。CLI管理だけが `./scripts/lakehouse.sh up` を使います。両管理方法で `./scripts/lakehouse.sh plan` は実行できます。
 
 配置成功後、Dokploy管理では通常ユーザーで標準dashboardを一度だけ作成します。CLIのupを使った場合は自動実行済みです。
 

@@ -194,7 +194,7 @@ CAは公開証明書ですが、**追加した信頼は完成imageに残りま�
 
 CAを初めて追加・更新・削除するときは、secretの内容変更だけではbuild cacheが無効にならないため、`--no-cache` で作り直します。[Dockerのsecretとcache](https://docs.docker.com/build/cache/invalidation/#build-secrets)
 
-CLI管理では、repoルートの同じ端末で [OPERATIONS.mdの7Compose補助関数](OPERATIONS.md#postgresqlの論理dump例) `lakehouse_compose` を定義してから、次を実行します。関数はprivate値で子プロセス環境を揃えるため、古いshellのproxyに加え、project・profile・port等の補間差も防ぎます。
+CLI管理では、repoルートの同じ端末で [OPERATIONS.mdの9Compose補助関数](OPERATIONS.md#postgresqlの論理dump例) `lakehouse_compose` を定義してから、次を実行します。関数はprivate値で子プロセス環境を揃えるため、古いshellのproxyに加え、project・profile・port等の補間差も防ぎます。
 
 **Bash / Zsh共通**
 
@@ -205,7 +205,7 @@ lakehouse_compose build --no-cache
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env up
 ```
 
-上は全7Composeを指定した補助関数で、有効profileの対象をbuildする例です。CLI管理なら同じ配置利用者が `up` まで行います。Dokploy管理ならCLIの `up` を追加実行せず、同じ7ファイル・secret参照・private設定を使う既存アプリでcacheなしの再build／再配置を行います。両方を別名で起動しません。
+上は全9Composeを指定した補助関数で、有効profileの対象をbuildする例です。CLI管理なら同じ配置利用者が `up` まで行います。Dokploy管理ならCLIの `up` を追加実行せず、同じ9ファイル・secret参照・private設定を使う既存アプリでcacheなしの再build／再配置を行います。両方を別名で起動しません。
 
 base imageやuv image自体の取得は、このCA処理より先です。その通信にはdaemon／remote builder側のproxyとCAが必要です。image内のCA追加で、まだpullできないbase imageを取得できるようにはなりません。
 

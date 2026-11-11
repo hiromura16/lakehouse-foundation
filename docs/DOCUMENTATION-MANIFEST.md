@@ -39,7 +39,7 @@
 | [会社VMの修正を取り込み、Dokployへ再配置する](<COMPANY-UPDATE.md>) | 既存の設定・鍵・volumeを保持し、会社VMの修正を取り込んでDokployへ再配置する。 | 既に動いている環境へ公開Gitの互換性修正を反映するとき。 | active |
 | [サイト設定リファレンス](<CONFIGURATION.md>) | 生成器・Compose・CLIが使う設定項目と、保存先・認証・反映先を照合する。 | private設定を作成・変更し、何に使われる値かを調べるとき。 | reference |
 | [導入・検証・停止](<DEPLOYMENT.md>) | private設定、host構成、CLIによる起動・検証・停止の操作を確認する。 | 管理方法を決めて配置するときや、CLI管理の構成を起動・停止するとき。 | active |
-| [Dokploy 0.31.0でGitから配置する](<DOKPLOY.md>) | Dokploy 0.31.0の画面で、生成appName・個別Environment・7つのComposeを揃えて配置する。 | Dokployへログインできた後、同じComposeアプリを初回配置・再配置するとき。 | active |
+| [Dokploy 0.31.0でGitから配置する](<DOKPLOY.md>) | Dokploy 0.31.0の画面で、生成appName・個別Environment・9つのComposeを揃えて配置する。 | Dokployへログインできた後、同じComposeアプリを初回配置・再配置するとき。 | active |
 | [Linuxサーバーを最初に準備する](<HOST-SETUP.md>) | 新規Ubuntuで操作端末・権限・Docker・Git・uvの前提を準備する。 | アプリ配置前にhostの状態と不足している前提を確認するとき。 | active |
 | [プロキシ設定の場所と反映方法](<PROXY.md>) | 通信主体別のproxy設定ファイル、CA受渡しと反映方法を参照する。 | 会社向け手順を読んだ後に、個別の設定場所や再起動対象を調べるとき。 | reference |
 | [SSRF対策と内部接続の設定](<SSRF.md>) | n8nの宛先制御、内部worker通信、proxyと固定APIの境界を設定する。 | 内部APIへの接続許可を決めるときや、SSRF制御による拒否を確認するとき。 | active |
@@ -72,7 +72,14 @@
 | [GUIで設定・操作する選択肢](<GUI-OPTIONS.md>) | 操作・オーケストレーション・列変換のGUIを分け、同梱機能と追加候補を比較する。 | 画面で何を設定したいか整理し、追加OSSや実装の採否を決めるとき。 | reference |
 | [AIクライアントからMCPで操作する](<MCP.md>) | 認証付きMCPから固定の業務参照・運用APIを呼び、AIクライアントへ接続する。 | APIの範囲を理解した後に、Streamable HTTPのMCP連携を用意するとき。 | active |
 | [MES・ERPデータをBronzeからGoldへ整える](<MEDALLION.md>) | 6契約の取り込み、最新版採用、不正行隔離、Gold集計と再投入の規則を追う。 | 素材から業務値へ変換する意味を理解し、品質や更新結果を照合するとき。 | active |
+| [SailとSparkを同じ合成データで比較する](<SAIL-LAB.md>) | 任意のSail LabでSparkと合成データの型・結果・再実行を比較し、未検証事項と測定条件を記録する。 | Sparkの既存検証後、独立したnamespaceと有限fixtureで別エンジンの比較を準備するとき。 | active |
 | [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>) | 既存SQL Serverを読取専用SELECTで抽出し、6契約のlanding素材を作成する。 | 実ソースDBの列対応・権限・上限を決め、全件snapshotのbridgeを試すとき。 | active |
+
+### 05 運用・保守
+
+| 文書 | 何のために読むか | 読むタイミング | 区分 |
+| --- | --- | --- | --- |
+| [OpenObserveを任意の比較Labとして追加する](<OPENOBSERVE.md>) | 通常のLoki経路を保ち、秘匿済みログを任意のOpenObserve Labへ分岐する設定と未検証範囲を整理する。 | ログ比較Labの導入前に、資格情報・保存先・独立停止・受入条件を確認するとき。 | active |
 
 ### 05 運用・根拠
 
@@ -110,7 +117,7 @@
 | [図と出力スクリプトを変更する人へ](<reports/EDITING-GUIDE.md>) | figures.json、描画・exportコード、生成物の責務と変更後の検証を理解する。 | 図の意味・レイアウト・出力形式を変更し、生成差分を確認するとき。 | active |
 | [PoCの評価計画と受入条件](<reports/EVALUATION-PLAN.md>) | 配置・品質・CDC・AI・復旧の評価範囲と受入条件を、実施前に記入する。 | 会社PoCを始める前に、担当・条件・成功基準・残す証跡を決めるとき。 | template |
 | [報告する主張と根拠の対応表](<reports/EVIDENCE-MATRIX.md>) | 報告する主張を既存検証・合成fixture・導入先受入・未評価に分けて根拠へ結ぶ。 | 数値や成功を報告へ引用するときと、導入先の証跡台帳を作るとき。 | reference |
-| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 38サービス・11profile・port・volume・接続主体を公開定義から技術付録として照合する。 | 詳細図の箱と線を確認するときや、構成定義の数量と制約を引用するとき。 | reference |
+| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 41サービス・13profile・port・volume・接続主体を公開定義から技術付録として照合する。 | 詳細図の箱と線を確認するときや、構成定義の数量と制約を引用するとき。 | reference |
 | [データレイクハウスPoC 報告書テンプレート](<reports/POC-REPORT-TEMPLATE.md>) | 業務目的、評価条件、観測結果、残る条件、次段階の判断を報告書へ整理する。 | 評価計画と証跡が揃い、社内保存用の報告書原本を作成するとき。 | template |
 | [PoC説明用のスライド構成](<reports/PRESENTATION-OUTLINE.md>) | 読み手と持ち時間に合わせ、14図の選択・説明順・話す論点を組み立てる。 | 報告書の判断と根拠を、発表や引継ぎのスライドへ移すとき。 | template |
 | [PoC報告書・発表に使う図版と雛形](<reports/README.md>) | 用途別14図・キャプション・雛形を選び、PNG・PDF・PPTXへ書き出す。 | PoC報告書や説明スライドを準備し、必要な図と根拠を選ぶとき。 | active |
@@ -177,14 +184,16 @@
 | [導入・検証・停止](<DEPLOYMENT.md>) | private設定、host構成、CLIによる起動・検証・停止の操作を確認する。 |
 | [ファイルの場所と変更のしかた](<DIRECTORY-GUIDE.md>) | 目的に対応するファイル、実行経路、公開コードとprivate状態の置き場を探す。 |
 | [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>) | 公開Markdown全件の固有の目的・読者・読む時点を、目的別と読者別に引く。 |
-| [Dokploy 0.31.0でGitから配置する](<DOKPLOY.md>) | Dokploy 0.31.0の画面で、生成appName・個別Environment・7つのComposeを揃えて配置する。 |
+| [Dokploy 0.31.0でGitから配置する](<DOKPLOY.md>) | Dokploy 0.31.0の画面で、生成appName・個別Environment・9つのComposeを揃えて配置する。 |
 | [Linuxサーバーを最初に準備する](<HOST-SETUP.md>) | 新規Ubuntuで操作端末・権限・Docker・Git・uvの前提を準備する。 |
 | [実装・配置・検証の追跡表](<IMPLEMENTATION-STATUS.md>) | 依頼された機能のソース実装、配置、既存検証、残る受入を別々に追跡する。 |
 | [Lokiの保存・検索・保持期間](<LOKI.md>) | Lokiの専用保存・7日保持・Grafana検索・reject・復元の境界を確認する。 |
 | [段階的な監視基盤の配置と受入](<OBSERVABILITY.md>) | 監視のhost権限、create-only GUI、閾値、検証と実機受入を分けて段階導入する。 |
+| [OpenObserveを任意の比較Labとして追加する](<OPENOBSERVE.md>) | 通常のLoki経路を保ち、秘匿済みログを任意のOpenObserve Labへ分岐する設定と未検証範囲を整理する。 |
 | [平時・更新・復旧の運用手順](<OPERATIONS.md>) | 平時点検・更新・backup・復旧を、鍵・DB・object・volumeの状態を揃えて行う。 |
 | [プロキシ設定の場所と反映方法](<PROXY.md>) | 通信主体別のproxy設定ファイル、CA受渡しと反映方法を参照する。 |
 | [採用版の公式リファレンスと文書監査](<REFERENCES.md>) | 採用版の公式仕様・tag・公開実装・検証記録の根拠を照合する。 |
+| [SailとSparkを同じ合成データで比較する](<SAIL-LAB.md>) | 任意のSail LabでSparkと合成データの型・結果・再実行を比較し、未検証事項と測定条件を記録する。 |
 | [BashとZshの両方で手順を実行する](<SHELLS.md>) | 会社VMのZshとBashでコマンドを使い分け、対話入力・コメント・shebang・引用の違いを確認する。 |
 | [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>) | 既存SQL Serverを読取専用SELECTで抽出し、6契約のlanding素材を作成する。 |
 | [SQL Server DDLの照合順序と途中失敗からの再開](<SQLSERVER-DDL-RECOVERY.md>) | error468・51019の残存診断、exact checkerの保護、CDC部分完了とWindows client別の安全な再開を整理する。 |
@@ -194,7 +203,7 @@
 | [症状から確認する](<TROUBLESHOOTING.md>) | 観測した症状から設定・起動・通信・job・データの失敗箇所を絞り込む。 |
 | [Vectorによる対象ログの整形と秘匿化](<VECTOR.md>) | 対象projectの有限capture・VRL重大度・秘匿化・有界配送と未検証項目を確認する。 |
 | [PoCの評価計画と受入条件](<reports/EVALUATION-PLAN.md>) | 配置・品質・CDC・AI・復旧の評価範囲と受入条件を、実施前に記入する。 |
-| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 38サービス・11profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
+| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 41サービス・13profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
 | [Vectorのログ正規化・転送設定](<../infra/monitoring/vector/README.md>) | 選択版の明示YAML合成、parser期待fixture、権限と配送上限を開発時に照合する。 |
 
 ### 評価・報告担当
@@ -206,6 +215,7 @@
 | [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>) | 公開Markdown全件の固有の目的・読者・読む時点を、目的別と読者別に引く。 |
 | [実装・配置・検証の追跡表](<IMPLEMENTATION-STATUS.md>) | 依頼された機能のソース実装、配置、既存検証、残る受入を別々に追跡する。 |
 | [段階的な監視基盤の配置と受入](<OBSERVABILITY.md>) | 監視のhost権限、create-only GUI、閾値、検証と実機受入を分けて段階導入する。 |
+| [OpenObserveを任意の比較Labとして追加する](<OPENOBSERVE.md>) | 通常のLoki経路を保ち、秘匿済みログを任意のOpenObserve Labへ分岐する設定と未検証範囲を整理する。 |
 | [採用版の公式リファレンスと文書監査](<REFERENCES.md>) | 採用版の公式仕様・tag・公開実装・検証記録の根拠を照合する。 |
 | [外部レビュー指摘の対応と確認](<REVIEW-FOLLOWUP.md>) | PR #3の外部レビュー指摘と、再現・修正・回帰確認の対応を追跡する。 |
 | [検証記録](<VALIDATION.md>) | 既存の合成環境・公開clone・CI・互換性修正で確認した条件と限界を読む。 |
@@ -214,7 +224,7 @@
 | [PoCの意思決定記録テンプレート](<reports/DECISION-RECORD-TEMPLATE.md>) | 選択肢・根拠・制約・承認・再評価条件を、後から追える意思決定記録に残す。 |
 | [PoCの評価計画と受入条件](<reports/EVALUATION-PLAN.md>) | 配置・品質・CDC・AI・復旧の評価範囲と受入条件を、実施前に記入する。 |
 | [報告する主張と根拠の対応表](<reports/EVIDENCE-MATRIX.md>) | 報告する主張を既存検証・合成fixture・導入先受入・未評価に分けて根拠へ結ぶ。 |
-| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 38サービス・11profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
+| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 41サービス・13profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
 | [データレイクハウスPoC 報告書テンプレート](<reports/POC-REPORT-TEMPLATE.md>) | 業務目的、評価条件、観測結果、残る条件、次段階の判断を報告書へ整理する。 |
 | [PoC説明用のスライド構成](<reports/PRESENTATION-OUTLINE.md>) | 読み手と持ち時間に合わせ、14図の選択・説明順・話す論点を組み立てる。 |
 | [PoC報告書・発表に使う図版と雛形](<reports/README.md>) | 用途別14図・キャプション・雛形を選び、PNG・PDF・PPTXへ書き出す。 |
@@ -231,11 +241,12 @@
 | [サイト設定リファレンス](<CONFIGURATION.md>) | 生成器・Compose・CLIが使う設定項目と、保存先・認証・反映先を照合する。 |
 | [導入・検証・停止](<DEPLOYMENT.md>) | private設定、host構成、CLIによる起動・検証・停止の操作を確認する。 |
 | [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>) | 公開Markdown全件の固有の目的・読者・読む時点を、目的別と読者別に引く。 |
-| [Dokploy 0.31.0でGitから配置する](<DOKPLOY.md>) | Dokploy 0.31.0の画面で、生成appName・個別Environment・7つのComposeを揃えて配置する。 |
+| [Dokploy 0.31.0でGitから配置する](<DOKPLOY.md>) | Dokploy 0.31.0の画面で、生成appName・個別Environment・9つのComposeを揃えて配置する。 |
 | [GrafanaのGUI編集と保存](<GRAFANA.md>) | GrafanaのGUIでdashboardを編集・保存し、収集対象とPromQLの意味を確認する。 |
 | [n8n・Airflow・Grafanaを画面から使う](<GUI-WALKTHROUGHS.md>) | n8n・Airflow・Grafanaで接続、認証、手動実行、履歴、保存を順に確かめる。 |
 | [Lokiの保存・検索・保持期間](<LOKI.md>) | Lokiの専用保存・7日保持・Grafana検索・reject・復元の境界を確認する。 |
 | [段階的な監視基盤の配置と受入](<OBSERVABILITY.md>) | 監視のhost権限、create-only GUI、閾値、検証と実機受入を分けて段階導入する。 |
+| [OpenObserveを任意の比較Labとして追加する](<OPENOBSERVE.md>) | 通常のLoki経路を保ち、秘匿済みログを任意のOpenObserve Labへ分岐する設定と未検証範囲を整理する。 |
 | [平時・更新・復旧の運用手順](<OPERATIONS.md>) | 平時点検・更新・backup・復旧を、鍵・DB・object・volumeの状態を揃えて行う。 |
 | [PoC操作ポータル](<POC-PORTAL.md>) | 操作ポータルの各ページから、サービス入口・データ・診断・履歴へ移動する。 |
 | [SQL Server DDLの照合順序と途中失敗からの再開](<SQLSERVER-DDL-RECOVERY.md>) | error468・51019の残存診断、exact checkerの保護、CDC部分完了とWindows client別の安全な再開を整理する。 |
@@ -273,6 +284,7 @@
 | [採用版の公式リファレンスと文書監査](<REFERENCES.md>) | 採用版の公式仕様・tag・公開実装・検証記録の根拠を照合する。 |
 | [外部レビュー指摘の対応と確認](<REVIEW-FOLLOWUP.md>) | PR #3の外部レビュー指摘と、再現・修正・回帰確認の対応を追跡する。 |
 | [レビュー指摘を改善へ取り込む](<REVIEW-WORKFLOW.md>) | issue・PR・依頼文書の指摘を対象commitで確認し、安全な回帰と差分へつなげる。 |
+| [SailとSparkを同じ合成データで比較する](<SAIL-LAB.md>) | 任意のSail LabでSparkと合成データの型・結果・再実行を比較し、未検証事項と測定条件を記録する。 |
 | [BashとZshの両方で手順を実行する](<SHELLS.md>) | 会社VMのZshとBashでコマンドを使い分け、対話入力・コメント・shebang・引用の違いを確認する。 |
 | [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>) | 既存SQL Serverを読取専用SELECTで抽出し、6契約のlanding素材を作成する。 |
 | [SQL Server DDLの照合順序と途中失敗からの再開](<SQLSERVER-DDL-RECOVERY.md>) | error468・51019の残存診断、exact checkerの保護、CDC部分完了とWindows client別の安全な再開を整理する。 |
@@ -284,7 +296,7 @@
 | [PoCの意思決定記録テンプレート](<reports/DECISION-RECORD-TEMPLATE.md>) | 選択肢・根拠・制約・承認・再評価条件を、後から追える意思決定記録に残す。 |
 | [図と出力スクリプトを変更する人へ](<reports/EDITING-GUIDE.md>) | figures.json、描画・exportコード、生成物の責務と変更後の検証を理解する。 |
 | [報告する主張と根拠の対応表](<reports/EVIDENCE-MATRIX.md>) | 報告する主張を既存検証・合成fixture・導入先受入・未評価に分けて根拠へ結ぶ。 |
-| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 38サービス・11profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
+| [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 41サービス・13profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
 | [PoC報告書・発表に使う図版と雛形](<reports/README.md>) | 用途別14図・キャプション・雛形を選び、PNG・PDF・PPTXへ書き出す。 |
 | [Vectorのログ正規化・転送設定](<../infra/monitoring/vector/README.md>) | 選択版の明示YAML合成、parser期待fixture、権限と配送上限を開発時に照合する。 |
 

@@ -22,6 +22,8 @@ FILES = [
         "cdc",
         "poc",
         "mcp",
+        "openobserve",
+        "sail",
     )
 ]
 BUILDERS = {
@@ -33,6 +35,10 @@ BUILDERS = {
     "jupyter",
     "mcp",
     "spark-volumes-init",
+    "vector",
+    "openobserve",
+    "sail-server",
+    "sail-benchmark",
 }
 CONSUMERS = {
     "demo",

@@ -1,18 +1,18 @@
 {
   "all_profiles": {
     "budget": {
-      "all_declared_operations_limit_bytes": 38721814528,
-      "explicit_only_bytes": 2147483648,
+      "all_declared_operations_limit_bytes": 45164265472,
+      "explicit_only_bytes": 4294967296,
       "explicit_only_instances": 0,
-      "explicit_only_services": 1,
+      "explicit_only_services": 2,
       "one_shot_bytes": 2281701376,
       "one_shot_instances": 4,
       "one_shot_services": 4,
-      "resident_bytes": 34292629504,
-      "resident_instances": 33,
-      "resident_services": 33,
-      "startup_plus_resident_limit_bytes": 36574330880,
-      "steady_resident_limit_bytes": 34292629504,
+      "resident_bytes": 38587596800,
+      "resident_instances": 35,
+      "resident_services": 35,
+      "startup_plus_resident_limit_bytes": 40869298176,
+      "steady_resident_limit_bytes": 38587596800,
       "unknown_bytes": 0,
       "unknown_instances": 0,
       "unknown_services": 0
@@ -41,8 +41,11 @@
       "n8n",
       "n8n-db",
       "node-exporter",
+      "openobserve",
       "prometheus",
       "qdrant",
+      "sail-benchmark",
+      "sail-server",
       "spark-check",
       "spark-history",
       "spark-master",
@@ -59,24 +62,26 @@
     ]
   },
   "compose_sha256": {
-    "infra/cdc/compose.yaml": "4523d60c608dc1fdc5bb0904c404c9e16f01783d0c62cc2ba6d31e36987f03df",
-    "infra/compute/compose.yaml": "f56178285732b27999d96fa9851e2580b89d860353b9798cbf7056135bca5442",
-    "infra/demo/compose.yaml": "5882d6b9d057689c7147c1c9c229dacd886045d97490daec8d715f3c6c43c750",
-    "infra/lakehouse/compose.yaml": "4fd506dd0725bb8ab7d49b727ebdaae067cd4948ae9c919546a2bdbea7035ec1",
-    "infra/mcp/compose.yaml": "0743b1ccd57235159de6d411c95a00d2a6d9436ebc69c2987d5c8b5068d7e6f6",
-    "infra/orchestration/compose.yaml": "f369db5a2bc8912526f72c14addaa127da7f304a710f9e43588a2ad5f94eda32",
-    "infra/poc/compose.yaml": "d22ad01ece047159c64bf9cfdb82c9ede1b97de4504eb875c950b35a1439b05c"
+    "infra/cdc/compose.yaml": "567d8e3e19cb0b8c600123e4bd24436c49e16dd4ba368fc219e2377043918d0f",
+    "infra/compute/compose.yaml": "6eed40242d839056f812b22e8e277d51c8cd074cf75afb05f3303c5443fda163",
+    "infra/demo/compose.yaml": "773458b2f143ad0f4185a85c82dee7e728a498ad9f7593756e24b9f2ebf541cd",
+    "infra/lakehouse/compose.yaml": "59770e3beb9151a9d6e39a4771dff261e12cf048a28bc971aeb032e122cc97db",
+    "infra/mcp/compose.yaml": "5cf687b6a1ccc474460ea0d79a8bb622ad102e0cf2457443002279b85d4bc15e",
+    "infra/openobserve/compose.yaml": "2519b278586fee6c341585536a226c79aadf290035c4ccfd3ef56a640e556124",
+    "infra/orchestration/compose.yaml": "33b4a36efc7b972aab6fce16bc1f65bdbfa87a0b944e73d61229897679ffcdf5",
+    "infra/poc/compose.yaml": "4031d2a30f98965209b4181333b0fad1b4f1fd682442a7bf1946ba9cc25a88d7",
+    "infra/sail/compose.yaml": "fc5a0fe0bb6aa0964b6d7f4b26abd3c3ccff988fa2d11f9ba312359d5f31faf8"
   },
   "counts": {
-    "build_owners": 9,
-    "compose_files": 7,
+    "build_owners": 12,
+    "compose_files": 9,
     "core_services": 6,
     "local_image_consumers": 7,
-    "local_images": 9,
-    "named_volume_service_references": 26,
-    "named_volumes": 18,
-    "profiles": 11,
-    "services": 38,
+    "local_images": 12,
+    "named_volume_service_references": 28,
+    "named_volumes": 20,
+    "profiles": 13,
+    "services": 41,
     "unknown_lifecycles": 0
   },
   "kind": "public-compose-source-inventory",
@@ -126,6 +131,30 @@
       "builder": "mcp",
       "consumers": [],
       "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-mcp:local"
+    },
+    {
+      "all_users": [
+        "openobserve"
+      ],
+      "builder": "openobserve",
+      "consumers": [],
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-openobserve:local"
+    },
+    {
+      "all_users": [
+        "sail-benchmark"
+      ],
+      "builder": "sail-benchmark",
+      "consumers": [],
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-sail-benchmark:local"
+    },
+    {
+      "all_users": [
+        "sail-server"
+      ],
+      "builder": "sail-server",
+      "consumers": [],
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-sail-server:local"
     },
     {
       "all_users": [
@@ -742,6 +771,60 @@
     },
     {
       "additional_budget": {
+        "all_declared_operations_limit_bytes": 2147483648,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 0,
+        "one_shot_instances": 0,
+        "one_shot_services": 0,
+        "resident_bytes": 2147483648,
+        "resident_instances": 1,
+        "resident_services": 1,
+        "startup_plus_resident_limit_bytes": 2147483648,
+        "steady_resident_limit_bytes": 2147483648,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "additional_service_count": 1,
+      "budget_including_core": {
+        "all_declared_operations_limit_bytes": 6845104128,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 268435456,
+        "one_shot_instances": 1,
+        "one_shot_services": 1,
+        "resident_bytes": 6576668672,
+        "resident_instances": 6,
+        "resident_services": 6,
+        "startup_plus_resident_limit_bytes": 6845104128,
+        "steady_resident_limit_bytes": 6576668672,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "named_volumes": [
+        "catalog-db",
+        "openobserve-data",
+        "storage",
+        "trino"
+      ],
+      "profile": "openobserve-lab",
+      "service_count": 7,
+      "services": [
+        "catalog",
+        "catalog-db",
+        "catalog-migrate",
+        "openobserve",
+        "storage",
+        "trino",
+        "worker"
+      ]
+    },
+    {
+      "additional_budget": {
         "all_declared_operations_limit_bytes": 4697620480,
         "explicit_only_bytes": 0,
         "explicit_only_instances": 0,
@@ -791,6 +874,61 @@
         "catalog",
         "catalog-db",
         "catalog-migrate",
+        "storage",
+        "trino",
+        "worker"
+      ]
+    },
+    {
+      "additional_budget": {
+        "all_declared_operations_limit_bytes": 4294967296,
+        "explicit_only_bytes": 2147483648,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 1,
+        "one_shot_bytes": 0,
+        "one_shot_instances": 0,
+        "one_shot_services": 0,
+        "resident_bytes": 2147483648,
+        "resident_instances": 1,
+        "resident_services": 1,
+        "startup_plus_resident_limit_bytes": 2147483648,
+        "steady_resident_limit_bytes": 2147483648,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "additional_service_count": 2,
+      "budget_including_core": {
+        "all_declared_operations_limit_bytes": 8992587776,
+        "explicit_only_bytes": 2147483648,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 1,
+        "one_shot_bytes": 268435456,
+        "one_shot_instances": 1,
+        "one_shot_services": 1,
+        "resident_bytes": 6576668672,
+        "resident_instances": 6,
+        "resident_services": 6,
+        "startup_plus_resident_limit_bytes": 6845104128,
+        "steady_resident_limit_bytes": 6576668672,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "named_volumes": [
+        "catalog-db",
+        "sail-lab-state",
+        "storage",
+        "trino"
+      ],
+      "profile": "sail-lab",
+      "service_count": 8,
+      "services": [
+        "catalog",
+        "catalog-db",
+        "catalog-migrate",
+        "sail-benchmark",
+        "sail-server",
         "storage",
         "trino",
         "worker"
@@ -853,7 +991,7 @@
   ],
   "runtime_measured": false,
   "schema_version": 1,
-  "scope": "seven-public-files-with-YAML-anchors-no-env-interpolation-no-deployment",
+  "scope": "registered-public-files-with-YAML-anchors-no-env-interpolation-no-deployment",
   "services": [
     {
       "anonymous_volume_count": 0,
@@ -1336,6 +1474,28 @@
       "anonymous_volume_count": 0,
       "bind_mount_count": 0,
       "core": false,
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-openobserve:local",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": true,
+      "memory_limit_bytes": 2147483648,
+      "named_volumes": [
+        "openobserve-data"
+      ],
+      "owns_build": true,
+      "profiles": [
+        "openobserve-lab"
+      ],
+      "pull_policy": "build",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "openobserve",
+      "source": "infra/openobserve/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
       "image": "prom/prometheus:v3.16.0@sha256:89c1a644817e9ad70fa2af76c84898e327c1de7063735f962e8313b1e28672c3",
       "lifecycle": "resident",
       "lifecycle_basis": "restart-policy",
@@ -1375,6 +1535,48 @@
       "restart_policy": "unless-stopped",
       "service": "qdrant",
       "source": "infra/poc/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-sail-benchmark:local",
+      "lifecycle": "explicit_only",
+      "lifecycle_basis": "deploy.replicas=0",
+      "local_image": true,
+      "memory_limit_bytes": 2147483648,
+      "named_volumes": [
+        "sail-lab-state"
+      ],
+      "owns_build": true,
+      "profiles": [
+        "sail-lab"
+      ],
+      "pull_policy": "build",
+      "replicas": 0,
+      "restart_policy": "no",
+      "service": "sail-benchmark",
+      "source": "infra/sail/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-sail-server:local",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": true,
+      "memory_limit_bytes": 2147483648,
+      "named_volumes": [],
+      "owns_build": true,
+      "profiles": [
+        "sail-lab"
+      ],
+      "pull_policy": "build",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "sail-server",
+      "source": "infra/sail/compose.yaml"
     },
     {
       "anonymous_volume_count": 0,
@@ -1767,6 +1969,17 @@
     },
     {
       "external": false,
+      "name_template": "${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_openobserve-data",
+      "services": [
+        "openobserve"
+      ],
+      "sources": [
+        "infra/openobserve/compose.yaml"
+      ],
+      "volume": "openobserve-data"
+    },
+    {
+      "external": false,
       "name_template": "${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_prometheus",
       "services": [
         "prometheus"
@@ -1786,6 +1999,17 @@
         "infra/poc/compose.yaml"
       ],
       "volume": "qdrant"
+    },
+    {
+      "external": false,
+      "name_template": "${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_sail-lab-state",
+      "services": [
+        "sail-benchmark"
+      ],
+      "sources": [
+        "infra/sail/compose.yaml"
+      ],
+      "volume": "sail-lab-state"
     },
     {
       "external": false,

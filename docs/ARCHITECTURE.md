@@ -34,11 +34,12 @@
 | 分散計算 | Spark 4.1.4 / Iceberg 1.12.0 | 常駐Master/Worker/History。Jupyterからremote投入も可能 |
 | 操作 | Streamlit 1.67.0 / FastAPI 0.162.2 | 設定保存・合成素材・処理開始・状態・catalog・診断・Swagger |
 | 実行の自動化 | n8n 2.46.7、Airflow 3.4.0 | 同梱の手動workflow/DAGからworkerへ依頼。定期担当は一つに決める |
-| 監視 | Grafana 13.3.0 / Prometheus 3.16.0 | worker/Prometheus指標。Grafana GUI編集をDBへ保持 |
+| 監視 | Grafana / Prometheus、node-exporter / cAdvisor、Loki / Vector | 指標とcuratedログを分離。Dashboardはcreate-only初期化後GUI所有 |
+| 任意の比較Lab | OpenObserve、Sail / Spark | ログ二重配送と合成エンジン比較。source定義あり、実runtime・性能は未検証 |
 | 分析拡張 | Superset / Jupyter / Qdrant / Marquez | 別profileで追加。初期化と保存先は [PoCツール](POC-TOOLS.md) |
 | AIの入口 | snapshot固定context、LangChain例、MCP 2.3.0 | 上限付き固定データ参照。MCPは既定read-only |
 
-coreは6service、全機能の定義は38serviceです。one-shotと明示実行smokeも含む数なので、起動中コンテナ数と一致しません。Compose・digest lock・requirements lockが機械的な正本です。図のロゴと線は [出典](assets/README.md) を持ち、第三者による認定を意味しません。
+coreは6service、全機能の定義は41serviceです。one-shotと明示実行smokeも含む数なので、起動中コンテナ数と一致しません。Compose・digest lock・requirements lockが機械的な正本です。図のロゴと線は [出典](assets/README.md) を持ち、第三者による認定を意味しません。
 
 ## 保存・制御・参照の経路
 
@@ -102,7 +103,7 @@ Cloudflare Tunnel/Access/R2/AI機能やClickHouseは拡張候補です。外部a
 
 ## 環境から独立したコードと復旧
 
-Compose7ファイルは同じprojectへ結合し、clone先に依存しない相対パスを使います。実接続先・landing/workspace・proxy/CA・秘密値は外部private設定に置きます。service名・imageとデータvolumeの関係は [配置](DEPLOYMENT.md)、変更するファイルは [ディレクトリ案内](DIRECTORY-GUIDE.md) にあります。
+Compose9ファイルは同じprojectへ結合し、clone先に依存しない相対パスを使います。実接続先・landing/workspace・proxy/CA・秘密値は外部private設定に置きます。service名・imageとデータvolumeの関係は [配置](DEPLOYMENT.md)、変更するファイルは [ディレクトリ案内](DIRECTORY-GUIDE.md) にあります。
 
 初期のIceberg形式はv2/Parquetです。v3はTrino 484でexperimentalであり、全エンジンでの読書き確認なしに切り替えません。原本、Iceberg metadata/data、カタログDB、暗号鍵、各GUI状態DBを整合した時点で保存し、別環境へ復元して確認します。通常停止はvolumeを保持します。[運用・復元](OPERATIONS.md)
 
@@ -141,3 +142,9 @@ PoCは単一ホスト・一部内部サービス共通資格情報の構成で�
 実行の境界も別々です。raw保存、Bronze置換、台帳更新、14SQL、CDCのSQLite checkpoint、Kafka offset、設定ファイル保存、コンテナ再配置は1つのtransactionにまとまりません。失敗箇所と再実行の単位を説明できる形にしてから自動化します。
 
 本番化の未実装事項は、利用者別認可/IdP、HA、同時writer、長期保持と清掃、実行世代の一括公開、復元・RPO/RTO、会社負荷、モデル評価等です。要件から選び、機能を追加しただけで達成済みとはしません。[カスタマイズ](CUSTOMIZATION.md)・[評価計画](reports/EVALUATION-PLAN.md)
+
+## 監視と比較Labの境界
+
+通常監視はPrometheusの指標と、明示captureした専用spool→Vector→秘匿化→Loki→Grafana Logsです。Docker socketやDockerRootDir全体をVectorへ渡しません。host/cgroup読み取りは配置前の承認が必要です。Grafanaのdatasourceは設定配布しますが、dashboardは初回作成後にGUIのDBを正本にします。[監視設計](OBSERVABILITY.md)
+
+`openobserve-lab` だけが秘匿化後の共通ログを第二sinkへ送ります。Lokiからの依存やmetrics remote_writeは追加しません。`sail-lab` は専用namespaceとstate volumeで同じ合成データを比較し、server 2GiB/client 2GiB、clientは通常replicas 0です。Spark共通imageの事前buildが必要です。両Labともsource/mock検査は実連携・24時間運転・性能の証明ではありません。[OpenObserve](OPENOBSERVE.md)・[Sail](SAIL-LAB.md)

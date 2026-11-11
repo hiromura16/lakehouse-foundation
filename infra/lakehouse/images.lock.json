@@ -42,5 +42,15 @@
     "pinned": "docker.io/timberio/vector:0.61.0-debian@sha256:f6c23b5a7e16fb2838d33619ef7acf4bad2289a7cf22bc90efc2371f520c4ea2",
     "provenance": "https://hub.docker.com/layers/timberio/vector/0.61.0-debian/images/sha256-6adda08dd40a5cb961c70d0e96a13fb3a934cfbc476e0e2eea533332917e3eb0",
     "verification": "official registry index metadata; local derived image runtime unverified"
+  },
+  "openobserve": {
+    "pinned": "public.ecr.aws/zinclabs/openobserve:v1.1.2@sha256:4a154849432f75c4fb024de32fe34163c02406c905dab22bf8d213d2e3386392",
+    "provenance": "https://public.ecr.aws/v2/zinclabs/openobserve/manifests/v1.1.2",
+    "verification": "official index metadata; derived image runtime not tested"
+  },
+  "openobserve-health-probe": {
+    "pinned": "docker.io/library/busybox:1.37.0-uclibc@sha256:7aa3d3c53cc1ed823c6a5967ebaac87700a5b0766af45ff599dbca3506c8b072",
+    "provenance": "https://github.com/docker-library/official-images/blob/master/library/busybox",
+    "verification": "official index and static ELF artifact checks; derived image runtime not tested"
   }
 }

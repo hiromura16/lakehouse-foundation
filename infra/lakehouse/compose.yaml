@@ -7,7 +7,7 @@
 
 # 内部service名をproxy対象から除外し、社内proxyへ内部要求を送らない。
 # 同じ除外値を大文字/小文字の両方へ渡し、利用libraryの違いを吸収する。
-x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,node-exporter,cadvisor,loki,vector,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
+x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,node-exporter,cadvisor,loki,vector,openobserve,sail-server,sail-benchmark,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
 
 name: ${COMPOSE_PROJECT_NAME:-lakehouse}
 
@@ -547,7 +547,8 @@ services:
     configs:
       - source: openobserve-vector-token
         target: /run/secrets/openobserve-vector.json
-        mode: 0444
+        # Local Compose ignores config mode/uid for file-backed bind mounts.
+        # Prepare the source as runtime-UID-owned0600; the wrapper checks it.
     # No Loki/OpenObserve dependency: their outage cannot gate existing metrics.
     healthcheck:
       test: [CMD, /bin/bash, /etc/vector/health.sh]
@@ -560,7 +561,9 @@ configs:
   # Private rendered config: never print/save `compose config` without --quiet.
   # An empty token is unused unless the lab-specific backend is selected.
   openobserve-vector-token:
-    content: '{"token":"${OPENOBSERVE_INGEST_TOKEN:-}"}'
+    # Profile-off uses only this public inert placeholder. When enabled, the
+    # operator's private read-only file is checked before Vector starts.
+    file: ${OPENOBSERVE_INGEST_TOKEN_FILE:-../monitoring/vector/openobserve-secrets.example.json}
   loki-config:
     file: ../monitoring/loki/loki.yaml
   monitoring-rules:

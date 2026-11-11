@@ -228,7 +228,7 @@ named volumeは保持されます。**停止前にプロジェクト名をDokplo
 1. **General → Provider → Git** を選びます。Repository URLは `https://github.com/hiromura16/lakehouse-foundation.git`、Branchは `main`、Compose Pathは `infra/lakehouse/compose.yaml` として **Save** します。公開HTTPSのためSSH Keyは不要です。
 2. **Composeサービス自身のEnvironmentタブ**を開きます。カード名は **Environment Settings** です。upgrade後のprivate envと一致させ、**Create Environment FileをON → Save** します。
 3. `COMPOSE_PROJECT_NAME` が画面の実appNameと一致し、移行用 `DATA_VOLUME_PREFIX`、既存の秘密値、`LAKEHOUSE_NO_PROXY`、proxy両case、CA、landing／privateディレクトリが保持されたことを確認します。
-4. **Advanced → Run Command → Command** を確認し、配置対象のComposeファイルとprofileを合わせます。coreのみなら空欄の既定Commandを利用できます。追加機能を使っている場合は既存profileを不用意に空へ戻さず、[7ファイルの指定](DOKPLOY.md#任意composeを重ねる)を維持します。
+4. **Advanced → Run Command → Command** を確認し、配置対象のComposeファイルとprofileを合わせます。coreのみなら空欄の既定Commandを利用できます。追加機能を使っている場合は既存profileを不用意に空へ戻さず、[9ファイルの指定](DOKPLOY.md#任意composeを重ねる)を維持します。
 
 GitHubタブは接続済みGitHub Provider用の別方式です。公開URLの直接入力にはGitタブを使います。[0.31.0のGitフォーム](https://github.com/Dokploy/dokploy/blob/v0.31.0/apps/dokploy/components/dashboard/compose/general/generic/save-git-provider-compose.tsx)
 

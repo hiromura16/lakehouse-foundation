@@ -110,6 +110,8 @@ class CanonicalBypassTests(unittest.TestCase):
             "cdc",
             "poc",
             "mcp",
+            "openobserve",
+            "sail",
         ):
             document = yaml.safe_load(
                 (ROOT / "infra" / name / "compose.yaml").read_text()

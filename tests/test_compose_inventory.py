@@ -16,7 +16,7 @@ from scripts import compose_inventory as inventory
 
 
 def write_sources(root, documents=None):
-    """Create exactly seven disposable public-shaped Compose source files."""
+    """Create the registered disposable public-shaped Compose source files."""
     documents = documents or [
         {
             "services": {
@@ -114,7 +114,7 @@ class SourceDerivationTests(unittest.TestCase):
     def rewrite(self):
         write_sources(self.root, self.documents)
 
-    def test_seven_sources_are_public_and_environment_independent(self):
+    def test_registered_sources_are_public_and_environment_independent(self):
         before = inventory.rendered(self.root)
         with patch.dict(
             os.environ,
@@ -127,12 +127,12 @@ class SourceDerivationTests(unittest.TestCase):
             after = inventory.rendered(self.root)
         self.assertEqual(before, after)
         report = json.loads(before)
-        self.assertEqual(report["counts"]["compose_files"], 7)
-        self.assertEqual(report["counts"]["services"], 7)
+        self.assertEqual(report["counts"]["compose_files"], 9)
+        self.assertEqual(report["counts"]["services"], 9)
         self.assertEqual(report["counts"]["profiles"], 0)
         self.assertFalse(report["runtime_measured"])
         self.assertEqual(
-            report["all_profiles"]["budget"]["resident_bytes"], 70 * 1024**2
+            report["all_profiles"]["budget"]["resident_bytes"], 90 * 1024**2
         )
         self.assertNotIn(str(self.root), before)
 
@@ -144,12 +144,12 @@ class SourceDerivationTests(unittest.TestCase):
         report = inventory.derive(self.root)
         rows = report["services"]
         combined = inventory.select_services(rows, ["demo", "mcp"])
-        self.assertEqual(len(combined), 7)
+        self.assertEqual(len(combined), 9)
         self.assertEqual(
-            inventory.budget(combined)["resident_bytes"], 70 * 1024**2
+            inventory.budget(combined)["resident_bytes"], 90 * 1024**2
         )
         profiles = {row["profile"]: row for row in report["profiles"]}
-        self.assertEqual(profiles["core"]["service_count"], 5)
+        self.assertEqual(profiles["core"]["service_count"], 7)
         self.assertEqual(profiles["demo"]["additional_service_count"], 1)
         self.assertEqual(profiles["mcp"]["additional_service_count"], 2)
         # Adding independent profile totals would double-count core/shared.
@@ -250,7 +250,7 @@ class SourceDerivationTests(unittest.TestCase):
         self.assertEqual(rows["synthetic-1"]["lifecycle"], "resident")
         self.assertEqual(rows["synthetic-2"]["lifecycle"], "explicit_only")
         total = report["all_profiles"]["budget"]
-        self.assertEqual(total["resident_bytes"], 50 * 1024**2)
+        self.assertEqual(total["resident_bytes"], 70 * 1024**2)
         self.assertEqual(total["one_shot_bytes"], 10 * 1024**2)
         self.assertEqual(total["explicit_only_bytes"], 10 * 1024**2)
         self.assertEqual(total["explicit_only_instances"], 0)
@@ -272,7 +272,7 @@ class SourceDerivationTests(unittest.TestCase):
         self.rewrite()
         rows = inventory.derive(self.root)["services"]
         self.assertEqual(
-            inventory.budget(rows)["resident_bytes"], 90 * 1024**2
+            inventory.budget(rows)["resident_bytes"], 110 * 1024**2
         )
         with self.assertRaisesRegex(inventory.InventoryError, "REPEATED"):
             inventory.budget(rows + [rows[0]])

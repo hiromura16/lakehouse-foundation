@@ -32,7 +32,7 @@ setopt INTERACTIVE_COMMENTS
 
 レイクハウスを動かすホストのrepoルートで、通常の配置利用者がprivate設定を選びます。Docker操作権が必要です。daemon/Samba/Dokployホスト設定の変更だけ管理者が別途行います。CLIかDokployのどちらで配置を管理するか決め、同じstackを別名で同時起動しません。`COMPOSE_PROJECT_NAME`、Dokployの `appName`、利用中volumeの対応を運用台帳に残します。
 
-本書のCLI起動停止例はCLI管理用です。Dokploy管理では同じ既存アプリの操作に読み替えます。backupのexec等をCLIで行う場合も、同じcommit・appName・private env・7Composeを使う保守作業として管理者が統一します。
+本書のCLI起動停止例はCLI管理用です。Dokploy管理では同じ既存アプリの操作に読み替えます。backupのexec等をCLIで行う場合も、同じcommit・appName・private env・9Composeを使う保守作業として管理者が統一します。
 
 ## 毎日の確認
 
@@ -116,7 +116,7 @@ Dokployで管理している場合は対象アプリの停止操作を使い、C
 
 移行前に全volumeの解決名を既存の実名と照合し、旧コンテナを全て停止してから一つの新配置を起動します。prefixはvolumeをrename・copyしません。誤ったprefixで空のDBが見えた場合は初期化を進めず、設定と実体を確認します。別環境やPreviewへ同じprefixを共有しません。
 
-volume定義は全7Composeで16キーです。core7、compute2、Airflow2、CDC2、PoC3のうち利用中のものと、landing/private設定/notebook等のbind mountを含め、実際の保存先を確認します。[全キー一覧](CONFIGURATION.md#data_volume_prefixを使う場面)
+volume定義は全9Composeで20キーです。core9、compute2、Airflow2、CDC2、PoC3、OpenObserve1、Sail1のうち利用中のものと、landing/private設定/notebook等のbind mountを含め、実際の保存先を確認します。[全キー一覧](CONFIGURATION.md#data_volume_prefixを使う場面)
 
 ## 更新とロールバック
 
@@ -142,6 +142,9 @@ DBだけ、S3だけ、暗号鍵だけの保管では復旧できません。Iceb
 | Airflow | 専用PostgreSQL、state volume、Fernet/JWT鍵、DAGのcommit |
 | Grafana | 停止したGrafana volume、設定、必要なプラグイン |
 | Prometheus | 停止したTSDB volumeと設定 |
+| Loki / Vector | Lokiのlog store、Vectorのbuffer/checkpoint volume、承認済みspoolと秘匿化設定。未配送と期限切れを区別 |
+| OpenObserve Lab使用時 | 専用data volume、private管理者情報、別管理の取り込みtoken。Lab停止はLoki停止と別 |
+| Sail Lab使用時 | 専用state volumeの証跡lock、比較commit/fixture/結果。通常業務volumeと混ぜない |
 | ランディング | CSV／JSON／画像、完了マーカー、manifest |
 | CDC有効時 | Kafkaデータ・Connect offset/config/status・schema history、CDC状態、private connector設定 |
 | compute有効時 | Spark event log/work volume、UID/GIDとjob commit。未完了jobの自動再実行はしない |
@@ -169,7 +172,8 @@ root = Path.cwd()
 values = load(sys.argv[1])
 command = ["docker", "compose", "--env-file", sys.argv[1]]
 for name in (
-    "lakehouse", "compute", "orchestration", "demo", "cdc", "poc", "mcp"
+    "lakehouse", "compute", "orchestration", "demo", "cdc", "poc", "mcp",
+    "openobserve", "sail",
 ):
     command.extend(["-f", str(root / "infra" / name / "compose.yaml")])
 subprocess.run(command + sys.argv[2:], env=environment(values), check=True)

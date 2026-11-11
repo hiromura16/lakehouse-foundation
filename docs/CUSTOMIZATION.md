@@ -121,7 +121,7 @@ Goldを新しい表にする場合、現在のpreview/AI APIは固定2表なの�
 
 ## 5. profile・サービスを追加する
 
-7Composeへ新しいservice/profileを加える場合は、service名・専用volume・secret・port・loopback・health・resource・logging・起動/終了の責任を定義します。共有のNO_PROXY canonical、設定生成/検査、GUI入口、固定診断、CI Compose検査、報告図、manifestを同時に更新します。
+9Composeへ新しいservice/profileを加える場合は、service名・専用volume・secret・port・loopback・health・resource・logging・起動/終了の責任を定義します。共有のNO_PROXY canonical、設定生成/検査、GUI入口、固定診断、CI Compose検査、報告図、manifestを同時に更新します。
 
 新しい公開portを無条件に全interfaceへbindしません。Notebook等がコード実行権を持つ場合は利用者分離と認可を設計します。選択しないprofileの秘密項目がcoreの起動を止めないことも確認します。
 

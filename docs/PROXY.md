@@ -89,7 +89,7 @@ daemonファイルとは別に、private `site.env` のHTTP(S)4項目を設定�
 
 | 項目 | 役割 |
 | --- | --- |
-| `LAKEHOUSE_NO_PROXY` | Compose補間用canonical。全7Composeと追加テンプレートが参照 |
+| `LAKEHOUSE_NO_PROXY` | Compose補間用canonical。全9Composeと追加テンプレートが参照 |
 | `NO_PROXY` / `no_proxy` | clientへ渡す大小文字の互換値。canonicalへ同期 |
 
 生成・`--upgrade`・CLI読込は、必須内部名とprivateファイル内の既存3項目を結合して重複を除きます。shellの古い除外先は採用しません。通常利用者がリポジトリのルートで実行します。
@@ -126,7 +126,7 @@ canonicalのない旧raw設定では必須内部名をfallbackで補い、両cas
 
 ### proxyファイルを補助入力にする場合
 
-直接Composeでは `--env-file site.env --env-file proxy.env` の順で後者が同名変数を上書きします。ただしsiteのcanonicalがあると後者の旧 `NO_PROXY` だけではbypassは変わりません。通常はsite設定に統合し、upgradeしてCLIを使います。daemon用6項目ファイルへcanonicalを加えません。補助入力が必要ならprivateなサイト設定側で3項目を同期し、全7Compose、同じproject/profile/volume名を使って `config --quiet` で確認します。raw `up` はCLIのwarehouse bootstrapやGrafana初期登録を代行しません。[配置手順](DEPLOYMENT.md)
+直接Composeでは `--env-file site.env --env-file proxy.env` の順で後者が同名変数を上書きします。ただしsiteのcanonicalがあると後者の旧 `NO_PROXY` だけではbypassは変わりません。通常はsite設定に統合し、upgradeしてCLIを使います。daemon用6項目ファイルへcanonicalを加えません。補助入力が必要ならprivateなサイト設定側で3項目を同期し、全9Compose、同じproject/profile/volume名を使って `config --quiet` で確認します。raw `up` はCLIのwarehouse bootstrapやGrafana初期登録を代行しません。[配置手順](DEPLOYMENT.md)
 
 ## 4. 企業CA・uv・Javaを設定する
 

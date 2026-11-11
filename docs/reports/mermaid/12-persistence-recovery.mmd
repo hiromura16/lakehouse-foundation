@@ -5,3 +5,4 @@ flowchart LR
   S["Spark logs / Kafka・SQLite再開状態"] --> B
   F["landing / workspace / private設定"] --> B
   B -.-> T["別環境へ復元してSQL・hash・再開位置を確認"]
+  L["Loki / Vector / 任意Lab専用state"] --> B

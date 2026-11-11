@@ -26,7 +26,7 @@ setopt INTERACTIVE_COMMENTS
 ```
 <!-- shell-usage:end -->
 
-確認日: 2026-11-10（JST）。初回配置・作業端末・権限は [START-HERE.md](START-HERE.md) で準備します。以下の `up` はCLI管理の環境だけで使います。Dokploy管理では同じprivate設定とComposeサービスのEnvironmentを揃え、7ファイルを使ってDeployします。[0.31.0の配置手順](DOKPLOY.md)
+確認日: 2026-11-10（JST）。初回配置・作業端末・権限は [START-HERE.md](START-HERE.md) で準備します。以下の `up` はCLI管理の環境だけで使います。Dokploy管理では同じprivate設定とComposeサービスのEnvironmentを揃え、9ファイルを使ってDeployします。[0.31.0の配置手順](DOKPLOY.md)
 
 
 操作画面を、素材投入だけでなく、サービスの入口、データの意味、読み取り確認、接続診断、履歴、同梱ヘルプから使えるようにしています。既定URLは `http://localhost:8501/`、操作APIとSwaggerは `http://localhost:8502/docs` です。実行する操作と、その結果を確認する操作を分けます。

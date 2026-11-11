@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="10-observability-title 10-observability-description" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
 <title id="10-observability-title">監視・状態確認・業務品質を分ける</title>
-<desc id="10-observability-description">Prometheusはworker/self/node/cadvisor/Loki/Vectorの6job定義。Vectorのcurated有限capture・VRL秘匿化からLokiへ配送するsource実装。host権限・公式validator・実配送・GUI・容量は別受入。 根拠: infra/monitoring/prometheus.yml, scripts/admin.py, scripts/grafana_setup.py, infra/demo/poc_quality.py</desc>
+<desc id="10-observability-description">Prometheusはworker/self/node/cadvisor/Loki/Vectorの6job定義。Vectorのcurated有限capture・VRL秘匿化からLokiへ配送するsource実装。host権限・公式validator・実配送・GUI・容量は別受入。 根拠: infra/monitoring/prometheus.yml, scripts/admin.py, scripts/grafana_setup.py, infra/demo/poc_quality.py, infra/openobserve/compose.yaml, docs/OPENOBSERVE.md</desc>
 <defs>
 <marker id="10-observability-data" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#2469a8"/></marker>
 <marker id="10-observability-control" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#70608e"/></marker>
@@ -68,7 +68,7 @@
 <rect x="1202.76" y="316" width="108.48" height="27" rx="3" fill="#fff" stroke="none"/>
 <g text-anchor="middle"><text x="1257" y="335" fill="#2469a8" font-size="18" font-weight="600">PromQL参照</text></g>
 <rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
-<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">GUI入口カードの数とPrometheus target数は別。会社SQL Server・DB・Kafka・ホスト全体の監視は追加する。</text>
+<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">host/cgroupはread承認後に受入。DB/SQL/Kafka固有指標は追加評価。任意OpenObserveはlog-only、metricsは後続。</text>
 <text x="56" y="977" fill="#536780" font-size="20" font-weight="400">Grafana JSON exportはdashboard単体。利用者・権限・全設定の復元はDBと設定のバックアップで確認する。</text>
 <text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>

@@ -62,7 +62,9 @@ SETTING_KEYS = frozenset(
     "CORPORATE_CA_FILE MCP_PORT MCP_API_TOKEN MCP_ENABLE_MUTATIONS "
     "MCP_ALLOWED_HOSTS SPARK_MASTER_UI_PORT SPARK_WORKER_UI_PORT "
     "SPARK_HISTORY_UI_PORT CADVISOR_DOCKER_DATA_ROOT "
-    "MONITORING_LOG_DIR MONITORING_HOST_ALIAS".split()
+    "MONITORING_LOG_DIR MONITORING_HOST_ALIAS OPENOBSERVE_PORT "
+    "OPENOBSERVE_ROOT_USER_EMAIL OPENOBSERVE_ROOT_USER_PASSWORD "
+    "OPENOBSERVE_INGEST_TOKEN_FILE".split()
 )
 SECRET_KEYS = frozenset(
     key
@@ -90,6 +92,7 @@ MOUNT_KEYS = frozenset(
         "NOTEBOOKS_DIR",
         "CADVISOR_DOCKER_DATA_ROOT",
         "MONITORING_LOG_DIR",
+        "OPENOBSERVE_INGEST_TOKEN_FILE",
         "CORPORATE_CA_FILE",
     }
 )
@@ -130,7 +133,7 @@ class SettingsStore:
         """Use the same validation as the CLI without evaluating shell text."""
         with self.lock:
             self.check_path()
-            return VALIDATOR.load(self.path)
+            return VALIDATOR.load(self.path, private_mount=self.path.parent)
 
     def public(self) -> dict:
         """Expose non-secret values and flags without stored credentials."""
@@ -324,7 +327,7 @@ class SettingsStore:
                     os.fsync(output.fileno())
                 os.chmod(temporary, 0o600)
                 # Validate before replacing the active settings file.
-                VALIDATOR.load(temporary)
+                VALIDATOR.load(temporary, private_mount=self.path.parent)
                 if self.path.read_text() != original:
                     raise SettingsError("Settings changed during save.")
                 os.replace(temporary, self.path)

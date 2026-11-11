@@ -9,7 +9,7 @@
 >
 > **前提となる資料:** [サイト設定リファレンス](<CONFIGURATION.md>) / [Dokploy 0.31.0でGitから配置する](<DOKPLOY.md>)
 >
-> **次に読む資料:** [GrafanaのGUI編集と保存](<GRAFANA.md>) / [平時・更新・復旧の運用手順](<OPERATIONS.md>)
+> **次に読む資料:** [GrafanaのGUI編集と保存](<GRAFANA.md>) / [平時・更新・復旧の運用手順](<OPERATIONS.md>) / [OpenObserveを任意の比較Labとして追加する](<OPENOBSERVE.md>)
 >
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
@@ -44,7 +44,7 @@ docker info --format '{{.DockerRootDir}}'
 
 未指定時のCompose fallbackは空の公開placeholderであり、Docker保存先の代替ではありません。実際の保存先・アクセス・metadataの受入が済むまでcontainer監視を成功扱いにしません。既存のNotebook/landing/private設定をmount先に流用しません。
 
-通常の`plan`は設定検査だけです。`predeploy`のNotebook検査と、今回のhost mount/collector権限確認は別に扱います。raw Dokploy Composeも同じ7ファイルを結合します。新しいlifecycle managerを追加しません。[Dokploy](DOKPLOY.md)
+通常の`plan`は設定検査だけです。`predeploy`のNotebook検査と、今回のhost mount/collector権限確認は別に扱います。raw Dokploy Composeも同じ9ファイルを結合します。新しいlifecycle managerを追加しません。[Dokploy](DOKPLOY.md)
 
 ## 3. GUIのダッシュボード
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Derive a deterministic inventory from seven public Compose source files.
+"""Derive an inventory from registered public Compose source files.
 
 This never reads site.env, resolves interpolation, invokes Docker, inspects
 the host, or measures runtime memory. Memory values are declared container
@@ -30,6 +30,8 @@ COMPOSE_FILES = tuple(
         "cdc",
         "poc",
         "mcp",
+        "openobserve",
+        "sail",
     )
 )
 MAX_MEMORY = 1024**4
@@ -373,7 +375,7 @@ def derive(root=ROOT):
         "kind": "public-compose-source-inventory",
         "runtime_measured": False,
         "scope": (
-            "seven-public-files-with-YAML-anchors-"
+            "registered-public-files-with-YAML-anchors-"
             "no-env-interpolation-no-deployment"
         ),
         "memory_semantics": (

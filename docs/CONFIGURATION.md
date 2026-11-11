@@ -83,21 +83,23 @@ export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 | `LANDING_DIR` | `/srv/lakehouse/landing` | ホスト上の専用絶対パス。workerへ `/landing` として読み取り専用mountする。変更時は新しいディレクトリ・Samba共有先・UID/GIDを揃え、対象を再配置する | 社内 |
 | `WORKER_UID` | 生成利用者のUID | workerの実行ユーザーID。ランディングの読み取り権限に合わせる。ファイルの所有権を自動で直す設定ではない | 社内 |
 | `WORKER_GID` | 生成利用者のGID | workerの実行グループID。親ディレクトリの通過権限とACLも確認する | 社内 |
-| `COMPOSE_PROFILES` | 空 | coreに加える機能。`automation,monitoring,compute,orchestration,demo,cdc,bi,notebooks,vector,lineage,mcp` からカンマ区切りで選択。変更後は同じprivate設定で `up` を実行する | いいえ |
+| `COMPOSE_PROFILES` | 空 | coreに加える機能。`automation,monitoring,compute,orchestration,demo,cdc,bi,notebooks,vector,lineage,mcp,openobserve-lab,sail-lab` からカンマ区切りで選択。変更後は同じprivate設定で `up` を実行する | いいえ |
 
 Dokployの `appName` はGUI側の項目であり、`site.env` に別の `APP_NAME` を作る仕組みではありません。Dokployは `-p <appName>` でComposeを実行するため、同じ環境をCLIでも操作する場合は `COMPOSE_PROJECT_NAME` をその `appName` に合わせます。画面のEnvironment名だけではデータは分離されません。[DOKPLOY.md](DOKPLOY.md)
 
 ### DATA_VOLUME_PREFIXを使う場面
 
-通常の新規導入では空のままにします。定義は次の16キーで、有効profileにより実際に作る対象が変わります。実名は `<prefix>_<volumeキー>` です。
+通常の新規導入では空のままにします。定義は次の20キーで、有効profileにより実際に作る対象が変わります。実名は `<prefix>_<volumeキー>` です。
 
 | Compose | volumeキー |
 | --- | --- |
-| lakehouse | `catalog-db,storage,trino,n8n-db,n8n,prometheus,grafana` |
+| lakehouse | `catalog-db,storage,trino,n8n-db,n8n,prometheus,grafana,loki,vector-data` |
 | compute | `spark-events,spark-work` |
 | orchestration | `airflow-db,airflow-state` |
 | cdc | `cdc-kafka,cdc-state` |
 | poc | `superset-db,qdrant,marquez-db` |
+| openobserve | `openobserve-data` |
+| sail | `sail-lab-state` |
 
 private設定、`LANDING_DIR`、`NOTEBOOKS_DIR`、truststore等のbind mountはこの数に含みません。空の場合のprefixは `COMPOSE_PROJECT_NAME` です。
 
@@ -154,6 +156,22 @@ Warehouse/bucket名は、現在の検査では小文字英字で始まる3〜51�
 | `GRAFANA_ADMIN_PASSWORD` | 48文字のhexを自動生成 | 初期管理者 `admin` の設定。GUIで変更した場合はprivate設定も現在の値に合わせる。既存Grafana DBのパスワードをenvだけでリセットする機能ではない | はい |
 
 n8nのownerアカウントやAirflowの画面ログインを、この表のDBパスワードと取り違えないようにします。Grafanaのダッシュボードは初回作成後、GUIで保存した内容を正本として扱います。[GRAFANA.md](GRAFANA.md)
+
+## 監視と任意の比較Lab
+
+| 項目 | 生成時の既定 | 意味と変更時の影響 | 秘密 |
+| --- | --- | --- | --- |
+| `MONITORING_LOG_DIR` | `/srv/lakehouse/log-spool` | Vectorだけが読む専用curatedログspool。private設定・landing・Notebook・Dockerデータとは独立させ、配置前に管理者が存在・所有権・権限を確認する | 社内 |
+| `MONITORING_HOST_ALIAS` | `local` | host実名を公開しないための短い監視alias。小文字英字始まりの32文字以内で英数字・`_`・`-` | 社内 |
+| `CADVISOR_DOCKER_DATA_ROOT` | 空 | Dockerの実データrootの絶対パス。`monitoring` 有効時に必須。rootの自動検出や作成・権限変更はしない | 社内 |
+| `OPENOBSERVE_PORT` | `5080` | `openobserve-lab` のUI/API。host loopback固定。metrics datasourceのportではない | 社内 |
+| `OPENOBSERVE_ROOT_USER_EMAIL` | `admin@example.invalid` | Labのbootstrap管理者ID。Labを使う時だけ設定し、外部メール送信には使わない | 社内 |
+| `OPENOBSERVE_ROOT_USER_PASSWORD` | 64文字のhexを自動生成 | Lab管理者のprivate秘密値。既存volumeの認証と整合させ、ログ配送資格情報と分離する | はい |
+| `OPENOBSERVE_INGEST_TOKEN_FILE` | 空 | Git外の絶対パス。所有者が同UIDで0600、symlinkなしのJSONに取り込みtokenだけを保持。内容を公開env・ログ・例外に出さない | はい |
+
+Lab無効時はOpenObserve資格情報・token fileを要求しません。`openobserve-lab` は `monitoring` と併用し、Vectorの秘匿化後のログを二重配送する任意機能です。Prometheus remote_writeとmetrics比較は後続Phaseで、今回のログAPIへ流用しません。[設定手順](OPENOBSERVE.md)
+
+Sail用の新しい接続体系・資格情報キーは追加しません。既存のS3/catalog設定を使い、`sail-lab` を明示した場合だけ専用serverと通常replicas 0の比較clientを定義します。先にSpark共通imageをbuildする手順と未検証範囲は [SAIL-LAB.md](SAIL-LAB.md) にあります。設定保存はhost mount作成・service再配置を行いません。
 
 ## Airflow
 

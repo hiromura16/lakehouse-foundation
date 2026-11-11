@@ -26,7 +26,7 @@ setopt INTERACTIVE_COMMENTS
 ```
 <!-- shell-usage:end -->
 
-確認日: 2026-11-10（JST）。初回配置・作業端末・権限は [START-HERE.md](START-HERE.md) で準備します。以下の `up` はCLI管理の環境だけで使います。Dokploy管理では同じprivate設定とComposeサービスのEnvironmentを揃え、7ファイルを使ってDeployします。[0.31.0の配置手順](DOKPLOY.md)
+確認日: 2026-11-10（JST）。初回配置・作業端末・権限は [START-HERE.md](START-HERE.md) で準備します。以下の `up` はCLI管理の環境だけで使います。Dokploy管理では同じprivate設定とComposeサービスのEnvironmentを揃え、9ファイルを使ってDeployします。[0.31.0の配置手順](DOKPLOY.md)
 
 
 このAPIは、設定の保存、合成素材の投入、明示した後続処理、Goldの参照を担当します。FastAPIのSwagger UIから入力項目と応答形式を確認できます。初めて操作する場合は [DEMO-GUI.md](DEMO-GUI.md)、会社導入は [COMPANY-ROLLOUT.md](COMPANY-ROLLOUT.md) を先に読みます。

@@ -14,7 +14,13 @@ if [ "$(id -u)" = 0 ] || [ -L /var/lib/vector ] || \
 fi
 case ",${COMPOSE_PROFILES:-}," in
   *,openobserve-lab,*)
-    if [ ! -r /run/secrets/openobserve-vector.json ]; then
+    token_file=/run/secrets/openobserve-vector.json
+    token_owner="$(stat -c '%u:%a' -- "$token_file" 2>/dev/null || true)"
+    if [ ! -f "$token_file" ] || [ -L "$token_file" ] || \
+       [ ! -r "$token_file" ] || \
+       [ "$token_owner" != "$(id -u):600" ] || \
+       [ "$(wc -c < "$token_file")" -gt 4096 ] || \
+       ! tr -d '\n\r' < "$token_file" | grep -Eq '^[[:space:]]*\{[[:space:]]*"token"[[:space:]]*:[[:space:]]*"o2oi_[A-Za-z0-9]{32}"[[:space:]]*\}[[:space:]]*$'; then
       printf '%s\n' 'Vector lab ingestion credentials are not prepared.' >&2
       exit 78
     fi

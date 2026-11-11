@@ -1,7 +1,7 @@
 # 報告書用の実装構成一覧
 
 <!-- doc-purpose:start -->
-> **役割:** 38サービス・11profile・port・volume・接続主体を公開定義から技術付録として照合する。
+> **役割:** 41サービス・13profile・port・volume・接続主体を公開定義から技術付録として照合する。
 >
 > **対象読者:** 基盤構築担当 / 開発・設計担当 / 評価・報告担当
 >
@@ -14,7 +14,7 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<../DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
-照合日: 2026-11-11（UTC）。compute検証commit `49898ac` から監視exporterのsource定義を追加しました。実機受入は未実行です。公開Compose・固定lock・同梱コードを読み取り、詳細構成図の各箱と線を確認するための技術付録として整理しました。導入先の実ホスト名・接続先・保存パス・秘密値は含めません。稼働環境への接続や再配置は行っていません。
+照合日: 2026-11-11（UTC）。compute検証commit `49898ac` から監視exporterのsource定義を追加しました。OpenObserveログ比較とSail合成比較も任意profileとして追加しました。今回の拡張の実機受入は未実行です。公開Compose・固定lock・同梱コードを読み取り、詳細構成図の各箱と線を確認するための技術付録として整理しました。導入先の実ホスト名・接続先・保存パス・秘密値は含めません。稼働環境への接続や再配置は行っていません。
 
 [素材一覧](README.md) から目的の図を選びます。過去の実機結果は [verification.json](../verification.json)・[VALIDATION.md](../VALIDATION.md)、採用版の公式資料は [REFERENCES.md](../REFERENCES.md) を参照してください。以下の個数は構成定義の数であり、性能値や常時起動数ではありません。
 
@@ -22,20 +22,20 @@
 
 | 項目 | 公開定義から確認できる値 | 図・報告書での表し方 |
 | --- | --- | --- |
-| アプリのCompose | 7ファイル | lakehouse → compute → orchestration → demo → cdc → poc → mcpの順で同じprojectへ結合 |
-| service定義 | 38 | core 6＋追加定義32。38個の常駐アプリとは表現しない |
-| 任意profile | 11 | automation、monitoring、compute、orchestration、demo、cdc、bi、notebooks、vector、lineage、mcp |
+| アプリのCompose | 9ファイル | lakehouse → compute → orchestration → demo → cdc → poc → mcp → openobserve → sailの順で同じprojectへ結合 |
+| service定義 | 41 | core 6＋追加定義35。41個の常駐アプリとは表現しない |
+| 任意profile | 13 | automation、monitoring、compute、orchestration、demo、cdc、bi、notebooks、vector、lineage、mcp、openobserve-lab、sail-lab |
 | 一時初期化 | 4service | catalog-migrate、spark-volumes-init、cdc-register、superset-init。正常時は終了コード0 |
-| 明示smoke | 1service | spark-check。通常upはreplicas=0、CLIから明示実行 |
-| buildを持つservice | 9 | worker、spark-volumes-init、airflow、demo-api、cdc-register、superset-init、jupyter、mcp、vector |
-| 名前付きvolume | 18種類の定義 | 必須coreが参照するのはcatalog-db/storage/trinoの3種。残りは選択profileの状態保存 |
-| ホスト上の別構成 | Dokploy、Samba、daemon proxy/CA | アプリ38serviceとは別の管理領域として描く |
+| 明示検証 | 2service | spark-check、sail-benchmark。通常upはreplicas=0、CLIから明示実行 |
+| buildを持つservice | 12 | worker、spark-volumes-init、airflow、demo-api、cdc-register、superset-init、jupyter、mcp、vector、openobserve、sail-server、sail-benchmark |
+| 名前付きvolume | 20種類の定義 | 必須coreが参照するのはcatalog-db/storage/trinoの3種。残りは選択profileの状態保存 |
+| ホスト上の別構成 | Dokploy、Samba、daemon proxy/CA | アプリ41serviceとは別の管理領域として描く |
 | 業務DB | 外部SQL Server | 会社の既存DB。公開ComposeからSQL Server本体は起動しない |
 | 環境ごとの識別 | COMPOSE_PROJECT_NAME、生成後のDokploy appName | 所属Environment名だけでは保存先・port・鍵が分離されない |
 
 DokployはSwarm上の管理サービスと専用PostgreSQL、管理画面を制限するNginx、Traefikを別途準備します。レイクハウス本体は **Docker Compose** で配置し、Swarm Stackとして配備する手順ではありません。全アプリserviceは `traefik.enable=false` で、標準Composeだけで利用者向けHTTPS入口が自動構成されるわけではありません。[Dokploy手順](../DOKPLOY.md)・[installer](../../infra/dokploy/install.sh)
 
-## 2. 38serviceと起動依存
+## 2. 41serviceと起動依存
 
 `healthy` は依存先のhealthcheck成功、`完了0` はone-shotの正常終了、`開始` はcontainerの開始です。ここはComposeの `depends_on` だけを示します。実行中にHTTP/DBへ接続する関係とは分けて図示してください。依存条件の成功だけで認証・業務データ・復元を検証したことにはなりません。
 
@@ -79,10 +79,13 @@ DokployはSwarm上の管理サービスと専用PostgreSQL、管理画面を制�
 | marquez | lineage | lineage API | marquez-db healthy |
 | marquez-web | lineage | lineage GUI | marquez healthy |
 | mcp | mcp | 固定tool/resourceをStreamable HTTPで公開 | demo-api healthy |
+| openobserve | openobserve-lab | 秘匿済みログの任意比較、2GiB/2CPU | なし。Lokiから依存しない |
+| sail-server | sail-lab | wheel固定のnative比較server、2GiB/2CPU | catalog healthy、storage 開始 |
+| sail-benchmark | sail-lab | 合成fixtureの比較client、2GiB/2CPU | sail-server/trino healthy。通常replicas=0 |
 
 `notebooks` だけならJupyterのSparkはlocal[2]です。`compute` も選ぶとstandalone Masterへ接続し、接続失敗を黙ってlocalへ切り替えません。`mcp` だけでもAPIは起動しますが、Streamlit画面には別途 `demo` が必要です。`cdc-consumer` は連続処理のプロセスですが、異常時の自動再起動は `restart: 'no'` です。[Spark実装](../../infra/poc/lakehouse_session.py)・[CDC Compose](../../infra/cdc/compose.yaml)
 
-正本: [core](../../infra/lakehouse/compose.yaml)・[compute](../../infra/compute/compose.yaml)・[Airflow](../../infra/orchestration/compose.yaml)・[demo](../../infra/demo/compose.yaml)・[CDC](../../infra/cdc/compose.yaml)・[PoC tools](../../infra/poc/compose.yaml)・[MCP](../../infra/mcp/compose.yaml)。
+正本: [core](../../infra/lakehouse/compose.yaml)・[compute](../../infra/compute/compose.yaml)・[Airflow](../../infra/orchestration/compose.yaml)・[demo](../../infra/demo/compose.yaml)・[CDC](../../infra/cdc/compose.yaml)・[PoC tools](../../infra/poc/compose.yaml)・[MCP](../../infra/mcp/compose.yaml)・[OpenObserve](../../infra/openobserve/compose.yaml)・[Sail](../../infra/sail/compose.yaml)。
 
 ## 3. 公開portと内部portを分ける
 
@@ -110,6 +113,7 @@ DokployはSwarm上の管理サービスと専用PostgreSQL、管理画面を制�
 | qdrant REST / dashboard | QDRANT_PORT / 6333 | 6333 | loopback固定 |
 | marquez API | MARQUEZ_API_PORT / 5000 | 5000 | loopback固定 |
 | marquez-web | MARQUEZ_UI_PORT / 3001 | 3000 | loopback固定 |
+| openobserve | OPENOBSERVE_PORT / 5080 | 5080 | loopback固定 |
 
 以下はアプリのComposeネットワーク内だけで使い、標準ではhostへpublishしません。
 
@@ -123,10 +127,11 @@ DokployはSwarm上の管理サービスと専用PostgreSQL、管理画面を制�
 | Spark driver / block manager | Jupyter 39000 / 39001。executorからのcallback用 |
 | Spark application UI | driver 4040。MasterのreverseProxyを経由 |
 | Marquez管理health | 5001。GUI公開APIの5000とは別 |
+| Sail Connect | 50051。比較clientからだけ使用しhost公開しない |
 
-Dokploy管理画面はアプリの上表とは別で、`DOKPLOY_ADMIN_PORT` の既定3100と管理用bind/allowlistを使います。Sambaはホスト上の共有設定であり、38serviceの公開portには含めません。SQL Serverも `SOURCE_SQLSERVER_PORT` / `CDC_SQLSERVER_PORT` / `DEMO_SQLSERVER_PORT` の外部TCP接続です。HTTP proxyへSQLのTCP接続を送る構成ではありません。
+Dokploy管理画面はアプリの上表とは別で、`DOKPLOY_ADMIN_PORT` の既定3100と管理用bind/allowlistを使います。Sambaはホスト上の共有設定であり、41serviceの公開portには含めません。SQL Serverも `SOURCE_SQLSERVER_PORT` / `CDC_SQLSERVER_PORT` / `DEMO_SQLSERVER_PORT` の外部TCP接続です。HTTP proxyへSQLのTCP接続を送る構成ではありません。
 
-## 4. 名前付きvolume全16種類
+## 4. 名前付きvolume全20種類
 
 物理名は各volumeの `name` 定義で決まり、通常は `COMPOSE_PROJECT_NAME`、移行時は `DATA_VOLUME_PREFIX` の接頭辞を使います。Dokployの生成appNameを変更しただけで既存データが移動するわけではありません。[既存データの引継ぎ](../DOKPLOY.md#既存volume名を引き継ぐ場合)
 
@@ -139,6 +144,10 @@ Dokploy管理画面はアプリの上表とは別で、`DOKPLOY_ADMIN_PORT` の�
 | n8n | n8nのユーザー領域 | n8n自身の設定・関連ファイル |
 | prometheus | prometheus /prometheus | TSDB。設定は15日/2GBの保持制限 |
 | grafana | grafana /var/lib/grafana | GUIで保存したDashboard、ユーザー等のGrafana DB |
+| loki | loki /loki | 7日保持の専用log store。期限・容量・実削除は別受入 |
+| vector-data | vector /var/lib/vector | bounded bufferとfile checkpoint |
+| openobserve-data | openobserve /data | LabのSQLite metadataとローカルlog store |
+| sail-lab-state | sail-benchmark /opt/lakehouse/lab-state | benchmarkの証跡lock。業務volumeとは独立 |
 | spark-events | init/master/worker/history/jupyterの /opt/spark/events | Spark event log。History再表示の根拠 |
 | spark-work | init/master/worker/historyの /opt/spark/work | daemon log、worker作業、History store |
 | airflow-db | airflow-db / PostgreSQL領域 | DAG実行・Connection等のmetadata |
@@ -252,20 +261,23 @@ Qdrantの3点検索は合成数値の機能疎通で、意味検索精度の評�
 | vector | 1024 | 0 | Qdrant |
 | lineage | 1792 | 0 | Marquez API/Web/DB |
 | mcp | 768 | 0 | mcp本体256＋共有demo-api512 |
-| 全serviceを一意に集計 | **32704** | **2176** | 33常駐＋4one-shot。共有serviceを二重計上しない |
+| openobserve-lab | 2048 | 0 | Lab本体のみ。ログ分岐にはmonitoringも必要 |
+| sail-lab | 2048 | 0 | serverのみ。明示benchmark client 2048MiBは別枠 |
+| 全serviceを一意に集計 | **36800** | **2176** | 35常駐＋4one-shot。共有serviceを二重計上しない |
 | 明示spark-check | 2048 | — | 前行に含めない、一時的なlocal smoke |
+| 明示sail-benchmark | 2048 | — | 前行に含めない。事前Spark buildと有限比較が必要 |
 
-全常駐の設定上限は約31.94GiBです。profile別の行には共有serviceがあるため、そのまま全行を足して全体値にしません。Spark Workerのcontainer上限4GiBと、クラスタへ広告するexecutor用RAM2GiBも別の値です。Jupyter driverとexecutorのメモリは、それぞれのcontainer側で見ます。
+全常駐の設定上限は約35.94GiBです。profile別の行には共有serviceがあるため、そのまま全行を足して全体値にしません。Spark Workerのcontainer上限4GiBと、クラスタへ広告するexecutor用RAM2GiBも別の値です。Jupyter driverとexecutorのメモリは、それぞれのcontainer側で見ます。
 
 図や報告書では「coreから開始し、目的別profileを段階追加」「構成上限と実測値は別欄」と表記し、未測定のスループット・応答時間・費用削減率を埋めません。性能と受入の記録様式は [評価計画](EVALUATION-PLAN.md) を使います。
 
 ## この一覧から稼働環境を照合する
 
-初心者はserviceの名前より先に、core、追加profile、初期化one-shot、明示smokeの4種類を区別します。38は定義数で、すべてが常駐するという意味ではありません。必要なprofileだけを選び、one-shotの正常終了を異常停止と混同しません。
+初心者はserviceの名前より先に、core、追加profile、初期化one-shot、明示smokeの4種類を区別します。41は定義数で、すべてが常駐するという意味ではありません。必要なprofileだけを選び、one-shotの正常終了を異常停止と混同しません。
 
 | 照合するもの | 公開側 | 導入先で確認するもの |
 | --- | --- | --- |
-| 構成 | 7つのCompose、選択profile | 実際のCommand、サービスenv、配置commit |
+| 構成 | 9つのCompose、選択profile | 実際のCommand、サービスenv、配置commit |
 | 保存 | volume keyとbindの役割 | 確定appName由来の実volume、privateの保存先、UID/GID |
 | 通信 | container名/内部port、host bind | 会社の接続制限、proxy bypass、SSH転送 |
 | 資源 | 宣言されたlimit | 起動/build/通常/負荷時の実使用量と空き |
@@ -279,4 +291,6 @@ serviceを追加/削除したら、起動依存、NO_PROXY、health、資源、�
 
 上級者は [CUSTOMIZATION](../CUSTOMIZATION.md) の追加profileの手順と [COMPATIBILITY](../COMPATIBILITY.md) の版の組合せを使います。復旧対象はこの表のvolumeだけでなく、外部bind、DB、暗号鍵、GUIの保存物も含め、[運用手順](../OPERATIONS.md) で一組として確認します。
 
-現行数量・service/profile/volume・資源上限の機械生成正本は [COMPOSE-INVENTORY.json](COMPOSE-INVENTORY.json) です。`python3 scripts/compose_inventory.py --check` で公開7ファイルのhashと照合します。実稼働数・使用メモリではありません。
+現行数量・service/profile/volume・資源上限の機械生成正本は [COMPOSE-INVENTORY.json](COMPOSE-INVENTORY.json) です。`python3 scripts/compose_inventory.py --check` で公開9ファイルのhashと照合します。実稼働数・使用メモリではありません。
+
+OpenObserveはlog-only Labであり、metrics remote_writeは後続Phaseです。Sailはcold build順序、Connect、S3/catalog、型・性能・再起動の実機確認を残します。source/mockの成功を24時間運転や性能の成功へ読み替えません。[OpenObserve](../OPENOBSERVE.md)・[Sail](../SAIL-LAB.md)

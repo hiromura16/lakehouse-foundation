@@ -50,7 +50,7 @@ HTMLはダウンロードしてブラウザーで開くと、14枚のSVGをオ�
 
 | 図 | 内容・報告書の用途 | 編集用 |
 | --- | --- | --- |
-| [01 詳細配置](figures/01-platform-detail.svg) | 全34service・11profile・core/常駐/one-shot/smoke。技術付録に | [Mermaid](mermaid/01-platform-detail.mmd) |
+| [01 詳細配置](figures/01-platform-detail.svg) | 全41service・13profile・core/常駐/one-shot/smoke。技術付録に | [Mermaid](mermaid/01-platform-detail.mmd) |
 | [02 バッチ経路](figures/02-batch-flow.svg) | SELECT/Samba/GUI→ready→原本/Bronze→明示変換 | [Mermaid](mermaid/02-batch-flow.mmd) |
 | [03 メダリオン](figures/03-medallion.svg) | 最新候補・妥当性・隔離・粒度・合成fixtureの件数 | [Mermaid](mermaid/03-medallion.mmd) |
 | [04 CDC確定順](figures/04-cdc-sequence.svg) | Debezium→Kafka→raw→現在値→派生表→checkpoint→offset | [Mermaid](mermaid/04-cdc-sequence.mmd) |
@@ -61,7 +61,7 @@ HTMLはダウンロードしてブラウザーで開くと、14枚のSVGをオ�
 | [09 認証境界](figures/09-security-boundaries.svg) | 管理者/利用者/内部DB、API token、SSRF、未完成の認可 | [Mermaid](mermaid/09-security-boundaries.mmd) |
 | [10 監視と品質](figures/10-observability.svg) | 2targetのmetrics、health、業務品質、各履歴を分離 | [Mermaid](mermaid/10-observability.mmd) |
 | [11 配置手順](figures/11-deployment-lifecycle.svg) | private準備→Dokploy→実appName→サービスenv→Deploy | [Mermaid](mermaid/11-deployment-lifecycle.mmd) |
-| [12 永続化・復旧](figures/12-persistence-recovery.svg) | 16volume・外部bind・DB/鍵・整合backup・別環境復元 | [Mermaid](mermaid/12-persistence-recovery.mmd) |
+| [12 永続化・復旧](figures/12-persistence-recovery.svg) | 20volume・外部bind・DB/鍵・整合backup・別環境復元 | [Mermaid](mermaid/12-persistence-recovery.mmd) |
 | [13 既存検証の結果](figures/13-evidence-summary.svg) | 合成機能確認・模擬proxyと、会社/負荷/推論の未評価 | [Mermaid](mermaid/13-evidence-summary.mmd) |
 | [14 次の評価](figures/14-poc-roadmap.svg) | 現地接続・業務整合・負荷・復旧・AI評価の段階と判断 | [Mermaid](mermaid/14-poc-roadmap.mmd) |
 
@@ -115,7 +115,7 @@ uv pip check \
 | `lakehouse-poc-report-assets.zip` | 図・雛形・索引・hash記録の一式 |
 | `export-manifest.json` | 図の基点、出力の相対名・サイズ・SHA-256 |
 
-図01は34serviceの名前を含むため、拡大表示かA3の技術付録で使います。他の用途別図を説明スライドに選ぶと読みやすくなります。PPTX内の図は箱やラベル単位のPowerPoint shapeではありません。図内の編集はSVG/Mermaid/figures.jsonで行い、再生成します。
+図01は41serviceの名前を含むため、拡大表示かA3の技術付録で使います。他の用途別図を説明スライドに選ぶと読みやすくなります。PPTX内の図は箱やラベル単位のPowerPoint shapeではありません。図内の編集はSVG/Mermaid/figures.jsonで行い、再生成します。
 
 Gitには編集可能なSVGと生成元・手順を保存します。PNG/PDF/PPTXは上の操作でGit外へ出力し、公開ソースのbinary/機密検査方針を維持します。出力ZIPは公開素材だけを集め、private設定やGUIの実画面を収集しません。
 

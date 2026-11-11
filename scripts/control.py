@@ -13,7 +13,7 @@ from settings import ROOT, environment, load
 parser = argparse.ArgumentParser(
     description=__doc__,
     epilog=(
-        "private設定から7つのComposeを同じprojectへ結合します。"
+        "private設定から9つのComposeを同じprojectへ結合します。"
         "planは構成検査だけ、source-checkはTCP到達だけです。"
         "起動停止はCLIかDokployの一つへ統一し、同じ環境を別名で起動しません。"
     ),
@@ -112,7 +112,16 @@ compose = [
     str(ROOT / "infra/lakehouse/compose.yaml"),
 ]
 # Optional engines stay in separate Compose files to keep the core small.
-for extension in ("compute", "orchestration", "demo", "cdc", "poc", "mcp"):
+for extension in (
+    "compute",
+    "orchestration",
+    "demo",
+    "cdc",
+    "poc",
+    "mcp",
+    "openobserve",
+    "sail",
+):
     extra_compose = ROOT / "infra" / extension / "compose.yaml"
     if extra_compose.is_file():
         compose.extend(["-f", str(extra_compose)])

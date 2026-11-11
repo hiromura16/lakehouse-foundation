@@ -9,3 +9,4 @@ flowchart LR
   Capture["明示curated capture"] --> Vector["Vector / 正規化・秘匿化"]
   Vector --> Loki["Loki / 専用volume7日"]
   Loki --> G
+  Vector -.-> OO["任意OpenObserve log-only / 独立volume / metrics後続"]

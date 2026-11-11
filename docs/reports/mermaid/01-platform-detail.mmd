@@ -10,3 +10,5 @@ flowchart TB
   BI["bi: superset / db / redis / init"] --> Core
   Extra["vector: qdrant / lineage: marquez + db + web"] --- Core
   Mon["monitoring: prometheus / grafana / node-exporter / cadvisor / loki / vector"] --> Core
+  Mon -.-> OO["openobserve-lab: 秘匿済みログのみ / metrics未実装"]
+  Sail["sail-lab: native server / 明示benchmark通常0"] --- Core
