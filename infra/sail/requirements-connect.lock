@@ -1,0 +1,20 @@
+# Additional Spark Connect dependencies only. The client image inherits the
+# existing Spark 4.1.4 Python package, pandas, numpy and Arrow from its owner.
+# CPython 3.10 Linux amd64/arm64 wheels are verified; other ABIs fail closed.
+# No native build/source fallback. Pins satisfy published PySpark 4.1.4
+# connect requirements; this is metadata evidence, not protocol acceptance.
+googleapis-common-protos==1.71.0 \
+    --hash=sha256:59034a1d849dc4d18971997a72ac56246570afdd17f9369a0ff68218d50ab78c
+grpcio==1.76.0 \
+    --hash=sha256:49ce47231818806067aea3324d4bf13825b658ad662d3b25fada0bdad9b8a6af \
+    --hash=sha256:035d90bc79eaa4bed83f524331d55e35820725c9fbb00ffa1904d5550ed7ede3
+grpcio-status==1.76.0 \
+    --hash=sha256:380568794055a8efbbd8871162df92012e0228a5f6dffaf57f2a00c534103b18
+protobuf==6.33.0 \
+    --hash=sha256:35be49fd3f4fefa4e6e2aacc35e8b837d6703c37a2168a55ac21e9b1bc7559ef \
+    --hash=sha256:e0697ece353e6239b90ee43a9231318302ad8353c70e6e45499fa52396debf90
+typing-extensions==4.15.0 \
+    --hash=sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548
+zstandard==0.25.0 \
+    --hash=sha256:4b6d83057e713ff235a12e73916b6d356e3084fd3d14ced499d84240f3eecee0 \
+    --hash=sha256:e05ab82ea7753354bb054b92e2f288afb750e6b439ff6ca78af52939ebbc476d

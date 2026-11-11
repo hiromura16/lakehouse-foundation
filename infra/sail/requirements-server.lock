@@ -1,0 +1,6 @@
+# Official PyPI 0.7.3 completed native wheels, Linux amd64 and arm64 only.
+# No sdist hash: unsupported platform fails rather than compiling Rust.
+# Publishing commit: ac4690078021cf2a5402dc5c7b38a886f1916c73.
+pysail==0.7.3 \
+    --hash=sha256:b9a308f8216b65c15f0e3666482ba602e962ec25408d42570a18b35f090dfdda \
+    --hash=sha256:ad8a68232cca4cd96b70645a7d5a122b2ecdd5300a9335fd537793686b9000ef

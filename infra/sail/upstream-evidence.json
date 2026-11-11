@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "checked_at": "2026-11-11",
+  "sail_version": "0.7.3",
+  "published_at": "2026-10-30",
+  "publishing_commit": "ac4690078021cf2a5402dc5c7b38a886f1916c73",
+  "distribution_source": "https://pypi.org/project/pysail/0.7.3/",
+  "distribution_verification": "publisher metadata and hashes observed; wheels not downloaded or installed here",
+  "linux_wheels": {
+    "pysail-0.7.3-cp38-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": "b9a308f8216b65c15f0e3666482ba602e962ec25408d42570a18b35f090dfdda",
+    "pysail-0.7.3-cp38-abi3-manylinux_2_24_aarch64.whl": "ad8a68232cca4cd96b70645a7d5a122b2ecdd5300a9335fd537793686b9000ef"
+  },
+  "official_sail_container_digest": null,
+  "container_strategy": "locally build official binary wheel on existing digest-pinned Python base; do not compile Rust",
+  "spark_baseline_version": "4.1.4",
+  "spark_connect_dependency_source": "https://github.com/apache/spark/blob/v4.1.4/python/packaging/classic/setup.py",
+  "connect_lock_verification": "all nine locked wheel hashes matched the six primary PyPI release pages; no installation or protocol test",
+  "connect_distribution_sources": [
+    "https://pypi.org/project/googleapis-common-protos/1.71.0/",
+    "https://pypi.org/project/grpcio/1.76.0/",
+    "https://pypi.org/project/grpcio-status/1.76.0/",
+    "https://pypi.org/project/protobuf/6.33.0/",
+    "https://pypi.org/project/typing-extensions/4.15.0/",
+    "https://pypi.org/project/zstandard/0.25.0/"
+  ],
+  "spark_baseline_runtime": "not_run",
+  "spark_connect_protocol_runtime": "not_run",
+  "rest_catalog_write": {
+    "documented": ["CREATE TABLE AS SELECT", "full overwrite", "catalog-backed commits"],
+    "excluded": ["CREATE OR REPLACE TABLE via REST", "native timestamp_ns result schema over Spark Connect"],
+    "runtime": "not_run",
+    "sources": [
+      "https://github.com/lakehq/sail/blob/v0.7.3/docs/guide/catalog/index.md#iceberg",
+      "https://github.com/lakehq/sail/blob/v0.7.3/docs/guide/sources/iceberg/features.md"
+    ]
+  },
+  "performance": "unmeasured; no improvement claim"
+}

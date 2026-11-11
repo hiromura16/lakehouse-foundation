@@ -1,0 +1,27 @@
+# Build the existing Spark image owner FIRST. This derived local image does
+# not replace Spark services or change their image/dependency ownership.
+# Compose supplies the selected project's exact owner-built tag explicitly.
+ARG SPARK_IMAGE
+FROM ${SPARK_IMAGE}
+USER root
+# Refresh only this derived image's trust when the operator supplies a new
+# public CA. The owner image retains its existing Java/OS trust entries.
+RUN --mount=type=secret,id=corporate_ca,required=false \
+    python3 /usr/local/share/lakehouse/install_ca.py
+COPY infra/sail/requirements-connect.lock /opt/lakehouse/connect.lock
+# Inherited pandas/numpy/Arrow are retained. Dependencies only, no PySpark
+# package reinstallation and no source compilation are permitted here.
+RUN UV_OFFLINE=0 uv --system-certs --no-cache pip install \
+      --python /opt/spark-venv/bin/python --require-hashes --only-binary :all: \
+      --no-deps -r /opt/lakehouse/connect.lock \
+    && uv pip check --python /opt/spark-venv/bin/python \
+    && mkdir -p /opt/lakehouse/lab-state \
+    && chown spark /opt/lakehouse/lab-state \
+    && chmod 0700 /opt/lakehouse/lab-state
+COPY infra/sail /opt/lakehouse/infra/sail
+COPY scripts/sail_benchmark.py /opt/lakehouse/scripts/sail_benchmark.py
+ENV PYTHONPATH=/opt/lakehouse:/opt/spark/python PYTHONDONTWRITEBYTECODE=1
+USER spark
+WORKDIR /opt/lakehouse/lab-state
+ENTRYPOINT ["/opt/spark-venv/bin/python", "/opt/lakehouse/scripts/sail_benchmark.py"]
+CMD ["plan"]

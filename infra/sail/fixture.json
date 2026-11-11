@@ -1,0 +1,1186 @@
+{
+  "provenance": {
+    "company_data": false,
+    "days": 7,
+    "generator": "scripts/generate-demo.py",
+    "kind": "synthetic",
+    "orders": 20,
+    "scenario": "clean-with-lab-precision-edges",
+    "seed": 42
+  },
+  "schema_version": 1,
+  "sources": {
+    "erp_products": [
+      {
+        "product_family": "Assembly",
+        "product_id": "P001",
+        "product_name": "合成部品・耐熱Ω",
+        "standard_cycle_seconds": "99999999.125",
+        "unit": "piece",
+        "updated_at": "2026-01-04T09:00:00.1234567+09:00"
+      },
+      {
+        "product_family": "Machining",
+        "product_id": "P002",
+        "product_name": "",
+        "standard_cycle_seconds": "30",
+        "unit": "piece",
+        "updated_at": "2026-01-04T08:00:00Z"
+      },
+      {
+        "product_family": "Assembly",
+        "product_id": "P003",
+        "product_name": null,
+        "standard_cycle_seconds": "35",
+        "unit": "piece",
+        "updated_at": "2026-01-04T08:00:00Z"
+      },
+      {
+        "product_family": "Machining",
+        "product_id": "P004",
+        "product_name": "Demo component 4",
+        "standard_cycle_seconds": "40",
+        "unit": "piece",
+        "updated_at": "2026-01-04T08:00:00Z"
+      }
+    ],
+    "erp_sales_orders": [
+      {
+        "factory_id": "F01",
+        "order_date": "2026-01-03",
+        "ordered_qty": "55",
+        "product_id": "P001",
+        "promised_date": "2026-01-06",
+        "sales_order_id": "SO00001",
+        "unit_price": "99999999999999.99",
+        "updated_at": "2026-01-05T07:00:00Z"
+      },
+      {
+        "factory_id": "F02",
+        "order_date": "2026-01-04",
+        "ordered_qty": "42",
+        "product_id": "P002",
+        "promised_date": "2026-01-07",
+        "sales_order_id": "SO00002",
+        "unit_price": "14.88",
+        "updated_at": "2026-01-06T07:00:00Z"
+      },
+      {
+        "factory_id": "F01",
+        "order_date": "2026-01-05",
+        "ordered_qty": "85",
+        "product_id": "P003",
+        "promised_date": "2026-01-08",
+        "sales_order_id": "SO00003",
+        "unit_price": "99.28",
+        "updated_at": "2026-01-07T07:00:00Z"
+      },
+      {
+        "factory_id": "F02",
+        "order_date": "2026-01-06",
+        "ordered_qty": "88",
+        "product_id": "P004",
+        "promised_date": "2026-01-09",
+        "sales_order_id": "SO00004",
+        "unit_price": "36.15",
+        "updated_at": "2026-01-08T07:00:00Z"
+      },
+      {
+        "factory_id": "F01",
+        "order_date": "2026-01-07",
+        "ordered_qty": "53",
+        "product_id": "P001",
+        "promised_date": "2026-01-10",
+        "sales_order_id": "SO00005",
+        "unit_price": "65.14",
+        "updated_at": "2026-01-09T07:00:00Z"
+      },
+      {
+        "factory_id": "F02",
+        "order_date": "2026-01-08",
+        "ordered_qty": "94",
+        "product_id": "P002",
+        "promised_date": "2026-01-11",
+        "sales_order_id": "SO00006",
+        "unit_price": "66.35",
+        "updated_at": "2026-01-10T07:00:00Z"
+      },
+      {
+        "factory_id": "F01",
+        "order_date": "2026-01-09",
+        "ordered_qty": "99",
+        "product_id": "P003",
+        "promised_date": "2026-01-12",
+        "sales_order_id": "SO00007",
+        "unit_price": "72.01",
+        "updated_at": "2026-01-11T07:00:00Z"
+      },
+      {
+        "factory_id": "F02",
+        "order_date": "2026-01-03",
+        "ordered_qty": "76",
+        "product_id": "P004",
+        "promised_date": "2026-01-06",
+        "sales_order_id": "SO00008",
+        "unit_price": "41.50",
+        "updated_at": "2026-01-05T07:00:00Z"
+      },
+      {
+        "factory_id": "F01",
+        "order_date": "2026-01-04",
+        "ordered_qty": "94",
+        "product_id": "P001",
+        "promised_date": "2026-01-07",
+        "sales_order_id": "SO00009",
+        "unit_price": "48.14",
+        "updated_at": "2026-01-06T07:00:00Z"
+      },
+      {
+        "factory_id": "F02",
+        "order_date": "2026-01-05",
+        "ordered_qty": "50",
+        "product_id": "P002",
+        "promised_date": "2026-01-08",
+        "sales_order_id": "SO00010",
+        "unit_price": "70.65",
+        "updated_at": "2026-01-07T07:00:00Z"
+      },
+      {
+        "factory_id": "F01",
+        "order_date": "2026-01-06",
+        "ordered_qty": "78",
+        "product_id": "P003",
+        "promised_date": "2026-01-09",
+        "sales_order_id": "SO00011",
+        "unit_price": "38.03",
+        "updated_at": "2026-01-08T07:00:00Z"
+      },
+      {
+        "factory_id": "F02",
+        "order_date": "2026-01-07",
+        "ordered_qty": "57",
+        "product_id": "P004",
+        "promised_date": "2026-01-10",
+        "sales_order_id": "SO00012",
+        "unit_price": "45.98",
+        "updated_at": "2026-01-09T07:00:00Z"
+      },
+      {
+        "factory_id": "F01",
+        "order_date": "2026-01-08",
+        "ordered_qty": "65",
+        "product_id": "P001",
+        "promised_date": "2026-01-11",
+        "sales_order_id": "SO00013",
+        "unit_price": "53.86",
+        "updated_at": "2026-01-10T07:00:00Z"
+      },
+      {
+        "factory_id": "F02",
+        "order_date": "2026-01-09",
+        "ordered_qty": "81",
+        "product_id": "P002",
+        "promised_date": "2026-01-12",
+        "sales_order_id": "SO00014",
+        "unit_price": "91.79",
+        "updated_at": "2026-01-11T07:00:00Z"
+      },
+      {
+        "factory_id": "F01",
+        "order_date": "2026-01-03",
+        "ordered_qty": "55",
+        "product_id": "P003",
+        "promised_date": "2026-01-06",
+        "sales_order_id": "SO00015",
+        "unit_price": "98.30",
+        "updated_at": "2026-01-05T07:00:00Z"
+      },
+      {
+        "factory_id": "F02",
+        "order_date": "2026-01-04",
+        "ordered_qty": "54",
+        "product_id": "P004",
+        "promised_date": "2026-01-07",
+        "sales_order_id": "SO00016",
+        "unit_price": "32.66",
+        "updated_at": "2026-01-06T07:00:00Z"
+      },
+      {
+        "factory_id": "F01",
+        "order_date": "2026-01-05",
+        "ordered_qty": "95",
+        "product_id": "P001",
+        "promised_date": "2026-01-08",
+        "sales_order_id": "SO00017",
+        "unit_price": "27.96",
+        "updated_at": "2026-01-07T07:00:00Z"
+      },
+      {
+        "factory_id": "F02",
+        "order_date": "2026-01-06",
+        "ordered_qty": "64",
+        "product_id": "P002",
+        "promised_date": "2026-01-09",
+        "sales_order_id": "SO00018",
+        "unit_price": "86.68",
+        "updated_at": "2026-01-08T07:00:00Z"
+      },
+      {
+        "factory_id": "F01",
+        "order_date": "2026-01-07",
+        "ordered_qty": "83",
+        "product_id": "P003",
+        "promised_date": "2026-01-10",
+        "sales_order_id": "SO00019",
+        "unit_price": "97.97",
+        "updated_at": "2026-01-09T07:00:00Z"
+      },
+      {
+        "factory_id": "F02",
+        "order_date": "2026-01-08",
+        "ordered_qty": "67",
+        "product_id": "P004",
+        "promised_date": "2026-01-11",
+        "sales_order_id": "SO00020",
+        "unit_price": "35.91",
+        "updated_at": "2026-01-10T07:00:00Z"
+      }
+    ],
+    "erp_shipments": [
+      {
+        "sales_order_id": "SO00001",
+        "shipment_id": "SH00001-1",
+        "shipped_at": "2026-01-06T14:00:00Z",
+        "shipped_qty": "27",
+        "updated_at": "2026-01-06T15:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00001",
+        "shipment_id": "SH00001-2",
+        "shipped_at": "2026-01-07T15:00:00Z",
+        "shipped_qty": "28",
+        "updated_at": "2026-01-07T16:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00002",
+        "shipment_id": "SH00002-1",
+        "shipped_at": "2026-01-07T14:00:00Z",
+        "shipped_qty": "20",
+        "updated_at": "2026-01-07T15:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00002",
+        "shipment_id": "SH00002-2",
+        "shipped_at": "2026-01-07T15:00:00Z",
+        "shipped_qty": "20",
+        "updated_at": "2026-01-07T16:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00003",
+        "shipment_id": "SH00003-1",
+        "shipped_at": "2026-01-08T14:00:00Z",
+        "shipped_qty": "39",
+        "updated_at": "2026-01-08T15:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00003",
+        "shipment_id": "SH00003-2",
+        "shipped_at": "2026-01-08T15:00:00Z",
+        "shipped_qty": "39",
+        "updated_at": "2026-01-08T16:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00004",
+        "shipment_id": "SH00004-1",
+        "shipped_at": "2026-01-09T14:00:00Z",
+        "shipped_qty": "44",
+        "updated_at": "2026-01-09T15:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00004",
+        "shipment_id": "SH00004-2",
+        "shipped_at": "2026-01-09T15:00:00Z",
+        "shipped_qty": "44",
+        "updated_at": "2026-01-09T16:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00005",
+        "shipment_id": "SH00005-1",
+        "shipped_at": "2026-01-10T14:00:00Z",
+        "shipped_qty": "25",
+        "updated_at": "2026-01-10T15:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00005",
+        "shipment_id": "SH00005-2",
+        "shipped_at": "2026-01-10T15:00:00Z",
+        "shipped_qty": "26",
+        "updated_at": "2026-01-10T16:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00006",
+        "shipment_id": "SH00006-1",
+        "shipped_at": "2026-01-11T14:00:00Z",
+        "shipped_qty": "42",
+        "updated_at": "2026-01-11T15:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00006",
+        "shipment_id": "SH00006-2",
+        "shipped_at": "2026-01-12T15:00:00Z",
+        "shipped_qty": "42",
+        "updated_at": "2026-01-12T16:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00007",
+        "shipment_id": "SH00007-1",
+        "shipped_at": "2026-01-12T14:00:00Z",
+        "shipped_qty": "49",
+        "updated_at": "2026-01-12T15:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00007",
+        "shipment_id": "SH00007-2",
+        "shipped_at": "2026-01-12T15:00:00Z",
+        "shipped_qty": "50",
+        "updated_at": "2026-01-12T16:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00008",
+        "shipment_id": "SH00008-1",
+        "shipped_at": "2026-01-06T14:00:00Z",
+        "shipped_qty": "37",
+        "updated_at": "2026-01-06T15:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00008",
+        "shipment_id": "SH00008-2",
+        "shipped_at": "2026-01-06T15:00:00Z",
+        "shipped_qty": "37",
+        "updated_at": "2026-01-06T16:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00009",
+        "shipment_id": "SH00009-1",
+        "shipped_at": "2026-01-07T14:00:00Z",
+        "shipped_qty": "46",
+        "updated_at": "2026-01-07T15:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00009",
+        "shipment_id": "SH00009-2",
+        "shipped_at": "2026-01-07T15:00:00Z",
+        "shipped_qty": "46",
+        "updated_at": "2026-01-07T16:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00010",
+        "shipment_id": "SH00010-1",
+        "shipped_at": "2026-01-08T14:00:00Z",
+        "shipped_qty": "25",
+        "updated_at": "2026-01-08T15:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00010",
+        "shipment_id": "SH00010-2",
+        "shipped_at": "2026-01-08T15:00:00Z",
+        "shipped_qty": "25",
+        "updated_at": "2026-01-08T16:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00011",
+        "shipment_id": "SH00011-1",
+        "shipped_at": "2026-01-09T14:00:00Z",
+        "shipped_qty": "34",
+        "updated_at": "2026-01-09T15:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00011",
+        "shipment_id": "SH00011-2",
+        "shipped_at": "2026-01-10T15:00:00Z",
+        "shipped_qty": "35",
+        "updated_at": "2026-01-10T16:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00012",
+        "shipment_id": "SH00012-1",
+        "shipped_at": "2026-01-10T14:00:00Z",
+        "shipped_qty": "25",
+        "updated_at": "2026-01-10T15:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00012",
+        "shipment_id": "SH00012-2",
+        "shipped_at": "2026-01-10T15:00:00Z",
+        "shipped_qty": "26",
+        "updated_at": "2026-01-10T16:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00013",
+        "shipment_id": "SH00013-1",
+        "shipped_at": "2026-01-11T14:00:00Z",
+        "shipped_qty": "32",
+        "updated_at": "2026-01-11T15:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00013",
+        "shipment_id": "SH00013-2",
+        "shipped_at": "2026-01-11T15:00:00Z",
+        "shipped_qty": "33",
+        "updated_at": "2026-01-11T16:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00014",
+        "shipment_id": "SH00014-1",
+        "shipped_at": "2026-01-12T14:00:00Z",
+        "shipped_qty": "37",
+        "updated_at": "2026-01-12T15:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00014",
+        "shipment_id": "SH00014-2",
+        "shipped_at": "2026-01-12T15:00:00Z",
+        "shipped_qty": "37",
+        "updated_at": "2026-01-12T16:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00015",
+        "shipment_id": "SH00015-1",
+        "shipped_at": "2026-01-06T14:00:00Z",
+        "shipped_qty": "25",
+        "updated_at": "2026-01-06T15:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00015",
+        "shipment_id": "SH00015-2",
+        "shipped_at": "2026-01-06T15:00:00Z",
+        "shipped_qty": "25",
+        "updated_at": "2026-01-06T16:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00016",
+        "shipment_id": "SH00016-1",
+        "shipped_at": "2026-01-07T14:00:00Z",
+        "shipped_qty": "27",
+        "updated_at": "2026-01-07T15:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00016",
+        "shipment_id": "SH00016-2",
+        "shipped_at": "2026-01-08T15:00:00Z",
+        "shipped_qty": "27",
+        "updated_at": "2026-01-08T16:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00017",
+        "shipment_id": "SH00017-1",
+        "shipped_at": "2026-01-08T14:00:00Z",
+        "shipped_qty": "46",
+        "updated_at": "2026-01-08T15:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00017",
+        "shipment_id": "SH00017-2",
+        "shipped_at": "2026-01-08T15:00:00Z",
+        "shipped_qty": "46",
+        "updated_at": "2026-01-08T16:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00018",
+        "shipment_id": "SH00018-1",
+        "shipped_at": "2026-01-09T14:00:00Z",
+        "shipped_qty": "27",
+        "updated_at": "2026-01-09T15:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00018",
+        "shipment_id": "SH00018-2",
+        "shipped_at": "2026-01-09T15:00:00Z",
+        "shipped_qty": "28",
+        "updated_at": "2026-01-09T16:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00019",
+        "shipment_id": "SH00019-1",
+        "shipped_at": "2026-01-10T14:00:00Z",
+        "shipped_qty": "41",
+        "updated_at": "2026-01-10T15:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00019",
+        "shipment_id": "SH00019-2",
+        "shipped_at": "2026-01-10T15:00:00Z",
+        "shipped_qty": "42",
+        "updated_at": "2026-01-10T16:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00020",
+        "shipment_id": "SH00020-1",
+        "shipped_at": "2026-01-11T14:00:00Z",
+        "shipped_qty": "29",
+        "updated_at": "2026-01-11T15:00:00Z"
+      },
+      {
+        "sales_order_id": "SO00020",
+        "shipment_id": "SH00020-2",
+        "shipped_at": "2026-01-11T15:00:00Z",
+        "shipped_qty": "30",
+        "updated_at": "2026-01-11T16:00:00Z"
+      }
+    ],
+    "erp_work_orders": [
+      {
+        "factory_id": "F01",
+        "planned_date": "2026-01-05",
+        "planned_qty": "94",
+        "product_id": "P001",
+        "updated_at": "2026-01-05T06:00:00Z",
+        "work_order_id": "WO00001"
+      },
+      {
+        "factory_id": "F02",
+        "planned_date": "2026-01-06",
+        "planned_qty": "93",
+        "product_id": "P002",
+        "updated_at": "2026-01-06T06:00:00Z",
+        "work_order_id": "WO00002"
+      },
+      {
+        "factory_id": "F01",
+        "planned_date": "2026-01-07",
+        "planned_qty": "109",
+        "product_id": "P003",
+        "updated_at": "2026-01-07T06:00:00Z",
+        "work_order_id": "WO00003"
+      },
+      {
+        "factory_id": "F02",
+        "planned_date": "2026-01-08",
+        "planned_qty": "137",
+        "product_id": "P004",
+        "updated_at": "2026-01-08T06:00:00Z",
+        "work_order_id": "WO00004"
+      },
+      {
+        "factory_id": "F01",
+        "planned_date": "2026-01-09",
+        "planned_qty": "123",
+        "product_id": "P001",
+        "updated_at": "2026-01-09T06:00:00Z",
+        "work_order_id": "WO00005"
+      },
+      {
+        "factory_id": "F02",
+        "planned_date": "2026-01-10",
+        "planned_qty": "128",
+        "product_id": "P002",
+        "updated_at": "2026-01-10T06:00:00Z",
+        "work_order_id": "WO00006"
+      },
+      {
+        "factory_id": "F01",
+        "planned_date": "2026-01-11",
+        "planned_qty": "85",
+        "product_id": "P003",
+        "updated_at": "2026-01-11T06:00:00Z",
+        "work_order_id": "WO00007"
+      },
+      {
+        "factory_id": "F02",
+        "planned_date": "2026-01-05",
+        "planned_qty": "150",
+        "product_id": "P004",
+        "updated_at": "2026-01-05T06:00:00Z",
+        "work_order_id": "WO00008"
+      },
+      {
+        "factory_id": "F01",
+        "planned_date": "2026-01-06",
+        "planned_qty": "109",
+        "product_id": "P001",
+        "updated_at": "2026-01-06T06:00:00Z",
+        "work_order_id": "WO00009"
+      },
+      {
+        "factory_id": "F02",
+        "planned_date": "2026-01-07",
+        "planned_qty": "115",
+        "product_id": "P002",
+        "updated_at": "2026-01-07T06:00:00Z",
+        "work_order_id": "WO00010"
+      },
+      {
+        "factory_id": "F01",
+        "planned_date": "2026-01-08",
+        "planned_qty": "106",
+        "product_id": "P003",
+        "updated_at": "2026-01-08T06:00:00Z",
+        "work_order_id": "WO00011"
+      },
+      {
+        "factory_id": "F02",
+        "planned_date": "2026-01-09",
+        "planned_qty": "100",
+        "product_id": "P004",
+        "updated_at": "2026-01-09T06:00:00Z",
+        "work_order_id": "WO00012"
+      },
+      {
+        "factory_id": "F01",
+        "planned_date": "2026-01-10",
+        "planned_qty": "109",
+        "product_id": "P001",
+        "updated_at": "2026-01-10T06:00:00Z",
+        "work_order_id": "WO00013"
+      },
+      {
+        "factory_id": "F02",
+        "planned_date": "2026-01-11",
+        "planned_qty": "107",
+        "product_id": "P002",
+        "updated_at": "2026-01-11T06:00:00Z",
+        "work_order_id": "WO00014"
+      },
+      {
+        "factory_id": "F01",
+        "planned_date": "2026-01-05",
+        "planned_qty": "98",
+        "product_id": "P003",
+        "updated_at": "2026-01-05T06:00:00Z",
+        "work_order_id": "WO00015"
+      },
+      {
+        "factory_id": "F02",
+        "planned_date": "2026-01-06",
+        "planned_qty": "134",
+        "product_id": "P004",
+        "updated_at": "2026-01-06T06:00:00Z",
+        "work_order_id": "WO00016"
+      },
+      {
+        "factory_id": "F01",
+        "planned_date": "2026-01-07",
+        "planned_qty": "143",
+        "product_id": "P001",
+        "updated_at": "2026-01-07T06:00:00Z",
+        "work_order_id": "WO00017"
+      },
+      {
+        "factory_id": "F02",
+        "planned_date": "2026-01-08",
+        "planned_qty": "134",
+        "product_id": "P002",
+        "updated_at": "2026-01-08T06:00:00Z",
+        "work_order_id": "WO00018"
+      },
+      {
+        "factory_id": "F01",
+        "planned_date": "2026-01-09",
+        "planned_qty": "150",
+        "product_id": "P003",
+        "updated_at": "2026-01-09T06:00:00Z",
+        "work_order_id": "WO00019"
+      },
+      {
+        "factory_id": "F02",
+        "planned_date": "2026-01-10",
+        "planned_qty": "123",
+        "product_id": "P004",
+        "updated_at": "2026-01-10T06:00:00Z",
+        "work_order_id": "WO00020"
+      }
+    ],
+    "mes_downtime": [
+      {
+        "downtime_id": "DT00001",
+        "end_time": "2026-01-05T10:01:00.0000002Z",
+        "reason_code": "CHANGEOVER",
+        "start_time": "2026-01-05T10:00:00.0000001Z",
+        "updated_at": "2026-01-05T13:00:00Z",
+        "work_order_id": "WO00001"
+      },
+      {
+        "downtime_id": "DT00002",
+        "end_time": "2026-01-06T12:08:00Z",
+        "reason_code": "MATERIAL_WAIT",
+        "start_time": "2026-01-06T12:00:00Z",
+        "updated_at": "2026-01-06T13:00:00Z",
+        "work_order_id": "WO00002"
+      },
+      {
+        "downtime_id": "DT00003",
+        "end_time": "2026-01-07T12:09:00Z",
+        "reason_code": "MINOR_STOP",
+        "start_time": "2026-01-07T12:00:00Z",
+        "updated_at": "2026-01-07T13:00:00Z",
+        "work_order_id": "WO00003"
+      },
+      {
+        "downtime_id": "DT00004",
+        "end_time": "2026-01-08T12:15:00Z",
+        "reason_code": "CHANGEOVER",
+        "start_time": "2026-01-08T12:00:00Z",
+        "updated_at": "2026-01-08T13:00:00Z",
+        "work_order_id": "WO00004"
+      },
+      {
+        "downtime_id": "DT00005",
+        "end_time": "2026-01-09T12:04:00Z",
+        "reason_code": "MATERIAL_WAIT",
+        "start_time": "2026-01-09T12:00:00Z",
+        "updated_at": "2026-01-09T13:00:00Z",
+        "work_order_id": "WO00005"
+      },
+      {
+        "downtime_id": "DT00006",
+        "end_time": "2026-01-10T12:10:00Z",
+        "reason_code": "MINOR_STOP",
+        "start_time": "2026-01-10T12:00:00Z",
+        "updated_at": "2026-01-10T13:00:00Z",
+        "work_order_id": "WO00006"
+      },
+      {
+        "downtime_id": "DT00007",
+        "end_time": "2026-01-11T12:04:00Z",
+        "reason_code": "CHANGEOVER",
+        "start_time": "2026-01-11T12:00:00Z",
+        "updated_at": "2026-01-11T13:00:00Z",
+        "work_order_id": "WO00007"
+      },
+      {
+        "downtime_id": "DT00008",
+        "end_time": "2026-01-05T12:03:00Z",
+        "reason_code": "MATERIAL_WAIT",
+        "start_time": "2026-01-05T12:00:00Z",
+        "updated_at": "2026-01-05T13:00:00Z",
+        "work_order_id": "WO00008"
+      },
+      {
+        "downtime_id": "DT00009",
+        "end_time": "2026-01-06T12:14:00Z",
+        "reason_code": "MINOR_STOP",
+        "start_time": "2026-01-06T12:00:00Z",
+        "updated_at": "2026-01-06T13:00:00Z",
+        "work_order_id": "WO00009"
+      },
+      {
+        "downtime_id": "DT00010",
+        "end_time": "2026-01-07T12:13:00Z",
+        "reason_code": "CHANGEOVER",
+        "start_time": "2026-01-07T12:00:00Z",
+        "updated_at": "2026-01-07T13:00:00Z",
+        "work_order_id": "WO00010"
+      },
+      {
+        "downtime_id": "DT00011",
+        "end_time": "2026-01-08T12:09:00Z",
+        "reason_code": "MATERIAL_WAIT",
+        "start_time": "2026-01-08T12:00:00Z",
+        "updated_at": "2026-01-08T13:00:00Z",
+        "work_order_id": "WO00011"
+      },
+      {
+        "downtime_id": "DT00012",
+        "end_time": "2026-01-09T12:03:00Z",
+        "reason_code": "MINOR_STOP",
+        "start_time": "2026-01-09T12:00:00Z",
+        "updated_at": "2026-01-09T13:00:00Z",
+        "work_order_id": "WO00012"
+      },
+      {
+        "downtime_id": "DT00013",
+        "end_time": "2026-01-10T12:04:00Z",
+        "reason_code": "CHANGEOVER",
+        "start_time": "2026-01-10T12:00:00Z",
+        "updated_at": "2026-01-10T13:00:00Z",
+        "work_order_id": "WO00013"
+      },
+      {
+        "downtime_id": "DT00014",
+        "end_time": "2026-01-11T12:16:00Z",
+        "reason_code": "MATERIAL_WAIT",
+        "start_time": "2026-01-11T12:00:00Z",
+        "updated_at": "2026-01-11T13:00:00Z",
+        "work_order_id": "WO00014"
+      },
+      {
+        "downtime_id": "DT00015",
+        "end_time": "2026-01-05T12:20:00Z",
+        "reason_code": "MINOR_STOP",
+        "start_time": "2026-01-05T12:00:00Z",
+        "updated_at": "2026-01-05T13:00:00Z",
+        "work_order_id": "WO00015"
+      },
+      {
+        "downtime_id": "DT00016",
+        "end_time": "2026-01-06T12:18:00Z",
+        "reason_code": "CHANGEOVER",
+        "start_time": "2026-01-06T12:00:00Z",
+        "updated_at": "2026-01-06T13:00:00Z",
+        "work_order_id": "WO00016"
+      },
+      {
+        "downtime_id": "DT00017",
+        "end_time": "2026-01-07T12:07:00Z",
+        "reason_code": "MATERIAL_WAIT",
+        "start_time": "2026-01-07T12:00:00Z",
+        "updated_at": "2026-01-07T13:00:00Z",
+        "work_order_id": "WO00017"
+      },
+      {
+        "downtime_id": "DT00018",
+        "end_time": "2026-01-08T12:10:00Z",
+        "reason_code": "MINOR_STOP",
+        "start_time": "2026-01-08T12:00:00Z",
+        "updated_at": "2026-01-08T13:00:00Z",
+        "work_order_id": "WO00018"
+      },
+      {
+        "downtime_id": "DT00019",
+        "end_time": "2026-01-09T12:10:00Z",
+        "reason_code": "CHANGEOVER",
+        "start_time": "2026-01-09T12:00:00Z",
+        "updated_at": "2026-01-09T13:00:00Z",
+        "work_order_id": "WO00019"
+      },
+      {
+        "downtime_id": "DT00020",
+        "end_time": "2026-01-10T12:02:00Z",
+        "reason_code": "MATERIAL_WAIT",
+        "start_time": "2026-01-10T12:00:00Z",
+        "updated_at": "2026-01-10T13:00:00Z",
+        "work_order_id": "WO00020"
+      }
+    ],
+    "mes_events": [
+      {
+        "event_id": "EV00001-1",
+        "event_time": "2026-01-05T19:00:00.1234567+09:00",
+        "good_qty": "43",
+        "reject_qty": "0",
+        "updated_at": "2026-01-05T11:00:00Z",
+        "work_order_id": "WO00001"
+      },
+      {
+        "event_id": "EV00001-2",
+        "event_time": "2026-01-05T11:00:00Z",
+        "good_qty": "43",
+        "reject_qty": "0",
+        "updated_at": "2026-01-05T12:00:00Z",
+        "work_order_id": "WO00001"
+      },
+      {
+        "event_id": "EV00002-1",
+        "event_time": "2026-01-06T10:00:00Z",
+        "good_qty": "39",
+        "reject_qty": "0",
+        "updated_at": "2026-01-06T11:00:00Z",
+        "work_order_id": "WO00002"
+      },
+      {
+        "event_id": "EV00002-2",
+        "event_time": "2026-01-06T11:00:00Z",
+        "good_qty": "40",
+        "reject_qty": "1",
+        "updated_at": "2026-01-06T12:00:00Z",
+        "work_order_id": "WO00002"
+      },
+      {
+        "event_id": "EV00003-1",
+        "event_time": "2026-01-07T10:00:00Z",
+        "good_qty": "51",
+        "reject_qty": "0",
+        "updated_at": "2026-01-07T11:00:00Z",
+        "work_order_id": "WO00003"
+      },
+      {
+        "event_id": "EV00003-2",
+        "event_time": "2026-01-07T11:00:00Z",
+        "good_qty": "52",
+        "reject_qty": "0",
+        "updated_at": "2026-01-07T12:00:00Z",
+        "work_order_id": "WO00003"
+      },
+      {
+        "event_id": "EV00004-1",
+        "event_time": "2026-01-08T10:00:00Z",
+        "good_qty": "66",
+        "reject_qty": "0",
+        "updated_at": "2026-01-08T11:00:00Z",
+        "work_order_id": "WO00004"
+      },
+      {
+        "event_id": "EV00004-2",
+        "event_time": "2026-01-08T11:00:00Z",
+        "good_qty": "67",
+        "reject_qty": "4",
+        "updated_at": "2026-01-08T12:00:00Z",
+        "work_order_id": "WO00004"
+      },
+      {
+        "event_id": "EV00005-1",
+        "event_time": "2026-01-09T10:00:00Z",
+        "good_qty": "57",
+        "reject_qty": "0",
+        "updated_at": "2026-01-09T11:00:00Z",
+        "work_order_id": "WO00005"
+      },
+      {
+        "event_id": "EV00005-2",
+        "event_time": "2026-01-09T11:00:00Z",
+        "good_qty": "58",
+        "reject_qty": "4",
+        "updated_at": "2026-01-09T12:00:00Z",
+        "work_order_id": "WO00005"
+      },
+      {
+        "event_id": "EV00006-1",
+        "event_time": "2026-01-10T10:00:00Z",
+        "good_qty": "58",
+        "reject_qty": "0",
+        "updated_at": "2026-01-10T11:00:00Z",
+        "work_order_id": "WO00006"
+      },
+      {
+        "event_id": "EV00006-2",
+        "event_time": "2026-01-10T11:00:00Z",
+        "good_qty": "58",
+        "reject_qty": "1",
+        "updated_at": "2026-01-10T12:00:00Z",
+        "work_order_id": "WO00006"
+      },
+      {
+        "event_id": "EV00007-1",
+        "event_time": "2026-01-11T10:00:00Z",
+        "good_qty": "37",
+        "reject_qty": "0",
+        "updated_at": "2026-01-11T11:00:00Z",
+        "work_order_id": "WO00007"
+      },
+      {
+        "event_id": "EV00007-2",
+        "event_time": "2026-01-11T11:00:00Z",
+        "good_qty": "38",
+        "reject_qty": "7",
+        "updated_at": "2026-01-11T12:00:00Z",
+        "work_order_id": "WO00007"
+      },
+      {
+        "event_id": "EV00008-1",
+        "event_time": "2026-01-05T10:00:00Z",
+        "good_qty": "67",
+        "reject_qty": "0",
+        "updated_at": "2026-01-05T11:00:00Z",
+        "work_order_id": "WO00008"
+      },
+      {
+        "event_id": "EV00008-2",
+        "event_time": "2026-01-05T11:00:00Z",
+        "good_qty": "68",
+        "reject_qty": "4",
+        "updated_at": "2026-01-05T12:00:00Z",
+        "work_order_id": "WO00008"
+      },
+      {
+        "event_id": "EV00009-1",
+        "event_time": "2026-01-06T10:00:00Z",
+        "good_qty": "51",
+        "reject_qty": "0",
+        "updated_at": "2026-01-06T11:00:00Z",
+        "work_order_id": "WO00009"
+      },
+      {
+        "event_id": "EV00009-2",
+        "event_time": "2026-01-06T11:00:00Z",
+        "good_qty": "52",
+        "reject_qty": "4",
+        "updated_at": "2026-01-06T12:00:00Z",
+        "work_order_id": "WO00009"
+      },
+      {
+        "event_id": "EV00010-1",
+        "event_time": "2026-01-07T10:00:00Z",
+        "good_qty": "48",
+        "reject_qty": "0",
+        "updated_at": "2026-01-07T11:00:00Z",
+        "work_order_id": "WO00010"
+      },
+      {
+        "event_id": "EV00010-2",
+        "event_time": "2026-01-07T11:00:00Z",
+        "good_qty": "49",
+        "reject_qty": "7",
+        "updated_at": "2026-01-07T12:00:00Z",
+        "work_order_id": "WO00010"
+      },
+      {
+        "event_id": "EV00011-1",
+        "event_time": "2026-01-08T10:00:00Z",
+        "good_qty": "50",
+        "reject_qty": "0",
+        "updated_at": "2026-01-08T11:00:00Z",
+        "work_order_id": "WO00011"
+      },
+      {
+        "event_id": "EV00011-2",
+        "event_time": "2026-01-08T11:00:00Z",
+        "good_qty": "50",
+        "reject_qty": "4",
+        "updated_at": "2026-01-08T12:00:00Z",
+        "work_order_id": "WO00011"
+      },
+      {
+        "event_id": "EV00012-1",
+        "event_time": "2026-01-09T10:00:00Z",
+        "good_qty": "40",
+        "reject_qty": "0",
+        "updated_at": "2026-01-09T11:00:00Z",
+        "work_order_id": "WO00012"
+      },
+      {
+        "event_id": "EV00012-2",
+        "event_time": "2026-01-09T11:00:00Z",
+        "good_qty": "41",
+        "reject_qty": "7",
+        "updated_at": "2026-01-09T12:00:00Z",
+        "work_order_id": "WO00012"
+      },
+      {
+        "event_id": "EV00013-1",
+        "event_time": "2026-01-10T10:00:00Z",
+        "good_qty": "49",
+        "reject_qty": "0",
+        "updated_at": "2026-01-10T11:00:00Z",
+        "work_order_id": "WO00013"
+      },
+      {
+        "event_id": "EV00013-2",
+        "event_time": "2026-01-10T11:00:00Z",
+        "good_qty": "50",
+        "reject_qty": "0",
+        "updated_at": "2026-01-10T12:00:00Z",
+        "work_order_id": "WO00013"
+      },
+      {
+        "event_id": "EV00014-1",
+        "event_time": "2026-01-11T10:00:00Z",
+        "good_qty": "48",
+        "reject_qty": "0",
+        "updated_at": "2026-01-11T11:00:00Z",
+        "work_order_id": "WO00014"
+      },
+      {
+        "event_id": "EV00014-2",
+        "event_time": "2026-01-11T11:00:00Z",
+        "good_qty": "48",
+        "reject_qty": "5",
+        "updated_at": "2026-01-11T12:00:00Z",
+        "work_order_id": "WO00014"
+      },
+      {
+        "event_id": "EV00015-1",
+        "event_time": "2026-01-05T10:00:00Z",
+        "good_qty": "45",
+        "reject_qty": "0",
+        "updated_at": "2026-01-05T11:00:00Z",
+        "work_order_id": "WO00015"
+      },
+      {
+        "event_id": "EV00015-2",
+        "event_time": "2026-01-05T11:00:00Z",
+        "good_qty": "45",
+        "reject_qty": "4",
+        "updated_at": "2026-01-05T12:00:00Z",
+        "work_order_id": "WO00015"
+      },
+      {
+        "event_id": "EV00016-1",
+        "event_time": "2026-01-06T10:00:00Z",
+        "good_qty": "58",
+        "reject_qty": "0",
+        "updated_at": "2026-01-06T11:00:00Z",
+        "work_order_id": "WO00016"
+      },
+      {
+        "event_id": "EV00016-2",
+        "event_time": "2026-01-06T11:00:00Z",
+        "good_qty": "59",
+        "reject_qty": "6",
+        "updated_at": "2026-01-06T12:00:00Z",
+        "work_order_id": "WO00016"
+      },
+      {
+        "event_id": "EV00017-1",
+        "event_time": "2026-01-07T10:00:00Z",
+        "good_qty": "70",
+        "reject_qty": "0",
+        "updated_at": "2026-01-07T11:00:00Z",
+        "work_order_id": "WO00017"
+      },
+      {
+        "event_id": "EV00017-2",
+        "event_time": "2026-01-07T11:00:00Z",
+        "good_qty": "71",
+        "reject_qty": "1",
+        "updated_at": "2026-01-07T12:00:00Z",
+        "work_order_id": "WO00017"
+      },
+      {
+        "event_id": "EV00018-1",
+        "event_time": "2026-01-08T10:00:00Z",
+        "good_qty": "60",
+        "reject_qty": "0",
+        "updated_at": "2026-01-08T11:00:00Z",
+        "work_order_id": "WO00018"
+      },
+      {
+        "event_id": "EV00018-2",
+        "event_time": "2026-01-08T11:00:00Z",
+        "good_qty": "61",
+        "reject_qty": "1",
+        "updated_at": "2026-01-08T12:00:00Z",
+        "work_order_id": "WO00018"
+      },
+      {
+        "event_id": "EV00019-1",
+        "event_time": "2026-01-09T10:00:00Z",
+        "good_qty": "73",
+        "reject_qty": "0",
+        "updated_at": "2026-01-09T11:00:00Z",
+        "work_order_id": "WO00019"
+      },
+      {
+        "event_id": "EV00019-2",
+        "event_time": "2026-01-09T11:00:00Z",
+        "good_qty": "74",
+        "reject_qty": "0",
+        "updated_at": "2026-01-09T12:00:00Z",
+        "work_order_id": "WO00019"
+      },
+      {
+        "event_id": "EV00020-1",
+        "event_time": "2026-01-10T10:00:00Z",
+        "good_qty": "56",
+        "reject_qty": "0",
+        "updated_at": "2026-01-10T11:00:00Z",
+        "work_order_id": "WO00020"
+      },
+      {
+        "event_id": "EV00020-2",
+        "event_time": "2026-01-10T11:00:00Z",
+        "good_qty": "57",
+        "reject_qty": "1",
+        "updated_at": "2026-01-10T12:00:00Z",
+        "work_order_id": "WO00020"
+      },
+      {
+        "event_id": "EV00001-1",
+        "event_time": "2026-01-05T19:00:00.1234567+09:00",
+        "good_qty": "43",
+        "reject_qty": "0",
+        "updated_at": "2026-01-05T11:00:00Z",
+        "work_order_id": "WO00001"
+      }
+    ]
+  }
+}
