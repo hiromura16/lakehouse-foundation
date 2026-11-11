@@ -95,5 +95,5 @@ transforms:
 sinks:
   metrics:
     type: prometheus_exporter
-    inputs: [internal, parser_metrics]
+    inputs: [internal*, parser_metrics]
     address: 0.0.0.0:9598

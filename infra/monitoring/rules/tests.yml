@@ -3,9 +3,11 @@
 rule_files: [foundation.yml]
 evaluation_interval: 1m
 tests:
-  # No discovered exporter (profile off) must not produce an ExporterDown.
+  # No intent signal (profile off) must not produce an ExporterDown.
   - interval: 1m
-    input_series: []
+    input_series:
+      - series: 'up{job="vector",instance="vector:9598",host_alias="local"}'
+        values: '1+0x10'
     alert_rule_test:
       - eval_time: 10m
         alertname: ExporterDownWarning
@@ -16,6 +18,12 @@ tests:
   # A discovered, unreachable exporter still triggers ordinary down alerts.
   - interval: 1m
     input_series:
+      - series: 'lakehouse_host_collection_expected{job="vector",instance="vector:9598",host_alias="local"}'
+        values: '1+0x10'
+      - series: 'up{job="vector",instance="vector:9598",host_alias="local"}'
+        values: '1+0x10'
+      - series: 'up{job="cadvisor",instance="cadvisor:8080",host_alias="local"}'
+        values: '1+0x10'
       - series: 'up{job="node",instance="node-exporter:9100",host_alias="local"}'
         values: '0+0x10'
     alert_rule_test:
@@ -29,6 +37,80 @@ tests:
         exp_alerts:
           - exp_labels: {job: node, instance: 'node-exporter:9100', host_alias: local, severity: critical}
             exp_annotations: {summary: 'Exporter unreachable for five minutes'}
+  # Node disappears while cAdvisor remains healthy: preserve node labels.
+  - interval: 1m
+    input_series:
+      - series: 'lakehouse_host_collection_expected{job="vector",instance="vector:9598",host_alias="local"}'
+        values: '1+0x10'
+      - series: 'up{job="vector",instance="vector:9598",host_alias="local"}'
+        values: '1+0x10'
+      - series: 'up{job="cadvisor",instance="cadvisor:8080",host_alias="local"}'
+        values: '1+0x10'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ExporterDownWarning
+        exp_alerts:
+          - exp_labels: {job: node, instance: 'node-exporter:9100', host_alias: local, severity: warning}
+            exp_annotations: {summary: 'Exporter unreachable for two minutes'}
+      - eval_time: 6m
+        alertname: ExporterDownCritical
+        exp_alerts:
+          - exp_labels: {job: node, instance: 'node-exporter:9100', host_alias: local, severity: critical}
+            exp_annotations: {summary: 'Exporter unreachable for five minutes'}
+  # Conversely, losing cAdvisor alone must not be hidden by a healthy node.
+  - interval: 1m
+    input_series:
+      - series: 'lakehouse_host_collection_expected{job="vector",instance="vector:9598",host_alias="local"}'
+        values: '1+0x10'
+      - series: 'up{job="vector",instance="vector:9598",host_alias="local"}'
+        values: '1+0x10'
+      - series: 'up{job="node",instance="node-exporter:9100",host_alias="local"}'
+        values: '1+0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: ExporterDownCritical
+        exp_alerts:
+          - exp_labels: {job: cadvisor, instance: 'cadvisor:8080', host_alias: local, severity: critical}
+            exp_annotations: {summary: 'Exporter unreachable for five minutes'}
+  # Recovery clears the unavailable state and both for-duration alerts.
+  - interval: 1m
+    input_series:
+      - series: 'lakehouse_host_collection_expected{job="vector",instance="vector:9598",host_alias="local"}'
+        values: '1+0x12'
+      - series: 'up{job="vector",instance="vector:9598",host_alias="local"}'
+        values: '1+0x12'
+      - series: 'up{job="cadvisor",instance="cadvisor:8080",host_alias="local"}'
+        values: '1+0x12'
+      - series: 'up{job="node",instance="node-exporter:9100",host_alias="local"}'
+        values: '0+0x6 1+0x5'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: ExporterDownWarning
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: ExporterDownCritical
+        exp_alerts: []
+  # Vector is unavailable: retained intent is not fresh knowledge of hosts.
+  - interval: 1m
+    input_series:
+      - series: 'lakehouse_host_collection_expected{job="vector",instance="vector:9598",host_alias="local"}'
+        values: '1+0x10'
+      - series: 'up{job="vector",instance="vector:9598",host_alias="local"}'
+        values: '0+0x10'
+      - series: 'up{job="loki",instance="loki:3100",host_alias="local"}'
+        values: '1+0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: ExporterDownWarning
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: ExporterDownCritical
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: LogTransportDown
+        exp_alerts:
+          - exp_labels: {job: vector, instance: 'vector:9598', host_alias: local, severity: warning}
+            exp_annotations: {summary: 'Log transport unreachable; existing metrics stay independent'}
   - interval: 1m
     input_series:
       - series: 'node_memory_MemTotal_bytes{host_alias="local"}'

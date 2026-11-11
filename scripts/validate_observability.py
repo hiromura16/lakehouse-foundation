@@ -74,6 +74,27 @@ def jobs():
                 ],
             ),
             (
+                "host",
+                [
+                    "validate",
+                    "--no-environment",
+                    "common.yaml",
+                    "loki.yaml",
+                    "host-expected.yaml",
+                ],
+            ),
+            (
+                "host-fanout",
+                [
+                    "validate",
+                    "--no-environment",
+                    "common.yaml",
+                    "loki.yaml",
+                    "openobserve.yaml",
+                    "host-expected.yaml",
+                ],
+            ),
+            (
                 "fixtures",
                 [
                     "test",
@@ -185,7 +206,7 @@ def execute(job, *, public_diagnostics=False):
         if copied.returncode:
             outcome["status"] = "public-config-copy-failed"
             return outcome
-        if name == "vector-fanout":
+        if name in {"vector-fanout", "vector-host-fanout"}:
             # Public empty-token file is configuration syntax evidence only.
             # It cannot authenticate and never contacts an OpenObserve server.
             tokens = Path(staging.name) / "secrets"

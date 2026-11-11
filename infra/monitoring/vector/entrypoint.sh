@@ -12,6 +12,7 @@ if [ "$(id -u)" = 0 ] || [ -L /var/lib/vector ] || \
   printf '%s\n' 'Vector state is not prepared for the selected runtime user.' >&2
   exit 78
 fi
+set -- --log-format json --config common.yaml --config loki.yaml
 case ",${COMPOSE_PROFILES:-}," in
   *,openobserve-lab,*)
     token_file=/run/secrets/openobserve-vector.json
@@ -24,11 +25,14 @@ case ",${COMPOSE_PROFILES:-}," in
       printf '%s\n' 'Vector lab ingestion credentials are not prepared.' >&2
       exit 78
     fi
-    exec /usr/bin/vector --log-format json \
-      --config common.yaml --config loki.yaml --config openobserve.yaml
+    set -- "$@" --config openobserve.yaml
     ;;
   *)
-    exec /usr/bin/vector --log-format json \
-      --config common.yaml --config loki.yaml
     ;;
 esac
+case ",${COMPOSE_PROFILES:-}," in
+  *,monitoring-host,*)
+    set -- "$@" --config host-expected.yaml
+    ;;
+esac
+exec /usr/bin/vector "$@"

@@ -145,6 +145,33 @@ class MonitoringFoundationTests(unittest.TestCase):
         self.assertIn("[10m]", alerts["HostCpuCritical"]["expr"])
         self.assertEqual(alerts["ExporterDownWarning"]["for"], "2m")
         self.assertEqual(alerts["ExporterDownCritical"]["for"], "5m")
+        recorded = {
+            row["record"]: row["expr"]
+            for group in rules["groups"]
+            for row in group["rules"]
+            if "record" in row
+        }
+        unavailable = recorded["foundation:host_exporter_unavailable:bool"]
+        self.assertIn(
+            'lakehouse_host_collection_expected{host_alias="local"} == 1',
+            unavailable,
+        )
+        self.assertIn('up{job="vector",host_alias="local"} == 1', unavailable)
+        self.assertIn(
+            'absent(up{job="node",instance="node-exporter:9100",'
+            'host_alias="local"})',
+            unavailable,
+        )
+        self.assertIn(
+            'absent(up{job="cadvisor",instance="cadvisor:8080",'
+            'host_alias="local"})',
+            unavailable,
+        )
+        for name in ("ExporterDownWarning", "ExporterDownCritical"):
+            self.assertEqual(
+                alerts[name]["expr"],
+                "foundation:host_exporter_unavailable:bool == 1",
+            )
         self.assertIn(
             'service!="trino"', alerts["ContainerMemoryWarning"]["expr"]
         )

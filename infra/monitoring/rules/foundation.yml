@@ -57,13 +57,27 @@ groups:
         for: 5m
         labels: {severity: critical}
         annotations: {summary: 'Host inode usage exceeds 90%'}
+      # Expected means explicitly selected, not healthy. Gate on Vector up so
+      # a stale intent sample cannot imply current knowledge during its outage.
+      # Each absent selector retains that exporter's canonical alert labels.
+      - record: foundation:host_exporter_unavailable:bool
+        expr: |
+          (
+            (up{job=~"node|cadvisor"} == bool 0)
+            or absent(up{job="node",instance="node-exporter:9100",host_alias="local"})
+            or absent(up{job="cadvisor",instance="cadvisor:8080",host_alias="local"})
+          )
+          and on(host_alias)
+            max by(host_alias) (lakehouse_host_collection_expected{host_alias="local"} == 1)
+          and on(host_alias)
+            max by(host_alias) (up{job="vector",host_alias="local"} == 1)
       - alert: ExporterDownWarning
-        expr: up{job=~"node|cadvisor"} == 0
+        expr: foundation:host_exporter_unavailable:bool == 1
         for: 2m
         labels: {severity: warning}
         annotations: {summary: 'Exporter unreachable for two minutes'}
       - alert: ExporterDownCritical
-        expr: up{job=~"node|cadvisor"} == 0
+        expr: foundation:host_exporter_unavailable:bool == 1
         for: 5m
         labels: {severity: critical}
         annotations: {summary: 'Exporter unreachable for five minutes'}

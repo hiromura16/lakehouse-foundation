@@ -5,6 +5,7 @@ fixture consistency here establishes source contracts only; live formatting,
 fan-out, saturation, checkpoint/restart and UI evidence remain separate gates.
 """
 
+import fnmatch
 import importlib.util
 import json
 import os
@@ -263,6 +264,46 @@ class VectorConfigTests(unittest.TestCase):
             ["sh", "-n", str(DIRECTORY / "entrypoint.sh")], check=True
         )
 
+    def test_optional_host_intent_is_one_bounded_namespaced_static_gauge(
+        self,
+    ):
+        """Check public topology, not emitted bytes or live exporter health."""
+        host = configuration("host-expected.yaml")
+        self.assertEqual(set(host), {"sources"})
+        self.assertEqual(set(host["sources"]), {"internal_host_expected"})
+        source = host["sources"]["internal_host_expected"]
+        self.assertEqual(
+            source,
+            {
+                "type": "static_metrics",
+                "namespace": "lakehouse",
+                "interval_secs": 15,
+                "metrics": [
+                    {
+                        "name": "host_collection_expected",
+                        "kind": "absolute",
+                        "tags": {"host_alias": "local"},
+                        "value": {"gauge": {"value": 1.0}},
+                    }
+                ],
+            },
+        )
+        common = configuration("common.yaml")
+        inputs = common["sinks"]["metrics"]["inputs"]
+        normal = {"internal", "parser_metrics"}
+        for components in (normal, normal | {"internal_host_expected"}):
+            matches = set()
+            for pattern in inputs:
+                matched = {
+                    name
+                    for name in components
+                    if fnmatch.fnmatchcase(name, pattern)
+                }
+                self.assertTrue(matched)
+                matches.update(matched)
+            self.assertEqual(matches, components)
+        self.assertNotIn("internal_host_expected", common["sources"])
+
     def test_redaction_and_parser_source_contracts_are_bounded(self):
         severity = (DIRECTORY / "transforms/severity.vrl").read_text()
         redaction = (DIRECTORY / "transforms/redact.vrl").read_text()
@@ -387,3 +428,27 @@ class EntryPointTests(unittest.TestCase):
         result = self.run_selected("monitoring")
         self.assertEqual(result.returncode, 78)
         self.assertTrue(self.state.is_symlink())
+
+    def test_host_intent_config_is_selected_only_by_the_exact_host_profile(
+        self,
+    ):
+        for profiles in ("", "monitoring", "monitoring,monitoring-hosting"):
+            result = self.run_selected(profiles)
+            self.assertEqual(result.returncode, 0)
+            self.assertNotIn("host-expected.yaml", result.stdout)
+        for profiles in (
+            "monitoring,monitoring-host",
+            "monitoring-host,monitoring",
+        ):
+            result = self.run_selected(profiles)
+            self.assertEqual(result.returncode, 0)
+            self.assertIn("host-expected.yaml", result.stdout)
+            self.assertNotIn("openobserve.yaml", result.stdout)
+        self.secret.write_text('{"token":"o2oi_' + "s" * 32 + '"}')
+        self.secret.chmod(0o600)
+        result = self.run_selected(
+            "monitoring,monitoring-host,openobserve-lab"
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("host-expected.yaml", result.stdout)
+        self.assertIn("openobserve.yaml", result.stdout)
