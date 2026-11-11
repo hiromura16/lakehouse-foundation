@@ -31,6 +31,7 @@ message = truncate(text, limit: 4096)
 # Position hash is assigned before redaction by the curated capture adapter.
 # Equal original container/time/stream/content produces the same ID on replay.
 event_id = sha2(string!(.source_identity) + "|" + string!(.source_timestamp) + "|" + string!(.stream) + "|" + string!(.source_position) + "|" + content_identity, variant: "SHA-256")
+truncation_flag = if truncated { 1 } else { 0 }
 . = {
   "timestamp": .timestamp,
   "message": message,
@@ -52,5 +53,5 @@ event_id = sha2(string!(.source_identity) + "|" + string!(.source_timestamp) + "
   "log_kind": .log_kind,
   "source_event_id": event_id,
   "line_count": lines,
-  "truncated": if truncated { 1 } else { 0 }
+  "truncated": truncation_flag
 }

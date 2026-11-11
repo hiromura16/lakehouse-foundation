@@ -195,7 +195,12 @@ def execute(job, *, public_diagnostics=False):
             token_file.write_text('{"token":""}\n')
             token_file.chmod(0o644)
             copied = subprocess.run(
-                ["docker", "cp", str(tokens), container + ":/run/secrets"],
+                [
+                    "docker",
+                    "cp",
+                    str(tokens) + "/.",
+                    container + ":/run/secrets",
+                ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=30,

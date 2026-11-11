@@ -1195,6 +1195,78 @@
       "logger": "module::target",
       "expected_message": "synthetic message",
       "expected_logger": "module::target"
+    },
+    {
+      "name": "json-status-typed-integer",
+      "kind": "severity",
+      "service": "demo-api",
+      "message": "{\"level\": \"INFO\", \"message\": \"synthetic response\", \"status\": 500}",
+      "stream": "stderr",
+      "expected": {
+        "level_normalized": "info",
+        "level_parser": "json",
+        "level_source": "level",
+        "level_raw": "INFO",
+        "level_parse_status": "parsed",
+        "stream": "stderr",
+        "logger": "unknown",
+        "http_status": 500,
+        "record_start": true
+      }
+    },
+    {
+      "name": "json-status-string-rejected",
+      "kind": "severity",
+      "service": "demo-api",
+      "message": "{\"level\": \"INFO\", \"message\": \"synthetic response\", \"status\": \"500\"}",
+      "stream": "stderr",
+      "expected": {
+        "level_normalized": "info",
+        "level_parser": "json",
+        "level_source": "level",
+        "level_raw": "INFO",
+        "level_parse_status": "parsed",
+        "stream": "stderr",
+        "logger": "unknown",
+        "http_status": null,
+        "record_start": true
+      }
+    },
+    {
+      "name": "json-status-object-rejected",
+      "kind": "severity",
+      "service": "demo-api",
+      "message": "{\"level\": \"INFO\", \"message\": \"synthetic response\", \"status\": {\"value\": 500}}",
+      "stream": "stderr",
+      "expected": {
+        "level_normalized": "info",
+        "level_parser": "json",
+        "level_source": "level",
+        "level_raw": "INFO",
+        "level_parse_status": "parsed",
+        "stream": "stderr",
+        "logger": "unknown",
+        "http_status": null,
+        "record_start": true
+      }
+    },
+    {
+      "name": "json-status-out-of-range-rejected",
+      "kind": "severity",
+      "service": "demo-api",
+      "message": "{\"level\": \"INFO\", \"message\": \"synthetic response\", \"http_status\": 600}",
+      "stream": "stderr",
+      "expected": {
+        "level_normalized": "info",
+        "level_parser": "json",
+        "level_source": "level",
+        "level_raw": "INFO",
+        "level_parse_status": "parsed",
+        "stream": "stderr",
+        "logger": "unknown",
+        "http_status": null,
+        "record_start": true
+      }
     }
   ]
 }

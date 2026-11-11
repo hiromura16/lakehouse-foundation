@@ -21,6 +21,7 @@ if !includes(allowed, service) { abort }
 source_time = string!(outer.timestamp)
 timestamp = parse_timestamp!(source_time, format: "%+")
 message = strip_ansi_escape_codes(string!(outer.message))
+capture_truncated = if outer.truncated == true || length(message) > 16384 { 1 } else { 0 }
 . = {
   "timestamp": timestamp,
   "source_timestamp": source_time,
@@ -32,6 +33,6 @@ message = strip_ansi_escape_codes(string!(outer.message))
   "source_position": position,
   "stream": stream,
   "message": truncate(message, limit: 16384),
-  "capture_truncated": if outer.truncated == true || length(message) > 16384 { 1 } else { 0 },
+  "capture_truncated": capture_truncated,
   "line_count": 1
 }

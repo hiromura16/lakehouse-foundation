@@ -4018,6 +4018,160 @@ tests:
         assert_eq!(.truncated, 0)
 
         assert_eq!(.logger, "module::target")'
+- name: json-status-typed-integer
+  inputs:
+  - insert_at: severity
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: demo-api
+      host_alias: lab
+      container_alias: demo-api-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 9b0f8a9e72a6b30a1194c9d58b212c89ef04fa69331634a667f8f49a1aeff4c4
+      stream: stderr
+      message: '{"level": "INFO", "message": "synthetic response", "status": 500}'
+      line_count: 1
+      capture_truncated: 0
+  outputs:
+  - extract_from: severity
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.level_parser, "json")
+
+        assert_eq!(.level_source, "level")
+
+        assert_eq!(.level_raw, "INFO")
+
+        assert_eq!(.level_parse_status, "parsed")
+
+        assert_eq!(.stream, "stderr")
+
+        assert_eq!(.logger, "unknown")
+
+        assert_eq!(.http_status, 500)
+
+        assert_eq!(.record_start, true)'
+- name: json-status-string-rejected
+  inputs:
+  - insert_at: severity
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: demo-api
+      host_alias: lab
+      container_alias: demo-api-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 6bce617b802a5af0188c58b568f49b7a3fd961e07fc9512aa67cb3d00648f7fd
+      stream: stderr
+      message: '{"level": "INFO", "message": "synthetic response", "status": "500"}'
+      line_count: 1
+      capture_truncated: 0
+  outputs:
+  - extract_from: severity
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.level_parser, "json")
+
+        assert_eq!(.level_source, "level")
+
+        assert_eq!(.level_raw, "INFO")
+
+        assert_eq!(.level_parse_status, "parsed")
+
+        assert_eq!(.stream, "stderr")
+
+        assert_eq!(.logger, "unknown")
+
+        assert_eq!(.http_status, null)
+
+        assert_eq!(.record_start, true)'
+- name: json-status-object-rejected
+  inputs:
+  - insert_at: severity
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: demo-api
+      host_alias: lab
+      container_alias: demo-api-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 8fb8644350deb636d532465c93a0aaf6f29fe009ae2c66721800a763f59a2a04
+      stream: stderr
+      message: '{"level": "INFO", "message": "synthetic response", "status": {"value":
+        500}}'
+      line_count: 1
+      capture_truncated: 0
+  outputs:
+  - extract_from: severity
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.level_parser, "json")
+
+        assert_eq!(.level_source, "level")
+
+        assert_eq!(.level_raw, "INFO")
+
+        assert_eq!(.level_parse_status, "parsed")
+
+        assert_eq!(.stream, "stderr")
+
+        assert_eq!(.logger, "unknown")
+
+        assert_eq!(.http_status, null)
+
+        assert_eq!(.record_start, true)'
+- name: json-status-out-of-range-rejected
+  inputs:
+  - insert_at: severity
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: demo-api
+      host_alias: lab
+      container_alias: demo-api-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 7809dd09d809a0950d928056b7a197ceca562bddaee2e9a8d3c177d2b33092b8
+      stream: stderr
+      message: '{"level": "INFO", "message": "synthetic response", "http_status":
+        600}'
+      line_count: 1
+      capture_truncated: 0
+  outputs:
+  - extract_from: severity
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.level_parser, "json")
+
+        assert_eq!(.level_source, "level")
+
+        assert_eq!(.level_raw, "INFO")
+
+        assert_eq!(.level_parse_status, "parsed")
+
+        assert_eq!(.stream, "stderr")
+
+        assert_eq!(.logger, "unknown")
+
+        assert_eq!(.http_status, null)
+
+        assert_eq!(.record_start, true)'
 - name: envelope-ansi-before-severity
   inputs:
   - insert_at: envelope

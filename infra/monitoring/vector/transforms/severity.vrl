@@ -38,8 +38,16 @@ if json_body {
     else { .message = "[structured event without a supported message field]" }
     if is_string(parsed.logger) { .logger = truncate(string!(parsed.logger), limit: 128) }
     else if is_string(parsed.target) { .logger = truncate(string!(parsed.target), limit: 128) }
-    if is_integer(parsed.status) && parsed.status >= 100 && parsed.status <= 599 { .http_status = parsed.status }
-    if is_integer(parsed.http_status) && parsed.http_status >= 100 && parsed.http_status <= 599 { .http_status = parsed.http_status }
+    # VRL does not narrow an arbitrary parsed value through an && predicate.
+    # Keep the integer-only contract and compare a separately typed local.
+    if is_integer(parsed.status) {
+      status = to_int(parsed.status) ?? 0
+      if status >= 100 && status <= 599 { .http_status = status }
+    }
+    if is_integer(parsed.http_status) {
+      status = to_int(parsed.http_status) ?? 0
+      if status >= 100 && status <= 599 { .http_status = status }
+    }
   }
 } else {
   # Logfmt level is defined by Prometheus/Grafana/Loki/OpenObserve formats.
@@ -52,8 +60,8 @@ if json_body {
       explicit = true
       if is_string(fields.msg) { .message = string!(fields.msg) }
       if is_string(fields.logger) { .logger = truncate(string!(fields.logger), limit: 128) }
-      status, status_error = to_int(fields.status)
-      if status_error == null && status >= 100 && status <= 599 { .http_status = status }
+      status = to_int(fields.status) ?? 0
+      if status >= 100 && status <= 599 { .http_status = status }
     }
   }
   if !explicit && includes(["worker", "demo-api", "demo", "cdc-consumer", "cdc-register", "mcp", "airflow", "airflow-db", "jupyter"], service) {
