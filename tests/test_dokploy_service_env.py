@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
+SERVICE_ID = "a" * 25
 
 
 def module(name, relative):
@@ -278,10 +279,48 @@ class ServiceEnvironmentTests(unittest.TestCase):
         )
         wait.assert_called_once()
 
+    def test_ready_service_filter_uses_full_id_not_name_regex(self):
+        """Model Docker prefix filters with a similarly named sibling."""
+        services = [
+            {"ID": SERVICE_ID, "Name": "dokploy", "Replicas": "1/1"},
+            {"ID": "b" * 25, "Name": "dokploy-postgres", "Replicas": "0/1"},
+        ]
+        now = [0.0]
+        filters = []
+
+        def docker(arguments, timeout=15):
+            """Match literal prefixes, as Docker's service filters do."""
+            del timeout
+            if arguments[:2] == ["service", "inspect"]:
+                return json.dumps([{"ID": SERVICE_ID}])
+            if arguments[:2] == ["service", "ls"]:
+                selected = arguments[arguments.index("--filter") + 1]
+                filters.append(selected)
+                key, prefix = selected.split("=", 1)
+                field = {"id": "ID", "name": "Name"}[key]
+                return "\n".join(
+                    row["Replicas"]
+                    for row in services
+                    if row[field].startswith(prefix)
+                )
+            self.assertEqual(arguments[:2], ["service", "ps"])
+            return json.dumps({"CurrentState": "Running 1 minute ago"})
+
+        def sleep(seconds):
+            """Advance the fake deadline on a regression, never real time."""
+            now[0] += seconds
+
+        with mock.patch.object(SERVICE, "docker", docker):
+            SERVICE.wait_ready(timeout=4, clock=lambda: now[0], sleep=sleep)
+        self.assertEqual(filters, ["id=" + SERVICE_ID])
+        self.assertEqual(now[0], 0)
+
     def test_paused_update_stops_with_safe_diagnostics(self):
         """A paused rollout is a failure even when the previous task runs."""
         replies = [
-            json.dumps([{"UpdateStatus": {"State": "paused"}}]),
+            json.dumps(
+                [{"ID": SERVICE_ID, "UpdateStatus": {"State": "paused"}}]
+            ),
             "1/1\n",
             json.dumps(
                 {"CurrentState": "Running 1 minute ago", "Error": PROXY}
@@ -305,7 +344,9 @@ class ServiceEnvironmentTests(unittest.TestCase):
             if arguments[:2] == ["service", "inspect"]:
                 observed.append(now[0])
                 state = "updating" if now[0] < 4 else "completed"
-                return json.dumps([{"UpdateStatus": {"State": state}}])
+                return json.dumps(
+                    [{"ID": SERVICE_ID, "UpdateStatus": {"State": state}}]
+                )
             if arguments[:2] == ["service", "ls"]:
                 return "1/1\n"
             return json.dumps(
@@ -327,7 +368,9 @@ class ServiceEnvironmentTests(unittest.TestCase):
             """Return a stalled synthetic task with a private-looking error."""
             del timeout
             if arguments[:2] == ["service", "inspect"]:
-                return json.dumps([{"UpdateStatus": {"State": "updating"}}])
+                return json.dumps(
+                    [{"ID": SERVICE_ID, "UpdateStatus": {"State": "updating"}}]
+                )
             if arguments[:2] == ["service", "ls"]:
                 return "0/1\n"
             return json.dumps(
