@@ -15,6 +15,8 @@ services:
   mcp:
     profiles: [mcp]
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-mcp:local
+    # Rebuild this local tag through its single owner; retain build cache.
+    pull_policy: build
     build:
       context: ../..
       dockerfile: infra/mcp/Dockerfile

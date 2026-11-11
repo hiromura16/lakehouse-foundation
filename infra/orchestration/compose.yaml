@@ -41,6 +41,8 @@ services:
   airflow:
     profiles: [orchestration]
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-airflow:local
+    # Rebuild this local tag through its single owner; retain build cache.
+    pull_policy: build
     build:
       secrets:
         - corporate_ca

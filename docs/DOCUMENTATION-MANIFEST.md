@@ -78,6 +78,8 @@
 
 | 文書 | 何のために読むか | 読むタイミング | 区分 |
 | --- | --- | --- | --- |
+| [BuildKit auth session timeout: 公開前の診断draft](<BUILD-KIT-AUTH-DIAGNOSTIC.md>) | PR11後も報告されたBuildKit timeoutの事実・仮説・次の診断を分離し、未解決として引き継ぐ。 | computeの配置前、明示検証、proxy build障害の切り分け時。 | active |
+| [Notebook workspace準備と明示Spark検証](<COMPUTE-VALIDATION.md>) | 安全なworkspace plan/apply/probe、既存projectのSpark smoke、結果とpull policyを確認する。 | computeの配置前、明示検証、proxy build障害の切り分け時。 | active |
 | [実装・配置・検証の追跡表](<IMPLEMENTATION-STATUS.md>) | 依頼された機能のソース実装、配置、既存検証、残る受入を別々に追跡する。 | できることと未実施の評価を確認し、PoCの範囲や進捗を説明するとき。 | reference |
 | [平時・更新・復旧の運用手順](<OPERATIONS.md>) | 平時点検・更新・backup・復旧を、鍵・DB・object・volumeの状態を揃えて行う。 | 運用を引き継ぐとき、更新前、障害復旧前に実施順序を確認するとき。 | active |
 | [採用版の公式リファレンスと文書監査](<REFERENCES.md>) | 採用版の公式仕様・tag・公開実装・検証記録の根拠を照合する。 | 画面名や設定の仕様を確認するときや、依存更新の調査を始めるとき。 | reference |
@@ -158,12 +160,14 @@
 | --- | --- |
 | [Lakehouse Foundation](<../README.md>) | MES・ERP向けPoC基盤の機能、構築入口、任意機能と報告素材を見渡す。 |
 | [Lakehouse Foundation アーキテクチャ](<ARCHITECTURE.md>) | 保存・変換・操作の構成とprofileの責務を、データと制御の経路から把握する。 |
+| [BuildKit auth session timeout: 公開前の診断draft](<BUILD-KIT-AUTH-DIAGNOSTIC.md>) | PR11後も報告されたBuildKit timeoutの事実・仮説・次の診断を分離し、未解決として引き継ぐ。 |
 | [SQL Server の変更を Iceberg へ反映する](<CDC.md>) | SQL ServerのsnapshotとI/U/DをDebezium・Kafka・consumer経由でIcebergへ反映する。 |
 | [Cloudflareを使う場所と社内に残す場所](<CLOUDFLARE.md>) | Cloudflareの入口保護・外部保存・AI候補を、社内に残す処理と分けて評価する。 |
 | [会社のプロキシ・CAを設定する](<COMPANY-PROXY.md>) | Git・uv・Docker・build・runtimeごとに社内proxyとCAを準備し、通信を診断する。 |
 | [会社への導入・受入ガイド](<COMPANY-ROLLOUT.md>) | 会社側の担当分担、Samba、外部SQL、業務照合と導入受入条件を決める。 |
 | [会社VMの修正を取り込み、Dokployへ再配置する](<COMPANY-UPDATE.md>) | 既存の設定・鍵・volumeを保持し、会社VMの修正を取り込んでDokployへ再配置する。 |
 | [バージョンと連携互換性](<COMPATIBILITY.md>) | 固定image・Python環境・Spark/Iceberg等の組合せと互換性の確認方法を調べる。 |
+| [Notebook workspace準備と明示Spark検証](<COMPUTE-VALIDATION.md>) | 安全なworkspace plan/apply/probe、既存projectのSpark smoke、結果とpull policyを確認する。 |
 | [サイト設定リファレンス](<CONFIGURATION.md>) | 生成器・Compose・CLIが使う設定項目と、保存先・認証・反映先を照合する。 |
 | [導入・検証・停止](<DEPLOYMENT.md>) | private設定、host構成、CLIによる起動・検証・停止の操作を確認する。 |
 | [ファイルの場所と変更のしかた](<DIRECTORY-GUIDE.md>) | 目的に対応するファイル、実行経路、公開コードとprivate状態の置き場を探す。 |
@@ -209,8 +213,10 @@
 
 | 文書 | 目的 |
 | --- | --- |
+| [BuildKit auth session timeout: 公開前の診断draft](<BUILD-KIT-AUTH-DIAGNOSTIC.md>) | PR11後も報告されたBuildKit timeoutの事実・仮説・次の診断を分離し、未解決として引き継ぐ。 |
 | [会社のプロキシ・CAを設定する](<COMPANY-PROXY.md>) | Git・uv・Docker・build・runtimeごとに社内proxyとCAを準備し、通信を診断する。 |
 | [会社VMの修正を取り込み、Dokployへ再配置する](<COMPANY-UPDATE.md>) | 既存の設定・鍵・volumeを保持し、会社VMの修正を取り込んでDokployへ再配置する。 |
+| [Notebook workspace準備と明示Spark検証](<COMPUTE-VALIDATION.md>) | 安全なworkspace plan/apply/probe、既存projectのSpark smoke、結果とpull policyを確認する。 |
 | [サイト設定リファレンス](<CONFIGURATION.md>) | 生成器・Compose・CLIが使う設定項目と、保存先・認証・反映先を照合する。 |
 | [導入・検証・停止](<DEPLOYMENT.md>) | private設定、host構成、CLIによる起動・検証・停止の操作を確認する。 |
 | [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>) | 公開Markdown全件の固有の目的・読者・読む時点を、目的別と読者別に引く。 |

@@ -3,6 +3,7 @@
 import contextlib
 import importlib.util
 import io
+import json
 import os
 import runpy
 import subprocess
@@ -85,6 +86,73 @@ class ControlEnvironmentTests(unittest.TestCase):
         self.assertEqual(
             output, "Compose configuration valid. Profiles: core only\n"
         )
+
+    def test_spark_target_overrides_project_interpolation_only_explicitly(
+        self,
+    ):
+        """A stale shell project cannot select another validation target."""
+        with mock.patch.object(
+            sys, "path", [str(ROOT / "scripts"), *sys.path]
+        ):
+            import compute_check
+        with (
+            mock.patch.object(
+                compute_check, "run_check", return_value=0
+            ) as run,
+            mock.patch.dict(os.environ, {"COMPOSE_PROJECT_NAME": "stale-app"}),
+        ):
+            code, process, _, _ = self.invoke(
+                [
+                    "--env-file",
+                    str(self.env_file),
+                    "--project-name",
+                    "selected-app",
+                    "spark-check",
+                ]
+            )
+        self.assertEqual(code, 0)
+        process.assert_not_called()
+        command, values, environment = run.call_args.args
+        self.assertEqual(
+            command[command.index("--project-name") + 1], "selected-app"
+        )
+        self.assertEqual(values["COMPOSE_PROJECT_NAME"], "selected-app")
+        self.assertEqual(environment["COMPOSE_PROJECT_NAME"], "selected-app")
+        self.assertEqual(environment["NO_PROXY"], environment["no_proxy"])
+
+    def test_workspace_profile_off_apply_probe_is_a_nonmutating_noop(self):
+        """Explicit preparation cannot require an inactive notebook path."""
+        with mock.patch.object(
+            sys, "path", [str(ROOT / "scripts"), *sys.path]
+        ):
+            code, process, output, _ = self.invoke(
+                [
+                    "--env-file",
+                    str(self.env_file),
+                    "--apply",
+                    "--probe",
+                    "notebook-workspace",
+                ]
+            )
+        self.assertIsNone(code)
+        self.assertFalse(json.loads(output)["enabled"])
+        process.assert_not_called()
+
+    def test_narrow_validation_flags_cannot_modify_other_lifecycle_actions(
+        self,
+    ):
+        for flags in (
+            ["--project-name", "another-app"],
+            ["--apply"],
+            ["--probe"],
+            ["--local-only"],
+        ):
+            with self.subTest(flags=flags):
+                code, process, _, _ = self.invoke(
+                    ["--env-file", str(self.env_file), *flags, "plan"]
+                )
+                self.assertEqual(code, 2)
+                process.assert_not_called()
 
     def test_environment_fallback_runs_through_the_private_validator(self):
         exit_code, process, output, _ = self.invoke(

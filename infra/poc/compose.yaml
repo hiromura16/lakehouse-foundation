@@ -89,6 +89,8 @@ services:
   superset-init:
     profiles: [bi]
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-superset:local
+    # Rebuild this local tag through its single owner; retain build cache.
+    pull_policy: build
     build:
       context: ../..
       dockerfile: infra/poc/Dockerfile.superset
@@ -117,6 +119,8 @@ services:
   superset:
     profiles: [bi]
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-superset:local
+    # Reuse the owner-built local tag; never query a registry for it.
+    pull_policy: never
     restart: unless-stopped
     labels: *poc_labels
     logging: *poc_logging
@@ -147,6 +151,8 @@ services:
   jupyter:
     profiles: [notebooks]
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-jupyter:local
+    # Rebuild this local tag through its single owner; retain build cache.
+    pull_policy: build
     build:
       context: ../..
       dockerfile: infra/poc/Dockerfile.notebooks

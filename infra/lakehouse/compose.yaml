@@ -183,6 +183,8 @@ services:
     logging: *service_logging
     # 環境別のtagにし、別projectのbuildで既存imageを取り違えないようにする。
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-worker:local
+    # Rebuild this local tag through its single owner; retain build cache.
+    pull_policy: build
     build:
       secrets:
         - corporate_ca

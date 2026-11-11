@@ -575,3 +575,6 @@ FROM iceberg.gold.factory_daily_production;
 Superset initは既存GUI編集を保持し、Qdrant seedは同名collectionがあれば点の内容を上書きしません。従ってseedが `existing: true` を返しても、以前の途中失敗を自動で埋め直した保証はありません。collectionの次元・件数・IDを見て、再作成が必要なら利用者がいない専用デモで別途判断します。
 
 Marquez seedは固定run IDの手動デモです。新しい実業務runの採取処理ではありません。これらの起動・seed・再起動試験は [seed_tools.py](../infra/poc/seed_tools.py) と [PoC tool tests](../tests/test_poc_tools.py) で追えます。AIへNotebookの実行APIを渡す段階では、固定read-only MCPとは異なる強い実行権限として設計します。
+
+
+Notebook workspaceのread-only計画と承認後のapply/probe、既存projectを明示したSpark検証、機械可読な結果は [compute配置前・検証手順](COMPUTE-VALIDATION.md) を参照します。通常Deployでspark-checkが常駐しないのは正常です。local tagのpull方針はFROM/uv/JAR通信や未解決のBuildKit auth session timeoutを修復する保証ではありません。

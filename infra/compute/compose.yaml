@@ -11,6 +11,8 @@ x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0
 # master/worker/history/smokeを同じ固定Spark/Iceberg imageへ揃える共通定義。
 x-spark-image: &spark_image
   image: ${COMPOSE_PROJECT_NAME:-lakehouse}-spark-check:local
+  # All consumers reuse the tag; only spark-volumes-init owns its build.
+  pull_policy: never
 # Dokploy等の所有者識別とTraefikの自動公開を分ける共通label。
 x-spark-labels: &spark_labels
   app.owner: lakehouse-foundation
@@ -56,6 +58,7 @@ services:
   # 同じbuild tagをdaemonとsmokeへ渡し、Spark/Icebergの組合せを揃える。
   spark-volumes-init:
     <<: *spark_image
+    pull_policy: build
     build:
       secrets: [corporate_ca]
       context: ../..
@@ -179,6 +182,8 @@ services:
   # replicas=0なので通常upでは起動せず、必要時だけrunで読み書きを確かめる。
   spark-check:
     <<: *spark_image
+    volumes:
+      - spark-work:/opt/spark/work
     profiles: [compute]
     deploy:
       replicas: 0

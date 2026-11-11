@@ -158,9 +158,9 @@ export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 ./scripts/lakehouse.sh --env-file "$LAKEHOUSE_ENV_FILE" spark-check
 ```
 
-この操作は `compute` プロファイルの `spark-check` を一時コンテナとして起動し、local[2]で既存の相互参照を確認します。通常の `up` ではこの一時serviceだけをreplicas 0にし、上記Master・Worker・Historyを常駐させます。Docker Composeを直接使う場合は同じ追加Composeを全て指定し、`--profile compute build spark-volumes-init` を実行した後、`--profile compute run --rm --no-deps spark-check` を実行します。
+この操作は既存project/core/volumeとMaster/Workerのreadinessを確認した後、`compute` の一時 `spark-check` でlocal[2]の相互参照を確認します。分散executorでこのjobが実行された証拠ではありません。通常の `up` ではこの一時serviceだけをreplicas 0にし、上記Master・Worker・Historyを常駐させます。Docker Composeを直接使う場合は同じ追加Composeを全て指定し、`--profile compute build spark-volumes-init` を実行した後、`--profile compute run --rm --no-deps spark-check` を実行します。
 
-`infra/compute/smoke.sql` は専用の `compatibility.spark_roundtrip` 表を作成・置換します。固定の3行に日本語・decimalを含め、Sparkで書いた表をSparkで読み、その後Trinoの `iceberg.compatibility.spark_roundtrip` から同じ行を読みます。再実行でも追記による二重化をせず、業務表は対象にしません。成功時は版と行数だけを出力し、鍵や接続文字列を表示しません。
+`infra/compute/smoke.sql` は専用の `compatibility.spark_roundtrip` 表を作成・置換します。固定の3行に日本語・decimalを含め、Sparkで書いた表をSparkで読み、その後Trinoの `iceberg.compatibility.spark_roundtrip` から同じ行を読みます。再実行でも追記による二重化をせず、業務表は対象にしません。成功/失敗は版・12段階・時刻・件数・由来・cleanupを持つ安全なJSONへ出力し、鍵や接続文字列を表示しません。
 
 この一時スモークは小さなlocal実行の読み書き確認です。常駐clusterの受入では、別途Jupyterから分散task・Python UDF・Arrow処理を実行し、Masterの完了アプリ、Workerのexecutor、Historyのevent logを照合します。大量データ、複数writerの競合、複数ホスト、認証付きOIDC、Iceberg v3の機能は別の確認です。
 
@@ -337,3 +337,6 @@ Sparkの受入ではlocal smokeとremote実行を両方記録します。local s
 ## 固定SQL sourceとCDCの検証範囲
 
 SQL Server 2022向けDDLは型・PK・所有権・固定captureを静的検査し、SQLFluffで全文parseします。Debezium 3.7.1.Finalの設定は3.7公式仕様に合わせ、fixed-demoだけexclusive初回snapshot、adaptive日時、decimal文字列を使います。Pythonの合成イベント・in-memory catalogueによるreplay試験と、実SQL Server→Kafka→Icebergの受入試験は別です。実接続・Agent・外部Proxy・Java/PythonのCA検証・イメージbuildは導入先で確認します。[固定source手順と制約](SQLSERVER-FIXED-DEMO.md)
+
+
+新しいplan/apply/probe、projectの優先順、local-only、結果の保存と未受入事項は [COMPUTE-VALIDATION.md](COMPUTE-VALIDATION.md) を正本とします。raw Composeだけのsmokeではhost preflightとprivate結果保存を行わないため、通常は同じprojectを明示するCLIの専用操作を使います。Deployの管理入口は切り替えません。

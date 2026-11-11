@@ -328,3 +328,6 @@ APIの待機timeout、workerのエラー、Trinoのquery取消は別の状態で
 まず `CDC_SOURCE_MODE` と保存先を確認します。genericの `cdc_*` とfixed-demoの `sqlcdc_*` は別です。Source reader、固定capture、private CA/Java truststore、既存connector設定を順に照合します。空payloadはtombstoneではなく、Raw保存後の解釈エラーとして止まる場合があります。
 
 rebuildの202は完了ではありません。同じrequest IDを再照会し、欠落Raw、offset gap、source identity不一致、query取消未確定を確認します。Rawやstateの削除、イベントのskip、offsetの手動巻戻しを成功への近道にしません。Icebergの複数表は独立commitなので、途中失敗後は利用を止め、保全した履歴から再照合します。[再生条件と保存境界](SQLSERVER-FIXED-DEMO.md#8-current-statereplaygui監視)
+
+
+Notebook workspaceのread-only計画と承認後のapply/probe、既存projectを明示したSpark検証、機械可読な結果は [compute配置前・検証手順](COMPUTE-VALIDATION.md) を参照します。通常Deployでspark-checkが常駐しないのは正常です。local tagのpull方針はFROM/uv/JAR通信や未解決のBuildKit auth session timeoutを修復する保証ではありません。

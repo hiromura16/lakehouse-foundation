@@ -1083,6 +1083,46 @@
         "docs/MEDALLION.md"
       ],
       "status": "active"
+    },
+    {
+      "path": "docs/COMPUTE-VALIDATION.md",
+      "title": "Notebook workspace準備と明示Spark検証",
+      "purpose": "安全なworkspace plan/apply/probe、既存projectのSpark smoke、結果とpull policyを確認する。",
+      "audience": [
+        "基盤構築担当",
+        "運用担当"
+      ],
+      "when_to_use": "computeの配置前、明示検証、proxy build障害の切り分け時。",
+      "category": "05 運用・根拠",
+      "prerequisites": [
+        "docs/CONFIGURATION.md",
+        "docs/DOKPLOY.md"
+      ],
+      "next": [
+        "docs/OPERATIONS.md",
+        "docs/TROUBLESHOOTING.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/BUILD-KIT-AUTH-DIAGNOSTIC.md",
+      "title": "BuildKit auth session timeout: 公開前の診断draft",
+      "purpose": "PR11後も報告されたBuildKit timeoutの事実・仮説・次の診断を分離し、未解決として引き継ぐ。",
+      "audience": [
+        "基盤構築担当",
+        "運用担当"
+      ],
+      "when_to_use": "computeの配置前、明示検証、proxy build障害の切り分け時。",
+      "category": "05 運用・根拠",
+      "prerequisites": [
+        "docs/CONFIGURATION.md",
+        "docs/DOKPLOY.md"
+      ],
+      "next": [
+        "docs/OPERATIONS.md",
+        "docs/TROUBLESHOOTING.md"
+      ],
+      "status": "active"
     }
   ]
 }

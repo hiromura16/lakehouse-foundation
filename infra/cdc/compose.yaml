@@ -180,6 +180,8 @@ services:
     user: "${WORKER_UID:-10001}:${WORKER_GID:-10001}"
     profiles: [cdc]
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-cdc:local
+    # Rebuild this local tag through its single owner; retain build cache.
+    pull_policy: build
     build:
       secrets:
         - corporate_ca
@@ -220,6 +222,8 @@ services:
     user: "${WORKER_UID:-10001}:${WORKER_GID:-10001}"
     profiles: [cdc]
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-cdc:local
+    # Reuse the owner-built local tag; never query a registry for it.
+    pull_policy: never
     restart: 'no'
     labels: *cdc_labels
     logging: *cdc_logging

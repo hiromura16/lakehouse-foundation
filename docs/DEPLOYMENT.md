@@ -540,3 +540,6 @@ Composeの `mem_limit` は設定上限で、実測RSSや必要host RAMの保証�
 新serviceを加える場合、Composeのservice定義に加えてprofile、依存順、health、one-shotか常駐か、資源上限、log保持、volume/bind、実行UID、port公開範囲、proxy/CA、設定検査を決めます。Docker socketをUIへ渡して便利さを作る前提にはしません。
 
 新規/再配置、profile未選択/選択、既存volume/空volume、proxy/直接、CAあり/なしを分けて構文・起動・小さい業務往復を確認します。初期化が冪等でも、DB major更新や秘密鍵rotationの安全性まで保証するわけではありません。追加の永続データはbackup/restore一覧と構成図にも反映します。
+
+
+Notebook workspaceのread-only計画と承認後のapply/probe、既存projectを明示したSpark検証、機械可読な結果は [compute配置前・検証手順](COMPUTE-VALIDATION.md) を参照します。通常Deployでspark-checkが常駐しないのは正常です。local tagのpull方針はFROM/uv/JAR通信や未解決のBuildKit auth session timeoutを修復する保証ではありません。

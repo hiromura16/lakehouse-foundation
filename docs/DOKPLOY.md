@@ -311,3 +311,6 @@ Git Sourceのclone先を固定して入力する必要はありません。`/lan
 | credentials/暗号鍵 | 対象DBや製品側の変更手順、復元可能な控え | 新認証と旧保存内容の復号。env変更だけで完了しない |
 
 Deployの失敗時は、Git取得、build、container起動、アプリ初期化のどこまで進んだかを分けます。前段が成功したから後段を一括で巻き戻せるとは限りません。旧コードへの切替も、既に進んだDB migrationとデータ形式に互換性があることを確かめてから行います。
+
+
+Notebook workspaceのread-only計画と承認後のapply/probe、既存projectを明示したSpark検証、機械可読な結果は [compute配置前・検証手順](COMPUTE-VALIDATION.md) を参照します。通常Deployでspark-checkが常駐しないのは正常です。local tagのpull方針はFROM/uv/JAR通信や未解決のBuildKit auth session timeoutを修復する保証ではありません。

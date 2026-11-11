@@ -311,3 +311,6 @@ Dokploy管理はGUIのStop、CLI管理は次を使います。
 GUI操作だけを続ける人は [LEARNING-PATH](LEARNING-PATH.md) の操作担当向け経路、指標や入力元を追加する人は [CUSTOMIZATION](CUSTOMIZATION.md) へ進みます。各資料の意味と読む順序を探す場合は [全MDマニフェスト](DOCUMENTATION-MANIFEST.md) を使います。
 
 途中で止まったら、最後に成功した段階へ戻り、対象profile・commit・job種別・期待結果を揃えます。ログ全文を公開へ貼らず、[障害対応](TROUBLESHOOTING.md) に沿って機密を含まない最小再現を作ります。起動が通った段階で、会社の業務受入や復元まで完了したとは記録しません。
+
+
+Notebook workspaceのread-only計画と承認後のapply/probe、既存projectを明示したSpark検証、機械可読な結果は [compute配置前・検証手順](COMPUTE-VALIDATION.md) を参照します。通常Deployでspark-checkが常駐しないのは正常です。local tagのpull方針はFROM/uv/JAR通信や未解決のBuildKit auth session timeoutを修復する保証ではありません。

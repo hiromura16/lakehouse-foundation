@@ -396,8 +396,11 @@ def load(path):
             raise ValueError("Compute UID must be non-root; GID numeric.")
     if "notebooks" in profiles:
         workspace = Path(values.get("NOTEBOOKS_DIR", ""))
-        if not workspace.is_absolute() or workspace.resolve().is_relative_to(
-            ROOT
+        if (
+            not workspace.is_absolute()
+            or ".." in workspace.parts
+            or workspace.is_relative_to(ROOT)
+            or workspace == Path("/")
         ):
             raise ValueError("Use an external absolute NOTEBOOKS_DIR.")
     if values.get("MCP_ENABLE_MUTATIONS", "false") not in {"true", "false"}:

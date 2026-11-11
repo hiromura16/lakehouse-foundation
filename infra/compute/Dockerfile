@@ -56,6 +56,7 @@ ENV UV_OFFLINE=1 UV_PYTHON_DOWNLOADS=never \
     HOME=/opt/spark/work
 COPY --chown=spark:root infra/compute/spark_cluster.py /opt/lakehouse/
 COPY --chown=spark:root infra/compute/spark_smoke.py /opt/lakehouse/
+COPY --chown=spark:root infra/compute/smoke_result.py /opt/lakehouse/
 COPY --chown=spark:root infra/compute/smoke.sql /opt/lakehouse/
 WORKDIR /opt/spark/work
 USER spark

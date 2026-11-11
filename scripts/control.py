@@ -2,6 +2,7 @@
 """Operate a portable Compose foundation using external private settings."""
 
 import argparse
+import json
 import os
 import socket
 import subprocess
@@ -19,6 +20,30 @@ parser = argparse.ArgumentParser(
 )
 # An explicit flag overrides the shell's default site selection.
 parser.add_argument(
+    "--project-name",
+    help="spark-checkだけの明示的な既存project。env-fileの秘密値は保持",
+)
+parser.add_argument(
+    "--local-only",
+    action="store_true",
+    help="spark-checkでcluster readinessを省略しlocal[2]互換性だけを確認",
+)
+parser.add_argument(
+    "--result-dir",
+    type=Path,
+    help="spark-check結果の既存private directory（0700）。省略時はstdoutのみ",
+)
+parser.add_argument(
+    "--apply",
+    action="store_true",
+    help="notebook-workspaceだけの明示権限準備。通常planは変更しない",
+)
+parser.add_argument(
+    "--probe",
+    action="store_true",
+    help="notebook-workspaceだけの明示非root一時write/read/delete probe",
+)
+parser.add_argument(
     "--env-file",
     default=os.environ.get("LAKEHOUSE_ENV_FILE") or None,
     type=Path,
@@ -28,6 +53,8 @@ parser.add_argument(
     "action",
     choices=[
         "plan",
+        "predeploy",
+        "notebook-workspace",
         "up",
         "verify",
         "ingest",
@@ -45,12 +72,37 @@ parser.add_argument(
     ),
 )
 args = parser.parse_args()
+if args.action != "spark-check" and (
+    args.project_name is not None or args.local_only or args.result_dir
+):
+    parser.error("Project/local-only/result options are spark-check only.")
+if args.action != "notebook-workspace" and (args.apply or args.probe):
+    parser.error("Apply/probe options are notebook-workspace only.")
 if args.env_file is None:
     parser.error("Provide --env-file or set LAKEHOUSE_ENV_FILE.")
 try:
     values = load(args.env_file)
 except (ValueError, OSError) as error:
+    if args.action == "spark-check":
+        from compute_check import settings_failure
+
+        raise SystemExit(
+            settings_failure(
+                local_only=args.local_only, result_dir=args.result_dir
+            )
+        ) from None
     raise SystemExit(str(error)) from None
+if args.action == "spark-check":
+    from compute_check import selected_project, settings_failure
+
+    try:
+        values = selected_project(values, args.project_name)
+    except ValueError:
+        raise SystemExit(
+            settings_failure(
+                local_only=args.local_only, result_dir=args.result_dir
+            )
+        ) from None
 compose = [
     "docker",
     "compose",
@@ -67,6 +119,10 @@ for extension in ("compute", "orchestration", "demo", "cdc", "poc", "mcp"):
 # Override inherited shell interpolation, including old case variants.
 # This also exports the dedicated key for raw Compose's canonical branch.
 env = environment(values)
+if args.action == "spark-check":
+    # Match service labels, interpolated image tags and default volume names.
+    # No other lifecycle action accepts this narrow override.
+    compose[2:2] = ["--project-name", values["COMPOSE_PROJECT_NAME"]]
 
 
 def run(parts, **kwargs):
@@ -94,6 +150,25 @@ elif args.action == "plan":
         "Compose configuration valid. Profiles: "
         + (values.get("COMPOSE_PROFILES") or "core only")
     )
+elif args.action == "notebook-workspace":
+    from notebook_workspace import prepare_workspace
+
+    result = prepare_workspace(values, apply=args.apply, probe=args.probe)
+    print(json.dumps(result))
+    if result.get("action") == "blocked" or (
+        args.probe
+        and result.get("enabled")
+        and result.get("probe") != "passed"
+    ):
+        raise SystemExit(1)
+elif args.action == "predeploy":
+    from notebook_workspace import inspect_workspace
+
+    run(["config", "--quiet"])
+    result = inspect_workspace(values)
+    print(json.dumps(result))
+    if result.get("enabled") and result.get("action") != "none":
+        raise SystemExit(1)
 elif args.action == "up":
     if not Path(values["LANDING_DIR"]).is_dir():
         raise SystemExit(
@@ -101,8 +176,13 @@ elif args.action == "up":
             "before starting services."
         )
     if "notebooks" in values.get("COMPOSE_PROFILES", "").split(","):
-        if not Path(values["NOTEBOOKS_DIR"]).is_dir():
-            raise SystemExit("Create NOTEBOOKS_DIR with WORKER_UID/GID first.")
+        from notebook_workspace import inspect_workspace
+
+        if inspect_workspace(values).get("action") != "none":
+            raise SystemExit(
+                "Review notebook-workspace plan and approved apply/probe "
+                "first."
+            )
     run(["up", "-d", "--build", "--wait", "--wait-timeout", "600"])
     run(
         [
@@ -126,18 +206,16 @@ elif args.action == "grafana-init":
     result = setup(values)
     print("Grafana dashboard: " + result["status"])
 elif args.action == "spark-check":
-    # One service owns the common image build, avoiding concurrent retagging.
-    run(["--profile", "compute", "build", "spark-volumes-init"])
-    # Core bootstrap must finish before this isolated Iceberg smoke job runs.
-    run(
-        [
-            "--profile",
-            "compute",
-            "run",
-            "--rm",
-            "--no-deps",
-            "spark-check",
-        ]
+    from compute_check import run_check
+
+    raise SystemExit(
+        run_check(
+            compose,
+            values,
+            env,
+            local_only=args.local_only,
+            result_dir=args.result_dir,
+        )
     )
 elif args.action in {"verify", "ingest", "medallion"}:
     run(
