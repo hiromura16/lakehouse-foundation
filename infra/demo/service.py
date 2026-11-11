@@ -14,6 +14,7 @@ import json
 import os
 import re
 import struct
+import sys
 import tempfile
 import zlib
 from datetime import datetime, timedelta
@@ -53,12 +54,11 @@ SQL_KEYS = {
 @lru_cache(maxsize=1)
 def fixed_sql_module():
     """Load the fixed source adapter without opening any connection."""
-    specification = importlib.util.spec_from_file_location(
-        "fixed_sql_source", ROOT / "scripts/sqlserver_demo.py"
-    )
-    module = importlib.util.module_from_spec(specification)
-    specification.loader.exec_module(module)
-    return module
+    scripts = str(ROOT / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    # The batch adapter uses the same module and process-local TLS lock.
+    return importlib.import_module("sqlserver_demo")
 
 
 def scenario_destination(destination):

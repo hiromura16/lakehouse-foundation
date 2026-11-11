@@ -156,7 +156,43 @@ class SettingsStore:
                 "SOURCE_SQLSERVER_DATABASE",
             }
         }
-        certificate = values.get("DEMO_SQLSERVER_CA_FILE", "")
+        return self._map_sql_ca(values, "DEMO_SQLSERVER_CA_FILE")
+
+    def reader_settings(self, *, include_control=False) -> dict[str, str]:
+        """Select SOURCE auth and marker policy, without DEMO credentials.
+
+        Checkpoint auth is separate and opt-in. This internal dictionary is
+        never serialized to worker requests or public API/GUI responses.
+        """
+        keys = {
+            "DEMO_SQLSERVER_" + suffix
+            for suffix in (
+                "INSTALLATION_ID",
+                "OWNERSHIP_TOKEN",
+                "ERP_SCHEMA",
+                "MES_SCHEMA",
+                "CONTROL_SCHEMA",
+                "ALLOW_SHARED_SOURCE_DATABASE",
+            )
+        }
+        if include_control:
+            keys.add(
+                "DEMO_SQLSERVER_USER"
+            )  # Identity check only, no DEMO auth.
+        values = {
+            key: value
+            for key, value in self.applied.items()
+            if (key.startswith("SOURCE_SQLSERVER_") or key in keys)
+            and (
+                include_control
+                or not key.startswith("SOURCE_SQLSERVER_CONTROL_")
+            )
+        }
+        return self._map_sql_ca(values, "SOURCE_SQLSERVER_CA_FILE")
+
+    def _map_sql_ca(self, values, key):
+        """Resolve one host-side CA inside the dedicated private mount."""
+        certificate = values.get(key, "")
         if not certificate or certificate == "system":
             return values
         selected = Path(certificate)
@@ -172,7 +208,7 @@ class SettingsStore:
             or not selected.is_file()
         ):
             raise SettingsError("Keep the demo CA in the private directory.")
-        values["DEMO_SQLSERVER_CA_FILE"] = str(selected)
+        values[key] = str(selected)
         return values
 
     def save(self, updates: dict[str, str]) -> dict:

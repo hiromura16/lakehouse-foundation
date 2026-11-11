@@ -25,6 +25,7 @@ ENV UV_OFFLINE=1
 COPY scripts/admin.py ./admin.py
 COPY scripts/generate-demo.py ./scripts/generate-demo.py
 COPY scripts/source_scenarios.py ./scripts/source_scenarios.py
+COPY scripts/sql_batch_worker.py ./scripts/sql_batch_worker.py
 COPY medallion ./medallion
 COPY samples ./samples
 USER 10001:10001

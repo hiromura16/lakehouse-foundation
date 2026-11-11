@@ -25,6 +25,7 @@ from hashlib import sha256
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO, StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import urlsplit
 
 import boto3
@@ -180,7 +181,7 @@ def schema(prefix, layer):
     通常処理、CDC、実行ごとの隔離検証だけを受け付ける。任意prefixを
     許してしまうと、検証の後片付けが通常表へ及ぶため入力を制限する。
     """
-    if prefix not in {"", "cdc_"} and not re.fullmatch(
+    if prefix not in {"", "cdc_", "sql_"} and not re.fullmatch(
         r"verify_[0-9a-f]+_", prefix
     ):
         raise ValueError("Invalid data namespace prefix.")
@@ -206,6 +207,12 @@ def ensure_tables(prefix=""):
                 "_source_hash",
                 "_ingested_at",
             ]
+            if prefix == "sql_":
+                # SQL provenance extends only the isolated fixed-source tables.
+                # Existing Landing/CDC schemas keep their current contracts.
+                from scripts.sql_batch_worker import SQL_SOURCE_COLUMNS
+
+                fields += list(SQL_SOURCE_COLUMNS)
             cat.create_table(
                 identifier,
                 schema=pa.schema([(name, pa.string()) for name in fields]),
@@ -514,6 +521,28 @@ def medallion(prefix=""):
         for statement in statements.split(";"):
             if not statement.strip():
                 continue
+            if prefix == "sql_":
+                # Preserve SQL origin columns through each typed/final SELECT.
+                # Keep the same qualifier when a source is selected via alias.
+                from scripts.sql_batch_worker import SQL_SOURCE_COLUMNS
+
+                def sql_provenance(match):
+                    """Extend a projection, retaining its source alias."""
+                    qualifier = match.group("qualifier") or ""
+                    return (
+                        ", ".join(
+                            qualifier + column for column in SQL_SOURCE_COLUMNS
+                        )
+                        + ", "
+                        + qualifier
+                        + "_source_file,"
+                    )
+
+                statement = re.sub(
+                    r"(?P<qualifier>[A-Za-z_]\w*\.)?_source_file,",
+                    sql_provenance,
+                    statement,
+                )
             for layer in ["bronze", "silver", "gold", "quarantine"]:
                 statement = statement.replace(
                     "iceberg." + layer + ".",
@@ -648,7 +677,20 @@ def cleanup_verification(cat, prefix):
             S3.delete_objects(Bucket=bucket, Delete={"Objects": objects})
 
 
-def run(action):
+def sql_worker_context():
+    """Expose only the existing worker capabilities needed by SQL batches."""
+    return SimpleNamespace(
+        pa=pa,
+        CONTRACT=CONTRACT,
+        catalog=catalog,
+        ensure_tables=ensure_tables,
+        medallion=medallion,
+        S3=S3,
+        os=os,
+    )
+
+
+def run(action, payload=None):
     """固定actionを同じworkerプロセス内で排他実行し、結果を返す。
 
     処理成功後にメモリー内の件数と最終成功時刻を更新する。blocked中は
@@ -671,6 +713,14 @@ def run(action):
             result = {**ingest(), **medallion()}
         elif action == "verify":
             result = verify()
+        elif action == "sql-load":
+            from scripts.sql_batch_worker import load
+
+            result = load(
+                sql_worker_context(),
+                payload["batch_id"],
+                payload["observed_at"],
+            )
         else:
             raise ValueError("Unsupported action.")
         STATE["successful_runs"] += 1
@@ -752,7 +802,21 @@ class Handler(BaseHTTPRequestHandler):
             if not 0 < length <= 4096:
                 return self.respond(400, {"error": "invalid body size"})
             payload = json.loads(self.rfile.read(length))
+            if not isinstance(payload, dict):
+                return self.respond(400, {"error": "invalid body"})
             action = payload.get("action")
+            if action == "sql-load":
+                if set(payload) != {"action", "batch_id", "observed_at"}:
+                    return self.respond(400, {"error": "invalid SQL request"})
+                from scripts.sql_batch_worker import apply_identifier
+
+                try:
+                    apply_identifier(
+                        payload["batch_id"], payload["observed_at"]
+                    )
+                except ValueError:
+                    return self.respond(400, {"error": "invalid SQL request"})
+                return self.respond(200, run(action, payload))
             if action not in {"ingest", "medallion", "verify"}:
                 return self.respond(400, {"error": "unknown action"})
             self.respond(200, run(action))

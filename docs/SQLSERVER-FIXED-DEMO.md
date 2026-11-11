@@ -155,3 +155,33 @@ SQL型へ入らない異常は、型付き列をNULLとし、JSONに元の値を
 旧アプリへ戻してもSQL表・installation・CDC・watermarkを自動削除しません。所有権tokenを再生成して戻そうとせず、private設定とデータを保持します。CDC停止やDDL変更はDBAが別途評価します。
 
 cleanで件数、日本語、decimal、NULL/空文字、UTCと第7小数桁を確認し、その後edge、増分再実行、部分失敗、DELETE、再起動・raw replayへ進みます。単体・静的契約・実DB統合のどれを実施したか、報告書で区別します。
+
+## 5. フルスナップショットを取り込む
+
+素材の投入とは別に **処理・検証 → SQL Serverフルスナップショット** を選び、置換への同意を確認して開始します。Swaggerでは `POST /sql-source/batches/snapshot` に `{"confirm": true}` を送ります。任意SQL・接続先・file pathを要求へ入れません。
+
+SOURCE readerは所有権と読取り専用権限を検査し、SERIALIZABLE transactionと6表への共有lockで小規模PoCの一貫した読取りを行います。lock待ちは5秒、各SQLのtimeoutも設定します。アプリからDBのisolation設定を変更することはありません。業務writerを待たせ得るため、大規模な本番source用の抽出方式とは分けます。
+
+原値JSONを正本とし、SQLの実PKと一致を確認します。型付き列だけを手動UPDATEしてJSONを同期しない操作は、この固定sourceの契約外です。合成データ・I/U/Dは固定APIを使います。実ERPの通常の型付き表を読む場合は、別の汎用extract/mapping設計を使います。
+
+単一原値は128 KiB、各表10万行、全JSONは16 MiBに制限します。日本語・decimal文字列・NULL・空文字・UTCの7桁時刻を保持します。生成されたASCIIの安定PKを対象にし、任意のUnicodeキーを正規化して同じキーへ丸めません。大きすぎる入力は公開前に拒否します。
+
+全6表を読めた後だけ、共有Landingの `sql-batches/<内容SHA-256>.json` とready markerを公開します。DB資格情報を持たないworkerへ、内容IDとSQL serverの観測時刻を送ります。workerは原本をS3へ保管してから `sql_bronze` の6表を更新し、既存の業務SQLを `sql_silver` / `sql_quarantine` / `sql_gold` へ適用します。通常の `bronze/silver/gold` とCDC用の表を置き換えません。
+
+Source件数とBronze件数・PK重複を照合し、全6表と派生処理が成功した後にだけ `sql_control.batches` へ完了記録を書きます。Silverと隔離にはsource由来を引き継ぎ、Goldは業務の集計粒度を保ちます。
+
+### 再実行・削除・途中失敗
+
+内容IDと、観測時刻を含む処理IDを分けます。同じ処理のreplayはskipし、直前と同じ内容の再観測も不要な置換を避けます。ただしデータがA→B→Aへ戻った新しいsnapshotは再適用するため、物理DELETEも全件照合で反映できます。古い観測を新しい現在値へ上書きする操作は拒否します。
+
+途中失敗では、表ごとのcommitによって世代が混ざることがあります。`sql_control.progress` の適用中記録を完了まで保持し、不完全な世代がある間は「同じ内容だからskip」と判定しません。全6表を再構築して収束を確認します。複数のIceberg表、Trino、S3を一括transactionで更新する機構ではありません。単一worker・単一sourceとして運用します。
+
+HTTP timeoutはworker停止を意味しません。結果不明なら完了扱いにせず、workerのbusy/blockedとjob結果を確認してから明示的に再試行します。原本・source ID・完了台帳を削除して再開を強行しません。別sourceへ同じSQL分析領域を使い回す操作も拒否します。
+
+### 由来を調べる
+
+SQL BronzeとSilver/隔離に `_source_system`、`_source_database`、`_source_schema`、`_source_table`、`_source_pk`、`_source_updated_at`、`_ingested_at`、`_batch_id`、`_run_id` を保持します。DB名や原本はprivateな実行データです。公開報告へそのまま添付しません。Goldの集計行に個々のsource PKを無理に付けず、対応するSilverとbatch記録へ戻って追跡します。
+
+## 権限診断の範囲
+
+runtimeは有効なobject権限、広いrole、固定対象のmetadata・trigger・FKを検査します。ただしSQL Serverのmetadata visibilityで隠れた他schemaの子FKまでは、固定親tableのVIEW DEFINITIONだけで全件証明できません。DBAが初回の全体検査を行い、固定表へ外部FKやtriggerを後付けしない契約を維持します。診断のためにruntimeへDB全体のCONTROLや広い書込み権限を与えません。

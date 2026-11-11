@@ -6,6 +6,7 @@ import sys
 import tempfile
 import time
 import unittest
+from hashlib import sha256
 from pathlib import Path
 from unittest import mock
 
@@ -191,6 +192,66 @@ class FixedSqlApiTests(unittest.TestCase):
             },
         )
         result = self.wait(reply.json()["id"])
+        self.assertEqual(result["status"], "failed")
+        self.assertNotIn("synthetic-private", str(result))
+        self.assertFalse(self.app.state.jobs.operation.locked())
+
+    def test_snapshot_has_strict_consent_and_only_source_reader_auth(self):
+        """The real route passes reader auth to extraction, never to worker."""
+        endpoint = "/sql-source/batches/snapshot"
+        for body in (
+            {"confirm": False},
+            {"confirm": 1},
+            {"confirm": True, "table": "dbo.private"},
+        ):
+            self.assertEqual(
+                self.request("POST", endpoint, json=body).status_code, 422
+            )
+        selected = self.app.state.store.applied
+        selected.update(
+            SOURCE_SQLSERVER_PASSWORD="synthetic-reader-private",
+            SOURCE_SQLSERVER_CONTROL_PASSWORD="synthetic-control-private",
+            DEMO_SQLSERVER_PASSWORD="synthetic-demo-private",
+        )
+        module = mock.Mock()
+        batch_id = "d" * 64
+        observed_at = "2026-01-01T00:00:00.1234567Z"
+        module.run_snapshot.return_value = {
+            "completed": True,
+            "batch_id": batch_id,
+            "apply_id": sha256(
+                (batch_id + "\n" + observed_at).encode()
+            ).hexdigest(),
+            "observed_at": observed_at,
+            "skipped": False,
+            "sql_statements": 14,
+            "counts": dict.fromkeys(
+                SQL_API.send_batch.__globals__["CONTRACT_IDS"], 1
+            ),
+            "password": "synthetic-private-detail",
+        }
+        with mock.patch.object(SQL_API, "batch_module", return_value=module):
+            reply = self.request("POST", endpoint, json={"confirm": True})
+            result = self.wait(reply.json()["id"])
+        self.assertEqual(result["status"], "succeeded")
+        self.assertNotIn("synthetic-private", str(result))
+        arguments = module.run_snapshot.call_args.args
+        reader = arguments[0]
+        self.assertEqual(
+            reader["SOURCE_SQLSERVER_PASSWORD"], "synthetic-reader-private"
+        )
+        self.assertNotIn("DEMO_SQLSERVER_PASSWORD", reader)
+        self.assertNotIn("SOURCE_SQLSERVER_CONTROL_PASSWORD", reader)
+        self.assertEqual(arguments[1], self.app.state.jobs.output)
+
+    def test_snapshot_failure_redacts_driver_and_releases_job(self):
+        module = mock.Mock()
+        module.run_snapshot.side_effect = ValueError("synthetic-private-url")
+        with mock.patch.object(SQL_API, "batch_module", return_value=module):
+            reply = self.request(
+                "POST", "/sql-source/batches/snapshot", json={"confirm": True}
+            )
+            result = self.wait(reply.json()["id"])
         self.assertEqual(result["status"], "failed")
         self.assertNotIn("synthetic-private", str(result))
         self.assertFalse(self.app.state.jobs.operation.locked())

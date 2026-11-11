@@ -75,6 +75,13 @@ jobs:
       run: python scripts/shell_examples.py --check
     - name: Check Trino SQL
       run: sqlfluff lint --dialect trino medallion
+    - name: Parse fixed SQL Server DDL without a database
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        for sql_file in infra/sqlserver/*.sql; do
+          sqlfluff parse --dialect tsql "$sql_file" > /dev/null
+        done
     - name: Validate all Compose profiles without starting services
       shell: bash
       run: |

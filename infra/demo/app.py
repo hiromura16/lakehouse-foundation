@@ -11,7 +11,7 @@ from poc_ui import (
     render_network,
     render_portal,
 )
-from sqlsource_ui import render_sql_source
+from sqlsource_ui import render_sql_batches, render_sql_source
 
 st.set_page_config(page_title="Lakehouse PoC ポータル", page_icon="🏭")
 st.title("Lakehouse PoC ポータル")
@@ -692,6 +692,7 @@ with source_tab:
     render_cdc_form()
 with pipeline_tab:
     render_pipeline()
+    render_sql_batches(call_api)
 with settings_tab:
     render_settings()
 with status_tab:
