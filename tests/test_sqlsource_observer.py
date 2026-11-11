@@ -791,6 +791,62 @@ class SqlObservationUiTests(unittest.TestCase):
         self.assertEqual(len(app.success), 0)
         self.assertTrue(any("受付だけ" in text.value for text in app.info))
 
+    def test_failed_and_blocked_consumers_show_safe_lifecycle(self):
+        for blocked, code in (
+            (False, "CDC_PROCESSING_FAILED"),
+            (True, "CDC_QUERY_REVIEW_REQUIRED"),
+        ):
+            with self.subTest(blocked=blocked):
+                value = consumer_fixture()
+                value.update(ready=False, blocked=blocked, error_code=code)
+                connect = connector_fixture()
+                connect["tasks"][0]["state"] = "FAILED"
+                self.reply_status = OBSERVER.cdc_status(
+                    {"COMPOSE_PROFILES": "demo"}
+                )
+                self.reply_status.update(
+                    configured=True,
+                    consumer=OBSERVER.consumer_observation(value),
+                    connector=OBSERVER.connector_observation(connect),
+                )
+                app = self.app()
+                app.button(key="sql-observe-cdc").click().run(timeout=10)
+                self.assertFalse(app.exception)
+                text = "\n".join(item.value for item in app.markdown)
+                self.assertIn("ready=false", text)
+                self.assertIn("blocked=" + str(blocked).lower(), text)
+                self.assertIn("connector稼働状態: RUNNING", text)
+                self.assertTrue(any(code in item.value for item in app.error))
+                self.assertTrue(
+                    any("RUNNING以外" in item.value for item in app.warning)
+                )
+                self.assertTrue(
+                    any("FAILED" in str(item.value) for item in app.dataframe)
+                )
+                if blocked:
+                    self.assertTrue(
+                        any("blocked" in item.value for item in app.error)
+                    )
+                self.assertNotIn("private-trace-fixture", str(app))
+                self.assertNotIn("private-worker-fixture", str(app))
+                self.assertEqual(len(app.success), 0)
+
+    def test_unknown_lifecycle_does_not_display_raw_diagnostic(self):
+        self.reply_status = OBSERVER.cdc_status({"COMPOSE_PROFILES": "demo"})
+        self.reply_status["consumer"]["error_code"] = "private-error-secret"
+        app = self.app()
+        app.button(key="sql-observe-cdc").click().run(timeout=10)
+        self.assertFalse(app.exception)
+        text = "\n".join(item.value for item in app.markdown)
+        self.assertIn("ready=unknown", text)
+        self.assertIn("blocked=unknown", text)
+        self.assertIn("connector稼働状態: unknown", text)
+        self.assertTrue(any("unknown" in item.value for item in app.warning))
+        self.assertNotIn("private-error-secret", str(app.markdown))
+        self.assertNotIn("private-error-secret", str(app.warning))
+        self.assertTrue(all(item.value == "未観測" for item in app.metric))
+        self.assertEqual(len(app.success), 0)
+
     def test_unobserved_counts_and_changed_preview_selection_stay_explicit(
         self,
     ):
