@@ -37,7 +37,8 @@ BEGIN
         N'@Id char(32) OUTPUT, @Hash char(64) OUTPUT, @Version int OUTPUT',
         @Id=@ActualId OUTPUT, @Hash=@ActualHash OUTPUT,
         @Version=@ActualVersion OUTPUT;
-    IF @ActualId IS NULL OR @ActualHash IS NULL OR @ActualVersion <> 1
+    IF @ActualId IS NULL OR @ActualHash IS NULL
+        OR @ActualVersion IS NULL OR @ActualVersion <> 1
         OR @ActualId COLLATE Latin1_General_100_BIN2
            <> @InstallationId COLLATE Latin1_General_100_BIN2
         OR @ActualHash COLLATE Latin1_General_100_BIN2

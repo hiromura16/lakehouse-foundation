@@ -39,7 +39,8 @@ BEGIN
         N'@Id char(32) OUTPUT, @Hash char(64) OUTPUT, @Version int OUTPUT',
         @Id=@ActualId OUTPUT, @Hash=@ActualHash OUTPUT,
         @Version=@ActualVersion OUTPUT;
-    IF @ActualId IS NULL OR @ActualHash IS NULL OR @ActualVersion <> 1
+    IF @ActualId IS NULL OR @ActualHash IS NULL
+        OR @ActualVersion IS NULL OR @ActualVersion <> 1
         OR @ActualId COLLATE Latin1_General_100_BIN2
            <> @InstallationId COLLATE Latin1_General_100_BIN2
         OR @ActualHash COLLATE Latin1_General_100_BIN2
@@ -222,7 +223,8 @@ INSERT INTO @AllowedGrants VALUES
 IF EXISTS (
     SELECT 1 FROM sys.database_principals r
     WHERE r.name IN (N'lh_demo_writer',N'lh_demo_reader',N'lh_demo_control_writer')
-      AND (r.type<>'R' OR r.owning_principal_id<>DATABASE_PRINCIPAL_ID(N'dbo'))
+      AND (r.type<>'R' OR r.owning_principal_id IS NULL
+           OR r.owning_principal_id<>DATABASE_PRINCIPAL_ID(N'dbo'))
 )
     THROW 51012, 'A same-named role has an unrelated owner or kind.', 1;
 IF EXISTS (

@@ -72,6 +72,22 @@ class FixedSqlContractTests(unittest.TestCase):
                     sql, r"(?i)\[(?:pocctl|legacy)\]|\[dbo\]\.\["
                 )
 
+    def test_null_marker_version_and_unowned_existing_role_are_refused(self):
+        """Keep standalone SQL guards strict despite SQL NULL comparisons."""
+        for filename in FILES:
+            with self.subTest(filename=filename):
+                self.assertIn("@ActualVersion IS NULL", source(filename))
+        permissions = source("003_demo_permissions.sql")
+        self.assertIn("r.owning_principal_id IS NULL", permissions)
+        self.assertIn(
+            "r.owning_principal_id<>DATABASE_PRINCIPAL_ID(N'dbo')",
+            permissions,
+        )
+        self.assertLess(
+            permissions.index("THROW 51012"), permissions.index("GRANT SELECT")
+        )
+        self.assertNotIn("ALTER AUTHORIZATION", permissions)
+
     def test_exact_tables_primary_keys_watermarks_and_originals(self):
         blocks = table_blocks()
         expected = {

@@ -136,6 +136,26 @@ def validate_settings(values, *, consent=False, role="demo"):
             raise SqlServerError(
                 "Complete the selected fixed SQL credentials."
             )
+    if role == "control":
+        # A missing comparison identity is not proof of separate principals.
+        # Only usernames are needed here; DEMO credentials stay excluded from
+        # the batch reader/control configuration passed by SettingsStore.
+        principals = [
+            selected.get(key, "")
+            for key in (
+                "SOURCE_SQLSERVER_CONTROL_USER",
+                "SOURCE_SQLSERVER_USER",
+                "DEMO_SQLSERVER_USER",
+            )
+        ]
+        if any(not isinstance(user, str) or not user for user in principals):
+            raise SqlServerError(
+                "Configure the three distinct fixed SQL principal identities."
+            )
+        if len({user.casefold() for user in principals}) != 3:
+            raise SqlServerError(
+                "The control principal must differ from source and demo users."
+            )
     host = selected[prefix + "_HOST"]
     database = selected[prefix + "_DATABASE"]
     if not re.fullmatch(r"[A-Za-z0-9_.-]{1,253}", host):
@@ -871,7 +891,9 @@ def write_data(
             primary = "[" + item["pk"] + "]"
             for key, typed, payload in rows:
                 cursor.execute(
-                    "SELECT run_id, original_values FROM "
+                    "SELECT "
+                    + primary
+                    + ", run_id, original_values FROM "
                     + target
                     + " WITH (UPDLOCK,HOLDLOCK) WHERE "
                     + primary
@@ -879,12 +901,20 @@ def write_data(
                     (key,),
                 )
                 prior = cursor.fetchone()
-                if prior and prior[0] != run_id:
+                # SQL collations may compare case, accents or trailing spaces
+                # as equal. Never update an equivalent-but-different physical
+                # PK while recording another key in original_values.
+                if prior and prior[0] != key:
+                    raise SqlServerError(
+                        "A SQL-collation key collision was refused; existing "
+                        "data was preserved."
+                    )
+                if prior and prior[1] != run_id:
                     raise SqlServerError(
                         "A fixed source key belongs to another run; existing "
                         "data was preserved."
                     )
-                if prior and prior[1] == payload:
+                if prior and prior[2] == payload:
                     result["skipped"] += 1
                     continue
                 if prior:
@@ -950,13 +980,18 @@ def mutate(values, action, *, run_id, consent=False):
         cursor = handle.cursor()
         check_writer(cursor, selected)
         cursor.execute(
-            "SELECT run_id, original_values FROM "
+            "SELECT product_id, run_id, original_values FROM "
             + target
             + " WITH (UPDLOCK,HOLDLOCK) WHERE product_id=%s",
             (key,),
         )
         previous = cursor.fetchone()
-        if previous and previous[0] != run_id:
+        if previous and previous[0] != key:
+            raise SqlServerError(
+                "A SQL-collation CDC key collision was refused; existing "
+                "data was preserved."
+            )
+        if previous and previous[1] != run_id:
             raise SqlServerError(
                 "The CDC test product is not owned by this run."
             )

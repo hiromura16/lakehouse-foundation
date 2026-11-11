@@ -67,8 +67,20 @@ class Cursor:
         self.calls.append((statement, arguments))
         self.next = None
         table = re.search(r"\[lh_demo_(?:erp|mes)\]\.\[[a-z_]+\]", statement)
-        if statement.startswith("SELECT run_id, original_values FROM "):
-            self.next = self.rows.get((table[0], arguments[0]))
+        if (
+            statement.startswith("SELECT ")
+            and ", run_id, original_values FROM " in statement
+        ):
+            # Model a case-insensitive SQL collation with space padding, while
+            # keeping the actual stored PK visible in the returned row.
+            requested = arguments[0].casefold().rstrip(" ")
+            for (origin, key), values in self.rows.items():
+                if (
+                    origin == table[0]
+                    and key.casefold().rstrip(" ") == requested
+                ):
+                    self.next = (key, *values)
+                    break
         elif statement.startswith("INSERT INTO ") and table:
             if self.fail_insert == table[0]:
                 raise RuntimeError("synthetic-driver-private-information")
@@ -205,6 +217,32 @@ class BoundaryTests(unittest.TestCase):
             values.pop(key)
             with self.subTest(setting=key):
                 with self.assertRaises(DEMO.SqlServerError):
+                    DEMO.validate_settings(values, role="control")
+
+    def test_control_principal_cannot_reuse_source_or_demo_identity(self):
+        for reused in ("SOURCE_SQLSERVER_USER", "DEMO_SQLSERVER_USER"):
+            with self.subTest(reused=reused):
+                settings = {
+                    **VALUES,
+                    "SOURCE_SQLSERVER_CONTROL_USER": VALUES[reused].upper(),
+                }
+                driver = mock.Mock()
+                with mock.patch.dict(
+                    sys.modules, {"pymssql": SimpleNamespace(connect=driver)}
+                ):
+                    with self.assertRaisesRegex(
+                        DEMO.SqlServerError, "must differ"
+                    ):
+                        with DEMO.connection(settings, role="control"):
+                            self.fail("A reused control principal connected")
+                driver.assert_not_called()
+
+    def test_control_missing_comparison_identity_is_not_assumed_safe(self):
+        for missing in ("SOURCE_SQLSERVER_USER", "DEMO_SQLSERVER_USER"):
+            values = dict(VALUES)
+            values.pop(missing)
+            with self.subTest(missing=missing):
+                with self.assertRaisesRegex(DEMO.SqlServerError, "identities"):
                     DEMO.validate_settings(values, role="control")
 
     def test_missing_writer_is_reported_without_echoing_secrets(self):
@@ -480,6 +518,57 @@ class WriteTests(unittest.TestCase):
             )
         )
         self.assertEqual(self.handle.commits, 2)
+
+    def test_case_or_space_equivalent_source_key_does_not_update_any_row(self):
+        for physical in ("p001", "P001 "):
+            with self.subTest(physical=physical):
+                self.handle = Handle()
+                self.handle.reader.rows[
+                    ("[lh_demo_erp].[products]", physical)
+                ] = (RUN, "existing-original")
+                before = copy.deepcopy(self.handle.reader.rows)
+                with self.assertRaisesRegex(DEMO.SqlServerError, "collation"):
+                    DEMO.write_data(
+                        GENERATOR.build_data(42, 1, 7, "clean"),
+                        VALUES,
+                        run_id=RUN,
+                        consent=True,
+                    )
+                self.assertEqual(self.handle.reader.rows, before)
+                self.assertEqual(self.handle.commits, 0)
+                self.assertEqual(self.handle.rollbacks, 1)
+                self.assertFalse(
+                    any(
+                        statement.startswith(("INSERT ", "UPDATE ", "DELETE "))
+                        for statement, _ in self.handle.reader.calls
+                    )
+                )
+
+    def test_case_or_space_equivalent_cdc_key_rejects_each_mutation(self):
+        key = "CDC-" + RUN
+        for physical in (key.lower(), key + " "):
+            for action in ("insert", "update", "delete"):
+                with self.subTest(physical=physical, action=action):
+                    self.handle = Handle()
+                    self.handle.reader.rows[
+                        ("[lh_demo_erp].[products]", physical)
+                    ] = (RUN, "existing-original")
+                    before = copy.deepcopy(self.handle.reader.rows)
+                    with self.assertRaisesRegex(
+                        DEMO.SqlServerError, "collation"
+                    ):
+                        DEMO.mutate(VALUES, action, run_id=RUN, consent=True)
+                    self.assertEqual(self.handle.reader.rows, before)
+                    self.assertEqual(self.handle.commits, 0)
+                    self.assertEqual(self.handle.rollbacks, 1)
+                    self.assertFalse(
+                        any(
+                            statement.startswith(
+                                ("INSERT ", "UPDATE ", "DELETE ")
+                            )
+                            for statement, _ in self.handle.reader.calls
+                        )
+                    )
 
     def test_source_updated_at_is_server_owned_not_generator_history(self):
         data = GENERATOR.build_data(42, 1, 7, "clean")
