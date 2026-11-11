@@ -75,7 +75,8 @@ IF EXISTS (
         N'lh_demo_erp.sales_orders',N'lh_demo_erp.shipments',
         N'lh_demo_mes.events',N'lh_demo_mes.downtime',
         N'lh_demo_ctl.installation',N'lh_demo_ctl.demo_runs',
-        N'lh_demo_ctl.batch_watermarks'
+        N'lh_demo_ctl.batch_watermarks',
+        N'lh_demo_ctl.check_write_safety_v1'
       )
 )
     THROW 51005, 'Unexpected fixed-schema objects exist; preserve them.', 1;

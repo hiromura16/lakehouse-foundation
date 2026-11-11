@@ -273,6 +273,21 @@ class FixedSqlContractTests(unittest.TestCase):
         self.assertNotIn("original_values", validation)
         self.assertIn("OBJECT_ID(N'cdc.change_tables'", validation)
 
+    def test_cdc_preserves_the_existing_metadata_safety_checker(self):
+        """CDC setup accepts the installed checker without redefining it."""
+        baseline = source("006_demo_validation.sql")
+        marker = "AND s.name+N'.'+o.name NOT IN ("
+        expected = baseline.split(marker, 1)[1].split(")", 1)[0]
+        for filename in CDC_FILES:
+            with self.subTest(filename=filename):
+                sql = source(filename)
+                actual = sql.split(marker, 1)[1].split(")", 1)[0]
+                self.assertEqual(actual, expected)
+                self.assertIn("lh_demo_ctl.check_write_safety_v1", actual)
+                self.assertNotRegex(
+                    sql, r"(?i)(?:ALTER|CREATE|DROP)\s+PROCEDURE"
+                )
+
     def test_cdc_target_and_captured_columns_are_exactly_the_six_contracts(
         self,
     ):
