@@ -41,7 +41,7 @@ setopt INTERACTIVE_COMMENTS
 
 日常の配置担当を **DokployかCLIのどちらか一つ** に決めます。Dokploy管理なら配置・停止・再配置はDokployで行い、CLIは同じ環境の `plan` / `status` / `verify` / `grafana-init` 等の補助操作に使います。同じ環境へ別のCompose名で `up` すると、別DB・別volumeを作る原因になります。
 
-初回はcoreだけを確認し、その後 `demo,monitoring` を追加します。全機能は11profile・36service定義で、全コンテナの上限メモリを同時に確保すると20GiBを超えます。Docker/Dokploy/OS/build用メモリも必要です。小さいVMでは段階ごとに使用量を確認し、全機能の同時起動を前提にしません。[容量と永続化](DEPLOYMENT.md)
+初回はcoreだけを確認し、その後 `demo,monitoring` を追加します。全機能は11profile・38service定義で、全コンテナの上限メモリを同時に確保すると20GiBを超えます。Docker/Dokploy/OS/build用メモリも必要です。小さいVMでは段階ごとに使用量を確認し、全機能の同時起動を前提にしません。[容量と永続化](DEPLOYMENT.md)
 
 ## 1. ホストを準備する
 

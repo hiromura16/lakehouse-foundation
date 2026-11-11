@@ -1,0 +1,3 @@
+# Sink-local timestamp adapter. The shared redacted event and identity are
+# unchanged; OpenObserve does not treat plain timestamp as its time override.
+._timestamp = .timestamp

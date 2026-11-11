@@ -69,6 +69,8 @@ jobs:
       run: python -m unittest discover -s tests
     - name: Check monitoring templates and official Prometheus configuration
       run: |
+        python scripts/compose_inventory.py --check
+        python infra/monitoring/vector/tests/build_fixtures.py --check
         python scripts/monitoring_assets.py --check
         python scripts/validate_observability.py --run
     - name: Check generated report figures and offline gallery

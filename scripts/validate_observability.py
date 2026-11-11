@@ -24,7 +24,7 @@ def jobs():
     """Resolve validators from the same immutable locks as deployed images."""
     locks = json.loads((ROOT / "infra/lakehouse/images.lock.json").read_text())
     image = locks["prometheus"]["pinned"]
-    return [
+    selected = [
         (
             "prometheus-config",
             image,
@@ -45,16 +45,77 @@ def jobs():
         ),
     ]
 
+    if "loki" in locks:
+        selected.append(
+            (
+                "loki-config",
+                locks["loki"]["pinned"],
+                "/usr/bin/loki",
+                [
+                    "-config.file=/validation/loki/loki.yaml",
+                    "-verify-config=true",
+                ],
+            )
+        )
+    if "vector" in locks:
+        for suffix, arguments in (
+            (
+                "loki",
+                ["validate", "--no-environment", "common.yaml", "loki.yaml"],
+            ),
+            (
+                "fanout",
+                [
+                    "validate",
+                    "--no-environment",
+                    "common.yaml",
+                    "loki.yaml",
+                    "openobserve.yaml",
+                ],
+            ),
+            (
+                "fixtures",
+                [
+                    "test",
+                    "common.yaml",
+                    "loki.yaml",
+                    "tests/native-tests.yaml",
+                ],
+            ),
+        ):
+            selected.append(
+                (
+                    "vector-" + suffix,
+                    locks["vector"]["pinned"],
+                    "/usr/bin/vector",
+                    arguments,
+                )
+            )
+    return selected
+
 
 def execute(job):
     """Bound execution and hide log bodies; report failed cleanup."""
     name, image, entrypoint, arguments = job
     container = None
     outcome = {"validator": name, "status": "not_run"}
-    paths = ("prometheus.yml", "rules/foundation.yml", "rules/tests.yml")
+    if name.startswith("vector-"):
+        paths = tuple(
+            str(p.relative_to(MONITORING))
+            for p in (MONITORING / "vector").rglob("*")
+            if p.is_file() and p.suffix in {".yaml", ".vrl", ".json"}
+        )
+    elif name.startswith("loki-"):
+        paths = ("loki/loki.yaml",)
+    else:
+        paths = ("prometheus.yml", "rules/foundation.yml", "rules/tests.yml")
     for relative in paths:
         path = MONITORING / relative
-        if path.is_symlink() or path.parent.is_symlink():
+        if path.is_symlink() or any(
+            parent.is_symlink()
+            for parent in path.parents
+            if parent.is_relative_to(MONITORING)
+        ):
             return {"validator": name, "status": "blocked-public-symlink"}
     staging = None
     try:
@@ -62,11 +123,13 @@ def execute(job):
         public = Path(staging.name) / "validation"
         public.mkdir(mode=0o755)
         public.chmod(0o755)
-        rules = public / "rules"
-        rules.mkdir(mode=0o755)
-        rules.chmod(0o755)
         for relative in paths:
             target = public / relative
+            target.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+            for parent in target.parents:
+                if parent == public:
+                    break
+                parent.chmod(0o755)
             shutil.copyfile(MONITORING / relative, target)
             # Only fresh public scratch files, never operator host state.
             target.chmod(0o644)
@@ -86,6 +149,8 @@ def execute(job):
                 "65534:65534",
                 "--tmpfs",
                 "/tmp:rw,noexec,nosuid,size=32m",
+                "--workdir",
+                "/validation/vector" if name.startswith("vector-") else "/",
                 "--entrypoint",
                 entrypoint,
                 image,
@@ -111,6 +176,25 @@ def execute(job):
         if copied.returncode:
             outcome["status"] = "public-config-copy-failed"
             return outcome
+        if name == "vector-fanout":
+            # Public empty-token file is configuration syntax evidence only.
+            # It cannot authenticate and never contacts an OpenObserve server.
+            tokens = Path(staging.name) / "secrets"
+            tokens.mkdir(mode=0o755)
+            tokens.chmod(0o755)
+            token_file = tokens / "openobserve-vector.json"
+            token_file.write_text('{"token":""}\n')
+            token_file.chmod(0o644)
+            copied = subprocess.run(
+                ["docker", "cp", str(tokens), container + ":/run/secrets"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=30,
+                check=False,
+            )
+            if copied.returncode:
+                outcome["status"] = "public-config-copy-failed"
+                return outcome
         result = subprocess.run(
             ["docker", "start", "--attach", container],
             stdout=subprocess.DEVNULL,

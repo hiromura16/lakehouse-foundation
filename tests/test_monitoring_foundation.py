@@ -150,10 +150,15 @@ class MonitoringFoundationTests(unittest.TestCase):
                 ids = [p["id"] for p in model["panels"]]
                 self.assertEqual(len(ids), len(set(ids)))
                 for panel in model["panels"]:
-                    self.assertIn(panel["type"], {"timeseries", "text"})
+                    self.assertIn(
+                        panel["type"], {"timeseries", "text", "stat", "logs"}
+                    )
                     if "datasource" in panel:
                         self.assertEqual(
-                            panel["datasource"]["uid"], "foundation-prometheus"
+                            panel["datasource"]["uid"],
+                            "foundation-loki"
+                            if filename == "logs.json"
+                            else "foundation-prometheus",
                         )
                 self.assertTrue(
                     any(p["type"] == "text" for p in model["panels"])
@@ -196,22 +201,23 @@ class MultipleDashboardTests(unittest.TestCase):
                 (404, None),
                 (409, None),
                 (200, {}),
+                (200, {}),
             ]
         )
         self.assertEqual(
             [r["status"] for r in result["dashboards"]],
-            ["exists", "created", "exists"],
+            ["exists", "created", "exists", "exists"],
         )
         self.assertEqual(
             sum(c.args[0] == "POST" for c in api.request.call_args_list), 2
         )
 
     def test_partial_failure_continues_without_error_body_leak(self):
-        result, _ = self.invoke([(200, {}), (500, None), (200, {})])
+        result, _ = self.invoke([(200, {}), (500, None), (200, {}), (200, {})])
         self.assertEqual(result["status"], "partial")
         self.assertEqual(
             [r["status"] for r in result["dashboards"]],
-            ["exists", "failed", "exists"],
+            ["exists", "failed", "exists", "exists"],
         )
         self.assertNotIn("error", json.dumps(result))
 

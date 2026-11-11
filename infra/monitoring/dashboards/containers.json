@@ -308,5 +308,13 @@
       }
     ]
   },
-  "links": []
+  "links": [
+    {
+      "title": "Logs (same time range)",
+      "url": "/d/lakehouse-logs-overview",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    }
+  ]
 }

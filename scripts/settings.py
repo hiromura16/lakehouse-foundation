@@ -27,6 +27,8 @@ REQUIRED_NO_PROXY = (
     "grafana",
     "node-exporter",
     "cadvisor",
+    "loki",
+    "vector",
     "spark-volumes-init",
     "spark-master",
     "spark-worker",
@@ -208,9 +210,30 @@ def validate_monitoring_paths(values, settings_path):
     """
     if "monitoring" not in values.get("COMPOSE_PROFILES", "").split(","):
         return
-    selected = values.get("CADVISOR_DOCKER_DATA_ROOT", "")
-    if not selected:
-        return
+    # A public alias is deliberately independent of the host's real name.
+    values.setdefault("MONITORING_HOST_ALIAS", "local")
+    if not re.fullmatch(
+        r"[a-z][a-z0-9_-]{0,31}", values["MONITORING_HOST_ALIAS"]
+    ):
+        raise ValueError("Use a short sanitized MONITORING_HOST_ALIAS.")
+    for key, default in (
+        ("CADVISOR_DOCKER_DATA_ROOT", ""),
+        ("MONITORING_LOG_DIR", "/srv/lakehouse/log-spool"),
+    ):
+        selected = values.get(key, default)
+        if selected:
+            _validate_monitoring_mount(selected, values, settings_path)
+    docker_root = values.get("CADVISOR_DOCKER_DATA_ROOT", "")
+    spool = values.get("MONITORING_LOG_DIR", "/srv/lakehouse/log-spool")
+    if docker_root and (
+        Path(spool).is_relative_to(Path(docker_root))
+        or Path(docker_root).is_relative_to(Path(spool))
+    ):
+        raise ValueError("Separate log spool and Docker data root.")
+
+
+def _validate_monitoring_mount(selected, values, settings_path):
+    """Inspect a selected path without following links or changing metadata."""
     candidate = Path(selected)
     excluded = [ROOT, Path(settings_path).parent]
     excluded.extend(
@@ -237,7 +260,7 @@ def validate_monitoring_paths(values, settings_path):
             for target in excluded
         )
     ):
-        raise ValueError("Use a dedicated external CADVISOR_DOCKER_DATA_ROOT.")
+        raise ValueError("Use a dedicated external monitoring directory.")
     try:
         for part in (candidate, *candidate.parents):
             if part.is_symlink():
@@ -441,7 +464,7 @@ def load(path):
         values["QDRANT_API_KEY"] == values["QDRANT_READ_ONLY_API_KEY"]
     ):
         raise ValueError("Use distinct Qdrant management and read-only keys.")
-    if profiles & {"notebooks", "compute"}:
+    if profiles & {"notebooks", "compute", "monitoring", "sail-lab"}:
         if (
             not values.get("WORKER_UID", "").isdigit()
             or int(values["WORKER_UID"]) == 0

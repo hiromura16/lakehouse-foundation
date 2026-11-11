@@ -1,0 +1,131 @@
+# Parser/reference matrix. All samples are synthetic reproductions, not raw
+# deployment captures. Exact format and UI validation remain operator gates.
+schema_version: 1
+vector_version: 0.61.0
+provenance: synthetic format reproductions; no company log inspection
+validation: official Vector compile/test and deployed-format acceptance pending
+level_contract: [trace, debug, info, warn, error, fatal, unknown]
+priority:
+  - structured level/lvl/severity/severity_text/log.level/levelname
+  - documented application text severity position
+  - documented fixed prefix
+  - unknown
+multiline:
+  group_by: [source_identity, stream, process_key]
+  max_events: 32
+  expire_after_ms: 1000
+  maximum_output_message_characters: 4096
+  metadata_strategy: first parent value; line_count sum; capture_truncated max
+  limitations: >-
+    Process key is available only in the supported PostgreSQL text prefix.
+    Interleaved independent traces from the same process/container/stream cannot
+    be disambiguated reliably. Structured single-event exceptions are preferred.
+    Rust panic text is unknown unless an explicit structured parent is present.
+parsers:
+  - application: Trino
+    deployed_version: '484'
+    services: [trino]
+    parser: json or provisional java_text
+    sample: '{"level":"INFO","logger":"io.trino.Unit","message":"synthetic ERROR word"}'
+    reference: https://trino.io/docs/484/admin/properties-logging.html
+    mapping: standard explicit severity; console-format JSON preferred
+    fallback: unknown; request/access status never implies severity
+  - application: Python worker and API/portal/CDC
+    deployed_version: Python 3.14; Uvicorn 0.54.0
+    services: [worker, demo-api, demo, cdc-consumer, cdc-register, mcp]
+    parser: json or python_uvicorn
+    sample: 'INFO:     synthetic application startup'
+    reference: https://github.com/encode/uvicorn/blob/0.54.0/uvicorn/logging.py
+    reference_scope: Uvicorn pinned formatter contract; runtime format pending
+    mapping: WARNING to warn; CRITICAL to fatal; uvicorn.error is only a logger
+    fallback: unknown; stderr never implies severity
+  - application: Superset and Gunicorn
+    deployed_version: Superset 6.1.0; Gunicorn dependency from image not inspected
+    services: [superset, superset-init]
+    parser: json or provisional gunicorn
+    sample: '[2026-01-01 00:00:00 +0000] [7] [INFO] synthetic ready'
+    reference: https://docs.gunicorn.org/en/23.0.0/settings.html#logconfig-dict
+    reference_scope: formatter interface; exact image dependency/runtime format pending
+    mapping: WARNING to warn; CRITICAL to fatal
+    fallback: unknown; access records separated and routes redacted
+  - application: Prometheus
+    deployed_version: 3.16.0
+    services: [prometheus]
+    parser: json or provisional logfmt
+    sample: 'level=info msg="synthetic failed word"'
+    reference: https://github.com/prometheus/prometheus/tree/v3.16.0
+    mapping: explicit level only
+    fallback: unknown; historical logfmt sample is provisional for this image
+  - application: Grafana
+    deployed_version: 13.3.0
+    services: [grafana]
+    parser: json or provisional logfmt
+    sample: 'logger=unit level=warn status=200 msg="synthetic"'
+    reference: https://github.com/grafana/grafana/tree/v13.3.0
+    mapping: explicit level only; status independent
+    fallback: unknown; query logs without defined level remain unknown
+  - application: PostgreSQL
+    deployed_version: 18.6-alpine
+    services: [catalog-db, superset-db, n8n-db, airflow-db, marquez-db]
+    parser: postgres_json or provisional postgres
+    sample: '2026-01-01 00:00:00.000 UTC [7] LOG: synthetic'
+    reference: https://www.postgresql.org/docs/18/runtime-config-logging.html
+    mapping: DEBUG1..5 debug; INFO/LOG/NOTICE info; WARNING warn; ERROR error; FATAL/PANIC fatal
+    fallback: unknown; DETAIL/HINT/CONTEXT/STATEMENT inherit parent
+    side_effects: no logging_collector/jsonlog change or database restart
+  - application: SeaweedFS
+    deployed_version: '4.53'
+    services: [storage]
+    parser: glog
+    sample: 'I0101 00:00:00.000 synthetic startup'
+    reference: https://github.com/seaweedfs/seaweedfs/tree/4.53/weed/glog
+    mapping: I info; W warn; E error; F fatal
+    fallback: unknown banner; exact deployed format pending
+  - application: Lakekeeper
+    deployed_version: 0.14.3
+    services: [catalog]
+    parser: json
+    sample: '{"level":"INFO","target":"unit","fields":{"message":"synthetic"}}'
+    reference: https://github.com/lakekeeper/lakekeeper/tree/v0.14.3
+    mapping: explicit tracing level only
+    fallback: unknown; module/HTTP status ignored as severity
+  - application: Redis
+    deployed_version: 8.10.3-alpine
+    services: [superset-redis]
+    parser: redis
+    sample: '7:M 01 Jan 2026 00:00:00.000 * synthetic ready'
+    reference: https://github.com/redis/redis/blob/8.10.3/src/server.c
+    mapping: '. debug; - verbose normalized debug; * notice normalized info; # warning normalized warn'
+    fallback: unknown banners
+  - application: Kafka, Debezium Connect and Kafka UI
+    deployed_version: Kafka 4.4.0; Debezium 3.7.1.Final; Kafbat 1.5.0
+    services: [cdc-kafka, cdc-connect, cdc-ui]
+    parser: json or provisional java_text
+    sample: '2026-01-01 00:00:00.000 INFO synthetic ERROR topic'
+    reference: https://github.com/debezium/debezium/tree/v3.7.1.Final
+    mapping: explicit standard severity only
+    fallback: unknown; payload/topic/query text never severity
+  - application: Node Exporter, cAdvisor, Loki and Vector
+    deployed_version: Node Exporter 1.12.1; cAdvisor 0.60.6; Loki 3.7.9; Vector 0.61.0
+    services: [node-exporter, cadvisor, loki, vector]
+    parser: json; provisional logfmt for node-exporter/loki; glog for cadvisor
+    sample: '{"level":"INFO","message":"synthetic"}'
+    reference: https://github.com/vectordotdev/vector/tree/v0.61.0
+    mapping: explicit standard/glog severity only
+    fallback: unknown; runtime self-log format acceptance pending
+  - application: OpenObserve and Sail optional labs
+    deployed_version: OpenObserve 1.1.2; Sail 0.7.3
+    services: [openobserve, sail-server, sail-benchmark]
+    parser: json; provisional logfmt for OpenObserve
+    sample: '{"level":"INFO","message":"synthetic"}'
+    reference: https://github.com/openobserve/openobserve/tree/v1.1.2
+    mapping: explicit standard severity only
+    fallback: unknown; no assumption that Rust module/target implies severity
+  - application: Optional Nginx, Traefik and Dokploy parser support
+    deployed_version: separately managed, not discovered or collected by default
+    services: [nginx, gateway, traefik, dokploy, dokploy-postgres]
+    parser: generic json; provisional nginx_error text only
+    sample: '2026/01/01 00:00:00 [warn] synthetic'
+    reference: https://nginx.org/en/docs/ngx_core_module.html#error_log
+    mapping: nginx notice info; crit/alert/emerg fatal; JSON explicit level only
+    fallback: unknown; separately managed service collection requires a new reviewed allowlist

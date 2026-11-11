@@ -32,5 +32,15 @@
     "pinned": "ghcr.io/google/cadvisor:v0.60.6@sha256:b8e7d1093144fd088f425ff003d75a4aa405de075db78dae3bc563730b1bd07a",
     "provenance": "https://github.com/google/cadvisor/pkgs/container/cadvisor/1267507127",
     "verification": "official registry index metadata; image runtime not tested"
+  },
+  "loki": {
+    "pinned": "docker.io/grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28",
+    "provenance": "https://github.com/grafana/loki/blob/4c66e9a54851299caa1d7469e02aa398b3296807/production/docker/docker-compose.yaml",
+    "verification": "official publisher immutable deployment pin; direct registry response/runtime unverified"
+  },
+  "vector": {
+    "pinned": "docker.io/timberio/vector:0.61.0-debian@sha256:f6c23b5a7e16fb2838d33619ef7acf4bad2289a7cf22bc90efc2371f520c4ea2",
+    "provenance": "https://hub.docker.com/layers/timberio/vector/0.61.0-debian/images/sha256-6adda08dd40a5cb961c70d0e96a13fb3a934cfbc476e0e2eea533332917e3eb0",
+    "verification": "official registry index metadata; local derived image runtime unverified"
   }
 }

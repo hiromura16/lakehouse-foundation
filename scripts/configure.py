@@ -56,6 +56,8 @@ values = {
     "PROMETHEUS_PORT": "9090",
     # Discover DockerRootDir locally; never assume a company host path.
     "CADVISOR_DOCKER_DATA_ROOT": "",
+    "MONITORING_LOG_DIR": "/srv/lakehouse/log-spool",
+    "MONITORING_HOST_ALIAS": "local",
     "N8N_PORT": "5678",
     "AIRFLOW_PORT": "8081",
     "SPARK_MASTER_UI_PORT": "8082",

@@ -18,7 +18,7 @@
 
 ## 1. 既存の監視と追加する権限
 
-`monitoring` はPrometheus・Grafana・Node Exporter・cAdvisorを含みます。core-onlyは6サービスのままです。exporterにhost公開portはなく、PrometheusはCompose内部DNSへ15秒間隔、10秒timeoutで接続します。既存のworker/self job、15日/2GB保持、Grafana/Prometheus volumeは維持します。通知先は設定しません。
+`monitoring` はPrometheus・Grafana・Node Exporter・cAdvisor・Loki・Vectorを含みます。core-onlyは6サービスのままです。exporterにhost公開portはなく、PrometheusはCompose内部DNSへ15秒間隔、10秒timeoutで接続します。既存のworker/self job、15日/2GB保持、Grafana/Prometheus volumeは維持します。通知先は設定しません。
 
 | 追加対象 | 初期メモリ上限 | 読取り・制約 | 未確認の受入項目 |
 | --- | --- | --- | --- |
@@ -80,7 +80,7 @@ validatorはnetworkなし・bind mountなし・capabilityなし・非rootの一�
 
 配置許可後にのみ、対象hostの観測とCPU/RAM/filesystem/IO、実ラベル、各`up`、alertとGUIを照合します。既存operationsをGUI編集してから通常Redeployし、その内容が残ることを確認します。collector停止中もworker・既存metricsが利用できることを確認します。会社DBや業務tableへ書込みません。
 
-現在のmetrics部分はPrometheus384MiB＋Grafana384MiB＋exporter128/256MiB＝**上限計1152MiB**です。使用RSSの実測ではありません。host読取り・build・OS/cache・将来のlog bufferは別途必要です。MemAvailableが3GiB未満またはswapが継続増加する場合、追加labの配置を止めて影響を報告します。自動的に他サービスの制限を変更しません。
+現在のmetrics部分はPrometheus384MiB＋Grafana384MiB＋exporter128/256MiB＝metrics **上限計1152MiB**、Loki512MiB＋Vector512MiBを加えたmonitoring全体は**2176MiB**です。使用RSSの実測ではありません。host読取り・build・OS/cache・各sinkの512MiB disk bufferと専用capture最大1GiBは別途必要です。MemAvailableが3GiB未満またはswapが継続増加する場合、追加labの配置を止めて影響を報告します。自動的に他サービスの制限を変更しません。
 
 rollbackは承認済みcode/configを既存managerから戻し、新規serviceだけを停止するoperator手順です。Prometheus/Grafana/notebook/event/work/data volume、private設定、GUI内容を削除しません。`down -v`、prune、daemon再起動、再帰chown/chmod、firewall/public bind変更は通常手順に含めません。
 
@@ -92,3 +92,5 @@ rollbackは承認済みcode/configを既存managerから戻し、新規service�
 - [Prometheus rules](https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/)・[rule fixtures](https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/)
 
 image lockのdigestは公式registry公開metadataとの照合です。対象imageのpull/実行・機能互換性の実測とは区別します。
+
+ログ整形・収集権限は [Vector](VECTOR.md)、保存・検索・保持期間は [Loki](LOKI.md) を確認します。通常監視はLoki-onlyで、継続capture・実配送・公式VRL実行は未受入です。

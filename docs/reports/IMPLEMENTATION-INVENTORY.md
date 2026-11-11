@@ -1,7 +1,7 @@
 # 報告書用の実装構成一覧
 
 <!-- doc-purpose:start -->
-> **役割:** 36サービス・11profile・port・volume・接続主体を公開定義から技術付録として照合する。
+> **役割:** 38サービス・11profile・port・volume・接続主体を公開定義から技術付録として照合する。
 >
 > **対象読者:** 基盤構築担当 / 開発・設計担当 / 評価・報告担当
 >
@@ -23,19 +23,19 @@
 | 項目 | 公開定義から確認できる値 | 図・報告書での表し方 |
 | --- | --- | --- |
 | アプリのCompose | 7ファイル | lakehouse → compute → orchestration → demo → cdc → poc → mcpの順で同じprojectへ結合 |
-| service定義 | 36 | core 6＋追加定義30。36個の常駐アプリとは表現しない |
+| service定義 | 38 | core 6＋追加定義32。38個の常駐アプリとは表現しない |
 | 任意profile | 11 | automation、monitoring、compute、orchestration、demo、cdc、bi、notebooks、vector、lineage、mcp |
 | 一時初期化 | 4service | catalog-migrate、spark-volumes-init、cdc-register、superset-init。正常時は終了コード0 |
 | 明示smoke | 1service | spark-check。通常upはreplicas=0、CLIから明示実行 |
-| buildを持つservice | 8 | worker、spark-volumes-init、airflow、demo-api、cdc-register、superset-init、jupyter、mcp |
-| 名前付きvolume | 16種類の定義 | 必須coreが参照するのはcatalog-db/storage/trinoの3種。残りは選択profileの状態保存 |
-| ホスト上の別構成 | Dokploy、Samba、daemon proxy/CA | アプリ36serviceとは別の管理領域として描く |
+| buildを持つservice | 9 | worker、spark-volumes-init、airflow、demo-api、cdc-register、superset-init、jupyter、mcp、vector |
+| 名前付きvolume | 18種類の定義 | 必須coreが参照するのはcatalog-db/storage/trinoの3種。残りは選択profileの状態保存 |
+| ホスト上の別構成 | Dokploy、Samba、daemon proxy/CA | アプリ38serviceとは別の管理領域として描く |
 | 業務DB | 外部SQL Server | 会社の既存DB。公開ComposeからSQL Server本体は起動しない |
 | 環境ごとの識別 | COMPOSE_PROJECT_NAME、生成後のDokploy appName | 所属Environment名だけでは保存先・port・鍵が分離されない |
 
 DokployはSwarm上の管理サービスと専用PostgreSQL、管理画面を制限するNginx、Traefikを別途準備します。レイクハウス本体は **Docker Compose** で配置し、Swarm Stackとして配備する手順ではありません。全アプリserviceは `traefik.enable=false` で、標準Composeだけで利用者向けHTTPS入口が自動構成されるわけではありません。[Dokploy手順](../DOKPLOY.md)・[installer](../../infra/dokploy/install.sh)
 
-## 2. 36serviceと起動依存
+## 2. 38serviceと起動依存
 
 `healthy` は依存先のhealthcheck成功、`完了0` はone-shotの正常終了、`開始` はcontainerの開始です。ここはComposeの `depends_on` だけを示します。実行中にHTTP/DBへ接続する関係とは分けて図示してください。依存条件の成功だけで認証・業務データ・復元を検証したことにはなりません。
 
@@ -52,6 +52,8 @@ DokployはSwarm上の管理サービスと専用PostgreSQL、管理画面を制�
 | prometheus | monitoring | worker/self/node/cadvisorの指標をscrape | なし |
 | node-exporter | monitoring | host CPU/RAM/disk/process。network/TCP無効 | なし。host mount承認が必要 |
 | cadvisor | monitoring | socket-free cgroup。実指標/ラベル受入待ち | なし。host mount承認が必要 |
+| loki | monitoring | 7日保持の専用filesystem log store | なし |
+| vector | monitoring | curated fileから正規化/秘匿化。有界buffer | なし。専用spool準備が必要 |
 | grafana | monitoring | 指標可視化、GUI編集を保持 | なし |
 | spark-volumes-init | computeまたはnotebooks | 共通image build、専用volumeルートの権限準備 | なし |
 | spark-master | compute | standaloneクラスタ受付 | spark-volumes-init 完了0 |
@@ -122,7 +124,7 @@ DokployはSwarm上の管理サービスと専用PostgreSQL、管理画面を制�
 | Spark application UI | driver 4040。MasterのreverseProxyを経由 |
 | Marquez管理health | 5001。GUI公開APIの5000とは別 |
 
-Dokploy管理画面はアプリの上表とは別で、`DOKPLOY_ADMIN_PORT` の既定3100と管理用bind/allowlistを使います。Sambaはホスト上の共有設定であり、36serviceの公開portには含めません。SQL Serverも `SOURCE_SQLSERVER_PORT` / `CDC_SQLSERVER_PORT` / `DEMO_SQLSERVER_PORT` の外部TCP接続です。HTTP proxyへSQLのTCP接続を送る構成ではありません。
+Dokploy管理画面はアプリの上表とは別で、`DOKPLOY_ADMIN_PORT` の既定3100と管理用bind/allowlistを使います。Sambaはホスト上の共有設定であり、38serviceの公開portには含めません。SQL Serverも `SOURCE_SQLSERVER_PORT` / `CDC_SQLSERVER_PORT` / `DEMO_SQLSERVER_PORT` の外部TCP接続です。HTTP proxyへSQLのTCP接続を送る構成ではありません。
 
 ## 4. 名前付きvolume全16種類
 
@@ -240,7 +242,7 @@ Qdrantの3点検索は合成数値の機能疎通で、意味検索精度の評�
 | --- | ---: | ---: | --- |
 | core | 4224 | 256 | 必須6定義、migrationを含む |
 | automation | 1408 | 0 | n8nと専用DB |
-| monitoring | 1152 | 0 | Prometheus/Grafana＋node/cadvisor。上限、実測ではない |
+| monitoring | 2176 | 0 | Prometheus/Grafana＋node/cadvisor/Loki/Vector。上限、実測ではない |
 | compute | 5888 | 128 | smokeは通常起動しないため別枠 |
 | orchestration | 4480 | 0 | Airflow standaloneと専用DB |
 | demo | 1280 | 0 | demo-apiはmcpと共有 |
@@ -250,16 +252,16 @@ Qdrantの3点検索は合成数値の機能疎通で、意味検索精度の評�
 | vector | 1024 | 0 | Qdrant |
 | lineage | 1792 | 0 | Marquez API/Web/DB |
 | mcp | 768 | 0 | mcp本体256＋共有demo-api512 |
-| 全serviceを一意に集計 | **31680** | **2176** | 31常駐＋4one-shot。共有serviceを二重計上しない |
+| 全serviceを一意に集計 | **32704** | **2176** | 33常駐＋4one-shot。共有serviceを二重計上しない |
 | 明示spark-check | 2048 | — | 前行に含めない、一時的なlocal smoke |
 
-全常駐の設定上限は約30.94GiBです。profile別の行には共有serviceがあるため、そのまま全行を足して全体値にしません。Spark Workerのcontainer上限4GiBと、クラスタへ広告するexecutor用RAM2GiBも別の値です。Jupyter driverとexecutorのメモリは、それぞれのcontainer側で見ます。
+全常駐の設定上限は約31.94GiBです。profile別の行には共有serviceがあるため、そのまま全行を足して全体値にしません。Spark Workerのcontainer上限4GiBと、クラスタへ広告するexecutor用RAM2GiBも別の値です。Jupyter driverとexecutorのメモリは、それぞれのcontainer側で見ます。
 
 図や報告書では「coreから開始し、目的別profileを段階追加」「構成上限と実測値は別欄」と表記し、未測定のスループット・応答時間・費用削減率を埋めません。性能と受入の記録様式は [評価計画](EVALUATION-PLAN.md) を使います。
 
 ## この一覧から稼働環境を照合する
 
-初心者はserviceの名前より先に、core、追加profile、初期化one-shot、明示smokeの4種類を区別します。36は定義数で、すべてが常駐するという意味ではありません。必要なprofileだけを選び、one-shotの正常終了を異常停止と混同しません。
+初心者はserviceの名前より先に、core、追加profile、初期化one-shot、明示smokeの4種類を区別します。38は定義数で、すべてが常駐するという意味ではありません。必要なprofileだけを選び、one-shotの正常終了を異常停止と混同しません。
 
 | 照合するもの | 公開側 | 導入先で確認するもの |
 | --- | --- | --- |
@@ -276,3 +278,5 @@ Qdrantの3点検索は合成数値の機能疎通で、意味検索精度の評�
 serviceを追加/削除したら、起動依存、NO_PROXY、health、資源、永続化、GUI入口、役割別の図を更新します。Composeの宣言と稼働結果は別の根拠なので、定義数を更新しただけで配備済みとは記録しません。図の基点が過去のcommitなら、差分と再照合の範囲を明記します。
 
 上級者は [CUSTOMIZATION](../CUSTOMIZATION.md) の追加profileの手順と [COMPATIBILITY](../COMPATIBILITY.md) の版の組合せを使います。復旧対象はこの表のvolumeだけでなく、外部bind、DB、暗号鍵、GUIの保存物も含め、[運用手順](../OPERATIONS.md) で一組として確認します。
+
+現行数量・service/profile/volume・資源上限の機械生成正本は [COMPOSE-INVENTORY.json](COMPOSE-INVENTORY.json) です。`python3 scripts/compose_inventory.py --check` で公開7ファイルのhashと照合します。実稼働数・使用メモリではありません。

@@ -5,10 +5,10 @@
   "figures": [
     {
       "id": "01-platform-detail",
-      "title": "全36サービスの配置と起動条件",
+      "title": "全38サービスの配置と起動条件",
       "subtitle": "Docker Compose 7ファイルを同じprojectへ結合。coreに必要なprofileを追加する。",
       "audience": "基盤設計・導入レビュー",
-      "caption": "core6サービスに11種類のprofileを重ねる36定義の単一ホストPoC構成。監視拡張はsource-only検査であり、host権限と実機受入は別途必要。",
+      "caption": "core6サービスに11種類のprofileを重ねる38定義の単一ホストPoC構成。監視拡張はsource-only検査であり、host権限と実機受入は別途必要。",
       "sources": [
         "infra/lakehouse/compose.yaml",
         "infra/compute/compose.yaml",
@@ -129,13 +129,13 @@
           "height": 330,
           "title": "monitoring｜監視",
           "lines": [
-            "prometheus / grafana / node-exporter / cadvisor",
-            "worker/self＋host/containerの4job",
-            "GUI保存を保持。socketなし・host読取り承認",
-            "network/TCPと実Docker labelsは未受入"
+            "prometheus / grafana / node / cadvisor",
+            "loki / vector：専用volume・7日保持",
+            "worker/self＋host/logの6job。実機未受入",
+            "host read承認・有限curated capture"
           ],
           "tone": "teal",
-          "tag": "4定義",
+          "tag": "6定義",
           "logo": "grafana"
         },
         {
@@ -212,7 +212,7 @@
         "Dokploy・Samba・daemon proxyはホスト側の別設定。SQL Serverは外部DB。",
         "一度だけの初期化4定義と通常0の明示smokeを区別する。新規exporterの実機互換性は未検証。"
       ],
-      "mermaid": "flowchart TB\n  Host[\"ホスト: Dokploy / Samba / Docker proxy\"] --> Core[\"core: storage / catalog-db / catalog-migrate / catalog / trino / worker\"]\n  GUI[\"demo: demo / demo-api\"] --> Core\n  MCP[\"mcp + demo-api\"] --> Core\n  N8N[\"automation: n8n / n8n-db\"] --> Core\n  AF[\"orchestration: airflow / airflow-db\"] --> Core\n  CDC[\"cdc: kafka / connect / ui / register / consumer\"] --> Core\n  Compute[\"compute: master / worker / history / init / smoke\"] --- Core\n  NB[\"notebooks: jupyter\"] --> Compute\n  BI[\"bi: superset / db / redis / init\"] --> Core\n  Extra[\"vector: qdrant / lineage: marquez + db + web\"] --- Core\n  Mon[\"monitoring: prometheus / grafana / node-exporter / cadvisor\"] --> Core\n",
+      "mermaid": "flowchart TB\n  Host[\"ホスト: Dokploy / Samba / Docker proxy\"] --> Core[\"core: storage / catalog-db / catalog-migrate / catalog / trino / worker\"]\n  GUI[\"demo: demo / demo-api\"] --> Core\n  MCP[\"mcp + demo-api\"] --> Core\n  N8N[\"automation: n8n / n8n-db\"] --> Core\n  AF[\"orchestration: airflow / airflow-db\"] --> Core\n  CDC[\"cdc: kafka / connect / ui / register / consumer\"] --> Core\n  Compute[\"compute: master / worker / history / init / smoke\"] --- Core\n  NB[\"notebooks: jupyter\"] --> Compute\n  BI[\"bi: superset / db / redis / init\"] --> Core\n  Extra[\"vector: qdrant / lineage: marquez + db + web\"] --- Core\n  Mon[\"monitoring: prometheus / grafana / node-exporter / cadvisor / loki / vector\"] --> Core\n",
       "width": 2400,
       "height": 1500
     },
@@ -1608,7 +1608,7 @@
       "title": "監視・状態確認・業務品質を分ける",
       "subtitle": "メトリクス、到達性、業務件数、履歴の4種類を区別する。healthyだけではデータの正しさは分からない。",
       "audience": "運用・品質レビュー",
-      "caption": "Prometheusは既存worker/selfにnode/cadvisorを追加する4job定義。host権限とDocker29/cgroupv2の指標・ラベルは別途実機受入が必要。ポータルhealth・品質SQL・実行履歴とは別の観測。",
+      "caption": "Prometheusはworker/self/node/cadvisor/Loki/Vectorの6job定義。Vectorのcurated有限capture・VRL秘匿化からLokiへ配送するsource実装。host権限・公式validator・実配送・GUI・容量は別受入。",
       "sources": [
         "infra/monitoring/prometheus.yml",
         "scripts/admin.py",
@@ -1626,7 +1626,7 @@
           "lines": [
             "処理の指標を公開",
             "DBA・業務照合とは別",
-            "外部host exporterは未同梱"
+            "host metricsはexporterへ分離"
           ],
           "tone": "blue",
           "tag": "メトリクス対象1",
@@ -1640,7 +1640,7 @@
           "height": 240,
           "title": "Prometheus",
           "lines": [
-            "worker/self＋node/cadvisorの4job",
+            "worker/self＋exporter/logの6job",
             "scrape interval：15秒",
             "保存：15日 / 2GBの設定"
           ],
@@ -1731,7 +1731,7 @@
         "GUI入口カードの数とPrometheus target数は別。会社SQL Server・DB・Kafka・ホスト全体の監視は追加する。",
         "Grafana JSON exportはdashboard単体。利用者・権限・全設定の復元はDBと設定のバックアップで確認する。"
       ],
-      "mermaid": "flowchart LR\n  W[\"worker metrics\"] --> P[\"Prometheus / 15s / 4job（実機未受入）\"]\n  P --> G[\"Grafana / GUI保存\"]\n  P --> P\n  Portal[\"ポータル\"] --> Health[\"固定health / 到達性\"]\n  Portal --> Quality[\"固定品質SQL / Gold preview\"]\n  Portal --> Jobs[\"最新20job / 非永続\"]\n  Native[\"n8n / Airflow / Spark\"] --> Logs[\"各実行履歴・保存先\"]\n",
+      "mermaid": "flowchart LR\n  W[\"worker metrics\"] --> P[\"Prometheus / 15s / 6job（実機未受入）\"]\n  P --> G[\"Grafana / GUI保存\"]\n  P --> P\n  Portal[\"ポータル\"] --> Health[\"固定health / 到達性\"]\n  Portal --> Quality[\"固定品質SQL / Gold preview\"]\n  Portal --> Jobs[\"最新20job / 非永続\"]\n  Native[\"n8n / Airflow / Spark\"] --> Logs[\"各実行履歴・保存先\"]\n  Capture[\"明示curated capture\"] --> Vector[\"Vector / 正規化・秘匿化\"]\n  Vector --> Loki[\"Loki / 専用volume7日\"]\n  Loki --> G\n",
       "width": 1920,
       "height": 1080
     },

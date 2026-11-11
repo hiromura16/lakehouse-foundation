@@ -658,6 +658,11 @@ class ComposeCompatibilityTests(PrivateSettingsFixture, unittest.TestCase):
             with self.subTest(target=name):
                 context = Path(target["context"])
                 self.assertEqual(context, ROOT)
+                if name == "vector":
+                    # Vector derives a completed binary using only local
+                    # config COPY and mkdir/chown; no HTTPS RUN fetches.
+                    self.assertFalse(target.get("secret"))
+                    continue
                 ca_secrets = [
                     item
                     for item in target.get("secret", [])

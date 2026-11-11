@@ -7,7 +7,7 @@
 
 # 内部service名をproxy対象から除外し、社内proxyへ内部要求を送らない。
 # 同じ除外値を大文字/小文字の両方へ渡し、利用libraryの違いを吸収する。
-x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,node-exporter,cadvisor,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
+x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,node-exporter,cadvisor,loki,vector,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
 
 name: ${COMPOSE_PROJECT_NAME:-lakehouse}
 
@@ -481,8 +481,88 @@ services:
       timeout: 5s
       retries: 3
 
+  # No host port, proxy, memberlist or extra object store. New dedicated volume.
+  loki:
+    image: docker.io/grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
+    profiles: [monitoring]
+    restart: unless-stopped
+    user: '10001:10001'
+    mem_limit: 512m
+    cpus: 0.5
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    logging: *service_logging
+    command: [-config.file=/etc/loki/loki.yaml]
+    configs:
+      - source: loki-config
+        target: /etc/loki/loki.yaml
+    volumes:
+      - loki:/loki
+    healthcheck:
+      test: [CMD, /usr/bin/loki, -health, '-health.url=http://127.0.0.1:3100/ready']
+      interval: 15s
+      timeout: 7s
+      retries: 10
+
+  # Curated project-only files, never Docker API/root log discovery.
+  # Explicit capture and host-directory approval precede deployment.
+  vector:
+    image: ${COMPOSE_PROJECT_NAME:-lakehouse}-vector:local
+    pull_policy: build
+    build:
+      context: ../..
+      dockerfile: infra/monitoring/vector/Dockerfile
+      args:
+        WORKER_UID: ${WORKER_UID:-10001}
+        WORKER_GID: ${WORKER_GID:-10001}
+    profiles: [monitoring]
+    restart: unless-stopped
+    user: ${WORKER_UID:-10001}:${WORKER_GID:-10001}
+    mem_limit: 512m
+    cpus: 1
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    logging: *service_logging
+    environment:
+      COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
+    working_dir: /etc/vector
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    volumes:
+      - vector-data:/var/lib/vector
+      - type: bind
+        source: ${MONITORING_LOG_DIR:-/srv/lakehouse/log-spool}
+        target: /var/lib/lakehouse-log-spool
+        read_only: true
+        bind:
+          create_host_path: false
+    configs:
+      - source: openobserve-vector-token
+        target: /run/secrets/openobserve-vector.json
+        mode: 0444
+    # No Loki/OpenObserve dependency: their outage cannot gate existing metrics.
+    healthcheck:
+      test: [CMD, /bin/bash, /etc/vector/health.sh]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
 # configは起動時の設定配布。S3認証を含む展開結果を公開ログやGitへ保存しない。
 configs:
+  # Private rendered config: never print/save `compose config` without --quiet.
+  # An empty token is unused unless the lab-specific backend is selected.
+  openobserve-vector-token:
+    content: '{"token":"${OPENOBSERVE_INGEST_TOKEN:-}"}'
+  loki-config:
+    file: ../monitoring/loki/loki.yaml
   monitoring-rules:
     file: ../monitoring/rules/foundation.yml
   s3-credentials:
@@ -541,6 +621,10 @@ volumes:
     name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_n8n
   prometheus:
     name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_prometheus
+  loki:
+    name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_loki
+  vector-data:
+    name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_vector-data
   grafana:
     name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_grafana
 

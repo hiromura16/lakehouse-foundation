@@ -515,7 +515,7 @@ Dokployルートでは、新規のDokploy導入を済ませてからGitサービ
 
 ## 資源を見積もる担当者へ
 
-Composeの `mem_limit` は設定上限で、実測RSSや必要host RAMの保証ではありません。全profileの常駐service上限は、公開構成の集計で約30.94GiBです。one-shot、build、OS、Docker/Dokploy、file cacheやbackupの余力は別に考えます。profile別の値と共有serviceの重複は [実装台帳](reports/IMPLEMENTATION-INVENTORY.md#9-資源上限の見積もりに使う値) を確認してください。
+Composeの `mem_limit` は設定上限で、実測RSSや必要host RAMの保証ではありません。全profileの常駐service上限は、公開構成の集計で約31.94GiBです。one-shot、build、OS、Docker/Dokploy、file cacheやbackupの余力は別に考えます。profile別の値と共有serviceの重複は [実装台帳](reports/IMPLEMENTATION-INVENTORY.md#9-資源上限の見積もりに使う値) を確認してください。
 
 1. coreだけを受け入れ、実際の入力件数・fileサイズ・処理時間を記録します。
 2. demo/monitoring、n8n等を一つずつ追加し、起動時ピークと平常時を分けます。

@@ -21,3 +21,14 @@ tests:
       - eval_time: 15m
         alertname: ContainerMemoryCritical
         exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'vector_component_discarded_events_total{component_id="openobserve"}'
+        values: '0+1x12'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: VectorDeliveryDiscard
+        exp_alerts:
+          - exp_labels: {component_id: openobserve, severity: warning}
+            exp_annotations:
+              summary: 'Vector reports discarded events; inspect bounded sink buffers'

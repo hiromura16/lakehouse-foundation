@@ -1,0 +1,1865 @@
+{
+  "all_profiles": {
+    "budget": {
+      "all_declared_operations_limit_bytes": 38721814528,
+      "explicit_only_bytes": 2147483648,
+      "explicit_only_instances": 0,
+      "explicit_only_services": 1,
+      "one_shot_bytes": 2281701376,
+      "one_shot_instances": 4,
+      "one_shot_services": 4,
+      "resident_bytes": 34292629504,
+      "resident_instances": 33,
+      "resident_services": 33,
+      "startup_plus_resident_limit_bytes": 36574330880,
+      "steady_resident_limit_bytes": 34292629504,
+      "unknown_bytes": 0,
+      "unknown_instances": 0,
+      "unknown_services": 0
+    },
+    "services": [
+      "airflow",
+      "airflow-db",
+      "cadvisor",
+      "catalog",
+      "catalog-db",
+      "catalog-migrate",
+      "cdc-connect",
+      "cdc-consumer",
+      "cdc-kafka",
+      "cdc-register",
+      "cdc-ui",
+      "demo",
+      "demo-api",
+      "grafana",
+      "jupyter",
+      "loki",
+      "marquez",
+      "marquez-db",
+      "marquez-web",
+      "mcp",
+      "n8n",
+      "n8n-db",
+      "node-exporter",
+      "prometheus",
+      "qdrant",
+      "spark-check",
+      "spark-history",
+      "spark-master",
+      "spark-volumes-init",
+      "spark-worker",
+      "storage",
+      "superset",
+      "superset-db",
+      "superset-init",
+      "superset-redis",
+      "trino",
+      "vector",
+      "worker"
+    ]
+  },
+  "compose_sha256": {
+    "infra/cdc/compose.yaml": "4523d60c608dc1fdc5bb0904c404c9e16f01783d0c62cc2ba6d31e36987f03df",
+    "infra/compute/compose.yaml": "f56178285732b27999d96fa9851e2580b89d860353b9798cbf7056135bca5442",
+    "infra/demo/compose.yaml": "5882d6b9d057689c7147c1c9c229dacd886045d97490daec8d715f3c6c43c750",
+    "infra/lakehouse/compose.yaml": "4fd506dd0725bb8ab7d49b727ebdaae067cd4948ae9c919546a2bdbea7035ec1",
+    "infra/mcp/compose.yaml": "0743b1ccd57235159de6d411c95a00d2a6d9436ebc69c2987d5c8b5068d7e6f6",
+    "infra/orchestration/compose.yaml": "f369db5a2bc8912526f72c14addaa127da7f304a710f9e43588a2ad5f94eda32",
+    "infra/poc/compose.yaml": "d22ad01ece047159c64bf9cfdb82c9ede1b97de4504eb875c950b35a1439b05c"
+  },
+  "counts": {
+    "build_owners": 9,
+    "compose_files": 7,
+    "core_services": 6,
+    "local_image_consumers": 7,
+    "local_images": 9,
+    "named_volume_service_references": 26,
+    "named_volumes": 18,
+    "profiles": 11,
+    "services": 38,
+    "unknown_lifecycles": 0
+  },
+  "kind": "public-compose-source-inventory",
+  "local_images": [
+    {
+      "all_users": [
+        "airflow"
+      ],
+      "builder": "airflow",
+      "consumers": [],
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-airflow:local"
+    },
+    {
+      "all_users": [
+        "cdc-consumer",
+        "cdc-register"
+      ],
+      "builder": "cdc-register",
+      "consumers": [
+        "cdc-consumer"
+      ],
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-cdc:local"
+    },
+    {
+      "all_users": [
+        "demo",
+        "demo-api"
+      ],
+      "builder": "demo-api",
+      "consumers": [
+        "demo"
+      ],
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-demo:local"
+    },
+    {
+      "all_users": [
+        "jupyter"
+      ],
+      "builder": "jupyter",
+      "consumers": [],
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-jupyter:local"
+    },
+    {
+      "all_users": [
+        "mcp"
+      ],
+      "builder": "mcp",
+      "consumers": [],
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-mcp:local"
+    },
+    {
+      "all_users": [
+        "spark-check",
+        "spark-history",
+        "spark-master",
+        "spark-volumes-init",
+        "spark-worker"
+      ],
+      "builder": "spark-volumes-init",
+      "consumers": [
+        "spark-check",
+        "spark-history",
+        "spark-master",
+        "spark-worker"
+      ],
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-spark-check:local"
+    },
+    {
+      "all_users": [
+        "superset",
+        "superset-init"
+      ],
+      "builder": "superset-init",
+      "consumers": [
+        "superset"
+      ],
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-superset:local"
+    },
+    {
+      "all_users": [
+        "vector"
+      ],
+      "builder": "vector",
+      "consumers": [],
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-vector:local"
+    },
+    {
+      "all_users": [
+        "worker"
+      ],
+      "builder": "worker",
+      "consumers": [],
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-worker:local"
+    }
+  ],
+  "memory_semantics": "Docker-binary-RAM-units-container-limits-not-observed-usage",
+  "profile_semantics": "each-profile-includes-core-do-not-add-profile-totals",
+  "profiles": [
+    {
+      "additional_budget": {
+        "all_declared_operations_limit_bytes": 0,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 0,
+        "one_shot_instances": 0,
+        "one_shot_services": 0,
+        "resident_bytes": 0,
+        "resident_instances": 0,
+        "resident_services": 0,
+        "startup_plus_resident_limit_bytes": 0,
+        "steady_resident_limit_bytes": 0,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "additional_service_count": 0,
+      "budget_including_core": {
+        "all_declared_operations_limit_bytes": 4697620480,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 268435456,
+        "one_shot_instances": 1,
+        "one_shot_services": 1,
+        "resident_bytes": 4429185024,
+        "resident_instances": 5,
+        "resident_services": 5,
+        "startup_plus_resident_limit_bytes": 4697620480,
+        "steady_resident_limit_bytes": 4429185024,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "named_volumes": [
+        "catalog-db",
+        "storage",
+        "trino"
+      ],
+      "profile": "core",
+      "service_count": 6,
+      "services": [
+        "catalog",
+        "catalog-db",
+        "catalog-migrate",
+        "storage",
+        "trino",
+        "worker"
+      ]
+    },
+    {
+      "additional_budget": {
+        "all_declared_operations_limit_bytes": 1476395008,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 0,
+        "one_shot_instances": 0,
+        "one_shot_services": 0,
+        "resident_bytes": 1476395008,
+        "resident_instances": 2,
+        "resident_services": 2,
+        "startup_plus_resident_limit_bytes": 1476395008,
+        "steady_resident_limit_bytes": 1476395008,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "additional_service_count": 2,
+      "budget_including_core": {
+        "all_declared_operations_limit_bytes": 6174015488,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 268435456,
+        "one_shot_instances": 1,
+        "one_shot_services": 1,
+        "resident_bytes": 5905580032,
+        "resident_instances": 7,
+        "resident_services": 7,
+        "startup_plus_resident_limit_bytes": 6174015488,
+        "steady_resident_limit_bytes": 5905580032,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "named_volumes": [
+        "catalog-db",
+        "n8n",
+        "n8n-db",
+        "storage",
+        "trino"
+      ],
+      "profile": "automation",
+      "service_count": 8,
+      "services": [
+        "catalog",
+        "catalog-db",
+        "catalog-migrate",
+        "n8n",
+        "n8n-db",
+        "storage",
+        "trino",
+        "worker"
+      ]
+    },
+    {
+      "additional_budget": {
+        "all_declared_operations_limit_bytes": 4496293888,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 1610612736,
+        "one_shot_instances": 1,
+        "one_shot_services": 1,
+        "resident_bytes": 2885681152,
+        "resident_instances": 3,
+        "resident_services": 3,
+        "startup_plus_resident_limit_bytes": 4496293888,
+        "steady_resident_limit_bytes": 2885681152,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "additional_service_count": 4,
+      "budget_including_core": {
+        "all_declared_operations_limit_bytes": 9193914368,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 1879048192,
+        "one_shot_instances": 2,
+        "one_shot_services": 2,
+        "resident_bytes": 7314866176,
+        "resident_instances": 8,
+        "resident_services": 8,
+        "startup_plus_resident_limit_bytes": 9193914368,
+        "steady_resident_limit_bytes": 7314866176,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "named_volumes": [
+        "catalog-db",
+        "storage",
+        "superset-db",
+        "trino"
+      ],
+      "profile": "bi",
+      "service_count": 10,
+      "services": [
+        "catalog",
+        "catalog-db",
+        "catalog-migrate",
+        "storage",
+        "superset",
+        "superset-db",
+        "superset-init",
+        "superset-redis",
+        "trino",
+        "worker"
+      ]
+    },
+    {
+      "additional_budget": {
+        "all_declared_operations_limit_bytes": 3758096384,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 268435456,
+        "one_shot_instances": 1,
+        "one_shot_services": 1,
+        "resident_bytes": 3489660928,
+        "resident_instances": 4,
+        "resident_services": 4,
+        "startup_plus_resident_limit_bytes": 3758096384,
+        "steady_resident_limit_bytes": 3489660928,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "additional_service_count": 5,
+      "budget_including_core": {
+        "all_declared_operations_limit_bytes": 8455716864,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 536870912,
+        "one_shot_instances": 2,
+        "one_shot_services": 2,
+        "resident_bytes": 7918845952,
+        "resident_instances": 9,
+        "resident_services": 9,
+        "startup_plus_resident_limit_bytes": 8455716864,
+        "steady_resident_limit_bytes": 7918845952,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "named_volumes": [
+        "catalog-db",
+        "cdc-kafka",
+        "cdc-state",
+        "storage",
+        "trino"
+      ],
+      "profile": "cdc",
+      "service_count": 11,
+      "services": [
+        "catalog",
+        "catalog-db",
+        "catalog-migrate",
+        "cdc-connect",
+        "cdc-consumer",
+        "cdc-kafka",
+        "cdc-register",
+        "cdc-ui",
+        "storage",
+        "trino",
+        "worker"
+      ]
+    },
+    {
+      "additional_budget": {
+        "all_declared_operations_limit_bytes": 8455716864,
+        "explicit_only_bytes": 2147483648,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 1,
+        "one_shot_bytes": 134217728,
+        "one_shot_instances": 1,
+        "one_shot_services": 1,
+        "resident_bytes": 6174015488,
+        "resident_instances": 3,
+        "resident_services": 3,
+        "startup_plus_resident_limit_bytes": 6308233216,
+        "steady_resident_limit_bytes": 6174015488,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "additional_service_count": 5,
+      "budget_including_core": {
+        "all_declared_operations_limit_bytes": 13153337344,
+        "explicit_only_bytes": 2147483648,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 1,
+        "one_shot_bytes": 402653184,
+        "one_shot_instances": 2,
+        "one_shot_services": 2,
+        "resident_bytes": 10603200512,
+        "resident_instances": 8,
+        "resident_services": 8,
+        "startup_plus_resident_limit_bytes": 11005853696,
+        "steady_resident_limit_bytes": 10603200512,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "named_volumes": [
+        "catalog-db",
+        "spark-events",
+        "spark-work",
+        "storage",
+        "trino"
+      ],
+      "profile": "compute",
+      "service_count": 11,
+      "services": [
+        "catalog",
+        "catalog-db",
+        "catalog-migrate",
+        "spark-check",
+        "spark-history",
+        "spark-master",
+        "spark-volumes-init",
+        "spark-worker",
+        "storage",
+        "trino",
+        "worker"
+      ]
+    },
+    {
+      "additional_budget": {
+        "all_declared_operations_limit_bytes": 1342177280,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 0,
+        "one_shot_instances": 0,
+        "one_shot_services": 0,
+        "resident_bytes": 1342177280,
+        "resident_instances": 2,
+        "resident_services": 2,
+        "startup_plus_resident_limit_bytes": 1342177280,
+        "steady_resident_limit_bytes": 1342177280,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "additional_service_count": 2,
+      "budget_including_core": {
+        "all_declared_operations_limit_bytes": 6039797760,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 268435456,
+        "one_shot_instances": 1,
+        "one_shot_services": 1,
+        "resident_bytes": 5771362304,
+        "resident_instances": 7,
+        "resident_services": 7,
+        "startup_plus_resident_limit_bytes": 6039797760,
+        "steady_resident_limit_bytes": 5771362304,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "named_volumes": [
+        "catalog-db",
+        "storage",
+        "trino"
+      ],
+      "profile": "demo",
+      "service_count": 8,
+      "services": [
+        "catalog",
+        "catalog-db",
+        "catalog-migrate",
+        "demo",
+        "demo-api",
+        "storage",
+        "trino",
+        "worker"
+      ]
+    },
+    {
+      "additional_budget": {
+        "all_declared_operations_limit_bytes": 1879048192,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 0,
+        "one_shot_instances": 0,
+        "one_shot_services": 0,
+        "resident_bytes": 1879048192,
+        "resident_instances": 3,
+        "resident_services": 3,
+        "startup_plus_resident_limit_bytes": 1879048192,
+        "steady_resident_limit_bytes": 1879048192,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "additional_service_count": 3,
+      "budget_including_core": {
+        "all_declared_operations_limit_bytes": 6576668672,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 268435456,
+        "one_shot_instances": 1,
+        "one_shot_services": 1,
+        "resident_bytes": 6308233216,
+        "resident_instances": 8,
+        "resident_services": 8,
+        "startup_plus_resident_limit_bytes": 6576668672,
+        "steady_resident_limit_bytes": 6308233216,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "named_volumes": [
+        "catalog-db",
+        "marquez-db",
+        "storage",
+        "trino"
+      ],
+      "profile": "lineage",
+      "service_count": 9,
+      "services": [
+        "catalog",
+        "catalog-db",
+        "catalog-migrate",
+        "marquez",
+        "marquez-db",
+        "marquez-web",
+        "storage",
+        "trino",
+        "worker"
+      ]
+    },
+    {
+      "additional_budget": {
+        "all_declared_operations_limit_bytes": 805306368,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 0,
+        "one_shot_instances": 0,
+        "one_shot_services": 0,
+        "resident_bytes": 805306368,
+        "resident_instances": 2,
+        "resident_services": 2,
+        "startup_plus_resident_limit_bytes": 805306368,
+        "steady_resident_limit_bytes": 805306368,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "additional_service_count": 2,
+      "budget_including_core": {
+        "all_declared_operations_limit_bytes": 5502926848,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 268435456,
+        "one_shot_instances": 1,
+        "one_shot_services": 1,
+        "resident_bytes": 5234491392,
+        "resident_instances": 7,
+        "resident_services": 7,
+        "startup_plus_resident_limit_bytes": 5502926848,
+        "steady_resident_limit_bytes": 5234491392,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "named_volumes": [
+        "catalog-db",
+        "storage",
+        "trino"
+      ],
+      "profile": "mcp",
+      "service_count": 8,
+      "services": [
+        "catalog",
+        "catalog-db",
+        "catalog-migrate",
+        "demo-api",
+        "mcp",
+        "storage",
+        "trino",
+        "worker"
+      ]
+    },
+    {
+      "additional_budget": {
+        "all_declared_operations_limit_bytes": 2281701376,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 0,
+        "one_shot_instances": 0,
+        "one_shot_services": 0,
+        "resident_bytes": 2281701376,
+        "resident_instances": 6,
+        "resident_services": 6,
+        "startup_plus_resident_limit_bytes": 2281701376,
+        "steady_resident_limit_bytes": 2281701376,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "additional_service_count": 6,
+      "budget_including_core": {
+        "all_declared_operations_limit_bytes": 6979321856,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 268435456,
+        "one_shot_instances": 1,
+        "one_shot_services": 1,
+        "resident_bytes": 6710886400,
+        "resident_instances": 11,
+        "resident_services": 11,
+        "startup_plus_resident_limit_bytes": 6979321856,
+        "steady_resident_limit_bytes": 6710886400,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "named_volumes": [
+        "catalog-db",
+        "grafana",
+        "loki",
+        "prometheus",
+        "storage",
+        "trino",
+        "vector-data"
+      ],
+      "profile": "monitoring",
+      "service_count": 12,
+      "services": [
+        "cadvisor",
+        "catalog",
+        "catalog-db",
+        "catalog-migrate",
+        "grafana",
+        "loki",
+        "node-exporter",
+        "prometheus",
+        "storage",
+        "trino",
+        "vector",
+        "worker"
+      ]
+    },
+    {
+      "additional_budget": {
+        "all_declared_operations_limit_bytes": 4429185024,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 134217728,
+        "one_shot_instances": 1,
+        "one_shot_services": 1,
+        "resident_bytes": 4294967296,
+        "resident_instances": 1,
+        "resident_services": 1,
+        "startup_plus_resident_limit_bytes": 4429185024,
+        "steady_resident_limit_bytes": 4294967296,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "additional_service_count": 2,
+      "budget_including_core": {
+        "all_declared_operations_limit_bytes": 9126805504,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 402653184,
+        "one_shot_instances": 2,
+        "one_shot_services": 2,
+        "resident_bytes": 8724152320,
+        "resident_instances": 6,
+        "resident_services": 6,
+        "startup_plus_resident_limit_bytes": 9126805504,
+        "steady_resident_limit_bytes": 8724152320,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "named_volumes": [
+        "catalog-db",
+        "spark-events",
+        "spark-work",
+        "storage",
+        "trino"
+      ],
+      "profile": "notebooks",
+      "service_count": 8,
+      "services": [
+        "catalog",
+        "catalog-db",
+        "catalog-migrate",
+        "jupyter",
+        "spark-volumes-init",
+        "storage",
+        "trino",
+        "worker"
+      ]
+    },
+    {
+      "additional_budget": {
+        "all_declared_operations_limit_bytes": 4697620480,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 0,
+        "one_shot_instances": 0,
+        "one_shot_services": 0,
+        "resident_bytes": 4697620480,
+        "resident_instances": 2,
+        "resident_services": 2,
+        "startup_plus_resident_limit_bytes": 4697620480,
+        "steady_resident_limit_bytes": 4697620480,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "additional_service_count": 2,
+      "budget_including_core": {
+        "all_declared_operations_limit_bytes": 9395240960,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 268435456,
+        "one_shot_instances": 1,
+        "one_shot_services": 1,
+        "resident_bytes": 9126805504,
+        "resident_instances": 7,
+        "resident_services": 7,
+        "startup_plus_resident_limit_bytes": 9395240960,
+        "steady_resident_limit_bytes": 9126805504,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "named_volumes": [
+        "airflow-db",
+        "airflow-state",
+        "catalog-db",
+        "storage",
+        "trino"
+      ],
+      "profile": "orchestration",
+      "service_count": 8,
+      "services": [
+        "airflow",
+        "airflow-db",
+        "catalog",
+        "catalog-db",
+        "catalog-migrate",
+        "storage",
+        "trino",
+        "worker"
+      ]
+    },
+    {
+      "additional_budget": {
+        "all_declared_operations_limit_bytes": 1073741824,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 0,
+        "one_shot_instances": 0,
+        "one_shot_services": 0,
+        "resident_bytes": 1073741824,
+        "resident_instances": 1,
+        "resident_services": 1,
+        "startup_plus_resident_limit_bytes": 1073741824,
+        "steady_resident_limit_bytes": 1073741824,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "additional_service_count": 1,
+      "budget_including_core": {
+        "all_declared_operations_limit_bytes": 5771362304,
+        "explicit_only_bytes": 0,
+        "explicit_only_instances": 0,
+        "explicit_only_services": 0,
+        "one_shot_bytes": 268435456,
+        "one_shot_instances": 1,
+        "one_shot_services": 1,
+        "resident_bytes": 5502926848,
+        "resident_instances": 6,
+        "resident_services": 6,
+        "startup_plus_resident_limit_bytes": 5771362304,
+        "steady_resident_limit_bytes": 5502926848,
+        "unknown_bytes": 0,
+        "unknown_instances": 0,
+        "unknown_services": 0
+      },
+      "named_volumes": [
+        "catalog-db",
+        "qdrant",
+        "storage",
+        "trino"
+      ],
+      "profile": "vector",
+      "service_count": 7,
+      "services": [
+        "catalog",
+        "catalog-db",
+        "catalog-migrate",
+        "qdrant",
+        "storage",
+        "trino",
+        "worker"
+      ]
+    }
+  ],
+  "runtime_measured": false,
+  "schema_version": 1,
+  "scope": "seven-public-files-with-YAML-anchors-no-env-interpolation-no-deployment",
+  "services": [
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-airflow:local",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": true,
+      "memory_limit_bytes": 4294967296,
+      "named_volumes": [
+        "airflow-state"
+      ],
+      "owns_build": true,
+      "profiles": [
+        "orchestration"
+      ],
+      "pull_policy": "build",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "airflow",
+      "source": "infra/orchestration/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "postgres:18.6-alpine@sha256:123b17998ccaf47e53b502e8c6a1e79afd8f579c6f3eec83c563da026f957395",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 402653184,
+      "named_volumes": [
+        "airflow-db"
+      ],
+      "owns_build": false,
+      "profiles": [
+        "orchestration"
+      ],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "airflow-db",
+      "source": "infra/orchestration/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 3,
+      "core": false,
+      "image": "ghcr.io/google/cadvisor:v0.60.6@sha256:b8e7d1093144fd088f425ff003d75a4aa405de075db78dae3bc563730b1bd07a",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 268435456,
+      "named_volumes": [],
+      "owns_build": false,
+      "profiles": [
+        "monitoring"
+      ],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "cadvisor",
+      "source": "infra/lakehouse/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": true,
+      "image": "quay.io/lakekeeper/catalog:v0.14.3@sha256:0009e7ccb26db811b8fc485974b624a999fd096f4da549a8704d3121dc20e98a",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 402653184,
+      "named_volumes": [],
+      "owns_build": false,
+      "profiles": [],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "catalog",
+      "source": "infra/lakehouse/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": true,
+      "image": "docker.io/library/postgres:18.6-alpine@sha256:300ebd02c6d4de9ee27ad7f6855d5d21b4d3a4a5117767c1197d284c635d9736",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 536870912,
+      "named_volumes": [
+        "catalog-db"
+      ],
+      "owns_build": false,
+      "profiles": [],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "catalog-db",
+      "source": "infra/lakehouse/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": true,
+      "image": "quay.io/lakekeeper/catalog:v0.14.3@sha256:0009e7ccb26db811b8fc485974b624a999fd096f4da549a8704d3121dc20e98a",
+      "lifecycle": "one_shot",
+      "lifecycle_basis": "dependency.service_completed_successfully",
+      "local_image": false,
+      "memory_limit_bytes": 268435456,
+      "named_volumes": [],
+      "owns_build": false,
+      "profiles": [],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "no",
+      "service": "catalog-migrate",
+      "source": "infra/lakehouse/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 1,
+      "core": false,
+      "image": "quay.io/debezium/connect:3.7.1.Final@sha256:53c6d0424d09f7ccef813c895fb9b1056a726bc14ff2e6a592856cd627ebd491",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 1073741824,
+      "named_volumes": [],
+      "owns_build": false,
+      "profiles": [
+        "cdc"
+      ],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "cdc-connect",
+      "source": "infra/cdc/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 2,
+      "core": false,
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-cdc:local",
+      "lifecycle": "resident",
+      "lifecycle_basis": "active-healthcheck",
+      "local_image": true,
+      "memory_limit_bytes": 1073741824,
+      "named_volumes": [
+        "cdc-state"
+      ],
+      "owns_build": false,
+      "profiles": [
+        "cdc"
+      ],
+      "pull_policy": "never",
+      "replicas": 1,
+      "restart_policy": "no",
+      "service": "cdc-consumer",
+      "source": "infra/cdc/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 805306368,
+      "named_volumes": [
+        "cdc-kafka"
+      ],
+      "owns_build": false,
+      "profiles": [
+        "cdc"
+      ],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "cdc-kafka",
+      "source": "infra/cdc/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 2,
+      "core": false,
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-cdc:local",
+      "lifecycle": "one_shot",
+      "lifecycle_basis": "dependency.service_completed_successfully",
+      "local_image": true,
+      "memory_limit_bytes": 268435456,
+      "named_volumes": [],
+      "owns_build": true,
+      "profiles": [
+        "cdc"
+      ],
+      "pull_policy": "build",
+      "replicas": 1,
+      "restart_policy": "no",
+      "service": "cdc-register",
+      "source": "infra/cdc/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "ghcr.io/kafbat/kafka-ui:v1.5.0@sha256:7cda86a33344160309fdb65146332e4da65db81a945614f2fe32e210803f6fd1",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 536870912,
+      "named_volumes": [],
+      "owns_build": false,
+      "profiles": [
+        "cdc"
+      ],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "cdc-ui",
+      "source": "infra/cdc/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-demo:local",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": true,
+      "memory_limit_bytes": 805306368,
+      "named_volumes": [],
+      "owns_build": false,
+      "profiles": [
+        "demo"
+      ],
+      "pull_policy": "never",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "demo",
+      "source": "infra/demo/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 2,
+      "core": false,
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-demo:local",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": true,
+      "memory_limit_bytes": 536870912,
+      "named_volumes": [],
+      "owns_build": true,
+      "profiles": [
+        "demo",
+        "mcp"
+      ],
+      "pull_policy": "build",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "demo-api",
+      "source": "infra/demo/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "grafana/grafana:13.3.0@sha256:6e5d306338670f381a942f1c50d3c266bf71531e5ddd9ee4fc1a133dac5ce63d",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 402653184,
+      "named_volumes": [
+        "grafana"
+      ],
+      "owns_build": false,
+      "profiles": [
+        "monitoring"
+      ],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "grafana",
+      "source": "infra/lakehouse/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 1,
+      "core": false,
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-jupyter:local",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": true,
+      "memory_limit_bytes": 4294967296,
+      "named_volumes": [
+        "spark-events"
+      ],
+      "owns_build": true,
+      "profiles": [
+        "notebooks"
+      ],
+      "pull_policy": "build",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "jupyter",
+      "source": "infra/poc/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "docker.io/grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 536870912,
+      "named_volumes": [
+        "loki"
+      ],
+      "owns_build": false,
+      "profiles": [
+        "monitoring"
+      ],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "loki",
+      "source": "infra/lakehouse/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "docker.io/marquezproject/marquez:0.50.0@sha256:6d8a2c2cdb28a4f6d13f9ca6f8cc055d8312c4dee204ebeb848efdd76e6ab30e",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 1073741824,
+      "named_volumes": [],
+      "owns_build": false,
+      "profiles": [
+        "lineage"
+      ],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "marquez",
+      "source": "infra/poc/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "docker.io/library/postgres:18.6-alpine@sha256:300ebd02c6d4de9ee27ad7f6855d5d21b4d3a4a5117767c1197d284c635d9736",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 402653184,
+      "named_volumes": [
+        "marquez-db"
+      ],
+      "owns_build": false,
+      "profiles": [
+        "lineage"
+      ],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "marquez-db",
+      "source": "infra/poc/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "docker.io/marquezproject/marquez-web:0.50.0@sha256:e8d53e10ab141cde1b121b01ff47776a58b407813fb6e10f490842d20c184346",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 402653184,
+      "named_volumes": [],
+      "owns_build": false,
+      "profiles": [
+        "lineage"
+      ],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "marquez-web",
+      "source": "infra/poc/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-mcp:local",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": true,
+      "memory_limit_bytes": 268435456,
+      "named_volumes": [],
+      "owns_build": true,
+      "profiles": [
+        "mcp"
+      ],
+      "pull_policy": "build",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "mcp",
+      "source": "infra/mcp/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 1,
+      "core": false,
+      "image": "docker.n8n.io/n8nio/n8n:2.46.7@sha256:6102ca27d9392c7f4778c0a35a80834d6620a365ab4d546a9fdf855a2b52fe4e",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 1073741824,
+      "named_volumes": [
+        "n8n"
+      ],
+      "owns_build": false,
+      "profiles": [
+        "automation"
+      ],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "n8n",
+      "source": "infra/lakehouse/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "docker.io/library/postgres:18.6-alpine@sha256:300ebd02c6d4de9ee27ad7f6855d5d21b4d3a4a5117767c1197d284c635d9736",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 402653184,
+      "named_volumes": [
+        "n8n-db"
+      ],
+      "owns_build": false,
+      "profiles": [
+        "automation"
+      ],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "n8n-db",
+      "source": "infra/lakehouse/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 1,
+      "core": false,
+      "image": "ghcr.io/prometheus/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 134217728,
+      "named_volumes": [],
+      "owns_build": false,
+      "profiles": [
+        "monitoring"
+      ],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "node-exporter",
+      "source": "infra/lakehouse/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "prom/prometheus:v3.16.0@sha256:89c1a644817e9ad70fa2af76c84898e327c1de7063735f962e8313b1e28672c3",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 402653184,
+      "named_volumes": [
+        "prometheus"
+      ],
+      "owns_build": false,
+      "profiles": [
+        "monitoring"
+      ],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "prometheus",
+      "source": "infra/lakehouse/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "docker.io/qdrant/qdrant:v1.20.0@sha256:9bfc89f9914fc14876a88c05270685921a55b8877b254a98bcc1cc2f0a424cd2",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 1073741824,
+      "named_volumes": [
+        "qdrant"
+      ],
+      "owns_build": false,
+      "profiles": [
+        "vector"
+      ],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "qdrant",
+      "source": "infra/poc/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-spark-check:local",
+      "lifecycle": "explicit_only",
+      "lifecycle_basis": "deploy.replicas=0",
+      "local_image": true,
+      "memory_limit_bytes": 2147483648,
+      "named_volumes": [
+        "spark-work"
+      ],
+      "owns_build": false,
+      "profiles": [
+        "compute"
+      ],
+      "pull_policy": "never",
+      "replicas": 0,
+      "restart_policy": "no",
+      "service": "spark-check",
+      "source": "infra/compute/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-spark-check:local",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": true,
+      "memory_limit_bytes": 1073741824,
+      "named_volumes": [
+        "spark-events",
+        "spark-work"
+      ],
+      "owns_build": false,
+      "profiles": [
+        "compute"
+      ],
+      "pull_policy": "never",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "spark-history",
+      "source": "infra/compute/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-spark-check:local",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": true,
+      "memory_limit_bytes": 805306368,
+      "named_volumes": [
+        "spark-events",
+        "spark-work"
+      ],
+      "owns_build": false,
+      "profiles": [
+        "compute"
+      ],
+      "pull_policy": "never",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "spark-master",
+      "source": "infra/compute/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-spark-check:local",
+      "lifecycle": "one_shot",
+      "lifecycle_basis": "dependency.service_completed_successfully",
+      "local_image": true,
+      "memory_limit_bytes": 134217728,
+      "named_volumes": [
+        "spark-events",
+        "spark-work"
+      ],
+      "owns_build": true,
+      "profiles": [
+        "compute",
+        "notebooks"
+      ],
+      "pull_policy": "build",
+      "replicas": 1,
+      "restart_policy": "no",
+      "service": "spark-volumes-init",
+      "source": "infra/compute/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-spark-check:local",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": true,
+      "memory_limit_bytes": 4294967296,
+      "named_volumes": [
+        "spark-events",
+        "spark-work"
+      ],
+      "owns_build": false,
+      "profiles": [
+        "compute"
+      ],
+      "pull_policy": "never",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "spark-worker",
+      "source": "infra/compute/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": true,
+      "image": "docker.io/chrislusf/seaweedfs:4.53@sha256:972ba30c529dfc72a6a12ed427e94d99c7b6a6e59d97bfa52be0a849f43e2cc9",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 805306368,
+      "named_volumes": [
+        "storage"
+      ],
+      "owns_build": false,
+      "profiles": [],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "storage",
+      "source": "infra/lakehouse/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-superset:local",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": true,
+      "memory_limit_bytes": 2147483648,
+      "named_volumes": [],
+      "owns_build": false,
+      "profiles": [
+        "bi"
+      ],
+      "pull_policy": "never",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "superset",
+      "source": "infra/poc/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "docker.io/library/postgres:18.6-alpine@sha256:300ebd02c6d4de9ee27ad7f6855d5d21b4d3a4a5117767c1197d284c635d9736",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 536870912,
+      "named_volumes": [
+        "superset-db"
+      ],
+      "owns_build": false,
+      "profiles": [
+        "bi"
+      ],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "superset-db",
+      "source": "infra/poc/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-superset:local",
+      "lifecycle": "one_shot",
+      "lifecycle_basis": "dependency.service_completed_successfully",
+      "local_image": true,
+      "memory_limit_bytes": 1610612736,
+      "named_volumes": [],
+      "owns_build": true,
+      "profiles": [
+        "bi"
+      ],
+      "pull_policy": "build",
+      "replicas": 1,
+      "restart_policy": "no",
+      "service": "superset-init",
+      "source": "infra/poc/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": false,
+      "image": "docker.io/library/redis:8.10.3-alpine@sha256:71885d8cc6e42f2bc0aa2eb853bfc4be200b5108a46ac50e117ae1df0531fb80",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 201326592,
+      "named_volumes": [],
+      "owns_build": false,
+      "profiles": [
+        "bi"
+      ],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "superset-redis",
+      "source": "infra/poc/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 0,
+      "core": true,
+      "image": "docker.io/trinodb/trino:484@sha256:2704eb53935af5e582d63d6033e9bf99d20c325e9b0e30b1016ef59a4773979f",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": false,
+      "memory_limit_bytes": 1610612736,
+      "named_volumes": [
+        "trino"
+      ],
+      "owns_build": false,
+      "profiles": [],
+      "pull_policy": "compose-default",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "trino",
+      "source": "infra/lakehouse/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 1,
+      "core": false,
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-vector:local",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": true,
+      "memory_limit_bytes": 536870912,
+      "named_volumes": [
+        "vector-data"
+      ],
+      "owns_build": true,
+      "profiles": [
+        "monitoring"
+      ],
+      "pull_policy": "build",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "vector",
+      "source": "infra/lakehouse/compose.yaml"
+    },
+    {
+      "anonymous_volume_count": 0,
+      "bind_mount_count": 1,
+      "core": true,
+      "image": "${COMPOSE_PROJECT_NAME:-lakehouse}-worker:local",
+      "lifecycle": "resident",
+      "lifecycle_basis": "restart-policy",
+      "local_image": true,
+      "memory_limit_bytes": 1073741824,
+      "named_volumes": [],
+      "owns_build": true,
+      "profiles": [],
+      "pull_policy": "build",
+      "replicas": 1,
+      "restart_policy": "unless-stopped",
+      "service": "worker",
+      "source": "infra/lakehouse/compose.yaml"
+    }
+  ],
+  "volumes": [
+    {
+      "external": false,
+      "name_template": "${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_airflow-db",
+      "services": [
+        "airflow-db"
+      ],
+      "sources": [
+        "infra/orchestration/compose.yaml"
+      ],
+      "volume": "airflow-db"
+    },
+    {
+      "external": false,
+      "name_template": "${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_airflow-state",
+      "services": [
+        "airflow"
+      ],
+      "sources": [
+        "infra/orchestration/compose.yaml"
+      ],
+      "volume": "airflow-state"
+    },
+    {
+      "external": false,
+      "name_template": "${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_catalog-db",
+      "services": [
+        "catalog-db"
+      ],
+      "sources": [
+        "infra/lakehouse/compose.yaml"
+      ],
+      "volume": "catalog-db"
+    },
+    {
+      "external": false,
+      "name_template": "${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_cdc-kafka",
+      "services": [
+        "cdc-kafka"
+      ],
+      "sources": [
+        "infra/cdc/compose.yaml"
+      ],
+      "volume": "cdc-kafka"
+    },
+    {
+      "external": false,
+      "name_template": "${CDC_STATE_VOLUME_NAME:-${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_cdc-state}",
+      "services": [
+        "cdc-consumer"
+      ],
+      "sources": [
+        "infra/cdc/compose.yaml"
+      ],
+      "volume": "cdc-state"
+    },
+    {
+      "external": false,
+      "name_template": "${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_grafana",
+      "services": [
+        "grafana"
+      ],
+      "sources": [
+        "infra/lakehouse/compose.yaml"
+      ],
+      "volume": "grafana"
+    },
+    {
+      "external": false,
+      "name_template": "${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_loki",
+      "services": [
+        "loki"
+      ],
+      "sources": [
+        "infra/lakehouse/compose.yaml"
+      ],
+      "volume": "loki"
+    },
+    {
+      "external": false,
+      "name_template": "${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_marquez-db",
+      "services": [
+        "marquez-db"
+      ],
+      "sources": [
+        "infra/poc/compose.yaml"
+      ],
+      "volume": "marquez-db"
+    },
+    {
+      "external": false,
+      "name_template": "${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_n8n",
+      "services": [
+        "n8n"
+      ],
+      "sources": [
+        "infra/lakehouse/compose.yaml"
+      ],
+      "volume": "n8n"
+    },
+    {
+      "external": false,
+      "name_template": "${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_n8n-db",
+      "services": [
+        "n8n-db"
+      ],
+      "sources": [
+        "infra/lakehouse/compose.yaml"
+      ],
+      "volume": "n8n-db"
+    },
+    {
+      "external": false,
+      "name_template": "${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_prometheus",
+      "services": [
+        "prometheus"
+      ],
+      "sources": [
+        "infra/lakehouse/compose.yaml"
+      ],
+      "volume": "prometheus"
+    },
+    {
+      "external": false,
+      "name_template": "${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_qdrant",
+      "services": [
+        "qdrant"
+      ],
+      "sources": [
+        "infra/poc/compose.yaml"
+      ],
+      "volume": "qdrant"
+    },
+    {
+      "external": false,
+      "name_template": "${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_spark-events",
+      "services": [
+        "jupyter",
+        "spark-history",
+        "spark-master",
+        "spark-volumes-init",
+        "spark-worker"
+      ],
+      "sources": [
+        "infra/compute/compose.yaml"
+      ],
+      "volume": "spark-events"
+    },
+    {
+      "external": false,
+      "name_template": "${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_spark-work",
+      "services": [
+        "spark-check",
+        "spark-history",
+        "spark-master",
+        "spark-volumes-init",
+        "spark-worker"
+      ],
+      "sources": [
+        "infra/compute/compose.yaml"
+      ],
+      "volume": "spark-work"
+    },
+    {
+      "external": false,
+      "name_template": "${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_storage",
+      "services": [
+        "storage"
+      ],
+      "sources": [
+        "infra/lakehouse/compose.yaml"
+      ],
+      "volume": "storage"
+    },
+    {
+      "external": false,
+      "name_template": "${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_superset-db",
+      "services": [
+        "superset-db"
+      ],
+      "sources": [
+        "infra/poc/compose.yaml"
+      ],
+      "volume": "superset-db"
+    },
+    {
+      "external": false,
+      "name_template": "${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_trino",
+      "services": [
+        "trino"
+      ],
+      "sources": [
+        "infra/lakehouse/compose.yaml"
+      ],
+      "volume": "trino"
+    },
+    {
+      "external": false,
+      "name_template": "${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_vector-data",
+      "services": [
+        "vector"
+      ],
+      "sources": [
+        "infra/lakehouse/compose.yaml"
+      ],
+      "volume": "vector-data"
+    }
+  ]
+}

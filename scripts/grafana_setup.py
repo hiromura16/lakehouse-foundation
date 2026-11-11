@@ -21,6 +21,7 @@ TEMPLATES = {
     DASHBOARD_UID: TEMPLATE,
     "lakehouse-host-overview": TEMPLATE.with_name("host.json"),
     "lakehouse-container-overview": TEMPLATE.with_name("containers.json"),
+    "lakehouse-logs-overview": TEMPLATE.with_name("logs.json"),
 }
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 

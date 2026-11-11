@@ -22,3 +22,11 @@ scrape_configs:
     static_configs:
       - targets: [cadvisor:8080]
         labels: {host_alias: local}
+  - job_name: loki
+    static_configs:
+      - targets: [loki:3100]
+        labels: {host_alias: local}
+  - job_name: vector
+    static_configs:
+      - targets: [vector:9598]
+        labels: {host_alias: local}

@@ -33,11 +33,11 @@ captionは図の説明で、会社での実施結果の代筆ではありませ�
 
 内容を直す場合はfigures.jsonのcaption・notes・sources・Mermaidを揃え、SVG/HTML/台帳を再生成します。[編集ガイド](EDITING-GUIDE.md)と[根拠対応表](EVIDENCE-MATRIX.md)を使います。
 
-## 図01 全36サービスの配置と起動条件
+## 図01 全38サービスの配置と起動条件
 
 **用途:** 基盤設計・導入レビュー
 
-**キャプション:** core6サービスに11種類のprofileを重ねる36定義の単一ホストPoC構成。監視拡張はsource-only検査であり、host権限と実機受入は別途必要。
+**キャプション:** core6サービスに11種類のprofileを重ねる38定義の単一ホストPoC構成。監視拡張はsource-only検査であり、host権限と実機受入は別途必要。
 
 [SVG](figures/01-platform-detail.svg) / [Mermaid](mermaid/01-platform-detail.mmd)
 
@@ -154,7 +154,7 @@ captionは図の説明で、会社での実施結果の代筆ではありませ�
 
 **用途:** 運用・品質レビュー
 
-**キャプション:** Prometheusは既存worker/selfにnode/cadvisorを追加する4job定義。host権限とDocker29/cgroupv2の指標・ラベルは別途実機受入が必要。ポータルhealth・品質SQL・実行履歴とは別の観測。
+**キャプション:** Prometheusはworker/self/node/cadvisor/Loki/Vectorの6job定義。Vectorのcurated有限capture・VRL秘匿化からLokiへ配送するsource実装。host権限・公式validator・実配送・GUI・容量は別受入。
 
 [SVG](figures/10-observability.svg) / [Mermaid](mermaid/10-observability.mmd)
 

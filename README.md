@@ -70,7 +70,7 @@ setopt INTERACTIVE_COMMENTS
 
 ## PoC報告書へ使う素材
 
-[詳細・用途別の図版集](docs/reports/README.md)に、全36serviceの配置、メダリオン、CDC、Spark、AI、proxy/認証、監視、配置・復旧、検証結果の**14図**を用意しています。編集可能なSVG/Mermaid、キャプションと根拠、報告書・評価計画・スライド構成の雛形を同梱し、uvの専用環境からPNG・PDF集・PowerPointへ一括出力できます。
+[詳細・用途別の図版集](docs/reports/README.md)に、全38serviceの配置、メダリオン、CDC、Spark、AI、proxy/認証、監視、配置・復旧、検証結果の**14図**を用意しています。編集可能なSVG/Mermaid、キャプションと根拠、報告書・評価計画・スライド構成の雛形を同梱し、uvの専用環境からPNG・PDF集・PowerPointへ一括出力できます。
 
 [オフラインHTML一覧](docs/reports/gallery.html) · [報告書雛形](docs/reports/POC-REPORT-TEMPLATE.md) · [評価計画](docs/reports/EVALUATION-PLAN.md)
 

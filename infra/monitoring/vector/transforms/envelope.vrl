@@ -1,0 +1,37 @@
+# The private capture envelope is the scope boundary. Drop malformed envelopes
+# instead of importing arbitrary labels, paths, IDs or application data fields.
+outer = object!(parse_json!(string!(.message)))
+if outer.capture_version != 1 { abort }
+project = string!(outer.compose_project)
+service = string!(outer.compose_service)
+host = string!(outer.host_alias)
+container = string!(outer.container_alias)
+identity = string!(outer.source_identity)
+position = string!(outer.source_position)
+stream = string!(outer.stream)
+if !match(project, r'^[a-z0-9][a-z0-9_-]{0,62}$') { abort }
+if !match(host, r'^[a-z][a-z0-9_-]{0,31}$') { abort }
+if !match(container, r'^[a-z0-9][a-z0-9_-]{0,79}$') { abort }
+if match(project + " " + host + " " + container, r'\bsk-[A-Za-z0-9_-]{16,}\b') { abort }
+if !match(identity, r'^[0-9a-f]{64}$') { abort }
+if !match(position, r'^[0-9a-f]{64}$') { abort }
+if stream != "stdout" && stream != "stderr" { abort }
+allowed = ["catalog-db", "storage", "catalog", "catalog-migrate", "trino", "worker", "demo-api", "demo", "prometheus", "grafana", "superset-db", "superset-redis", "superset-init", "superset", "node-exporter", "cadvisor", "loki", "vector", "cdc-kafka", "cdc-connect", "cdc-ui", "cdc-register", "cdc-consumer", "spark-volumes-init", "spark-master", "spark-worker", "spark-history", "spark-check", "n8n-db", "n8n", "airflow-db", "airflow", "jupyter", "qdrant", "marquez-db", "marquez", "marquez-web", "mcp", "openobserve", "sail-server", "sail-benchmark"]
+if !includes(allowed, service) { abort }
+source_time = string!(outer.timestamp)
+timestamp = parse_timestamp!(source_time, format: "%+")
+message = strip_ansi_escape_codes(string!(outer.message))
+. = {
+  "timestamp": timestamp,
+  "source_timestamp": source_time,
+  "compose_project": project,
+  "compose_service": service,
+  "host_alias": host,
+  "container_alias": container,
+  "source_identity": identity,
+  "source_position": position,
+  "stream": stream,
+  "message": truncate(message, limit: 16384),
+  "capture_truncated": if outer.truncated == true || length(message) > 16384 { 1 } else { 0 },
+  "line_count": 1
+}

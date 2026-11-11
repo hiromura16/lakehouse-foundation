@@ -243,7 +243,7 @@ def templates():
             "synthetic restart/health/JVM metric is supplied.",
         )
     )
-    return {
+    models = {
         "host.json": dashboard(
             "lakehouse-host-overview",
             "Lakehouse Host Overview",
@@ -281,6 +281,115 @@ def templates():
             ],
         ),
     }
+
+    models["logs.json"] = logs_dashboard()
+    for name, model in models.items():
+        if name != "logs.json":
+            model["links"].append(
+                {
+                    "title": "Logs (same time range)",
+                    "url": "/d/lakehouse-logs-overview",
+                    "type": "link",
+                    "includeVars": True,
+                    "keepTime": True,
+                }
+            )
+    return models
+
+
+def logs_dashboard():
+    """Scope every count/error/query by the selected project and service."""
+    source = {"type": "loki", "uid": "foundation-loki"}
+    scope = (
+        'job="lakehouse",compose_project=~"$project",'
+        'compose_service=~"$service",container_name=~"$container"'
+    )
+    selected = "{" + scope + ',level=~"$level"} |= "$keyword"'
+    errors = "{" + scope + ',level=~"error|fatal"} |= "$keyword"'
+    warnings = "{" + scope + ',level="warn"} |= "$keyword"'
+    queries = [
+        (
+            "Events in five minutes",
+            "sum(count_over_time(" + selected + "[5m]))",
+            "stat",
+        ),
+        (
+            "Per-service count",
+            "sum by(compose_service) (count_over_time(" + selected + "[5m]))",
+            "timeseries",
+        ),
+        (
+            "Error/fatal rate",
+            "sum by(compose_service) (rate(" + errors + "[5m]))",
+            "timeseries",
+        ),
+        (
+            "Warnings in five minutes",
+            "sum(count_over_time(" + warnings + "[5m]))",
+            "stat",
+        ),
+        (
+            "Error/fatal in five minutes",
+            "sum(count_over_time(" + errors + "[5m]))",
+            "stat",
+        ),
+        (
+            "Warning rate",
+            "sum by(compose_service) (rate(" + warnings + "[5m]))",
+            "timeseries",
+        ),
+        ("Latest errors (selected project)", errors, "logs"),
+        ("Selected logs", selected, "logs"),
+    ]
+    panels = []
+    for index, (title, query, kind) in enumerate(queries, 1):
+        model = panel(index, title, query)
+        model["type"] = kind
+        model["datasource"] = source
+        if kind == "logs":
+            model["options"] = {
+                "showTime": True,
+                "enableLogDetails": True,
+                "sortOrder": "Descending",
+            }
+        panels.append(model)
+    panels.append(
+        notice(
+            len(panels) + 1,
+            "Log acceptance pending",
+            "Explicit level is preserved. Unknown remains unknown. "
+            "Parser fixtures, backend delivery, redaction and GUI colors "
+            "require separate validation. Counts are not exactly-once "
+            "evidence.",
+        )
+    )
+    variables = []
+    for name, label, filters in (
+        ("project", "compose_project", 'job="lakehouse"'),
+        (
+            "service",
+            "compose_service",
+            'job="lakehouse",compose_project=~"$project"',
+        ),
+        ("container", "container_name", scope.split(",container_name")[0]),
+        ("level", "level", scope),
+    ):
+        item = variable(name, "label_values({" + filters + "}," + label + ")")
+        item["datasource"] = source
+        item["allValue"] = ".+"
+        variables.append(item)
+    variables.append(
+        {
+            "name": "keyword",
+            "label": "Contains text",
+            "type": "textbox",
+            "query": "",
+            "current": {"text": "", "value": ""},
+        }
+    )
+    return dashboard(
+        "lakehouse-logs-overview", "Lakehouse Logs Overview", panels, variables
+    )
 
 
 def main():

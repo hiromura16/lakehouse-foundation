@@ -92,3 +92,20 @@ groups:
         for: 1m
         labels: {severity: critical}
         annotations: {summary: 'Trino high memory with emitted OOM/start evidence'}
+  - name: log-transport-foundation
+    rules:
+      - alert: LogTransportDown
+        expr: up{job=~"loki|vector"} == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Log transport unreachable; existing metrics stay independent'}
+      - alert: VectorDeliveryDiscard
+        expr: sum by(component_id) (increase(vector_component_discarded_events_total{component_id=~"loki|openobserve"}[5m])) > 0
+        for: 1m
+        labels: {severity: warning}
+        annotations: {summary: 'Vector reports discarded events; inspect bounded sink buffers'}
+      - alert: LokiRejectedSamples
+        expr: sum by(reason) (increase(loki_discarded_samples_total[5m])) > 0
+        for: 1m
+        labels: {severity: warning}
+        annotations: {summary: 'Loki reports rejected samples; inspect time/size limits'}
