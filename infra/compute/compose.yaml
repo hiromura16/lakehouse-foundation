@@ -6,11 +6,13 @@
 
 # 内部service名をproxy対象から除外し、社内proxyへ内部要求を送らない。
 # 同じ除外値を大文字/小文字の両方へ渡し、利用libraryの違いを吸収する。
-x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
+x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,node-exporter,cadvisor,loki,vector,openobserve,sail-server,sail-benchmark,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
 
 # master/worker/history/smokeを同じ固定Spark/Iceberg imageへ揃える共通定義。
 x-spark-image: &spark_image
   image: ${COMPOSE_PROJECT_NAME:-lakehouse}-spark-check:local
+  # All consumers reuse the tag; only spark-volumes-init owns its build.
+  pull_policy: never
 # Dokploy等の所有者識別とTraefikの自動公開を分ける共通label。
 x-spark-labels: &spark_labels
   app.owner: lakehouse-foundation
@@ -56,6 +58,7 @@ services:
   # 同じbuild tagをdaemonとsmokeへ渡し、Spark/Icebergの組合せを揃える。
   spark-volumes-init:
     <<: *spark_image
+    pull_policy: build
     build:
       secrets: [corporate_ca]
       context: ../..
@@ -179,6 +182,8 @@ services:
   # replicas=0なので通常upでは起動せず、必要時だけrunで読み書きを確かめる。
   spark-check:
     <<: *spark_image
+    volumes:
+      - spark-work:/opt/spark/work
     profiles: [compute]
     deploy:
       replicas: 0

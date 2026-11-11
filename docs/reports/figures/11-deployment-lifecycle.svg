@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="11-deployment-lifecycle-title 11-deployment-lifecycle-description" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
 <title id="11-deployment-lifecycle-title">公開Gitから配置・反映する手順</title>
-<desc id="11-deployment-lifecycle-description">ホスト準備とprivate設定を行い、生成後appNameへCompose名を合わせる。Composeサービス自身のEnvironmentを保存し、Git Providerと7ファイルCommandからDeployする。GUI保存だけでは反映しない。 根拠: infra/dokploy/install.sh, docs/DOKPLOY.md, docs/START-HERE.md, docs/COMPANY-UPDATE.md</desc>
+<desc id="11-deployment-lifecycle-description">ホスト準備とprivate設定を行い、生成後appNameへCompose名を合わせる。Composeサービス自身のEnvironmentを保存し、Git Providerと9ファイルCommandからDeployする。GUI保存だけでは反映しない。 根拠: infra/dokploy/install.sh, docs/DOKPLOY.md, docs/START-HERE.md, docs/COMPANY-UPDATE.md</desc>
 <defs>
 <marker id="11-deployment-lifecycle-data" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#2469a8"/></marker>
 <marker id="11-deployment-lifecycle-control" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#70608e"/></marker>
@@ -61,7 +61,7 @@
 <rect x="984" y="668" width="5" height="154" rx="2" fill="#63449b" stroke="none"/>
 <text x="1008" y="692" fill="#152a43" font-size="27" font-weight="700">06｜Run Command</text>
 <text x="1008" y="737" fill="#152a43" font-size="23" font-weight="400">Commandはcomposeから</text>
-<text x="1008" y="769" fill="#152a43" font-size="23" font-weight="400">実appName / 7ファイル / wait</text>
+<text x="1008" y="769" fill="#152a43" font-size="23" font-weight="400">実appName / 9ファイル / wait</text>
 <text x="1008" y="808" fill="#63449b" font-size="20" font-weight="600">pipeやshell連結は使わない</text>
 <rect x="1448" y="650" width="416" height="190" rx="16" fill="#f1edfc" stroke="#c6b9e9"/>
 <rect x="1448" y="668" width="5" height="154" rx="2" fill="#63449b" stroke="none"/>
@@ -79,7 +79,7 @@
 <path d="M 984,745 L 920,745" fill="none" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5" marker-end="url(#11-deployment-lifecycle-control)"/>
 <path d="M 520,745 L 456,745" fill="none" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5" marker-end="url(#11-deployment-lifecycle-control)"/>
 <rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
-<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">7Composeの標準Commandは初回から使用可能。起動対象はCOMPOSE_PROFILESで段階追加する。</text>
+<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">9Composeの標準Commandは初回から使用可能。起動対象はCOMPOSE_PROFILESで段階追加する。</text>
 <text x="56" y="977" fill="#536780" font-size="20" font-weight="400">CLIかDokployの管理入口を一つに決める。private envとDokployサービスenvは管理者が同期して再配置する。</text>
-<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>

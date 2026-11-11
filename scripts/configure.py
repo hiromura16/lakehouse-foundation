@@ -54,6 +54,14 @@ values = {
     "S3_PORT": "8333",
     "GRAFANA_PORT": "3000",
     "PROMETHEUS_PORT": "9090",
+    # Only monitoring-host reads the Docker data root; keep opt-in separate.
+    "CADVISOR_DOCKER_DATA_ROOT": "",
+    "MONITORING_LOG_DIR": "/srv/lakehouse/log-spool",
+    "MONITORING_HOST_ALIAS": "local",
+    "OPENOBSERVE_PORT": "5080",
+    "OPENOBSERVE_ROOT_USER_EMAIL": "admin@example.invalid",
+    "OPENOBSERVE_ROOT_USER_PASSWORD": secrets.token_hex(32),
+    "OPENOBSERVE_INGEST_TOKEN_FILE": "",
     "N8N_PORT": "5678",
     "AIRFLOW_PORT": "8081",
     "SPARK_MASTER_UI_PORT": "8082",
@@ -63,6 +71,7 @@ values = {
     "DEMO_API_PORT": "8502",
     "CDC_CONNECT_PORT": "8083",
     "CDC_UI_PORT": "8084",
+    # monitoring-host needs monitoring; sail-lab needs compute explicitly.
     "COMPOSE_PROFILES": "",
     "SUPERSET_PORT": "8088",
     "SUPERSET_DB_PASSWORD": secrets.token_hex(32),

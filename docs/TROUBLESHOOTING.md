@@ -236,7 +236,7 @@ SSRFの設定値、内部workerの例外、NO_PROXYとの違い、GUI保存と�
 | 順序 | 配置担当が見るもの | 成功の意味 | 失敗したら |
 | --- | --- | --- | --- |
 | 1 | 開いているDokploy Environment／アプリ、配置commit、private設定の選択 | 目的の環境を見ている | 別環境の再起動やデータ操作を中止 |
-| 2 | `plan` | 選択値と7Composeの構成検査が通る | missing file、権限、値、profile、portを修正。まだ再配置しない |
+| 2 | `plan` | 選択値と9Composeの構成検査が通る | missing file、権限、値、profile、portを修正。まだ再配置しない |
 | 3 | `status`／Dokployサービス状態 | コンテナの起動状態が分かる | failed initと常駐サービスを区別し、対象ログを非公開で確認 |
 | 4 | GUIの「状態」、API `/health` | APIの準備状態や到達性が分かる | mount・token・内部API設定を確認 |
 | 5 | 既存ジョブのGETとworkerのbusy／blocked | 再投入できるかを判断する材料が揃う | 不明結果なら既存処理を調べ、POSTを繰り返さない |
@@ -328,3 +328,33 @@ APIの待機timeout、workerのエラー、Trinoのquery取消は別の状態で
 まず `CDC_SOURCE_MODE` と保存先を確認します。genericの `cdc_*` とfixed-demoの `sqlcdc_*` は別です。Source reader、固定capture、private CA/Java truststore、既存connector設定を順に照合します。空payloadはtombstoneではなく、Raw保存後の解釈エラーとして止まる場合があります。
 
 rebuildの202は完了ではありません。同じrequest IDを再照会し、欠落Raw、offset gap、source identity不一致、query取消未確定を確認します。Rawやstateの削除、イベントのskip、offsetの手動巻戻しを成功への近道にしません。Icebergの複数表は独立commitなので、途中失敗後は利用を止め、保全した履歴から再照合します。[再生条件と保存境界](SQLSERVER-FIXED-DEMO.md#8-current-statereplaygui監視)
+
+
+Notebook workspaceのread-only計画と承認後のapply/probe、既存projectを明示したSpark検証、機械可読な結果は [compute配置前・検証手順](COMPUTE-VALIDATION.md) を参照します。通常Deployでspark-checkが常駐しないのは正常です。local tagのpull方針はFROM/uv/JAR通信や未解決のBuildKit auth session timeoutを修復する保証ではありません。
+
+通常monitoringは専用spoolの準備が必要です。host root/PIDの読取りは別opt-inの `monitoring-host` だけで、配置前に承認します。GUI保持・検証未了事項は [段階的な監視基盤](OBSERVABILITY.md) を参照してください。
+
+## SQL Server error 468 / checker error 51019
+
+003のrole/permission、004/005のcapture/index/column比較でsystem/catalogと対象DBのcollation差が現れる場合、承認済み修正版の両辺BIN2比較を使います。server/database collation変更、`DATABASE_DEFAULT`での回避、安全gate解除はしません。006は読取り監査で同型の異種列競合を確認していません。
+
+失敗後はchecker・role・grant・CDC captureが残っていないと推測せず、新しい専用DBA sessionで読取り専用preflightを行います。51019は未知の同名checkerを保護する停止です。自動DROPや定義の強制更新を行いません。003成功とrole割当が既に確認できた場合は006へ進み、修正版004の承認後に004→006とします。003未確認ならpreflight→必要な003→006で止めて照合します。005は明示的なrollback専用です。[残存診断・Windows sqlcmd・部分完了の再開](SQLSERVER-DDL-RECOVERY.md)
+
+## 任意Labの追加で迷った場合
+
+| 症状 | 最初に確認すること | 取り違えないこと |
+| --- | --- | --- |
+| monitoringのplanが拒否される | 専用 `MONITORING_LOG_DIR`、host alias。`monitoring-host` を追加する場合だけDocker rootとhost読取り承認 | 空のrootを推測値で埋めたり、Docker socketをcollectorへ渡したりしない |
+| OpenObserve Labだけ起動・配送できない | Lab profile、loopback port、専用volume、管理者と取り込みtokenの分離、Git外0600 token file | 通常Lokiの停止・削除やGrafana上書きで回避しない |
+| OpenObserveでmetricsが見えない | 今回はログ `_json` のみ。metrics比較は後続Phase | UI portやログtokenをPrometheus datasource/remote_writeへ流用しない |
+| Sail clientのbuildが失敗する | [Sail手順](SAIL-LAB.md) の共通Spark image事前buildとprivate project tag | cold build順序は実機未検証。registryからlocal tagを代用pullしない |
+| Sailが通常Deploy後に終了/未起動 | `sail-benchmark` はreplicas 0の明示検証用 | benchmark未実行を性能・互換性の成功としない |
+
+詳細な配送・損失・bufferの境界は [Vector](VECTOR.md)、Labの停止は [OpenObserve](OPENOBSERVE.md) と [Sail](SAIL-LAB.md) にあります。実値やtoken、rawログを公開Issueへ添付しません。
+
+`monitoring-host` 単独、または `compute` なしの `sail-lab` は設定検査で拒否します。前者は `monitoring,monitoring-host`、後者は `compute,sail-lab` を選び、必要資源・権限を確認してから既存managerへ反映します。通常monitoringだけでhost root/PIDを読ませません。
+
+
+## CLIがproject名の不一致で停止する（Issue #23）
+
+shellの`COMPOSE_PROJECT_NAME`はCLIの対象変更には使えません。private設定、またはspark-checkの`--project-name`と不一致なら、status/verify/grafana-init/spark-checkを含め操作前に停止します。`unset COMPOSE_PROJECT_NAME`で古い値を解除し、private設定を実appNameへ合わせます。明示project指定はspark-checkだけです。資格情報や他のenv値を公開ログへ出して切り分けません。

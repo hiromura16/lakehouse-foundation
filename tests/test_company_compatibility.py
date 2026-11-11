@@ -25,11 +25,14 @@ COMPOSE_FILES = [
         "cdc",
         "poc",
         "mcp",
+        "openobserve",
+        "sail",
     )
 ]
 ALL_PROFILES = (
-    "automation,monitoring,compute,orchestration,demo,cdc,bi,notebooks,"
-    "vector,lineage,mcp"
+    "automation,monitoring,monitoring-host,compute,orchestration,demo,cdc,"
+    "bi,notebooks,"
+    "vector,lineage,mcp,openobserve-lab,sail-lab"
 )
 CORE_SERVICES = {
     "catalog-db",
@@ -658,6 +661,11 @@ class ComposeCompatibilityTests(PrivateSettingsFixture, unittest.TestCase):
             with self.subTest(target=name):
                 context = Path(target["context"])
                 self.assertEqual(context, ROOT)
+                if name in {"vector", "openobserve"}:
+                    # These derive completed binaries using only local
+                    # COPY and metadata setup; there are no HTTPS RUN fetches.
+                    self.assertFalse(target.get("secret"))
+                    continue
                 ca_secrets = [
                     item
                     for item in target.get("secret", [])

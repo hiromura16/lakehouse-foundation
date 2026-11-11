@@ -1,0 +1,106 @@
+# 役割: 承認後だけ追加する、SailとSparkの合成データ比較用profile。
+# core/compute等と同じprojectへ最後に結合する。既存Spark定義は変更しない。
+# serverは常駐するが、benchmarkはreplicas=0で明示run以外は表を書かない。
+# Docker socket、host port、会社DB資格情報を渡さない。
+
+x-sail-no-proxy: &sail_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,node-exporter,cadvisor,loki,vector,openobserve,sail-server,sail-benchmark,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
+x-sail-proxy: &sail_proxy
+  HTTP_PROXY: ${HTTP_PROXY:-}
+  HTTPS_PROXY: ${HTTPS_PROXY:-}
+  NO_PROXY: *sail_no_proxy
+  http_proxy: ${http_proxy:-}
+  https_proxy: ${https_proxy:-}
+  no_proxy: *sail_no_proxy
+x-sail-environment: &sail_environment
+  <<: *sail_proxy
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+  S3_SECRET_KEY: ${S3_SECRET_KEY}
+  WAREHOUSE_NAME: ${WAREHOUSE_NAME}
+x-sail-logging: &sail_logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+x-sail-labels: &sail_labels
+  app.owner: lakehouse-foundation
+  traefik.enable: 'false'
+
+services:
+  # 公式wheelのみを使うnative server。TCP healthはlivenessだけを示す。
+  sail-server:
+    image: ${COMPOSE_PROJECT_NAME:-lakehouse}-sail-server:local
+    pull_policy: build
+    build:
+      context: ../..
+      dockerfile: infra/sail/Dockerfile
+      secrets: [corporate_ca]
+      args:
+        <<: *sail_proxy
+        WORKER_UID: ${WORKER_UID:-10001}
+        WORKER_GID: ${WORKER_GID:-10001}
+    profiles: [sail-lab]
+    user: "${WORKER_UID:-10001}:${WORKER_GID:-10001}"
+    init: true
+    restart: unless-stopped
+    labels: *sail_labels
+    logging: *sail_logging
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 2g
+    cpus: 2
+    environment: *sail_environment
+    expose: ['50051']
+    depends_on:
+      catalog:
+        condition: service_healthy
+      storage:
+        condition: service_started
+    healthcheck:
+      test:
+        - CMD
+        - /opt/sail-venv/bin/python
+        - /opt/lakehouse/infra/sail/server.py
+        - health
+      interval: 10s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  # Spark owner imageを事前buildしてから、この派生clientをbuildする。
+  # FROMのlocal tagをregistryへ取りに行く設計にはしない。通常Deployでrunしない。
+  sail-benchmark:
+    image: ${COMPOSE_PROJECT_NAME:-lakehouse}-sail-benchmark:local
+    pull_policy: build
+    build:
+      context: ../..
+      dockerfile: infra/sail/Dockerfile.client
+      secrets: [corporate_ca]
+      args:
+        <<: *sail_proxy
+        SPARK_IMAGE: ${COMPOSE_PROJECT_NAME:-lakehouse}-spark-check:local
+    profiles: [sail-lab]
+    deploy:
+      replicas: 0
+    user: "${WORKER_UID:-10001}:${WORKER_GID:-10001}"
+    init: true
+    restart: 'no'
+    labels: *sail_labels
+    logging: *sail_logging
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 2g
+    cpus: 2
+    environment: *sail_environment
+    command: [plan]
+    volumes:
+      - sail-lab-state:/opt/lakehouse/lab-state
+    depends_on:
+      sail-server:
+        condition: service_healthy
+      trino:
+        condition: service_healthy
+
+volumes:
+  # 証跡lockだけを保存する専用volume。業務volumeを共有・初期化しない。
+  sail-lab-state:
+    name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_sail-lab-state

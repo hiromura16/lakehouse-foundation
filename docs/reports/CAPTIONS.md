@@ -16,7 +16,7 @@
 
 [図版集の使い方](README.md) / [HTML一覧](gallery.html)
 
-照合日: 2026-11-10。生成元はfigures.jsonです。図の作成は、同日付で全機能を再試験したことを意味しません。
+照合日: 2026-11-11。生成元はfigures.jsonです。図の作成は、同日付で全機能を再試験したことを意味しません。
 
 ## 初めて図を使うとき
 
@@ -33,18 +33,18 @@ captionは図の説明で、会社での実施結果の代筆ではありませ�
 
 内容を直す場合はfigures.jsonのcaption・notes・sources・Mermaidを揃え、SVG/HTML/台帳を再生成します。[編集ガイド](EDITING-GUIDE.md)と[根拠対応表](EVIDENCE-MATRIX.md)を使います。
 
-## 図01 全34サービスの配置と起動条件
+## 図01 全41サービスの配置と起動条件
 
 **用途:** 基盤設計・導入レビュー
 
-**キャプション:** core6サービスに11種類のprofileを重ねる単一ホストPoC構成。34は定義数であり、常駐・一度だけの初期化・明示スモークを区別する。
+**キャプション:** core6サービスに14種類のprofileを重ねる41定義の単一ホストPoC構成。監視拡張はsource-only検査であり、host権限と実機受入は別途必要。
 
 [SVG](figures/01-platform-detail.svg) / [Mermaid](mermaid/01-platform-detail.mmd)
 
 - Dokploy・Samba・daemon proxyはホスト側の別設定。SQL Serverは外部DB。
-- 一度だけの初期化は4定義。全profileでは33containerの検証記録があり、34全てが常時稼働する構成ではない。
+- 初期化4定義と通常0の明示検証2定義を区別する。新規監視・比較Labの実機受入は別途必要。
 
-**根拠:** [compose.yaml](../../infra/lakehouse/compose.yaml)、[compose.yaml](../../infra/compute/compose.yaml)、[compose.yaml](../../infra/orchestration/compose.yaml)、[compose.yaml](../../infra/demo/compose.yaml)、[compose.yaml](../../infra/cdc/compose.yaml)、[compose.yaml](../../infra/poc/compose.yaml)、[compose.yaml](../../infra/mcp/compose.yaml)
+**根拠:** [compose.yaml](../../infra/lakehouse/compose.yaml)、[compose.yaml](../../infra/compute/compose.yaml)、[compose.yaml](../../infra/orchestration/compose.yaml)、[compose.yaml](../../infra/demo/compose.yaml)、[compose.yaml](../../infra/cdc/compose.yaml)、[compose.yaml](../../infra/poc/compose.yaml)、[compose.yaml](../../infra/mcp/compose.yaml)、[compose.yaml](../../infra/openobserve/compose.yaml)、[compose.yaml](../../infra/sail/compose.yaml)
 
 ## 図02 ファイル・SQLのバッチ取り込み経路
 
@@ -154,24 +154,24 @@ captionは図の説明で、会社での実施結果の代筆ではありませ�
 
 **用途:** 運用・品質レビュー
 
-**キャプション:** Prometheusはworkerと自身の2targetを15秒ごとに収集する。ポータルのhealth、固定品質SQL、n8n/Airflow等の実行履歴は別の観測で、全ホストの監視や長期監査を完成させるものではない。
+**キャプション:** 通常監視はPrometheus/Grafana/Loki/Vector。host root/PIDを読むexporterはmonitoring-hostの明示opt-in。curated有限capture・秘匿化・配送のsourceと、公式validator・実host/GUI・容量の受入を区別する。
 
 [SVG](figures/10-observability.svg) / [Mermaid](mermaid/10-observability.mmd)
 
-- GUI入口カードの数とPrometheus target数は別。会社SQL Server・DB・Kafka・ホスト全体の監視は追加する。
+- host/cgroupはmonitoring-hostの別opt-in・read承認後に受入。任意OpenObserveはlog-only、metricsは後続。
 - Grafana JSON exportはdashboard単体。利用者・権限・全設定の復元はDBと設定のバックアップで確認する。
 
-**根拠:** [prometheus.yml](../../infra/monitoring/prometheus.yml)、[admin.py](../../scripts/admin.py)、[grafana_setup.py](../../scripts/grafana_setup.py)、[poc_quality.py](../../infra/demo/poc_quality.py)
+**根拠:** [prometheus.yml](../../infra/monitoring/prometheus.yml)、[admin.py](../../scripts/admin.py)、[grafana_setup.py](../../scripts/grafana_setup.py)、[poc_quality.py](../../infra/demo/poc_quality.py)、[compose.yaml](../../infra/openobserve/compose.yaml)、[OPENOBSERVE.md](../../docs/OPENOBSERVE.md)
 
 ## 図11 公開Gitから配置・反映する手順
 
 **用途:** 導入・変更管理
 
-**キャプション:** ホスト準備とprivate設定を行い、生成後appNameへCompose名を合わせる。Composeサービス自身のEnvironmentを保存し、Git Providerと7ファイルCommandからDeployする。GUI保存だけでは反映しない。
+**キャプション:** ホスト準備とprivate設定を行い、生成後appNameへCompose名を合わせる。Composeサービス自身のEnvironmentを保存し、Git Providerと9ファイルCommandからDeployする。GUI保存だけでは反映しない。
 
 [SVG](figures/11-deployment-lifecycle.svg) / [Mermaid](mermaid/11-deployment-lifecycle.mmd)
 
-- 7Composeの標準Commandは初回から使用可能。起動対象はCOMPOSE_PROFILESで段階追加する。
+- 9Composeの標準Commandは初回から使用可能。起動対象はCOMPOSE_PROFILESで段階追加する。
 - CLIかDokployの管理入口を一つに決める。private envとDokployサービスenvは管理者が同期して再配置する。
 
 **根拠:** [install.sh](../../infra/dokploy/install.sh)、[DOKPLOY.md](../../docs/DOKPLOY.md)、[START-HERE.md](../../docs/START-HERE.md)、[COMPANY-UPDATE.md](../../docs/COMPANY-UPDATE.md)
@@ -184,10 +184,10 @@ captionは図の説明で、会社での実施結果の代筆ではありませ�
 
 [SVG](figures/12-persistence-recovery.svg) / [Mermaid](mermaid/12-persistence-recovery.mmd)
 
-- 16は全profileのvolume定義数。core用Composeファイルの7定義には任意n8n・監視の4種も含む。
+- 20は全profileのvolume定義数。core用Composeは9定義。任意Labの2種を含む。
 - appName・DATA_VOLUME_PREFIX・秘密値を単独変更しない。DB passwordのenv変更だけで既存DBは更新されない。
 
-**根拠:** [OPERATIONS.md](../../docs/OPERATIONS.md)、[compose.yaml](../../infra/lakehouse/compose.yaml)、[compose.yaml](../../infra/compute/compose.yaml)、[compose.yaml](../../infra/cdc/compose.yaml)、[compose.yaml](../../infra/poc/compose.yaml)
+**根拠:** [OPERATIONS.md](../../docs/OPERATIONS.md)、[compose.yaml](../../infra/lakehouse/compose.yaml)、[compose.yaml](../../infra/compute/compose.yaml)、[compose.yaml](../../infra/cdc/compose.yaml)、[compose.yaml](../../infra/poc/compose.yaml)、[compose.yaml](../../infra/openobserve/compose.yaml)、[compose.yaml](../../infra/sail/compose.yaml)
 
 ## 図13 合成PoCで確認したこと・未評価のこと
 

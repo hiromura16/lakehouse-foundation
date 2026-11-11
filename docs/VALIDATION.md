@@ -181,3 +181,9 @@ Git版、実施日とtimezone、platform、選択profile、合成/会社デー�
 代表実行では、対話入力からコマンドへ渡る値、空白・backslash・glob文字を含む引数、7Composeの補助関数、複数行stdin、here-document、shebang経由のhelpを安全なstubまたは非変更のhelpで照合しました。構文検査やstubから会社のsudo・SSH・Deploy・実DBを実行していません。
 
 CIにもBash/Zshの準備と全MDのshell検査を追加しています。新しい例の未ラベル、Bash固有readの共通扱い、壊れたfenceや構文を検出し、shellがない場合も成功扱いにしません。入力・コメントの実動確認を含む追加回帰を実装しました。これは既存の会社接続や運用受入を置き換える結果ではありません。
+
+## 2026-11-11: 監視・任意比較Labの追加受入は未完了
+
+従来の34service・11profile等の記録は、記載日の実施範囲を保持しています。現在の公開sourceは9Compose・14profile・41service定義・20 named volumeです。現行数量とsource hashの正本は [生成台帳](reports/COMPOSE-INVENTORY.json) です。常駐上限約35.94GiBは設定値で、実使用量ではありません。
+
+node-exporter/cAdvisor、Loki/Vector、任意OpenObserve log-only Lab、Sail合成比較のsource・fixture・mockと静的検査を追加しました。`ab5a50f` の[GitHub Actions](https://github.com/hiromura16/lakehouse-foundation/actions/runs/43016741384)は全step成功です。unittest 922件（921成功・skip 1）、Ruff/format/PEP8、compile、公開391ファイル・履歴70commitの機密検査（検出0）、文書64本、Bash/Zsh例228件、図14点、SQL解析・Trino lint、9Compose/14profileのconfig検査を実施しました。公式固定imageでPrometheus config/rules/fixturesとLoki config、Vector base/host/OpenObserve fanoutの4構成、92合成nativeテストが成功しました。host expected signalとalert gateも合成fixture検証の対象です。CIのComposeは5.1.3であり、対象5.6.1のcold/warm orderingを実測した結果ではありません。ローカルDocker APIの拒否は再試行・迂回していません。派生imageのbuild/配置、実ログ配送、24時間容量・欠損・重複・耐久、Sailのcold build/Connect/catalog/S3/型・性能、SQL Server/Windows・会社受入は未実施です。Docker/host security設定を変更して結果を作っていません。

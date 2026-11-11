@@ -9,7 +9,7 @@
 >
 > **前提となる資料:** [初めて構築する人の一本道ガイド](<START-HERE.md>) / [MES・ERPデータをBronzeからGoldへ整える](<MEDALLION.md>)
 >
-> **次に読む資料:** [AIへ渡せるデータとLangChain連携](<AI-READINESS.md>) / [ソース・指標・API・計算基盤を拡張する](<CUSTOMIZATION.md>)
+> **次に読む資料:** [AIへ渡せるデータとLangChain連携](<AI-READINESS.md>) / [ソース・指標・API・計算基盤を拡張する](<CUSTOMIZATION.md>) / [OpenObserveを任意の比較Labとして追加する](<OPENOBSERVE.md>) / [SailとSparkを同じ合成データで比較する](<SAIL-LAB.md>)
 >
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
@@ -102,7 +102,7 @@ Qdrant への埋め込み生成や、実際のジョブからの OpenLineage 自
 読み書きできるようにします。Compose が勝手に別所有者の directory を作らないよう、
 `create_host_path: false` にしています。
 
-以下の `up` は**CLI管理の場合だけ**実行します。Dokploy管理ではprivate設定とComposeサービス自身のEnvironmentを揃え、7ファイルのCommandでDeployします。[DOKPLOY](DOKPLOY.md) に沿って配置し、同じ環境へCLIの起動を重ねません。`plan` は両方式で確認できます。
+以下の `up` は**CLI管理の場合だけ**実行します。Dokploy管理ではprivate設定とComposeサービス自身のEnvironmentを揃え、9ファイルのCommandでDeployします。[DOKPLOY](DOKPLOY.md) に沿って配置し、同じ環境へCLIの起動を重ねません。`plan` は両方式で確認できます。
 
 **Bash / Zsh共通**
 
@@ -137,9 +137,9 @@ URLのportはprivate envの実値を使います。別PCのブラウザーで `l
 
 ### CLIで対象serviceだけを操作する準備
 
-リポジトリrootのBashまたはZshで以下を1回定義します。7ファイルを省略しないための関数です。`dc config --quiet` は起動や変更をしません。
+リポジトリrootのBashまたはZshで以下を1回定義します。9ファイルを省略しないための関数です。`dc config --quiet` は起動や変更をしません。
 
-以下の `up` は**CLI管理の場合だけ**実行します。Dokploy管理ではComposeサービス自身のEnvironmentを保存し、7ファイルを使ってDeployします。起動方法を重ねません。[配置手順](DOKPLOY.md)
+以下の `up` は**CLI管理の場合だけ**実行します。Dokploy管理ではComposeサービス自身のEnvironmentを保存し、9ファイルを使ってDeployします。起動方法を重ねません。[配置手順](DOKPLOY.md)
 
 **Bash / Zsh共通**
 
@@ -156,7 +156,8 @@ root = Path.cwd()
 values = load(sys.argv[1])
 command = ["docker", "compose", "--env-file", sys.argv[1]]
 for name in (
-    "lakehouse", "compute", "orchestration", "demo", "cdc", "poc", "mcp"
+    "lakehouse", "compute", "orchestration", "demo", "cdc", "poc", "mcp",
+    "openobserve", "sail",
 ):
     command.extend(["-f", str(root / "infra" / name / "compose.yaml")])
 subprocess.run(command + sys.argv[2:], env=environment(values), check=True)
@@ -575,3 +576,17 @@ FROM iceberg.gold.factory_daily_production;
 Superset initは既存GUI編集を保持し、Qdrant seedは同名collectionがあれば点の内容を上書きしません。従ってseedが `existing: true` を返しても、以前の途中失敗を自動で埋め直した保証はありません。collectionの次元・件数・IDを見て、再作成が必要なら利用者がいない専用デモで別途判断します。
 
 Marquez seedは固定run IDの手動デモです。新しい実業務runの採取処理ではありません。これらの起動・seed・再起動試験は [seed_tools.py](../infra/poc/seed_tools.py) と [PoC tool tests](../tests/test_poc_tools.py) で追えます。AIへNotebookの実行APIを渡す段階では、固定read-only MCPとは異なる強い実行権限として設計します。
+
+
+Notebook workspaceのread-only計画と承認後のapply/probe、既存projectを明示したSpark検証、機械可読な結果は [compute配置前・検証手順](COMPUTE-VALIDATION.md) を参照します。通常Deployでspark-checkが常駐しないのは正常です。local tagのpull方針はFROM/uv/JAR通信や未解決のBuildKit auth session timeoutを修復する保証ではありません。
+
+## 任意の監視・計算比較Labを選ぶ
+
+標準のBI/Notebook/vector/lineageと別に、`openobserve-lab` と `sail-lab` を選べます。標準9Composeファイルを結合しても、明示profileなしでは起動しません。新しいLabを既存monitoringやSparkの置換として扱わず、一つずつ合成環境で受入します。
+
+| 比較する問い | profileと入口 | 資源・停止境界 | 現時点の証拠 |
+| --- | --- | --- | --- |
+| 同じ秘匿済みログを別UIで比較できるか | `monitoring,openobserve-lab`、loopback 5080 | OpenObserve 2GiB/2CPU・専用volume。Lokiは独立 | source/mock。実配送・保持・24時間・metrics比較は未実施 |
+| 同じ合成ERP/MESでSpark/Sailの型と結果は一致するか | `compute,sail-lab`、内部Connectのみ | server 2GiB/client明示2GiB、通常client 0 replica・専用state | source/fixture/mock。cold build・Connect・S3/catalog・性能は未実施 |
+
+操作は [OpenObserve Lab](OPENOBSERVE.md) と [Sail Lab](SAIL-LAB.md) に従います。Sailでは共通Spark imageを先にbuildし、通常のDeployだけでbenchmarkを開始しません。実行・24時間・性能の未実施を、unit testの成功で埋めないでください。

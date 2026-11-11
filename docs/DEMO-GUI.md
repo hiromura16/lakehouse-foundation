@@ -26,7 +26,7 @@ setopt INTERACTIVE_COMMENTS
 ```
 <!-- shell-usage:end -->
 
-確認日: 2026-11-10（JST）。初回配置・作業端末・権限は [START-HERE.md](START-HERE.md) で準備します。以下の `up` はCLI管理の環境だけで使います。Dokploy管理では同じprivate設定とComposeサービスのEnvironmentを揃え、7ファイルを使ってDeployします。[0.31.0の配置手順](DOKPLOY.md)
+確認日: 2026-11-10（JST）。初回配置・作業端末・権限は [START-HERE.md](START-HERE.md) で準備します。以下の `up` はCLI管理の環境だけで使います。Dokploy管理では同じprivate設定とComposeサービスのEnvironmentを揃え、9ファイルを使ってDeployします。[0.31.0の配置手順](DOKPLOY.md)
 
 
 この画面では、MES・ERPの合成データをランディングディレクトリまたは専用の検証SQL Serverへ投入します。バッチと有限回のマイクロバッチを選べます。素材を作る操作から、Icebergへの取り込み・SQL変換・n8n・Airflowを自動起動することはありません。

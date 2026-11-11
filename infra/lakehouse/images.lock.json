@@ -22,5 +22,35 @@
   },
   "grafana": {
     "pinned": "grafana/grafana:13.3.0@sha256:6e5d306338670f381a942f1c50d3c266bf71531e5ddd9ee4fc1a133dac5ce63d"
+  },
+  "node-exporter": {
+    "pinned": "ghcr.io/prometheus/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0",
+    "provenance": "https://github.com/prometheus/node_exporter/pkgs/container/node-exporter/1029141164",
+    "verification": "official registry index metadata; image runtime not tested"
+  },
+  "cadvisor": {
+    "pinned": "ghcr.io/google/cadvisor:v0.60.6@sha256:b8e7d1093144fd088f425ff003d75a4aa405de075db78dae3bc563730b1bd07a",
+    "provenance": "https://github.com/google/cadvisor/pkgs/container/cadvisor/1267507127",
+    "verification": "official registry index metadata; image runtime not tested"
+  },
+  "loki": {
+    "pinned": "docker.io/grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28",
+    "provenance": "https://github.com/grafana/loki/blob/4c66e9a54851299caa1d7469e02aa398b3296807/production/docker/docker-compose.yaml",
+    "verification": "official publisher immutable deployment pin; direct registry response/runtime unverified"
+  },
+  "vector": {
+    "pinned": "docker.io/timberio/vector:0.61.0-debian@sha256:f6c23b5a7e16fb2838d33619ef7acf4bad2289a7cf22bc90efc2371f520c4ea2",
+    "provenance": "https://hub.docker.com/layers/timberio/vector/0.61.0-debian/images/sha256-6adda08dd40a5cb961c70d0e96a13fb3a934cfbc476e0e2eea533332917e3eb0",
+    "verification": "official registry index metadata; local derived image runtime unverified"
+  },
+  "openobserve": {
+    "pinned": "public.ecr.aws/zinclabs/openobserve:v1.1.2@sha256:4a154849432f75c4fb024de32fe34163c02406c905dab22bf8d213d2e3386392",
+    "provenance": "https://public.ecr.aws/v2/zinclabs/openobserve/manifests/v1.1.2",
+    "verification": "official index metadata; derived image runtime not tested"
+  },
+  "openobserve-health-probe": {
+    "pinned": "docker.io/library/busybox:1.37.0-uclibc@sha256:7aa3d3c53cc1ed823c6a5967ebaac87700a5b0766af45ff599dbca3506c8b072",
+    "provenance": "https://github.com/docker-library/official-images/blob/master/library/busybox",
+    "verification": "official index and static ELF artifact checks; derived image runtime not tested"
   }
 }

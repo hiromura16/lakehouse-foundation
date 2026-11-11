@@ -129,7 +129,7 @@ Airbyte以外の必要メモリは、この環境で測定していない。n8n�
 | [Airbyte MSSQL](https://docs.airbyte.com/integrations/sources/mssql) | 比較時のconnector 5.1.3表示とCDC対応。platform、destination、導入版は未選定 |
 | [Dagster dbt integration](https://docs.dagster.io/integrations/libraries/dbt) | UIでモデル・履歴を扱う候補。SQL/YAMLの定義を置き換えるものではない |
 
-同梱の版・profileの正本は7本のComposeとlockで、上の候補製品の文書ではない。新規候補を実装する際は、[COMPATIBILITY.md](COMPATIBILITY.md) と同じく版固定、秘密設定、保存・復元、小規模読み書き試験を追加する。
+同梱の版・profileの正本は9本のComposeとlockで、上の候補製品の文書ではない。新規候補を実装する際は、[COMPATIBILITY.md](COMPATIBILITY.md) と同じく版固定、秘密設定、保存・復元、小規模読み書き試験を追加する。
 
 ## 追加GUI製品の採用試験を一つの成果物にする
 

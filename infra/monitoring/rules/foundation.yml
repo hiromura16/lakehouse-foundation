@@ -1,0 +1,125 @@
+# Thresholds are a starting policy, not measured capacity recommendations.
+# CPU averaging windows and alert `for` debounce durations are separate.
+groups:
+  - name: host-foundation
+    rules:
+      - alert: HostCpuWarning
+        expr: 1 - avg by (instance, host_alias) (rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.8
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: 'Host CPU five-minute average exceeds 80%'}
+      - alert: HostCpuCritical
+        expr: 1 - avg by (instance, host_alias) (rate(node_cpu_seconds_total{mode="idle"}[10m])) > 0.9
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: 'Host CPU ten-minute average exceeds 90%'}
+      - alert: HostMemoryWarning
+        expr: node_memory_MemAvailable_bytes < 3 * 1024^3
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Available host memory below 3 GiB'}
+      - alert: HostMemoryCritical
+        expr: node_memory_MemAvailable_bytes < 1.5 * 1024^3
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: 'Available host memory below 1.5 GiB'}
+      - alert: HostSwapWarning
+        expr: node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes > 2 * 1024^3
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Used host swap exceeds 2 GiB'}
+      - alert: HostSwapCritical
+        expr: node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes > 3 * 1024^3
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: 'Used host swap exceeds 3 GiB'}
+      - record: foundation:filesystem_used:ratio
+        expr: 1 - node_filesystem_avail_bytes{fstype!~"tmpfs|squashfs|overlay|nsfs|proc|sysfs|devtmpfs",mountpoint!~"/host($|/).*"} / node_filesystem_size_bytes
+      - record: foundation:inode_used:ratio
+        expr: 1 - node_filesystem_files_free{fstype!~"tmpfs|squashfs|overlay|nsfs|proc|sysfs|devtmpfs"} / (node_filesystem_files > 0)
+      - alert: HostFilesystemWarning
+        expr: foundation:filesystem_used:ratio > 0.8
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Host filesystem usage exceeds 80%'}
+      - alert: HostFilesystemCritical
+        expr: foundation:filesystem_used:ratio > 0.9
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: 'Host filesystem usage exceeds 90%'}
+      - alert: HostInodeWarning
+        expr: foundation:inode_used:ratio > 0.8
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Host inode usage exceeds 80%'}
+      - alert: HostInodeCritical
+        expr: foundation:inode_used:ratio > 0.9
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: 'Host inode usage exceeds 90%'}
+      # Expected means explicitly selected, not healthy. Gate on Vector up so
+      # a stale intent sample cannot imply current knowledge during its outage.
+      # Each absent selector retains that exporter's canonical alert labels.
+      - record: foundation:host_exporter_unavailable:bool
+        expr: |
+          (
+            (up{job=~"node|cadvisor"} == bool 0)
+            or absent(up{job="node",instance="node-exporter:9100",host_alias="local"})
+            or absent(up{job="cadvisor",instance="cadvisor:8080",host_alias="local"})
+          )
+          and on(host_alias)
+            max by(host_alias) (lakehouse_host_collection_expected{host_alias="local"} == 1)
+          and on(host_alias)
+            max by(host_alias) (up{job="vector",host_alias="local"} == 1)
+      - alert: ExporterDownWarning
+        expr: foundation:host_exporter_unavailable:bool == 1
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: 'Exporter unreachable for two minutes'}
+      - alert: ExporterDownCritical
+        expr: foundation:host_exporter_unavailable:bool == 1
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: 'Exporter unreachable for five minutes'}
+  - name: container-foundation
+    rules:
+      # Only actually emitted Compose labels qualify. Missing labels are not
+      # invented. Root/aggregate cgroups and zero/unlimited limits are excluded.
+      - record: foundation:container_memory_limit:bytes
+        expr: container_spec_memory_limit_bytes{container_label_com_docker_compose_project!="",container_label_com_docker_compose_service!="",id!="/"} > 0 < on(host_alias) group_left() max by(host_alias) (node_memory_MemTotal_bytes)
+      - record: foundation:container_memory_used:ratio
+        expr: container_memory_working_set_bytes / on(instance,id) group_left() foundation:container_memory_limit:bytes
+      - alert: ContainerMemoryWarning
+        expr: foundation:container_memory_used:ratio{container_label_com_docker_compose_service!="trino"} > 0.85
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Finite container memory limit exceeds 85%'}
+      - alert: ContainerMemoryCritical
+        expr: foundation:container_memory_used:ratio{container_label_com_docker_compose_service!="trino"} > 0.95
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: 'Finite container memory limit exceeds 95%'}
+      # JVM reserved/working-set memory alone is insufficient for a Trino alert.
+      # No emitted OOM/start-time evidence means no correlated alert, not zero.
+      - alert: TrinoMemoryFailureEvidence
+        expr: (foundation:container_memory_used:ratio{container_label_com_docker_compose_service="trino"} > 0.95) and on(instance,id) ((increase(container_oom_events_total[10m]) > 0) or (changes(container_start_time_seconds[10m]) > 0))
+        for: 1m
+        labels: {severity: critical}
+        annotations: {summary: 'Trino high memory with emitted OOM/start evidence'}
+  - name: log-transport-foundation
+    rules:
+      - alert: LogTransportDown
+        expr: up{job=~"loki|vector"} == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Log transport unreachable; existing metrics stay independent'}
+      - alert: VectorDeliveryDiscard
+        expr: sum by(component_id) (increase(vector_component_discarded_events_total{component_id=~"loki|openobserve"}[5m])) > 0
+        for: 1m
+        labels: {severity: warning}
+        annotations: {summary: 'Vector reports discarded events; inspect bounded sink buffers'}
+      - alert: LokiRejectedSamples
+        expr: sum by(reason) (increase(loki_discarded_samples_total[5m])) > 0
+        for: 1m
+        labels: {severity: warning}
+        annotations: {summary: 'Loki reports rejected samples; inspect time/size limits'}

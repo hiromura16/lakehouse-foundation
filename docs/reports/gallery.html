@@ -5,7 +5,7 @@
 <p>図は編集可能なSVG、説明と根拠は同梱のキャプション台帳。合成検証・会社での受入・追加計画を分けて使います。</p>
 <p>SVGはこのHTMLへ埋込済みです。閲覧時の外部通信は不要。PNG・PDF・PowerPointの一括出力はREADMEの手順を使用します。</p>
 </header><nav aria-label="図版一覧">
-<a href="#01-platform-detail">全34サービスの配置と起動条件</a>
+<a href="#01-platform-detail">全41サービスの配置と起動条件</a>
 <a href="#02-batch-flow">ファイル・SQLのバッチ取り込み経路</a>
 <a href="#03-medallion">メダリオンの採用・隔離・集計ルール</a>
 <a href="#04-cdc-sequence">CDCの確定順序と再開位置</a>
@@ -20,26 +20,26 @@
 <a href="#13-evidence-summary">合成PoCで確認したこと・未評価のこと</a>
 <a href="#14-poc-roadmap">PoCから会社導入へ進む評価の順番</a>
 </nav>
-<article id="01-platform-detail"><h2>全34サービスの配置と起動条件</h2>
-<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1500" viewBox="0 0 2400 1500" role="img" aria-labelledby="01-platform-detail-title 01-platform-detail-description" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
-<title id="01-platform-detail-title">全34サービスの配置と起動条件</title>
-<desc id="01-platform-detail-description">core6サービスに11種類のprofileを重ねる単一ホストPoC構成。34は定義数であり、常駐・一度だけの初期化・明示スモークを区別する。 根拠: infra/lakehouse/compose.yaml, infra/compute/compose.yaml, infra/orchestration/compose.yaml, infra/demo/compose.yaml, infra/cdc/compose.yaml, infra/poc/compose.yaml, infra/mcp/compose.yaml</desc>
+<article id="01-platform-detail"><h2>全41サービスの配置と起動条件</h2>
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1850" viewBox="0 0 2400 1850" role="img" aria-labelledby="01-platform-detail-title 01-platform-detail-description" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
+<title id="01-platform-detail-title">全41サービスの配置と起動条件</title>
+<desc id="01-platform-detail-description">core6サービスに14種類のprofileを重ねる41定義の単一ホストPoC構成。監視拡張はsource-only検査であり、host権限と実機受入は別途必要。 根拠: infra/lakehouse/compose.yaml, infra/compute/compose.yaml, infra/orchestration/compose.yaml, infra/demo/compose.yaml, infra/cdc/compose.yaml, infra/poc/compose.yaml, infra/mcp/compose.yaml, infra/openobserve/compose.yaml, infra/sail/compose.yaml</desc>
 <defs>
 <marker id="01-platform-detail-data" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#2469a8"/></marker>
 <marker id="01-platform-detail-control" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#70608e"/></marker>
 <marker id="01-platform-detail-optional" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#78818c"/></marker>
 </defs>
-<rect x="0" y="0" width="2400" height="1500" rx="0" fill="#fff" stroke="none"/>
-<rect x="0" y="0" width="14" height="1500" rx="0" fill="#152a43" stroke="none"/>
+<rect x="0" y="0" width="2400" height="1850" rx="0" fill="#fff" stroke="none"/>
+<rect x="0" y="0" width="14" height="1850" rx="0" fill="#152a43" stroke="none"/>
 <text x="56" y="43" fill="#536780" font-size="18" font-weight="600">LAKEHOUSE FOUNDATION  /  PoC REPORT ASSETS</text>
-<text x="56" y="104" fill="#152a43" font-size="42" font-weight="700">01  全34サービスの配置と起動条件</text>
+<text x="56" y="104" fill="#152a43" font-size="42" font-weight="700">01  全41サービスの配置と起動条件</text>
 <path d="M1750,35 L1800,35" stroke="#2469a8" stroke-width="3"/>
 <text x="1812" y="41" fill="#536780" font-size="17" font-weight="400">データ</text>
 <path d="M1955,35 L2005,35" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5"/>
 <text x="2017" y="41" fill="#536780" font-size="17" font-weight="400">制御・設定</text>
 <path d="M2160,35 L2210,35" stroke="#78818c" stroke-width="3" stroke-dasharray="3 7"/>
 <text x="2222" y="41" fill="#536780" font-size="17" font-weight="400">任意・計画</text>
-<text x="56" y="148" fill="#536780" font-size="23" font-weight="400">Docker Compose 7ファイルを同じprojectへ結合。coreに必要なprofileを追加する。</text>
+<text x="56" y="148" fill="#536780" font-size="23" font-weight="400">Docker Compose 9ファイルを同じprojectへ結合。coreに必要なprofileを追加する。</text>
 <rect x="52" y="220" width="1124" height="330" rx="16" fill="#edf4ff" stroke="#b8cee8"/>
 <rect x="52" y="238" width="5" height="294" rx="2" fill="#245fa6" stroke="none"/>
 <text x="76" y="262" fill="#152a43" font-size="27" font-weight="700">core｜保存・カタログ・SQL・取り込み</text>
@@ -92,13 +92,14 @@
 <text x="1224" y="802" fill="#126c59" font-size="20" font-weight="600">2定義</text>
 <rect x="1774" y="580" width="574" height="330" rx="16" fill="#eaf7f3" stroke="#a4d1c1"/>
 <rect x="1774" y="598" width="5" height="294" rx="2" fill="#126c59" stroke="none"/>
-<text x="1798" y="622" fill="#152a43" font-size="27" font-weight="700">monitoring｜監視</text>
+<text x="1798" y="622" fill="#152a43" font-size="27" font-weight="700">monitoring / monitoring-host</text>
 <image x="2283" y="598" width="46" height="46" preserveAspectRatio="xMidYMid meet" href="data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz4KPCEtLSBHZW5lcmF0b3I6IEFkb2JlIElsbHVzdHJhdG9yIDIwLjEuMCwgU1ZHIEV4cG9ydCBQbHVnLUluIC4gU1ZHIFZlcnNpb246IDYuMDAgQnVpbGQgMCkgIC0tPgo8c3ZnIHZlcnNpb249IjEuMSIgaWQ9IkxheWVyXzEiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIHg9IjBweCIgeT0iMHB4IgoJIHdpZHRoPSIzNTFweCIgaGVpZ2h0PSIzNjVweCIgdmlld0JveD0iMCAwIDM1MSAzNjUiIHN0eWxlPSJlbmFibGUtYmFja2dyb3VuZDpuZXcgMCAwIDM1MSAzNjU7IiB4bWw6c3BhY2U9InByZXNlcnZlIj4KPHN0eWxlIHR5cGU9InRleHQvY3NzIj4KCS5zdDB7ZmlsbDp1cmwoI1NWR0lEXzFfKTt9Cjwvc3R5bGU+CjxnIGlkPSJMYXllcl8xXzFfIj4KPC9nPgo8bGluZWFyR3JhZGllbnQgaWQ9IlNWR0lEXzFfIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgeDE9IjE3NS41IiB5MT0iMzAlIiB4Mj0iMTc1LjUiIHkyPSI5OSUiPgoJPHN0b3AgIG9mZnNldD0iMCIgc3R5bGU9InN0b3AtY29sb3I6I0YwNUEyOCIvPgoJPHN0b3AgIG9mZnNldD0iMSIgc3R5bGU9InN0b3AtY29sb3I6I0ZCQ0EwQSIvPgo8L2xpbmVhckdyYWRpZW50Pgo8cGF0aCBjbGFzcz0ic3QwIiBkPSJNMzQyLDE2MS4yYy0wLjYtNi4xLTEuNi0xMy4xLTMuNi0yMC45Yy0yLTcuNy01LTE2LjItOS40LTI1Yy00LjQtOC44LTEwLjEtMTcuOS0xNy41LTI2LjgKCWMtMi45LTMuNS02LjEtNi45LTkuNS0xMC4yYzUuMS0yMC4zLTYuMi0zNy45LTYuMi0zNy45Yy0xOS41LTEuMi0zMS45LDYuMS0zNi41LDkuNGMtMC44LTAuMy0xLjUtMC43LTIuMy0xCgljLTMuMy0xLjMtNi43LTIuNi0xMC4zLTMuN2MtMy41LTEuMS03LjEtMi4xLTEwLjgtM2MtMy43LTAuOS03LjQtMS42LTExLjItMi4yYy0wLjctMC4xLTEuMy0wLjItMi0wLjMKCWMtOC41LTI3LjItMzIuOS0zOC42LTMyLjktMzguNmMtMjcuMywxNy4zLTMyLjQsNDEuNS0zMi40LDQxLjVzLTAuMSwwLjUtMC4zLDEuNGMtMS41LDAuNC0zLDAuOS00LjUsMS4zYy0yLjEsMC42LTQuMiwxLjQtNi4yLDIuMgoJYy0yLjEsMC44LTQuMSwxLjYtNi4yLDIuNWMtNC4xLDEuOC04LjIsMy44LTEyLjIsNmMtMy45LDIuMi03LjcsNC42LTExLjQsNy4xYy0wLjUtMC4yLTEtMC40LTEtMC40Yy0zNy44LTE0LjQtNzEuMywyLjktNzEuMywyLjkKCWMtMy4xLDQwLjIsMTUuMSw2NS41LDE4LjcsNzAuMWMtMC45LDIuNS0xLjcsNS0yLjUsNy41Yy0yLjgsOS4xLTQuOSwxOC40LTYuMiwyOC4xYy0wLjIsMS40LTAuNCwyLjgtMC41LDQuMgoJQzE4LjgsMTkyLjcsOC41LDIyOCw4LjUsMjI4YzI5LjEsMzMuNSw2My4xLDM1LjYsNjMuMSwzNS42YzAsMCwwLjEtMC4xLDAuMS0wLjFjNC4zLDcuNyw5LjMsMTUsMTQuOSwyMS45YzIuNCwyLjksNC44LDUuNiw3LjQsOC4zCgljLTEwLjYsMzAuNCwxLjUsNTUuNiwxLjUsNTUuNmMzMi40LDEuMiw1My43LTE0LjIsNTguMi0xNy43YzMuMiwxLjEsNi41LDIuMSw5LjgsMi45YzEwLDIuNiwyMC4yLDQuMSwzMC40LDQuNQoJYzIuNSwwLjEsNS4xLDAuMiw3LjYsMC4xbDEuMiwwbDAuOCwwbDEuNiwwbDEuNi0wLjFsMCwwLjFjMTUuMywyMS44LDQyLjEsMjQuOSw0Mi4xLDI0LjljMTkuMS0yMC4xLDIwLjItNDAuMSwyMC4yLTQ0LjRsMCwwCgljMCwwLDAtMC4xLDAtMC4zYzAtMC40LDAtMC42LDAtMC42bDAsMGMwLTAuMywwLTAuNiwwLTAuOWM0LTIuOCw3LjgtNS44LDExLjQtOS4xYzcuNi02LjksMTQuMy0xNC44LDE5LjktMjMuMwoJYzAuNS0wLjgsMS0xLjYsMS41LTIuNGMyMS42LDEuMiwzNi45LTEzLjQsMzYuOS0xMy40Yy0zLjYtMjIuNS0xNi40LTMzLjUtMTkuMS0zNS42bDAsMGMwLDAtMC4xLTAuMS0wLjMtMC4yCgljLTAuMi0wLjEtMC4yLTAuMi0wLjItMC4yYzAsMCwwLDAsMCwwYy0wLjEtMC4xLTAuMy0wLjItMC41LTAuM2MwLjEtMS40LDAuMi0yLjcsMC4zLTQuMWMwLjItMi40LDAuMi00LjksMC4yLTcuM2wwLTEuOGwwLTAuOQoJbDAtMC41YzAtMC42LDAtMC40LDAtMC42bC0wLjEtMS41bC0wLjEtMmMwLTAuNy0wLjEtMS4zLTAuMi0xLjljLTAuMS0wLjYtMC4xLTEuMy0wLjItMS45bC0wLjItMS45bC0wLjMtMS45CgljLTAuNC0yLjUtMC44LTQuOS0xLjQtNy40Yy0yLjMtOS43LTYuMS0xOC45LTExLTI3LjJjLTUtOC4zLTExLjItMTUuNi0xOC4zLTIxLjhjLTctNi4yLTE0LjktMTEuMi0yMy4xLTE0LjkKCWMtOC4zLTMuNy0xNi45LTYuMS0yNS41LTcuMmMtNC4zLTAuNi04LjYtMC44LTEyLjktMC43bC0xLjYsMGwtMC40LDBjLTAuMSwwLTAuNiwwLTAuNSwwbC0wLjcsMGwtMS42LDAuMWMtMC42LDAtMS4yLDAuMS0xLjcsMC4xCgljLTIuMiwwLjItNC40LDAuNS02LjUsMC45Yy04LjYsMS42LTE2LjcsNC43LTIzLjgsOWMtNy4xLDQuMy0xMy4zLDkuNi0xOC4zLDE1LjZjLTUsNi04LjksMTIuNy0xMS42LDE5LjZjLTIuNyw2LjktNC4yLDE0LjEtNC42LDIxCgljLTAuMSwxLjctMC4xLDMuNS0wLjEsNS4yYzAsMC40LDAsMC45LDAsMS4zbDAuMSwxLjRjMC4xLDAuOCwwLjEsMS43LDAuMiwyLjVjMC4zLDMuNSwxLDYuOSwxLjksMTAuMWMxLjksNi41LDQuOSwxMi40LDguNiwxNy40CgljMy43LDUsOC4yLDkuMSwxMi45LDEyLjRjNC43LDMuMiw5LjgsNS41LDE0LjgsN2M1LDEuNSwxMCwyLjEsMTQuNywyLjFjMC42LDAsMS4yLDAsMS43LDBjMC4zLDAsMC42LDAsMC45LDBjMC4zLDAsMC42LDAsMC45LTAuMQoJYzAuNSwwLDEtMC4xLDEuNS0wLjFjMC4xLDAsMC4zLDAsMC40LTAuMWwwLjUtMC4xYzAuMywwLDAuNi0wLjEsMC45LTAuMWMwLjYtMC4xLDEuMS0wLjIsMS43LTAuM2MwLjYtMC4xLDEuMS0wLjIsMS42LTAuNAoJYzEuMS0wLjIsMi4xLTAuNiwzLjEtMC45YzItMC43LDQtMS41LDUuNy0yLjRjMS44LTAuOSwzLjQtMiw1LTNjMC40LTAuMywwLjktMC42LDEuMy0xYzEuNi0xLjMsMS45LTMuNywwLjYtNS4zCgljLTEuMS0xLjQtMy4xLTEuOC00LjctMC45Yy0wLjQsMC4yLTAuOCwwLjQtMS4yLDAuNmMtMS40LDAuNy0yLjgsMS4zLTQuMywxLjhjLTEuNSwwLjUtMy4xLDAuOS00LjcsMS4yYy0wLjgsMC4xLTEuNiwwLjItMi41LDAuMwoJYy0wLjQsMC0wLjgsMC4xLTEuMywwLjFjLTAuNCwwLTAuOSwwLTEuMiwwYy0wLjQsMC0wLjgsMC0xLjIsMGMtMC41LDAtMSwwLTEuNS0wLjFjMCwwLTAuMywwLTAuMSwwbC0wLjIsMGwtMC4zLDAKCWMtMC4yLDAtMC41LDAtMC43LTAuMWMtMC41LTAuMS0wLjktMC4xLTEuNC0wLjJjLTMuNy0wLjUtNy40LTEuNi0xMC45LTMuMmMtMy42LTEuNi03LTMuOC0xMC4xLTYuNmMtMy4xLTIuOC01LjgtNi4xLTcuOS05LjkKCWMtMi4xLTMuOC0zLjYtOC00LjMtMTIuNGMtMC4zLTIuMi0wLjUtNC41LTAuNC02LjdjMC0wLjYsMC4xLTEuMiwwLjEtMS44YzAsMC4yLDAtMC4xLDAtMC4xbDAtMC4ybDAtMC41YzAtMC4zLDAuMS0wLjYsMC4xLTAuOQoJYzAuMS0xLjIsMC4zLTIuNCwwLjUtMy42YzEuNy05LjYsNi41LTE5LDEzLjktMjYuMWMxLjktMS44LDMuOS0zLjQsNi00LjljMi4xLTEuNSw0LjQtMi44LDYuOC0zLjljMi40LTEuMSw0LjgtMiw3LjQtMi43CgljMi41LTAuNyw1LjEtMS4xLDcuOC0xLjRjMS4zLTAuMSwyLjYtMC4yLDQtMC4yYzAuNCwwLDAuNiwwLDAuOSwwbDEuMSwwbDAuNywwYzAuMywwLDAsMCwwLjEsMGwwLjMsMGwxLjEsMC4xCgljMi45LDAuMiw1LjcsMC42LDguNSwxLjNjNS42LDEuMiwxMS4xLDMuMywxNi4yLDYuMWMxMC4yLDUuNywxOC45LDE0LjUsMjQuMiwyNS4xYzIuNyw1LjMsNC42LDExLDUuNSwxNi45YzAuMiwxLjUsMC40LDMsMC41LDQuNQoJbDAuMSwxLjFsMC4xLDEuMWMwLDAuNCwwLDAuOCwwLDEuMWMwLDAuNCwwLDAuOCwwLDEuMWwwLDFsMCwxLjFjMCwwLjctMC4xLDEuOS0wLjEsMi42Yy0wLjEsMS42LTAuMywzLjMtMC41LDQuOQoJYy0wLjIsMS42LTAuNSwzLjItMC44LDQuOGMtMC4zLDEuNi0wLjcsMy4yLTEuMSw0LjdjLTAuOCwzLjEtMS44LDYuMi0zLDkuM2MtMi40LDYtNS42LDExLjgtOS40LDE3LjEKCWMtNy43LDEwLjYtMTguMiwxOS4yLTMwLjIsMjQuN2MtNiwyLjctMTIuMyw0LjctMTguOCw1LjdjLTMuMiwwLjYtNi41LDAuOS05LjgsMWwtMC42LDBsLTAuNSwwbC0xLjEsMGwtMS42LDBsLTAuOCwwCgljMC40LDAtMC4xLDAtMC4xLDBsLTAuMywwYy0xLjgsMC0zLjUtMC4xLTUuMy0wLjNjLTctMC41LTEzLjktMS44LTIwLjctMy43Yy02LjctMS45LTEzLjItNC42LTE5LjQtNy44CgljLTEyLjMtNi42LTIzLjQtMTUuNi0zMi0yNi41Yy00LjMtNS40LTguMS0xMS4zLTExLjItMTcuNGMtMy4xLTYuMS01LjYtMTIuNi03LjQtMTkuMWMtMS44LTYuNi0yLjktMTMuMy0zLjQtMjAuMWwtMC4xLTEuM2wwLTAuMwoJbDAtMC4zbDAtMC42bDAtMS4xbDAtMC4zbDAtMC40bDAtMC44bDAtMS42bDAtMC4zYzAsMCwwLDAuMSwwLTAuMWwwLTAuNmMwLTAuOCwwLTEuNywwLTIuNWMwLjEtMy4zLDAuNC02LjgsMC44LTEwLjIKCWMwLjQtMy40LDEtNi45LDEuNy0xMC4zYzAuNy0zLjQsMS41LTYuOCwyLjUtMTAuMmMxLjktNi43LDQuMy0xMy4yLDcuMS0xOS4zYzUuNy0xMi4yLDEzLjEtMjMuMSwyMi0zMS44YzIuMi0yLjIsNC41LTQuMiw2LjktNi4yCgljMi40LTEuOSw0LjktMy43LDcuNS01LjRjMi41LTEuNyw1LjItMy4yLDcuOS00LjZjMS4zLTAuNywyLjctMS40LDQuMS0yYzAuNy0wLjMsMS40LTAuNiwyLjEtMC45YzAuNy0wLjMsMS40LTAuNiwyLjEtMC45CgljMi44LTEuMiw1LjctMi4yLDguNy0zLjFjMC43LTAuMiwxLjUtMC40LDIuMi0wLjdjMC43LTAuMiwxLjUtMC40LDIuMi0wLjZjMS41LTAuNCwzLTAuOCw0LjUtMS4xYzAuNy0wLjIsMS41LTAuMywyLjMtMC41CgljMC44LTAuMiwxLjUtMC4zLDIuMy0wLjVjMC44LTAuMSwxLjUtMC4zLDIuMy0wLjRsMS4xLTAuMmwxLjItMC4yYzAuOC0wLjEsMS41LTAuMiwyLjMtMC4zYzAuOS0wLjEsMS43LTAuMiwyLjYtMC4zCgljMC43LTAuMSwxLjktMC4yLDIuNi0wLjNjMC41LTAuMSwxLjEtMC4xLDEuNi0wLjJsMS4xLTAuMWwwLjUtMC4xbDAuNiwwYzAuOS0wLjEsMS43LTAuMSwyLjYtMC4ybDEuMy0wLjFjMCwwLDAuNSwwLDAuMSwwbDAuMywwCglsMC42LDBjMC43LDAsMS41LTAuMSwyLjItMC4xYzIuOS0wLjEsNS45LTAuMSw4LjgsMGM1LjgsMC4yLDExLjUsMC45LDE3LDEuOWMxMS4xLDIuMSwyMS41LDUuNiwzMSwxMC4zCgljOS41LDQuNiwxNy45LDEwLjMsMjUuMywxNi41YzAuNSwwLjQsMC45LDAuOCwxLjQsMS4yYzAuNCwwLjQsMC45LDAuOCwxLjMsMS4yYzAuOSwwLjgsMS43LDEuNiwyLjYsMi40YzAuOSwwLjgsMS43LDEuNiwyLjUsMi40CgljMC44LDAuOCwxLjYsMS42LDIuNCwyLjVjMy4xLDMuMyw2LDYuNiw4LjYsMTBjNS4yLDYuNyw5LjQsMTMuNSwxMi43LDE5LjljMC4yLDAuNCwwLjQsMC44LDAuNiwxLjJjMC4yLDAuNCwwLjQsMC44LDAuNiwxLjIKCWMwLjQsMC44LDAuOCwxLjYsMS4xLDIuNGMwLjQsMC44LDAuNywxLjUsMS4xLDIuM2MwLjMsMC44LDAuNywxLjUsMSwyLjNjMS4yLDMsMi40LDUuOSwzLjMsOC42YzEuNSw0LjQsMi42LDguMywzLjUsMTEuNwoJYzAuMywxLjQsMS42LDIuMywzLDIuMWMxLjUtMC4xLDIuNi0xLjMsMi42LTIuOEMzNDIuNiwxNzAuNCwzNDIuNSwxNjYuMSwzNDIsMTYxLjJ6Ii8+Cjwvc3ZnPgo="/>
-<text x="1798" y="667" fill="#152a43" font-size="23" font-weight="400">prometheus / grafana</text>
-<text x="1798" y="699" fill="#152a43" font-size="23" font-weight="400">workerとPrometheus自身を収集</text>
-<text x="1798" y="731" fill="#152a43" font-size="23" font-weight="400">dashboardはGUI保存を保持</text>
-<text x="1798" y="763" fill="#152a43" font-size="23" font-weight="400">全ホスト監視は別途追加</text>
-<text x="1798" y="802" fill="#126c59" font-size="20" font-weight="600">2定義</text>
+<text x="1798" y="667" fill="#152a43" font-size="23" font-weight="400">通常4：prometheus / grafana / loki /</text>
+<text x="1798" y="699" fill="#152a43" font-size="23" font-weight="400">vector</text>
+<text x="1798" y="731" fill="#152a43" font-size="23" font-weight="400">host追加2：node-exporter / cadvisor</text>
+<text x="1798" y="763" fill="#152a43" font-size="23" font-weight="400">host root/PIDは別opt-in・事前承認</text>
+<text x="1798" y="795" fill="#152a43" font-size="23" font-weight="400">通常更新からhost読取りを追加しない</text>
+<text x="1798" y="834" fill="#126c59" font-size="20" font-weight="600">4定義 + 明示host 2定義</text>
 <rect x="52" y="940" width="550" height="330" rx="16" fill="#fff7dd" stroke="#dfca85"/>
 <rect x="52" y="958" width="5" height="294" rx="2" fill="#806000" stroke="none"/>
 <text x="76" y="982" fill="#152a43" font-size="27" font-weight="700">bi｜Superset</text>
@@ -131,15 +132,31 @@
 <text x="1798" y="1091" fill="#152a43" font-size="23" font-weight="400">既定9read / 2resources</text>
 <text x="1798" y="1123" fill="#152a43" font-size="23" font-weight="400">Streamlit画面はdemo選択時のみ</text>
 <text x="1798" y="1162" fill="#245fa6" font-size="20" font-weight="600">1定義</text>
-<rect x="56" y="1335" width="2288" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
-<text x="56" y="1370" fill="#536780" font-size="20" font-weight="400">Dokploy・Samba・daemon proxyはホスト側の別設定。SQL Serverは外部DB。</text>
-<text x="56" y="1397" fill="#536780" font-size="20" font-weight="400">一度だけの初期化は4定義。全profileでは33containerの検証記録があり、34全てが常時稼働する構成ではない。</text>
-<text x="56" y="1477" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+<rect x="52" y="1300" width="1124" height="330" rx="16" fill="#eaf7f3" stroke="#a4d1c1"/>
+<rect x="52" y="1318" width="5" height="294" rx="2" fill="#126c59" stroke="none"/>
+<text x="76" y="1342" fill="#152a43" font-size="27" font-weight="700">openobserve-lab｜ログ比較のみ</text>
+<text x="76" y="1387" fill="#152a43" font-size="23" font-weight="400">openobserve：2GiB / 2CPU / 専用volume</text>
+<text x="76" y="1419" fill="#152a43" font-size="23" font-weight="400">Vectorの秘匿化後eventを第二sinkへ分岐</text>
+<text x="76" y="1451" fill="#152a43" font-size="23" font-weight="400">通常Loki経路は独立。metrics比較は後続Phase</text>
+<text x="76" y="1483" fill="#152a43" font-size="23" font-weight="400">実API・配送・保持削除・24時間性能は未受入</text>
+<text x="76" y="1522" fill="#126c59" font-size="20" font-weight="600">任意1定義 / cold runtime未検証</text>
+<rect x="1200" y="1300" width="1148" height="330" rx="16" fill="#f1edfc" stroke="#c6b9e9"/>
+<rect x="1200" y="1318" width="5" height="294" rx="2" fill="#63449b" stroke="none"/>
+<text x="1224" y="1342" fill="#152a43" font-size="27" font-weight="700">sail-lab｜合成データのエンジン比較</text>
+<text x="1224" y="1387" fill="#152a43" font-size="23" font-weight="400">sail-server：2GiB / sail-benchmark：明示2GiB</text>
+<text x="1224" y="1419" fill="#152a43" font-size="23" font-weight="400">clientは通常replicas 0。専用state volume</text>
+<text x="1224" y="1451" fill="#152a43" font-size="23" font-weight="400">compute必須。Spark共通image事前build</text>
+<text x="1224" y="1483" fill="#152a43" font-size="23" font-weight="400">型・Connect・catalog/S3・性能は実機未受入</text>
+<text x="1224" y="1522" fill="#63449b" font-size="20" font-weight="600">任意2定義 / 通常業務表と分離</text>
+<rect x="56" y="1685" width="2288" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
+<text x="56" y="1720" fill="#536780" font-size="20" font-weight="400">Dokploy・Samba・daemon proxyはホスト側の別設定。SQL Serverは外部DB。</text>
+<text x="56" y="1747" fill="#536780" font-size="20" font-weight="400">初期化4定義と通常0の明示検証2定義を区別する。新規監視・比較Labの実機受入は別途必要。</text>
+<text x="56" y="1827" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>
 
-<p class="caption"><strong>図01: </strong>core6サービスに11種類のprofileを重ねる単一ホストPoC構成。34は定義数であり、常駐・一度だけの初期化・明示スモークを区別する。</p>
+<p class="caption"><strong>図01: </strong>core6サービスに14種類のprofileを重ねる41定義の単一ホストPoC構成。監視拡張はsource-only検査であり、host権限と実機受入は別途必要。</p>
 <details><summary>用途・根拠・編集元</summary>
-<p class="scope">用途: 基盤設計・導入レビュー / 照合日: 2026-11-10</p>
+<p class="scope">用途: 基盤設計・導入レビュー / 照合日: 2026-11-11</p>
 <p><a href="figures/01-platform-detail.svg">SVG</a> / <a href="mermaid/01-platform-detail.mmd">Mermaid</a></p><ul>
 <li><a href="../../infra/lakehouse/compose.yaml">infra/lakehouse/compose.yaml</a></li>
 <li><a href="../../infra/compute/compose.yaml">infra/compute/compose.yaml</a></li>
@@ -148,6 +165,8 @@
 <li><a href="../../infra/cdc/compose.yaml">infra/cdc/compose.yaml</a></li>
 <li><a href="../../infra/poc/compose.yaml">infra/poc/compose.yaml</a></li>
 <li><a href="../../infra/mcp/compose.yaml">infra/mcp/compose.yaml</a></li>
+<li><a href="../../infra/openobserve/compose.yaml">infra/openobserve/compose.yaml</a></li>
+<li><a href="../../infra/sail/compose.yaml">infra/sail/compose.yaml</a></li>
 </ul></details></article>
 <article id="02-batch-flow"><h2>ファイル・SQLのバッチ取り込み経路</h2>
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="02-batch-flow-title 02-batch-flow-description" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
@@ -223,12 +242,12 @@
 <rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
 <text x="56" y="950" fill="#536780" font-size="20" font-weight="400">ファイルを消すだけでは取り込み済みBronzeを削除しない。会社データは合成試験と別環境で受入。</text>
 <text x="56" y="977" fill="#536780" font-size="20" font-weight="400">1原本16MiB以下、契約CSV/JSONは100000行以下。SQL抽出の6表は同一時点transactionではない。</text>
-<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>
 
 <p class="caption"><strong>図02: </strong>SQLのread-only抽出とSamba/GUI素材は同じlanding契約へ合流する。workerが原本とBronzeを保存し、明示したmedallion操作でSilver・隔離・Goldへ進む。</p>
 <details><summary>用途・根拠・編集元</summary>
-<p class="scope">用途: データ連携・業務担当 / 照合日: 2026-11-10</p>
+<p class="scope">用途: データ連携・業務担当 / 照合日: 2026-11-11</p>
 <p><a href="figures/02-batch-flow.svg">SVG</a> / <a href="mermaid/02-batch-flow.mmd">Mermaid</a></p><ul>
 <li><a href="../../scripts/extract-sqlserver.py">scripts/extract-sqlserver.py</a></li>
 <li><a href="../../scripts/generate-demo.py">scripts/generate-demo.py</a></li>
@@ -310,12 +329,12 @@
 <rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
 <text x="56" y="950" fill="#536780" font-size="20" font-weight="400">seed42 / orders20 / days7 / edge専用fixture。GUIの複数runの累積値と比較しない。</text>
 <text x="56" y="977" fill="#536780" font-size="20" font-weight="400">置換は1表単位。複数表の読取りでは世代が混在し得る。更新時刻が不正なら版順を保証できない。</text>
-<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>
 
 <p class="caption"><strong>図03: </strong>Bronzeの版からupdated_at等の固定順序で最新候補を選び、型・数量・親参照を検査する。Silverと隔離を分け、親子明細を事前集約してGoldの多重加算を防ぐ。</p>
 <details><summary>用途・根拠・編集元</summary>
-<p class="scope">用途: データ品質・業務集計レビュー / 照合日: 2026-11-10</p>
+<p class="scope">用途: データ品質・業務集計レビュー / 照合日: 2026-11-11</p>
 <p><a href="figures/03-medallion.svg">SVG</a> / <a href="mermaid/03-medallion.mmd">Mermaid</a></p><ul>
 <li><a href="../../medallion/01_silver.sql">medallion/01_silver.sql</a></li>
 <li><a href="../../medallion/02_quarantine.sql">medallion/02_quarantine.sql</a></li>
@@ -408,12 +427,12 @@
 <rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
 <text x="56" y="950" fill="#536780" font-size="20" font-weight="400">過去の合成試験：初期144＋INSERT6＋UPDATE6＋DELETE6＋tombstone6＝raw168。restart後distinct168。</text>
 <text x="56" y="977" fill="#536780" font-size="20" font-weight="400">GUIの固定I/U/Dは専用DBの所有権tokenを検証する素材操作。会社業務DBのDMLは実行しない。</text>
-<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>
 
 <p class="caption"><strong>図04: </strong>SQL Server CDCをDebeziumで読み、Kafkaを経由してrawイベントとSQLite現在値を保存する。consumerはSilver/Goldまで確認してcheckpointを保存し、その後Kafka offsetをcommitする。</p>
 <details><summary>用途・根拠・編集元</summary>
-<p class="scope">用途: DBA・ストリーミング設計 / 照合日: 2026-11-10</p>
+<p class="scope">用途: DBA・ストリーミング設計 / 照合日: 2026-11-11</p>
 <p><a href="figures/04-cdc-sequence.svg">SVG</a> / <a href="mermaid/04-cdc-sequence.mmd">Mermaid</a></p><ul>
 <li><a href="../../infra/cdc/consumer.py">infra/cdc/consumer.py</a></li>
 <li><a href="../../infra/cdc/connector.py">infra/cdc/connector.py</a></li>
@@ -502,12 +521,12 @@
 <rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
 <text x="56" y="950" fill="#536780" font-size="20" font-weight="400">APIは1worker前提。直近20件のjob履歴はメモリ内で、API再起動後は失われる。</text>
 <text x="56" y="977" fill="#536780" font-size="20" font-weight="400">タイムアウトは処理停止を意味しない。workerのbusyと実体を見て、二重実行を避ける。</text>
-<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>
 
 <p class="caption"><strong>図05: </strong>Streamlit・Swagger・MCP連携は固定FastAPIを使い、source jobとpipeline jobを分ける。同梱n8n/AirflowはWORKER_TOKENでworkerへ直接依頼する。設定保存からDockerやsudoを呼ばない。</p>
 <details><summary>用途・根拠・編集元</summary>
-<p class="scope">用途: 利用者導線・API連携 / 照合日: 2026-11-10</p>
+<p class="scope">用途: 利用者導線・API連携 / 照合日: 2026-11-11</p>
 <p><a href="figures/05-control-api.svg">SVG</a> / <a href="mermaid/05-control-api.mmd">Mermaid</a></p><ul>
 <li><a href="../../infra/demo/api.py">infra/demo/api.py</a></li>
 <li><a href="../../infra/demo/job_manager.py">infra/demo/job_manager.py</a></li>
@@ -596,12 +615,12 @@
 <rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
 <text x="56" y="950" fill="#536780" font-size="20" font-weight="400">7077/7078・Notebook callbackは内部用。Sparkの3UIはhost loopbackに限定。</text>
 <text x="56" y="977" fill="#536780" font-size="20" font-weight="400">spark-checkは別のlocal[2]互換smoke。常駐クラスタへのremote実行成功とは区別する。</text>
-<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>
 
 <p class="caption"><strong>図06: </strong>compute有効時、Jupyterのdriverがstandalone Masterへ接続し別Workerでexecutorを動かす。event logを共有し、Historyで終了後も参照する。computeなしのNotebookは明示local[2]である。</p>
 <details><summary>用途・根拠・編集元</summary>
-<p class="scope">用途: 分析基盤・分散計算レビュー / 照合日: 2026-11-10</p>
+<p class="scope">用途: 分析基盤・分散計算レビュー / 照合日: 2026-11-11</p>
 <p><a href="figures/06-spark-compute.svg">SVG</a> / <a href="mermaid/06-spark-compute.mmd">Mermaid</a></p><ul>
 <li><a href="../../infra/compute/compose.yaml">infra/compute/compose.yaml</a></li>
 <li><a href="../../infra/poc/lakehouse_session.py">infra/poc/lakehouse_session.py</a></li>
@@ -687,12 +706,12 @@
 <rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
 <text x="56" y="950" fill="#536780" font-size="20" font-weight="400">export時SQLのhashは、過去snapshotを生成したSQL版の証明ではない。実行監査台帳は追加課題。</text>
 <text x="56" y="977" fill="#536780" font-size="20" font-weight="400">Qdrantの合成vector3点とMarquezの手動系統seedは疎通試験。意味検索精度・実系統自動収集を保証しない。</text>
-<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>
 
 <p class="caption"><strong>図07: </strong>Trinoが各表のmain snapshotを固定し、上限付きcontext JSONへ表名とsnapshot IDを付ける。LangChain Document化までを同梱し、モデル推論やRAGの完成とは区別する。</p>
 <details><summary>用途・根拠・編集元</summary>
-<p class="scope">用途: AI・業務利用の説明 / 照合日: 2026-11-10</p>
+<p class="scope">用途: AI・業務利用の説明 / 照合日: 2026-11-11</p>
 <p><a href="figures/07-ai-context.svg">SVG</a> / <a href="mermaid/07-ai-context.mmd">Mermaid</a></p><ul>
 <li><a href="../../scripts/ai_context.py">scripts/ai_context.py</a></li>
 <li><a href="../../examples/ai/context_chain.py">examples/ai/context_chain.py</a></li>
@@ -777,12 +796,12 @@
 <rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
 <text x="56" y="950" fill="#536780" font-size="20" font-weight="400">NO_PROXYは経路選択。n8nのSSRF許可は別の保護。内部bypassがあってもSSRF許可にはならない。</text>
 <text x="56" y="977" fill="#536780" font-size="20" font-weight="400">GUI診断は固定HTTPS4先だけ。成功してもdaemon・Java・実会社proxy全経路の受入完了ではない。</text>
-<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>
 
 <p class="caption"><strong>図08: </strong>daemon、BuildKit、稼働中client、Java/SDKの設定を分ける。private canonicalへ必須内部名と会社追加先をまとめ、企業CAをホスト・image・JVMへ必要な範囲で適用する。</p>
 <details><summary>用途・根拠・編集元</summary>
-<p class="scope">用途: ネットワーク・導入担当 / 照合日: 2026-11-10</p>
+<p class="scope">用途: ネットワーク・導入担当 / 照合日: 2026-11-11</p>
 <p><a href="figures/08-proxy-ca.svg">SVG</a> / <a href="mermaid/08-proxy-ca.mmd">Mermaid</a></p><ul>
 <li><a href="../../scripts/configure-proxy.sh">scripts/configure-proxy.sh</a></li>
 <li><a href="../../scripts/settings.py">scripts/settings.py</a></li>
@@ -863,12 +882,12 @@
 <rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
 <text x="56" y="950" fill="#536780" font-size="20" font-weight="400">SQLのDB資格情報、worker token、S3鍵をLLMへ渡さない。Notebook/Superset等nativeツールの権限は別管理。</text>
 <text x="56" y="977" fill="#536780" font-size="20" font-weight="400">公開素材は実IP・proxy・ユーザー名・実データ・証明書を含めず、既知情報と全履歴を照合する。</text>
-<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>
 
 <p class="caption"><strong>図09: </strong>利用者は限定入口から操作し、API/MCPは専用tokenを使う。管理者だけがDokploy/Docker/ホスト設定を変更する。内部Trino/カタログは閉域前提で、利用者別認可の完成は別課題である。</p>
 <details><summary>用途・根拠・編集元</summary>
-<p class="scope">用途: セキュリティ・公開レビュー / 照合日: 2026-11-10</p>
+<p class="scope">用途: セキュリティ・公開レビュー / 照合日: 2026-11-11</p>
 <p><a href="figures/09-security-boundaries.svg">SVG</a> / <a href="mermaid/09-security-boundaries.mmd">Mermaid</a></p><ul>
 <li><a href="../../infra/demo/api.py">infra/demo/api.py</a></li>
 <li><a href="../../infra/mcp/server.py">infra/mcp/server.py</a></li>
@@ -878,7 +897,7 @@
 <article id="10-observability"><h2>監視・状態確認・業務品質を分ける</h2>
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="10-observability-title 10-observability-description" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
 <title id="10-observability-title">監視・状態確認・業務品質を分ける</title>
-<desc id="10-observability-description">Prometheusはworkerと自身の2targetを15秒ごとに収集する。ポータルのhealth、固定品質SQL、n8n/Airflow等の実行履歴は別の観測で、全ホストの監視や長期監査を完成させるものではない。 根拠: infra/monitoring/prometheus.yml, scripts/admin.py, scripts/grafana_setup.py, infra/demo/poc_quality.py</desc>
+<desc id="10-observability-description">通常監視はPrometheus/Grafana/Loki/Vector。host root/PIDを読むexporterはmonitoring-hostの明示opt-in。curated有限capture・秘匿化・配送のsourceと、公式validator・実host/GUI・容量の受入を区別する。 根拠: infra/monitoring/prometheus.yml, scripts/admin.py, scripts/grafana_setup.py, infra/demo/poc_quality.py, infra/openobserve/compose.yaml, docs/OPENOBSERVE.md</desc>
 <defs>
 <marker id="10-observability-data" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#2469a8"/></marker>
 <marker id="10-observability-control" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#70608e"/></marker>
@@ -900,13 +919,13 @@
 <text x="80" y="272" fill="#152a43" font-size="27" font-weight="700">worker /metrics</text>
 <text x="80" y="317" fill="#152a43" font-size="23" font-weight="400">処理の指標を公開</text>
 <text x="80" y="349" fill="#152a43" font-size="23" font-weight="400">DBA・業務照合とは別</text>
-<text x="80" y="381" fill="#152a43" font-size="23" font-weight="400">外部host exporterは未同梱</text>
+<text x="80" y="381" fill="#152a43" font-size="23" font-weight="400">host metricsはexporterへ分離</text>
 <text x="80" y="420" fill="#245fa6" font-size="20" font-weight="600">メトリクス対象1</text>
 <rect x="650" y="230" width="520" height="240" rx="16" fill="#eaf7f3" stroke="#a4d1c1"/>
 <rect x="650" y="248" width="5" height="204" rx="2" fill="#126c59" stroke="none"/>
 <text x="674" y="272" fill="#152a43" font-size="27" font-weight="700">Prometheus</text>
 <image x="1105" y="248" width="46" height="46" preserveAspectRatio="xMidYMid meet" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbDpzcGFjZT0icHJlc2VydmUiIHdpZHRoPSIxMTMuMzMzIiBoZWlnaHQ9IjExMy4zMzEiIHZpZXdCb3g9IjAgMCAxMTMuMzMzIDExMy4zMzEiPjxwYXRoIGQ9Ik01Ni42NjcgMEMyNS4zNzIgMCAwIDI1LjM2OSAwIDU2LjY2NWMwIDMxLjI5NSAyNS4zNzIgNTYuNjY2IDU2LjY2NyA1Ni42NjZzNTYuNjY2LTI1LjM3MSA1Ni42NjYtNTYuNjY2QzExMy4zMzMgMjUuMzY5IDg3Ljk2MSAwIDU2LjY2NyAwWm0wIDEwNi4wNTVjLTguOTA0IDAtMTYuMTIzLTUuOTQ4LTE2LjEyMy0xMy4yODNINzIuNzljMCA3LjMzNC03LjIxOSAxMy4yODMtMTYuMTIzIDEzLjI4M3ptMjYuNjMtMTcuNjgySDMwLjAzNHYtOS42NThoNTMuMjY0djkuNjU4em0tLjE5MS0xNC42MjloLTUyLjkyYy0uMTc2LS4yMDMtLjM1Ni0uNDAzLS41MjYtLjYwOS01LjQ1Mi02LjYyLTYuNzM2LTEwLjA3Ni03Ljk4My0xMy41OTgtLjAyMS0uMTE2IDYuNjExIDEuMzU1IDExLjMxNCAyLjQxMyAwIDAgMi40Mi41NiA1Ljk1OCAxLjIwNS0zLjM5Ny0zLjk4Mi01LjQxNC05LjA0NC01LjQxNC0xNC4yMTggMC0xMS4zNTkgOC43MTItMjEuMjg1IDUuNTY5LTI5LjMwOCAzLjA1OS4yNDkgNi4zMzEgNi40NTYgNi41NTIgMTYuMTYxIDMuMjUyLTQuNDk0IDQuNjEzLTEyLjcwMSA0LjYxMy0xNy43MzMgMC01LjIxIDMuNDMzLTExLjI2MiA2Ljg2Ny0xMS40NjktMy4wNjEgNS4wNDUuNzkzIDkuMzcgNC4yMTkgMjAuMDk5IDEuMjg1IDQuMDMgMS4xMjEgMTAuODEyIDIuMTEzIDE1LjExMy4zMjktOC45MzMgMS44NjUtMjEuOTY3IDcuNTMyLTI2LjQ2Ny0yLjUgNS42NjcuMzcgMTIuNzU4IDIuMzMzIDE2LjE2N0M3Ni41IDM3IDc4LjQyIDQxLjE2NyA3OC40MiA0OS4wNDhjMCA1LjI4NC0xLjk1MSAxMC4yNTktNS4yNDIgMTQuMTQ4IDMuNzQyLS43MDIgNi4zMjYtMS4zMzUgNi4zMjYtMS4zMzVsMTIuMTUyLTIuMzcxYy4wMDEtLjAwMS0xLjc2NSA3LjI2MS04LjU1IDE0LjI1NHoiIHN0eWxlPSJmaWxsOiNlNjUyMmM7ZmlsbC1vcGFjaXR5OjEiLz48L3N2Zz4="/>
-<text x="674" y="317" fill="#152a43" font-size="23" font-weight="400">worker＋Prometheus自身の2target</text>
+<text x="674" y="317" fill="#152a43" font-size="23" font-weight="400">通常指標＋host opt-inの収集定義</text>
 <text x="674" y="349" fill="#152a43" font-size="23" font-weight="400">scrape interval：15秒</text>
 <text x="674" y="381" fill="#152a43" font-size="23" font-weight="400">保存：15日 / 2GBの設定</text>
 <text x="674" y="420" fill="#126c59" font-size="20" font-weight="600">monitoring</text>
@@ -946,24 +965,26 @@
 <rect x="1202.76" y="316" width="108.48" height="27" rx="3" fill="#fff" stroke="none"/>
 <g text-anchor="middle"><text x="1257" y="335" fill="#2469a8" font-size="18" font-weight="600">PromQL参照</text></g>
 <rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
-<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">GUI入口カードの数とPrometheus target数は別。会社SQL Server・DB・Kafka・ホスト全体の監視は追加する。</text>
+<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">host/cgroupはmonitoring-hostの別opt-in・read承認後に受入。任意OpenObserveはlog-only、metricsは後続。</text>
 <text x="56" y="977" fill="#536780" font-size="20" font-weight="400">Grafana JSON exportはdashboard単体。利用者・権限・全設定の復元はDBと設定のバックアップで確認する。</text>
-<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>
 
-<p class="caption"><strong>図10: </strong>Prometheusはworkerと自身の2targetを15秒ごとに収集する。ポータルのhealth、固定品質SQL、n8n/Airflow等の実行履歴は別の観測で、全ホストの監視や長期監査を完成させるものではない。</p>
+<p class="caption"><strong>図10: </strong>通常監視はPrometheus/Grafana/Loki/Vector。host root/PIDを読むexporterはmonitoring-hostの明示opt-in。curated有限capture・秘匿化・配送のsourceと、公式validator・実host/GUI・容量の受入を区別する。</p>
 <details><summary>用途・根拠・編集元</summary>
-<p class="scope">用途: 運用・品質レビュー / 照合日: 2026-11-10</p>
+<p class="scope">用途: 運用・品質レビュー / 照合日: 2026-11-11</p>
 <p><a href="figures/10-observability.svg">SVG</a> / <a href="mermaid/10-observability.mmd">Mermaid</a></p><ul>
 <li><a href="../../infra/monitoring/prometheus.yml">infra/monitoring/prometheus.yml</a></li>
 <li><a href="../../scripts/admin.py">scripts/admin.py</a></li>
 <li><a href="../../scripts/grafana_setup.py">scripts/grafana_setup.py</a></li>
 <li><a href="../../infra/demo/poc_quality.py">infra/demo/poc_quality.py</a></li>
+<li><a href="../../infra/openobserve/compose.yaml">infra/openobserve/compose.yaml</a></li>
+<li><a href="../../docs/OPENOBSERVE.md">docs/OPENOBSERVE.md</a></li>
 </ul></details></article>
 <article id="11-deployment-lifecycle"><h2>公開Gitから配置・反映する手順</h2>
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="11-deployment-lifecycle-title 11-deployment-lifecycle-description" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
 <title id="11-deployment-lifecycle-title">公開Gitから配置・反映する手順</title>
-<desc id="11-deployment-lifecycle-description">ホスト準備とprivate設定を行い、生成後appNameへCompose名を合わせる。Composeサービス自身のEnvironmentを保存し、Git Providerと7ファイルCommandからDeployする。GUI保存だけでは反映しない。 根拠: infra/dokploy/install.sh, docs/DOKPLOY.md, docs/START-HERE.md, docs/COMPANY-UPDATE.md</desc>
+<desc id="11-deployment-lifecycle-description">ホスト準備とprivate設定を行い、生成後appNameへCompose名を合わせる。Composeサービス自身のEnvironmentを保存し、Git Providerと9ファイルCommandからDeployする。GUI保存だけでは反映しない。 根拠: infra/dokploy/install.sh, docs/DOKPLOY.md, docs/START-HERE.md, docs/COMPANY-UPDATE.md</desc>
 <defs>
 <marker id="11-deployment-lifecycle-data" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#2469a8"/></marker>
 <marker id="11-deployment-lifecycle-control" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#70608e"/></marker>
@@ -1024,7 +1045,7 @@
 <rect x="984" y="668" width="5" height="154" rx="2" fill="#63449b" stroke="none"/>
 <text x="1008" y="692" fill="#152a43" font-size="27" font-weight="700">06｜Run Command</text>
 <text x="1008" y="737" fill="#152a43" font-size="23" font-weight="400">Commandはcomposeから</text>
-<text x="1008" y="769" fill="#152a43" font-size="23" font-weight="400">実appName / 7ファイル / wait</text>
+<text x="1008" y="769" fill="#152a43" font-size="23" font-weight="400">実appName / 9ファイル / wait</text>
 <text x="1008" y="808" fill="#63449b" font-size="20" font-weight="600">pipeやshell連結は使わない</text>
 <rect x="1448" y="650" width="416" height="190" rx="16" fill="#f1edfc" stroke="#c6b9e9"/>
 <rect x="1448" y="668" width="5" height="154" rx="2" fill="#63449b" stroke="none"/>
@@ -1042,14 +1063,14 @@
 <path d="M 984,745 L 920,745" fill="none" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5" marker-end="url(#11-deployment-lifecycle-control)"/>
 <path d="M 520,745 L 456,745" fill="none" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5" marker-end="url(#11-deployment-lifecycle-control)"/>
 <rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
-<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">7Composeの標準Commandは初回から使用可能。起動対象はCOMPOSE_PROFILESで段階追加する。</text>
+<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">9Composeの標準Commandは初回から使用可能。起動対象はCOMPOSE_PROFILESで段階追加する。</text>
 <text x="56" y="977" fill="#536780" font-size="20" font-weight="400">CLIかDokployの管理入口を一つに決める。private envとDokployサービスenvは管理者が同期して再配置する。</text>
-<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>
 
-<p class="caption"><strong>図11: </strong>ホスト準備とprivate設定を行い、生成後appNameへCompose名を合わせる。Composeサービス自身のEnvironmentを保存し、Git Providerと7ファイルCommandからDeployする。GUI保存だけでは反映しない。</p>
+<p class="caption"><strong>図11: </strong>ホスト準備とprivate設定を行い、生成後appNameへCompose名を合わせる。Composeサービス自身のEnvironmentを保存し、Git Providerと9ファイルCommandからDeployする。GUI保存だけでは反映しない。</p>
 <details><summary>用途・根拠・編集元</summary>
-<p class="scope">用途: 導入・変更管理 / 照合日: 2026-11-10</p>
+<p class="scope">用途: 導入・変更管理 / 照合日: 2026-11-11</p>
 <p><a href="figures/11-deployment-lifecycle.svg">SVG</a> / <a href="mermaid/11-deployment-lifecycle.mmd">Mermaid</a></p><ul>
 <li><a href="../../infra/dokploy/install.sh">infra/dokploy/install.sh</a></li>
 <li><a href="../../docs/DOKPLOY.md">docs/DOKPLOY.md</a></li>
@@ -1059,7 +1080,7 @@
 <article id="12-persistence-recovery"><h2>永続データと復元を一組で管理する</h2>
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="12-persistence-recovery-title 12-persistence-recovery-description" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
 <title id="12-persistence-recovery-title">永続データと復元を一組で管理する</title>
-<desc id="12-persistence-recovery-description">受領原本とIceberg metadata/data、Lakekeeper DBと暗号鍵を整合した停止点で保管する。各GUIのDB/暗号鍵、SparkとCDCの再開状態、外部landing/workspaceも復元範囲へ含める。 根拠: docs/OPERATIONS.md, infra/lakehouse/compose.yaml, infra/compute/compose.yaml, infra/cdc/compose.yaml, infra/poc/compose.yaml</desc>
+<desc id="12-persistence-recovery-description">受領原本とIceberg metadata/data、Lakekeeper DBと暗号鍵を整合した停止点で保管する。各GUIのDB/暗号鍵、SparkとCDCの再開状態、外部landing/workspaceも復元範囲へ含める。 根拠: docs/OPERATIONS.md, infra/lakehouse/compose.yaml, infra/compute/compose.yaml, infra/cdc/compose.yaml, infra/poc/compose.yaml, infra/openobserve/compose.yaml, infra/sail/compose.yaml</desc>
 <defs>
 <marker id="12-persistence-recovery-data" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#2469a8"/></marker>
 <marker id="12-persistence-recovery-control" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#70608e"/></marker>
@@ -1075,7 +1096,7 @@
 <text x="1537" y="41" fill="#536780" font-size="17" font-weight="400">制御・設定</text>
 <path d="M1680,35 L1730,35" stroke="#78818c" stroke-width="3" stroke-dasharray="3 7"/>
 <text x="1742" y="41" fill="#536780" font-size="17" font-weight="400">任意・計画</text>
-<text x="56" y="148" fill="#536780" font-size="23" font-weight="400">16種類の名前付きvolume定義と外部bind。cloneや再配置とデータ移行を分ける。</text>
+<text x="56" y="148" fill="#536780" font-size="23" font-weight="400">20種類の名前付きvolume定義と外部bind。cloneや再配置とデータ移行を分ける。</text>
 <rect x="56" y="230" width="560" height="310" rx="16" fill="#edf4ff" stroke="#b8cee8"/>
 <rect x="56" y="248" width="5" height="274" rx="2" fill="#245fa6" stroke="none"/>
 <text x="80" y="272" fill="#152a43" font-size="27" font-weight="700">正本データ｜core</text>
@@ -1093,7 +1114,7 @@
 <text x="704" y="349" fill="#152a43" font-size="23" font-weight="400">airflow-db / airflow-state ＋ Fernet</text>
 <text x="704" y="381" fill="#152a43" font-size="23" font-weight="400">prometheus / grafana</text>
 <text x="704" y="413" fill="#152a43" font-size="23" font-weight="400">superset-db / qdrant / marquez-db</text>
-<text x="704" y="445" fill="#152a43" font-size="23" font-weight="400">Redisはcache / 専用volumeなし</text>
+<text x="704" y="445" fill="#152a43" font-size="23" font-weight="400">Loki / Vector / Lab専用state</text>
 <text x="704" y="484" fill="#126c59" font-size="20" font-weight="600">GUI編集を保持する</text>
 <rect x="1304" y="230" width="560" height="310" rx="16" fill="#f1edfc" stroke="#c6b9e9"/>
 <rect x="1304" y="248" width="5" height="274" rx="2" fill="#63449b" stroke="none"/>
@@ -1129,20 +1150,22 @@
 <rect x="1230" y="731" width="84" height="27" rx="3" fill="#fff" stroke="none"/>
 <g text-anchor="middle"><text x="1272" y="750" fill="#78818c" font-size="18" font-weight="600">復元試験</text></g>
 <rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
-<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">16は全profileのvolume定義数。core用Composeファイルの7定義には任意n8n・監視の4種も含む。</text>
+<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">20は全profileのvolume定義数。core用Composeは9定義。任意Labの2種を含む。</text>
 <text x="56" y="977" fill="#536780" font-size="20" font-weight="400">appName・DATA_VOLUME_PREFIX・秘密値を単独変更しない。DB passwordのenv変更だけで既存DBは更新されない。</text>
-<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>
 
 <p class="caption"><strong>図12: </strong>受領原本とIceberg metadata/data、Lakekeeper DBと暗号鍵を整合した停止点で保管する。各GUIのDB/暗号鍵、SparkとCDCの再開状態、外部landing/workspaceも復元範囲へ含める。</p>
 <details><summary>用途・根拠・編集元</summary>
-<p class="scope">用途: バックアップ・引継ぎ・復旧 / 照合日: 2026-11-10</p>
+<p class="scope">用途: バックアップ・引継ぎ・復旧 / 照合日: 2026-11-11</p>
 <p><a href="figures/12-persistence-recovery.svg">SVG</a> / <a href="mermaid/12-persistence-recovery.mmd">Mermaid</a></p><ul>
 <li><a href="../../docs/OPERATIONS.md">docs/OPERATIONS.md</a></li>
 <li><a href="../../infra/lakehouse/compose.yaml">infra/lakehouse/compose.yaml</a></li>
 <li><a href="../../infra/compute/compose.yaml">infra/compute/compose.yaml</a></li>
 <li><a href="../../infra/cdc/compose.yaml">infra/cdc/compose.yaml</a></li>
 <li><a href="../../infra/poc/compose.yaml">infra/poc/compose.yaml</a></li>
+<li><a href="../../infra/openobserve/compose.yaml">infra/openobserve/compose.yaml</a></li>
+<li><a href="../../infra/sail/compose.yaml">infra/sail/compose.yaml</a></li>
 </ul></details></article>
 <article id="13-evidence-summary"><h2>合成PoCで確認したこと・未評価のこと</h2>
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="13-evidence-summary-title 13-evidence-summary-description" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
@@ -1212,12 +1235,12 @@
 <rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
 <text x="56" y="950" fill="#536780" font-size="20" font-weight="400">数値はdocs/verification.jsonと独立fixtureの範囲。全試験が単一commitで再実行されたとは主張しない。</text>
 <text x="56" y="977" fill="#536780" font-size="20" font-weight="400">図の作成日は再試験日ではない。報告先では環境・期間・母数・受入判定・未実施を一緒に記載する。</text>
-<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>
 
 <p class="caption"><strong>図13: </strong>小規模合成データでファイルからIceberg、更新・削除、再実行、各GUI/APIの経路を確認した記録がある。一方、実会社proxy/DB・モデル推論・復元・容量/性能の受入は別に必要である。</p>
 <details><summary>用途・根拠・編集元</summary>
-<p class="scope">用途: PoC結果の報告・意思決定 / 照合日: 2026-11-10</p>
+<p class="scope">用途: PoC結果の報告・意思決定 / 照合日: 2026-11-11</p>
 <p><a href="figures/13-evidence-summary.svg">SVG</a> / <a href="mermaid/13-evidence-summary.mmd">Mermaid</a></p><ul>
 <li><a href="../../docs/verification.json">docs/verification.json</a></li>
 <li><a href="../../medallion/expected-demo.json">medallion/expected-demo.json</a></li>
@@ -1298,12 +1321,12 @@
 <rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
 <text x="56" y="950" fill="#536780" font-size="20" font-weight="400">Cloudflare・ClickHouse・LLM基盤・全ログ監視等は採用判断が必要な候補。自動導入済みとはしない。</text>
 <text x="56" y="977" fill="#536780" font-size="20" font-weight="400">具体的な評価項目・結果記入欄はEVALUATION-PLANとPOC-REPORT-TEMPLATEを使用する。</text>
-<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>
 
 <p class="caption"><strong>図14: </strong>機能往復の確認を起点に、会社ネットワーク/DB受入、業務整合、負荷と復元、AI評価へ段階を分ける。未評価を完了扱いせず、次へ進む条件と証跡を合意する。</p>
 <details><summary>用途・根拠・編集元</summary>
-<p class="scope">用途: PoC計画・次フェーズの合意 / 照合日: 2026-11-10</p>
+<p class="scope">用途: PoC計画・次フェーズの合意 / 照合日: 2026-11-11</p>
 <p><a href="figures/14-poc-roadmap.svg">SVG</a> / <a href="mermaid/14-poc-roadmap.mmd">Mermaid</a></p><ul>
 <li><a href="../../docs/START-HERE.md">docs/START-HERE.md</a></li>
 <li><a href="../../docs/COMPANY-ROLLOUT.md">docs/COMPANY-ROLLOUT.md</a></li>

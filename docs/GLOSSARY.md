@@ -61,7 +61,7 @@
 | image / container | 起動材料と、その実行単位 | image更新と実行中containerの再作成は別 |
 | tag / digest | imageの版名と内容を固定する参照 | tagだけの同一名は内容固定の保証にならない |
 | Compose project | 一組のサービスを識別する実行名 | 別名でupすると別DB/volumeを作る原因になる |
-| profile | 必要な追加機能を選ぶ設定 | 7Composeファイルを結合しても全profileが自動起動するわけではない |
+| profile | 必要な追加機能を選ぶ設定 | 9Composeファイルを結合しても全profileが自動起動するわけではない |
 | appName | Dokployの生成後の実行名 | 表示名や作成時の入力slugとは別。suffixを含む実名を使う |
 | one-shot | 初期化等を終えて終了コード0で止まるサービス | Exited(0)を異常と判断して再起動し続けない |
 | named volume / bind | Dockerが管理する保存領域と、指定host pathのmount | clone先を変えることと保存データの移動は別 |

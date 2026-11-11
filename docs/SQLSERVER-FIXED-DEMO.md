@@ -256,7 +256,7 @@ connector名とdata prefixは `lakehouse-demo-sqlserver`、consumer groupは `la
 
 Rawは `iceberg.sqlcdc_events.events` です。Kafkaのtopic/partition/offsetをevent IDにし、key/envelope原文、before/after、op、tombstone、LSN、transaction ID、source時刻、run IDを追記します。同じ配送位置の同一内容は再追記せず、内容が変われば拒否します。source identityを表propertyに固定し、別sourceの履歴へ自動相乗りしません。Rawは不変履歴、現在値は別の再構築可能な派生物です。Raw保持だけでCurrent StateやKafka offsetの処理完了を示しません。
 
-Phase 4のfixed consumerはRaw保存後に停止し、Current Stateの再構築やKafka offsetの完了を行いません。継続処理とreplay/materializationは後続Phase 5の実装・受入が必要です。この段階を単独で常時運転しません。
+現行のfixed consumerは常駐し、Raw保存→Current Stateのstage→Icebergへの派生状態反映→local完了offset記録→Kafka同期commitの順に処理します。途中失敗ではmaintenanceへ入り、通常の取込・ackを止めて明示rebuildと再照合を待ちます。Current State・replay・GUI監視は§8のとおり実装済みですが、会社環境でのSQL Server→Kafka→Iceberg連携受入は未実施です。実装済みの機能と、実機で確認できた範囲を分けて判断してください。
 
 ### CAと配置を混同しない
 
@@ -325,3 +325,12 @@ consumerの単一実行threadがKafka読取りを止め、RawのIceberg snapshot
 | Gold preview | 固定projection・1〜100行・個別snapshot。CLI AI exportは別のDBAPI経路で行数とrequest timeoutを制限し、GUI監視と同じtransport上限とは説明しない |
 
 この上限を超える業務sourceや、複数partition・長期履歴・並列writerへ広げる場合は、別の設計・負荷試験・復旧試験を行います。値を大きく変更するだけで本番向けになるとは扱いません。
+
+
+## 9. 混在collation・003の残存checker・Windowsからの再開
+
+catalogと対象DB/table variableでcollationが異なる場合、003/004/005の異種文字列比較を両辺`Latin1_General_100_BIN2`へ揃えます。DB/server collation変更や安全gateの解除はしません。006とcanonical checkerは同型の競合候補がないことを監査し、本体を変更していません。
+
+003の失敗を全変更rollback済みとは扱いません。新しい専用DBA sessionで[読取り専用preflight](../infra/sqlserver/diagnostics/003_permissions_preflight.sql)を実行し、installation・checkerの完全定義/owner/EXECUTE AS/ANSI flagsと限定role/permissionを確認します。51019でも自動DROP/ALTERや空白削除による照合緩和はしません。既に003と3用途のrole割当を確認できた場合は006から進み、不要な003再実行を避けます。004は承認済み修正版だけを使い、その後006で確認します。005は通常導入では実行しません。
+
+VS Code MSSQLからSQL loginでDBA作業も可能です。DBA passwordはruntime/site.env/Dokployへ保存しません。Windows Go/ODBC sqlcmdの版、空白入りpath、`:r`とPowerShellの引用の違い、残存objectの保全条件は[DDL診断・回復手順](SQLSERVER-DDL-RECOVERY.md)を参照してください。実SQL Server/Windowsでの受入はsourceテストと別です。

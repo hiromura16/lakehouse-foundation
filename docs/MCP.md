@@ -45,7 +45,7 @@ setopt INTERACTIVE_COMMENTS
 3. `CONTROL_SETTINGS_DIR` と `CONTROL_SETTINGS_NAME` が専用private設定を指すことを確認し、`plan` → `up` を行います。`mcp` だけでも内部の `demo-api` は起動します。画面も必要なら `demo` を追加します。
 4. MCPクライアントに `http://localhost:8503/mcp`、HTTPヘッダー `Authorization: Bearer <MCP_API_TOKEN>` を登録します。トークンはクライアントの秘密設定へ保管し、URL・プロンプト・公開JSONへ埋め込みません。
 
-次の `up` は**CLI管理の場合だけ**リポジトリrootで実行します。Dokploy管理ではComposeサービス自身のEnvironmentに設定を保存し、既存appをDeployします。wrapperが7本のComposeを全て選択します。Docker Composeを直接操作する場合は [COMPATIBILITY.md](COMPATIBILITY.md#composeを直接操作する場合の省略しない例) の7ファイルの定義を使います。
+次の `up` は**CLI管理の場合だけ**リポジトリrootで実行します。Dokploy管理ではComposeサービス自身のEnvironmentに設定を保存し、既存appをDeployします。wrapperが9本のComposeを全て選択します。Docker Composeを直接操作する場合は [COMPATIBILITY.md](COMPATIBILITY.md#composeを直接操作する場合の省略しない例) の9ファイルの定義を使います。
 
 **Bash / Zsh共通**
 

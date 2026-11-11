@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="12-persistence-recovery-title 12-persistence-recovery-description" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
 <title id="12-persistence-recovery-title">永続データと復元を一組で管理する</title>
-<desc id="12-persistence-recovery-description">受領原本とIceberg metadata/data、Lakekeeper DBと暗号鍵を整合した停止点で保管する。各GUIのDB/暗号鍵、SparkとCDCの再開状態、外部landing/workspaceも復元範囲へ含める。 根拠: docs/OPERATIONS.md, infra/lakehouse/compose.yaml, infra/compute/compose.yaml, infra/cdc/compose.yaml, infra/poc/compose.yaml</desc>
+<desc id="12-persistence-recovery-description">受領原本とIceberg metadata/data、Lakekeeper DBと暗号鍵を整合した停止点で保管する。各GUIのDB/暗号鍵、SparkとCDCの再開状態、外部landing/workspaceも復元範囲へ含める。 根拠: docs/OPERATIONS.md, infra/lakehouse/compose.yaml, infra/compute/compose.yaml, infra/cdc/compose.yaml, infra/poc/compose.yaml, infra/openobserve/compose.yaml, infra/sail/compose.yaml</desc>
 <defs>
 <marker id="12-persistence-recovery-data" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#2469a8"/></marker>
 <marker id="12-persistence-recovery-control" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#70608e"/></marker>
@@ -16,7 +16,7 @@
 <text x="1537" y="41" fill="#536780" font-size="17" font-weight="400">制御・設定</text>
 <path d="M1680,35 L1730,35" stroke="#78818c" stroke-width="3" stroke-dasharray="3 7"/>
 <text x="1742" y="41" fill="#536780" font-size="17" font-weight="400">任意・計画</text>
-<text x="56" y="148" fill="#536780" font-size="23" font-weight="400">16種類の名前付きvolume定義と外部bind。cloneや再配置とデータ移行を分ける。</text>
+<text x="56" y="148" fill="#536780" font-size="23" font-weight="400">20種類の名前付きvolume定義と外部bind。cloneや再配置とデータ移行を分ける。</text>
 <rect x="56" y="230" width="560" height="310" rx="16" fill="#edf4ff" stroke="#b8cee8"/>
 <rect x="56" y="248" width="5" height="274" rx="2" fill="#245fa6" stroke="none"/>
 <text x="80" y="272" fill="#152a43" font-size="27" font-weight="700">正本データ｜core</text>
@@ -34,7 +34,7 @@
 <text x="704" y="349" fill="#152a43" font-size="23" font-weight="400">airflow-db / airflow-state ＋ Fernet</text>
 <text x="704" y="381" fill="#152a43" font-size="23" font-weight="400">prometheus / grafana</text>
 <text x="704" y="413" fill="#152a43" font-size="23" font-weight="400">superset-db / qdrant / marquez-db</text>
-<text x="704" y="445" fill="#152a43" font-size="23" font-weight="400">Redisはcache / 専用volumeなし</text>
+<text x="704" y="445" fill="#152a43" font-size="23" font-weight="400">Loki / Vector / Lab専用state</text>
 <text x="704" y="484" fill="#126c59" font-size="20" font-weight="600">GUI編集を保持する</text>
 <rect x="1304" y="230" width="560" height="310" rx="16" fill="#f1edfc" stroke="#c6b9e9"/>
 <rect x="1304" y="248" width="5" height="274" rx="2" fill="#63449b" stroke="none"/>
@@ -70,7 +70,7 @@
 <rect x="1230" y="731" width="84" height="27" rx="3" fill="#fff" stroke="none"/>
 <g text-anchor="middle"><text x="1272" y="750" fill="#78818c" font-size="18" font-weight="600">復元試験</text></g>
 <rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
-<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">16は全profileのvolume定義数。core用Composeファイルの7定義には任意n8n・監視の4種も含む。</text>
+<text x="56" y="950" fill="#536780" font-size="20" font-weight="400">20は全profileのvolume定義数。core用Composeは9定義。任意Labの2種を含む。</text>
 <text x="56" y="977" fill="#536780" font-size="20" font-weight="400">appName・DATA_VOLUME_PREFIX・秘密値を単独変更しない。DB passwordのenv変更だけで既存DBは更新されない。</text>
-<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-10 / 根拠・キャプションは同梱台帳へ</text>
+<text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>

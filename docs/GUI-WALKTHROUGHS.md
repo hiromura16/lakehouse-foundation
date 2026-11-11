@@ -34,7 +34,7 @@ setopt INTERACTIVE_COMMENTS
 
 private envの `COMPOSE_PROFILES` へ、必要な機能を追加してから起動します。3機能すべてを使う例は `automation,monitoring,orchestration` です。既存の他プロファイルを使用中なら、その設定も保持します。
 
-以下の `up` は**CLI管理の場合だけ**実行します。Dokploy管理ではComposeサービス自身のEnvironmentを保存し、7ファイルを使ってDeployします。起動方法を重ねません。[配置手順](DOKPLOY.md)
+以下の `up` は**CLI管理の場合だけ**実行します。Dokploy管理ではComposeサービス自身のEnvironmentを保存し、9ファイルを使ってDeployします。起動方法を重ねません。[配置手順](DOKPLOY.md)
 
 **Bash / Zsh共通**
 
@@ -76,7 +76,7 @@ sequenceDiagram
 
 ### Dokployで配置したサイトから始める場合
 
-1. [DOKPLOY.md](DOKPLOY.md) のGit配置で7本のComposeを結合し、サービス自身のEnvironmentへprivate設定を保存してDeployを完了します。
+1. [DOKPLOY.md](DOKPLOY.md) のGit配置で9本のComposeを結合し、サービス自身のEnvironmentへprivate設定を保存してDeployを完了します。
 2. **Containers** 一覧でn8n、Airflow、Grafanaと各DBの状態を確認します。1つのContainers行のメニューにある **View Logs** / **Terminal** を使い、サイト全体の再Deployと区別します。
 3. private envの各portへブラウザーで接続します。Dokployの画面から開いたTerminalが、そのままn8n等のWeb画面になるわけではありません。
 4. GUIの初期値は管理者端末でprivate `site.env` をエディターで確認します。n8n ownerのログイン情報は、このファイルからは取得できません。

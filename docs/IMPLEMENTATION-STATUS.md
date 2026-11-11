@@ -79,3 +79,9 @@
 公開ソースの品質検査、Git履歴の秘密値検査、原本Dockerfileからのbuild、各GUIとAPI、疑似データの一連経路、永続データの保持を確認し、[検証記録](VALIDATION.md) と機械可読結果へ反映します。
 
 会社の本番SQL・proxy/CA・IdP、負荷、冗長化、バックアップ復元は、導入先で確認した結果を別途残します。接続先や資格情報、生ログはこの表へ掲載しません。
+
+## 2026-11-11のsource拡張と受入待ち
+
+現在のsourceは9Compose・14profile・41serviceです。[機械生成台帳](reports/COMPOSE-INVENTORY.json) で数量を再照合します。node-exporter/cAdvisor、Loki/Vector、任意OpenObserveログLabとSail合成比較の定義を加えました。過去の日付付き統合結果は当時の範囲です。今回のsource/mock/静的検査と、新しい実機試験を混同しません。
+
+OpenObserveはLoki独立の第二ログsinkで、metrics比較は後続Phaseです。Sailは通常client replicas 0で、共通Spark imageの事前buildと明示実行が必要です。新規runtime/VRL配送・24時間・性能・会社受入は未実施です。[監視](OBSERVABILITY.md)・[OpenObserve](OPENOBSERVE.md)・[Sail](SAIL-LAB.md)・[追加検証の範囲](VALIDATION.md)

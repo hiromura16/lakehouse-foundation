@@ -1,0 +1,36 @@
+# One primary sink; label keys are static. Vector0.61 permits unconfined label
+# values (not keys), so normalized level remains exactly info/warn/etc.
+sinks:
+  loki:
+    type: loki
+    inputs: [redacted]
+    endpoint: http://loki:3100
+    compression: gzip
+    encoding:
+      codec: json
+    remove_timestamp: false
+    out_of_order_action: accept
+    labels:
+      job: lakehouse
+      host: "{{ host_alias }}"
+      compose_project: "{{ compose_project }}"
+      compose_service: "{{ compose_service }}"
+      container_name: "{{ container_alias }}"
+      stream: "{{ stream }}"
+      level: "{{ level }}"
+    acknowledgements:
+      enabled: false
+    buffer:
+      type: disk
+      max_size: 536870912
+      when_full: drop_newest
+    batch:
+      max_bytes: 262144
+      max_events: 256
+      timeout_secs: 1
+    request:
+      concurrency: 1
+      timeout_secs: 10
+      retry_attempts: 10
+      retry_initial_backoff_secs: 1
+      retry_max_duration_secs: 30

@@ -1,0 +1,59 @@
+# Reconstruct an allowlisted event. Unrecognized structured data never reaches
+# either sink; redact the remaining message/logger/raw-level text identically.
+text = string!(.message)
+content_identity = sha2(text, variant: "SHA-256")
+# Prefer losing a sensitive message over preserving fragments of escaped or
+# multiline credentials. Severity/source metadata still remains inspectable.
+sensitive = match(text, r'(?is)\b(?:authorization|proxy-authorization|cookie|set-cookie|password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|secret[_-]?key|aws_access_key_id|aws_secret_access_key|aws_session_token|secret[_-]?access[_-]?key|access[_-]?key[_-]?id|session[_-]?token|client[_-]?secret|access[_-]?token|refresh[_-]?token|id[_-]?token)\b[\s"\\\x27]*[:=]') || match(text, r'(?is)\b(?:bearer|basic)\s+[^\s]+') || match(text, r'\b(?:AKIA|ASIA)[A-Z0-9]{16}\b') || match(text, r'\bsk-[A-Za-z0-9_-]{16,}\b') || match(text, r'(?i)\b[a-z][a-z0-9+.\-]*://[^\s/@?#]+@')
+# Drop the entire sensitive assignment/header; no captured secret is echoed.
+text = replace(text, r'(?im)\b(?:authorization|proxy-authorization)\s*[=:]\s*(?:"[^"\n]*"|[^\r\n]+)', "[REDACTED_AUTH]")
+text = replace(text, r'(?i)\b(?:bearer|basic)\s+[A-Za-z0-9+/_=.~\-]+', "[REDACTED_AUTH]")
+text = replace(text, r'(?im)(?:"|\b)(?:cookie|set-cookie)(?:"|\b)\s*[:=]\s*(?:"[^"\n]*"|[^\r\n]+)', "[REDACTED_COOKIE]")
+text = replace(text, r'(?is)(?:"|\b)(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|secret[_-]?key|aws_access_key_id|aws_secret_access_key|aws_session_token|secret[_-]?access[_-]?key|access[_-]?key[_-]?id|session[_-]?token|client[_-]?secret|access[_-]?token|refresh[_-]?token|id[_-]?token)(?:"|\b)\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|\x27[^\x27]*\x27|[^\s;,}\]]+)', "[REDACTED_SECRET]")
+text = replace(text, r'\b(?:AKIA|ASIA)[A-Z0-9]{16}\b', "[REDACTED_AWS_KEY]")
+text = replace(text, r'\bsk-[A-Za-z0-9_-]{16,}\b', "[REDACTED_API_KEY]")
+text = replace(text, r'(?i)\b[a-z][a-z0-9+.\-]*://[^\s/@?#]+@', "[REDACTED_URL_USERINFO]")
+# Userinfo includes empty-user passwords and token-as-user credentials.
+# The authority stops at /, ? or #, so a query value is not mistaken for it.
+# Access clients are not useful low-cardinality observability identifiers.
+text = replace(text, r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', "[IP]")
+if sensitive { text = "[REDACTED: sensitive log content]" }
+logger = string!(.logger)
+# Logger/target is untrusted metadata too. A colon is valid in a module path,
+# but must not allow a credential assignment to escape message redaction.
+logger_sensitive = match(logger, r'(?i)\b(?:authorization|proxy-authorization|cookie|set-cookie|password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|secret[_-]?key|aws_access_key_id|aws_secret_access_key|aws_session_token|secret[_-]?access[_-]?key|access[_-]?key[_-]?id|session[_-]?token|client[_-]?secret|access[_-]?token|refresh[_-]?token|id[_-]?token)\b\s*[:=]') || match(logger, r'(?i)\b(?:bearer|basic)\s*:')
+if logger_sensitive || match(logger, r'\b(?:AKIA|ASIA)[A-Z0-9]{16}\b') || match(logger, r'\bsk-[A-Za-z0-9_-]{16,}\b') || !match(logger, r'^[A-Za-z0-9_.:-]{1,128}$') { logger = "redacted" }
+raw = truncate(string!(.level_raw), limit: 32)
+if raw != "" && !match(raw, r'(?i)^(TRACE|DEBUG[1-5]?|INFO|WARN|WARNING|ERROR|FATAL|CRITICAL|LOG|NOTICE|PANIC|I|W|E|F|[.\-*#])$') { raw = "[UNRECOGNIZED_REDACTED]" }
+lines = to_int!(.line_count)
+truncated = lines >= 32 || length(text) > 4096 || .capture_truncated == 1
+# At most 4096 characters: even worst-case JSON escaping (6 bytes each)
+# leaves room for bounded metadata below Loki's 64KiB line budget.
+message = truncate(text, limit: 4096)
+# Position hash is assigned before redaction by the curated capture adapter.
+# Equal original container/time/stream/content produces the same ID on replay.
+event_id = sha2(string!(.source_identity) + "|" + string!(.source_timestamp) + "|" + string!(.stream) + "|" + string!(.source_position) + "|" + content_identity, variant: "SHA-256")
+truncation_flag = if truncated { 1 } else { 0 }
+. = {
+  "timestamp": .timestamp,
+  "message": message,
+  "compose_project": .compose_project,
+  "compose_service": .compose_service,
+  "host_alias": .host_alias,
+  "container_alias": .container_alias,
+  "stream": .stream,
+  "level": .level_normalized,
+  "level_raw": raw,
+  "level_normalized": .level_normalized,
+  "level_source": .level_source,
+  "level_parser": .level_parser,
+  "level_parse_status": .level_parse_status,
+  "logger": logger,
+  "http_status": .http_status,
+  "http_method": .http_method,
+  "http_route": .http_route,
+  "log_kind": .log_kind,
+  "source_event_id": event_id,
+  "line_count": lines,
+  "truncated": truncation_flag
+}

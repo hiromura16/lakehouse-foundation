@@ -42,9 +42,9 @@ datasourceは従来どおりprovisionされますが、ダッシュボードのf
 
 ## 初回の起動とインポート
 
-private設定の `COMPOSE_PROFILES` に `monitoring` を含めて起動します。以下は `LAKEHOUSE_ENV_FILE` を設定済みの場合です。明示的な `--env-file` も引き続き使えます。
+先に [監視のspoolと任意host監視の準備](OBSERVABILITY.md) を済ませます。private設定の `COMPOSE_PROFILES` に `monitoring` を含めて起動します。以下は `LAKEHOUSE_ENV_FILE` を設定済みの場合です。明示的な `--env-file` も引き続き使えます。
 
-以下の `up` は**CLI管理の場合だけ**実行します。Dokploy管理ではComposeサービス自身のEnvironmentを保存し、7ファイルを使ってDeployします。起動方法を重ねません。[配置手順](DOKPLOY.md)
+以下の `up` は**CLI管理の場合だけ**実行します。Dokploy管理ではComposeサービス自身のEnvironmentを保存し、9ファイルを使ってDeployします。起動方法を重ねません。[配置手順](DOKPLOY.md)
 
 **Bash / Zsh共通**
 
@@ -199,3 +199,15 @@ Dashboardの受入ではGUI変更→Save→再読込→同じvolumeで再起動�
 ## 外部pluginを使わない会社PoC
 
 標準dashboardは組込みPrometheus datasourceとpanelを使います。Composeで `GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES=false` と `GF_PLUGINS_PREINSTALL_DISABLED=true` を設定し、外部pluginの更新確認・初回自動取得を抑えます。GUI保存先のvolumeや組込み機能は維持します。独自pluginを追加するときは、許可された取得経路・署名・versionを管理者が別途評価します。これだけで全外向き通信を遮断する意味ではありません。[Grafanaの公式設定](https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/)
+
+通常monitoringは専用spoolの準備が必要です。host root/PIDの読取りは別opt-inの `monitoring-host` だけで、配置前に承認します。GUI保持・検証未了事項は [段階的な監視基盤](OBSERVABILITY.md) を参照してください。
+
+## 任意Labと既存画面の関係
+
+通常のLogsは組込みLoki datasourceを使います。`openobserve-lab` は同じ秘匿済みログを別UIへ送る比較で、Grafana pluginやPrometheus remote_writeを追加しません。OpenObserveを止めても既存Loki/Grafanaの保存物を置き換えません。Sailも独立した合成比較で、既存dashboardを再生成・上書きする操作ではありません。[OpenObserve](OPENOBSERVE.md)・[Sail](SAIL-LAB.md)
+
+既存UIDのdashboardはGUI保存が正本です。テンプレート更新は新しいsourceの提案であり、再配置や `grafana-init` がGUIの編集を上書きすることはありません。新規host/log panelの実指標・VRL配送・長期容量は導入先で受入します。
+
+`monitoring-host` を選ばない場合、node/cAdvisorによるhost/container panelは未観測です。通常monitoringはhost rootやPID namespaceへアクセスしません。値をゼロで補ったり、panelを埋めるため暗黙にexporterを有効にしたりしません。
+
+明示選択したhost監視では、Vectorが公開するexpected signalとVector自身のupを条件に、node/cAdvisorの停止だけでなくDNS target消失もExporterDownとして扱います。Vector停止時はhost判定unknownで、LogTransportDownの別条件を見ます。profile未選択や欠測をhealthy/0と表示する保証はありません。[判定の境界](OBSERVABILITY.md#4-アラートと検証の境界)

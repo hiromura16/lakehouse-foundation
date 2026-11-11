@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seed one editable Grafana dashboard without replacing GUI-owned state."""
+"""Seed editable Grafana dashboards without replacing GUI-owned state."""
 
 import argparse
 import base64
@@ -17,6 +17,12 @@ from settings import ROOT, load
 DASHBOARD_UID = "lakehouse-operations"
 DASHBOARDS_API = "/apis/dashboard.grafana.app/v1/namespaces/default/dashboards"
 TEMPLATE = ROOT / "infra/monitoring/dashboards/foundation.json"
+TEMPLATES = {
+    DASHBOARD_UID: TEMPLATE,
+    "lakehouse-host-overview": TEMPLATE.with_name("host.json"),
+    "lakehouse-container-overview": TEMPLATE.with_name("containers.json"),
+    "lakehouse-logs-overview": TEMPLATE.with_name("logs.json"),
+}
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 
 
@@ -127,10 +133,10 @@ def wait_ready(api, timeout=60):
         time.sleep(min(1, max(0, deadline - time.monotonic())))
 
 
-def create_payload(template=TEMPLATE):
+def create_payload(template=TEMPLATE, uid=DASHBOARD_UID):
     """Wrap a classic editable model in the new dashboard API resource."""
     model = json.loads(template.read_text(encoding="utf-8"))
-    if not isinstance(model, dict) or model.get("uid") != DASHBOARD_UID:
+    if not isinstance(model, dict) or model.get("uid") != uid:
         raise GrafanaError("The dashboard template UID is invalid.")
     if not isinstance(model.get("panels"), list) or not model.get("title"):
         raise GrafanaError("The dashboard template model is invalid.")
@@ -141,36 +147,69 @@ def create_payload(template=TEMPLATE):
     return {
         "apiVersion": "dashboard.grafana.app/v1",
         "kind": "Dashboard",
-        "metadata": {"name": DASHBOARD_UID},
+        "metadata": {"name": uid},
         "spec": model,
     }
 
 
-def setup(values):
-    """Create only a missing UID; existing GUI dashboards are never updated."""
-    api = GrafanaAPI(values)
-    wait_ready(api)
-    item_path = DASHBOARDS_API + "/" + DASHBOARD_UID
+def _seed_one(api, uid):
+    """Create a single allowlisted UID without PUT, PATCH or replacement."""
+    item_path = DASHBOARDS_API + "/" + uid
     status, _ = api.request("GET", item_path)
     if status == 200:
-        return {"status": "exists", "uid": DASHBOARD_UID}
+        return {"status": "exists", "uid": uid}
     if status != 404:
         raise GrafanaError("Grafana dashboard lookup failed; no write made.")
-    status, _ = api.request("POST", DASHBOARDS_API, create_payload())
+    payload = (
+        create_payload()
+        if uid == DASHBOARD_UID
+        else create_payload(TEMPLATES[uid], uid)
+    )
+    status, _ = api.request("POST", DASHBOARDS_API, payload)
     if status in {200, 201}:
-        return {"status": "created", "uid": DASHBOARD_UID}
+        return {"status": "created", "uid": uid}
     if status == 409:
-        # Another initializer may have won the create race. Never use PUT.
+        # A concurrent initializer may win. Existing GUI state always wins.
         status, _ = api.request("GET", item_path)
         if status == 200:
-            return {"status": "exists", "uid": DASHBOARD_UID}
+            return {"status": "exists", "uid": uid}
     raise GrafanaError(
         "Grafana dashboard creation failed; no update attempted."
     )
 
 
-def export_dashboard(values, output):
+def setup(values):
+    """Seed each missing UID; keep legacy single-UID callers compatible.
+
+    Monitoring selects all shipped templates. Return partial per-UID evidence
+    so an unavailable optional dashboard cannot hide successful existing ones.
+    No API response body or authentication value enters the result.
+    """
+    api = GrafanaAPI(values)
+    wait_ready(api)
+    if "monitoring" not in values.get("COMPOSE_PROFILES", "").split(","):
+        return _seed_one(api, DASHBOARD_UID)
+    results = []
+    for uid in TEMPLATES:
+        try:
+            results.append(_seed_one(api, uid))
+        except GrafanaError:
+            results.append({"status": "failed", "uid": uid})
+    statuses = {item["status"] for item in results}
+    status = (
+        "partial"
+        if "failed" in statuses
+        else "created"
+        if "created" in statuses
+        else "exists"
+    )
+    return {"status": status, "dashboards": results}
+
+
+def export_dashboard(values, output, uid=DASHBOARD_UID):
     """Export GUI state to one new private file outside the public checkout."""
+    if uid not in TEMPLATES:
+        raise GrafanaError("Choose a bundled dashboard UID.")
     output = Path(output).expanduser()
     if not output.is_absolute() or output.resolve().is_relative_to(ROOT):
         raise GrafanaError(
@@ -188,18 +227,18 @@ def export_dashboard(values, output):
         raise GrafanaError("The export directory must have mode 0700.")
     api = GrafanaAPI(values)
     wait_ready(api)
-    status, resource = api.request("GET", DASHBOARDS_API + "/" + DASHBOARD_UID)
+    status, resource = api.request("GET", DASHBOARDS_API + "/" + uid)
     if status != 200 or not isinstance(resource, dict):
         raise GrafanaError("The dashboard could not be read; no export made.")
     if not isinstance(resource.get("spec"), dict):
         raise GrafanaError("Grafana did not return a classic dashboard model.")
     model = copy.deepcopy(resource["spec"])
-    model["uid"] = DASHBOARD_UID
+    model["uid"] = uid
     content = json.dumps(model, ensure_ascii=False, indent=2) + "\n"
     descriptor = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as target:
         target.write(content)
-    return {"status": "exported", "uid": DASHBOARD_UID}
+    return {"status": "exported", "uid": uid}
 
 
 def main():
@@ -218,6 +257,12 @@ def main():
         help=(
             "Grafana管理者のprivate site.env。省略時はLAKEHOUSE_ENV_FILEを使う"
         ),
+    )
+    parser.add_argument(
+        "--uid",
+        choices=list(TEMPLATES),
+        default=DASHBOARD_UID,
+        help="export対象の固定UID",
     )
     parser.add_argument(
         "--output",
@@ -239,7 +284,7 @@ def main():
         result = (
             setup(values)
             if args.action == "init"
-            else export_dashboard(values, args.output)
+            else export_dashboard(values, args.output, args.uid)
         )
     except GrafanaError as error:
         raise SystemExit(str(error)) from None
@@ -248,6 +293,8 @@ def main():
             "Grafana operation failed; inspect private settings and health."
         ) from None
     print(json.dumps(result))
+    if result["status"] == "partial":
+        raise SystemExit(2)
 
 
 if __name__ == "__main__":

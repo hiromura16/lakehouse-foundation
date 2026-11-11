@@ -75,12 +75,24 @@ def service_cards(values, health):
                 if missing
                 else ("available" if health.get(item.id) else "unreachable")
             )
-        port = int(values.get(item.port_key, str(item.port)))
+        port = (
+            int(values.get(item.port_key, str(item.port)))
+            if enabled
+            else item.port
+        )
         # Optional PoC and CDC ports deliberately bind to host loopback.
         link_host = (
             "localhost"
             if item.profile
-            in {"cdc", "bi", "notebooks", "vector", "lineage", "compute"}
+            in {
+                "cdc",
+                "bi",
+                "notebooks",
+                "vector",
+                "lineage",
+                "compute",
+                "openobserve-lab",
+            }
             else host
         )
         result.append(

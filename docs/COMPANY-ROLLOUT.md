@@ -204,7 +204,7 @@ fi
 
 会社の受入では、抽出manifestの件数とBronze、Silver/Quarantineへの振り分け、Goldの数量・金額を、DB担当が用意した同じ範囲の集計と照合します。`verify` の合成期待値を会社データの期待値として流用しません。
 
-TrinoのCLIで読み取り確認する例です。先に [運用の補助関数](OPERATIONS.md#postgresqlの論理dump例) の `lakehouse_compose` を同じrepoルートで定義してください。7Composeと正規化したprivate設定を使い、shellに残る別project名の影響を避けます。CLIは公式Trino imageに同梱されています。
+TrinoのCLIで読み取り確認する例です。先に [運用の補助関数](OPERATIONS.md#postgresqlの論理dump例) の `lakehouse_compose` を同じrepoルートで定義してください。9Composeと正規化したprivate設定を使い、shellに残る別project名の影響を避けます。CLIは公式Trino imageに同梱されています。
 
 **Bash / Zsh共通**
 

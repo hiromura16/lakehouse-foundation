@@ -49,7 +49,7 @@ setopt INTERACTIVE_COMMENTS
 | `title` / `subtitle` | 1枚を単独で貼ったときの主題と対象範囲 |
 | `audience` / `caption` | 読み手・用途と、報告書へ添える説明 |
 | `sources` | リポジトリルートからの公開参照。実在するコード/文書を指定 |
-| `width` / `height` | SVG viewBoxの座標幅・高さ。標準1920×1080、詳細図01は2400×1500 |
+| `width` / `height` | SVG viewBoxの座標幅・高さ。標準1920×1080、詳細図01は2400×1850 |
 | `panels` | 箱の位置・大きさ・見出し・本文・意味付け |
 | `edges` | source/targetのpanel key、データ/制御/計画、短いラベルと経由点 |
 | `notes` | 合成条件、表単位commit、未実施など、図と一緒に残す制約 |

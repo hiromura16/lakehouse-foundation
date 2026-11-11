@@ -7,7 +7,7 @@
 
 # 内部service名をproxy対象から除外し、社内proxyへ内部要求を送らない。
 # 同じ除外値を大文字/小文字の両方へ渡し、利用libraryの違いを吸収する。
-x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
+x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1,storage,catalog,catalog-db,trino,worker,catalog-migrate,n8n-db,n8n,prometheus,grafana,node-exporter,cadvisor,loki,vector,openobserve,sail-server,sail-benchmark,spark-volumes-init,spark-master,spark-worker,spark-history,spark-check,airflow-db,airflow,demo-api,demo,cdc-kafka,cdc-connect,cdc-ui,cdc-register,cdc-consumer,superset-db,superset-redis,superset-init,superset,jupyter,qdrant,marquez-db,marquez,marquez-web,mcp,dokploy,dokploy-postgres,dokploy-traefik,${NO_PROXY:-},${no_proxy:-}}"
 
 name: ${COMPOSE_PROJECT_NAME:-lakehouse}
 
@@ -183,6 +183,8 @@ services:
     logging: *service_logging
     # 環境別のtagにし、別projectのbuildで既存imageを取り違えないようにする。
     image: ${COMPOSE_PROJECT_NAME:-lakehouse}-worker:local
+    # Rebuild this local tag through its single owner; retain build cache.
+    pull_policy: build
     build:
       secrets:
         - corporate_ca
@@ -327,8 +329,8 @@ services:
       timeout: 5s
       retries: 30
 
-  # monitoringの時系列保存。現在の収集対象はworkerとPrometheus自身の2種。
-  # 15日/2GBの保持設定を設ける。hostや全コンテナを自動収集する構成ではない。
+  # 既存のworker/self収集を維持し、host exporterはmonitoring-hostで明示選択する。
+  # exporter停止でもPrometheus自身は起動する。15日/2GBの保持上限は維持する。
   prometheus:
     restart: unless-stopped
     labels:
@@ -346,6 +348,8 @@ services:
     configs:
       - source: prometheus-config
         target: /etc/prometheus/prometheus.yml
+      - source: monitoring-rules
+        target: /etc/prometheus/rules/foundation.yml
     volumes:
       - prometheus:/prometheus
     ports:
@@ -372,6 +376,8 @@ services:
       # 標準dashboardは組込み機能だけを使う。外部pluginの取得は管理者の別作業。
       GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: 'false'
       GF_PLUGINS_PREINSTALL_DISABLED: 'true'
+      GF_PLUGINS_PREINSTALL_AUTO_UPDATE: 'false'
+      GF_PLUGINS_PLUGIN_ADMIN_ENABLED: 'false'
     configs:
       - source: grafana-datasource
         target: /etc/grafana/provisioning/datasources/prometheus.yml
@@ -380,8 +386,188 @@ services:
     ports:
       - ${BIND_IP:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000
 
+  # host root/proc/sysの読取りとhost PIDはmonitoring-hostの明示選択時だけ渡す。
+  # netlinkや/proc/netがcontainer netnsを示す問題を避け、ネットワーク/TCPは未提供。
+  # D-Bus・host network・追加capabilityは渡さない。systemd collectorは無効。
+  node-exporter:
+    image: ghcr.io/prometheus/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0
+    profiles: [monitoring-host]
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.5
+    user: '65534:65534'
+    pid: host
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: *service_logging
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    command:
+      - --path.rootfs=/host
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.disable-defaults
+      - --collector.cpu
+      - --collector.loadavg
+      - --collector.meminfo
+      - --collector.vmstat
+      - --collector.filesystem
+      - --collector.diskstats
+      - --collector.time
+      - --collector.stat
+      - --collector.uname
+      - --collector.processes
+      - --web.listen-address=:9100
+    volumes:
+      - type: bind
+        source: /
+        target: /host
+        read_only: true
+        bind:
+          propagation: rslave
+          create_host_path: false
+    # BusyBox/wgetの存在は公式Dockerfileに基づく。実imageでのprobeは未実施。
+    healthcheck:
+      test: [CMD, /bin/wget, -q, -T, '4', -O, /dev/null, 'http://127.0.0.1:9100/metrics']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # socket-freeで見えるcgroup指標だけを収集する。Docker metadata/labelは実機受入が必要。
+  # DockerRootDirはoperatorが確認した絶対パスをprivate設定へ指定する。既定値を推測しない。
+  cadvisor:
+    image: ghcr.io/google/cadvisor:v0.60.6@sha256:b8e7d1093144fd088f425ff003d75a4aa405de075db78dae3bc563730b1bd07a
+    profiles: [monitoring-host]
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
+    user: '65534:65534'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: *service_logging
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    command:
+      - --docker_only=false
+      - --housekeeping_interval=15s
+      - --store_container_labels=false
+      - --whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service,app.owner
+    volumes:
+      - type: bind
+        source: /
+        target: /rootfs
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /sys
+        target: /sys
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${CADVISOR_DOCKER_DATA_ROOT:-../monitoring/empty-docker-root}
+        target: /var/lib/docker
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: [CMD, /usr/bin/healthcheck.sh]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # No host port, proxy, memberlist or extra object store. New dedicated volume.
+  loki:
+    image: docker.io/grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
+    profiles: [monitoring]
+    restart: unless-stopped
+    user: '10001:10001'
+    mem_limit: 512m
+    cpus: 0.5
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    logging: *service_logging
+    command: [-config.file=/etc/loki/loki.yaml]
+    configs:
+      - source: loki-config
+        target: /etc/loki/loki.yaml
+    volumes:
+      - loki:/loki
+    healthcheck:
+      test: [CMD, /usr/bin/loki, -health, '-health.url=http://127.0.0.1:3100/ready']
+      interval: 15s
+      timeout: 7s
+      retries: 10
+
+  # Curated project-only files, never Docker API/root log discovery.
+  # Explicit capture and host-directory approval precede deployment.
+  vector:
+    image: ${COMPOSE_PROJECT_NAME:-lakehouse}-vector:local
+    pull_policy: build
+    build:
+      context: ../..
+      dockerfile: infra/monitoring/vector/Dockerfile
+      args:
+        WORKER_UID: ${WORKER_UID:-10001}
+        WORKER_GID: ${WORKER_GID:-10001}
+    profiles: [monitoring]
+    restart: unless-stopped
+    user: ${WORKER_UID:-10001}:${WORKER_GID:-10001}
+    mem_limit: 512m
+    cpus: 1
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    logging: *service_logging
+    environment:
+      COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
+    working_dir: /etc/vector
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    volumes:
+      - vector-data:/var/lib/vector
+      - type: bind
+        source: ${MONITORING_LOG_DIR:-/srv/lakehouse/log-spool}
+        target: /var/lib/lakehouse-log-spool
+        read_only: true
+        bind:
+          create_host_path: false
+    configs:
+      - source: openobserve-vector-token
+        target: /run/secrets/openobserve-vector.json
+        # Local Compose ignores config mode/uid for file-backed bind mounts.
+        # Prepare the source as runtime-UID-owned0600; the wrapper checks it.
+    # No Loki/OpenObserve dependency: their outage cannot gate existing metrics.
+    healthcheck:
+      test: [CMD, /bin/bash, /etc/vector/health.sh]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
 # configは起動時の設定配布。S3認証を含む展開結果を公開ログやGitへ保存しない。
 configs:
+  # Private rendered config: never print/save `compose config` without --quiet.
+  # An empty token is unused unless the lab-specific backend is selected.
+  openobserve-vector-token:
+    # Profile-off uses only this public inert placeholder. When enabled, the
+    # operator's private read-only file is checked before Vector starts.
+    file: ${OPENOBSERVE_INGEST_TOKEN_FILE:-../monitoring/vector/openobserve-secrets.example.json}
+  loki-config:
+    file: ../monitoring/loki/loki.yaml
+  monitoring-rules:
+    file: ../monitoring/rules/foundation.yml
   s3-credentials:
     content: |-
       {
@@ -438,6 +624,10 @@ volumes:
     name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_n8n
   prometheus:
     name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_prometheus
+  loki:
+    name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_loki
+  vector-data:
+    name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_vector-data
   grafana:
     name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_grafana
 

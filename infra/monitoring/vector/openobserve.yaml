@@ -1,0 +1,53 @@
+# Load only with openobserve-lab selected. The private JSON secret maps
+# token to a scoped ingestion-only token; never a root/bootstrap password.
+# This file does not enable general environment interpolation.
+secret:
+  openobserve:
+    type: file
+    path: /run/secrets/openobserve-vector.json
+transforms:
+  openobserve_timestamp:
+    type: remap
+    inputs: [redacted]
+    file: transforms/openobserve.vrl
+    drop_on_error: true
+sinks:
+  openobserve:
+    type: http
+    inputs: [openobserve_timestamp]
+    uri: http://openobserve:5080/api/default/lakehouse_logs/_json
+    method: post
+    compression: gzip
+    auth:
+      strategy: basic
+      user: collector
+      password: "SECRET[openobserve.token]"
+    encoding:
+      codec: json
+      timestamp_format: rfc3339
+    framing:
+      method: character_delimited
+      character_delimited:
+        delimiter: ','
+    payload_prefix: '['
+    payload_suffix: ']'
+    request:
+      headers:
+        Content-Type: application/json
+      concurrency: 1
+      timeout_secs: 10
+      retry_attempts: 10
+      retry_initial_backoff_secs: 1
+      retry_max_duration_secs: 30
+    acknowledgements:
+      enabled: false
+    buffer:
+      type: disk
+      max_size: 536870912
+      when_full: drop_newest
+    batch:
+      max_bytes: 262144
+      max_events: 256
+      timeout_secs: 1
+    healthcheck:
+      enabled: false

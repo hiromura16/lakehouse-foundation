@@ -1,6 +1,6 @@
 """Test sanitized SQL observations with synthetic HTTP/query fakes."""
 
-import importlib
+import importlib.util
 import json
 import sys
 import threading
@@ -12,11 +12,32 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest import mock
 
-import httpx
-from fastapi import FastAPI, Header, HTTPException
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from fastapi.testclient import TestClient
+# Skip only an absent optional package; keep broken installs as errors.
+try:
+    import httpx
+except ModuleNotFoundError as error:
+    if error.name != "httpx" or importlib.util.find_spec("httpx") is not None:
+        raise
+    raise unittest.SkipTest(
+        "Optional tests need httpx. In a uv virtual environment, run "
+        "uv pip sync --require-hashes requirements-dev.lock."
+    ) from error
+# The API fixture has its own optional dependency, separate from HTTPX.
+try:
+    from fastapi import FastAPI, Header, HTTPException
+    from fastapi.exceptions import RequestValidationError
+    from fastapi.responses import JSONResponse
+    from fastapi.testclient import TestClient
+except ModuleNotFoundError as error:
+    if (
+        error.name != "fastapi"
+        or importlib.util.find_spec("fastapi") is not None
+    ):
+        raise
+    raise unittest.SkipTest(
+        "Optional tests need fastapi. In a uv virtual environment, run "
+        "uv pip sync --require-hashes requirements-dev.lock."
+    ) from error
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "infra/demo"))

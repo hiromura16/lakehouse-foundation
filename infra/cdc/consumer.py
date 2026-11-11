@@ -365,6 +365,21 @@ def identity_digest(identity):
     return sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
 
+def poll_maintenance(consumer, runtime, next_observation, interval):
+    """Service paused group callbacks frequently but bound status sampling.
+
+    observe reads broker watermarks and SQLite counts. Keep that work at the
+    configured CDC interval; poll retains its 0.2 second timeout so assignment
+    callbacks and queued rebuild checks stay responsive. Schedule from the
+    completed observation, avoiding catch-up bursts after a slow broker RPC.
+    """
+    consumer.poll(0.2)
+    if time.monotonic() >= next_observation:
+        runtime.observe()
+        return time.monotonic() + interval
+    return next_observation
+
+
 def run(directory, mapping_file):
     """state dirを排他し、有限poll窓のbatchを失敗・中断まで繰り返す。
 
@@ -445,14 +460,19 @@ def run(directory, mapping_file):
         flush=True,
     )
     try:
+        observation_interval = int(values["CDC_POLL_SECONDS"])
+        next_observation = time.monotonic() + observation_interval
         while True:
             if runtime.handle_rebuild():
+                # Rebuild already publishes its immediate final observation.
+                next_observation = time.monotonic() + observation_interval
                 continue
             if runtime.maintenance:
                 # Polling services group callbacks; paused deliveries are
                 # never staged or acked. A successful rebuild seeks explicitly.
-                consumer.poll(0.2)
-                runtime.observe()
+                next_observation = poll_maintenance(
+                    consumer, runtime, next_observation, observation_interval
+                )
                 continue
             records = []
             batch_bytes = 0
@@ -486,6 +506,9 @@ def run(directory, mapping_file):
                 if time.monotonic() >= deadline:
                     break
             if runtime.maintenance:
+                # Assignment/error entry already published its status. Start
+                # the periodic maintenance interval after that transition.
+                next_observation = time.monotonic() + observation_interval
                 continue
             if not records:
                 runtime.observe()
@@ -493,6 +516,9 @@ def run(directory, mapping_file):
             # 工程5: Icebergとlocal完了位置より先にKafkaをackしない。
             # broker応答だけ失敗しても、再開位置はlocal checkpointから決める。
             result = runtime.process(records)
+            # process publishes success/failure immediately, including entry
+            # into maintenance. Never duplicate that observation next poll.
+            next_observation = time.monotonic() + observation_interval
             if result is not None:
                 print(
                     json.dumps({"processed": len(records), **result}),

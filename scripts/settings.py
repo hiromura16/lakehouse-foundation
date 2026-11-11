@@ -2,6 +2,7 @@
 
 import base64
 import binascii
+import importlib.util
 import ipaddress
 import os
 import re
@@ -25,6 +26,13 @@ REQUIRED_NO_PROXY = (
     "n8n",
     "prometheus",
     "grafana",
+    "node-exporter",
+    "cadvisor",
+    "loki",
+    "vector",
+    "openobserve",
+    "sail-server",
+    "sail-benchmark",
     "spark-volumes-init",
     "spark-master",
     "spark-worker",
@@ -196,7 +204,89 @@ def validate_ssrf(values):
                 raise ValueError("Use DNS names without URL or port in " + key)
 
 
-def load(path):
+def validate_monitoring_paths(values, settings_path):
+    """Check selected host mounts without preparing or correcting the host.
+
+    Host exporters require an explicit Docker root only when opted in.
+    Paths must be literal external directories, distinct from notebooks,
+    landing and private settings. Errors never include their values.
+    """
+    profiles = set(values.get("COMPOSE_PROFILES", "").split(","))
+    if "monitoring" not in profiles:
+        return
+    # A public alias is deliberately independent of the host's real name.
+    values.setdefault("MONITORING_HOST_ALIAS", "local")
+    if not re.fullmatch(
+        r"[a-z][a-z0-9_-]{0,31}", values["MONITORING_HOST_ALIAS"]
+    ):
+        raise ValueError("Use a short sanitized MONITORING_HOST_ALIAS.")
+    mounts = [("MONITORING_LOG_DIR", "/srv/lakehouse/log-spool")]
+    if "monitoring-host" in profiles:
+        if not values.get("CADVISOR_DOCKER_DATA_ROOT"):
+            raise ValueError(
+                "Select an explicit CADVISOR_DOCKER_DATA_ROOT for "
+                "monitoring-host."
+            )
+        mounts.append(("CADVISOR_DOCKER_DATA_ROOT", ""))
+    for key, default in mounts:
+        selected = values.get(key, default)
+        if selected:
+            _validate_monitoring_mount(selected, values, settings_path)
+    docker_root = values.get("CADVISOR_DOCKER_DATA_ROOT", "")
+    spool = values.get("MONITORING_LOG_DIR", "/srv/lakehouse/log-spool")
+    if (
+        "monitoring-host" in profiles
+        and docker_root
+        and (
+            Path(spool).is_relative_to(Path(docker_root))
+            or Path(docker_root).is_relative_to(Path(spool))
+        )
+    ):
+        raise ValueError("Separate log spool and Docker data root.")
+
+
+def _validate_monitoring_mount(selected, values, settings_path):
+    """Inspect a selected path without following links or changing metadata."""
+    candidate = Path(selected)
+    excluded = [ROOT, Path(settings_path).parent]
+    excluded.extend(
+        Path(values[key])
+        for key in ("LANDING_DIR", "NOTEBOOKS_DIR", "CONTROL_SETTINGS_DIR")
+        if values.get(key)
+    )
+    blocked = {"/", "/var", "/srv", "/opt", "/mnt", "/tmp", "/home"}
+    protected = {".config", ".ssh", ".aws", ".docker", ".codex"}
+    if (
+        not candidate.is_absolute()
+        or ".." in candidate.parts
+        or str(candidate) in blocked
+        or protected.intersection(candidate.parts)
+        or any(
+            candidate == target or candidate.is_relative_to(target)
+            for target in map(
+                Path, ("/etc", "/proc", "/sys", "/dev", "/run", "/root")
+            )
+        )
+        or any(
+            candidate.is_relative_to(target)
+            or target.is_relative_to(candidate)
+            for target in excluded
+        )
+    ):
+        raise ValueError("Use a dedicated external monitoring directory.")
+    try:
+        for part in (candidate, *candidate.parents):
+            if part.is_symlink():
+                raise ValueError(
+                    "Monitoring mount paths must not use symlinks."
+                )
+        if candidate.exists() and not candidate.is_dir():
+            raise ValueError("Monitoring mount must be a directory.")
+    except OSError:
+        raise ValueError("Monitoring mount could not be inspected.") from None
+
+
+def load(path, *, private_mount=None):
     """Parse private settings literally and validate deployment boundaries."""
     path = Path(path).expanduser().resolve()
     if path.is_relative_to(ROOT):
@@ -240,6 +330,7 @@ def load(path):
         raise ValueError(
             "BIND_IP must be a specific local/private IPv4 address."
         )
+    profiles = set(filter(None, values.get("COMPOSE_PROFILES", "").split(",")))
     port_defaults = {
         "TRINO_PORT": "8080",
         "CATALOG_PORT": "8181",
@@ -261,13 +352,15 @@ def load(path):
         "SPARK_MASTER_UI_PORT": "8082",
         "SPARK_WORKER_UI_PORT": "8085",
         "SPARK_HISTORY_UI_PORT": "18080",
+        "OPENOBSERVE_PORT": "5080",
     }
     for key, default in port_defaults.items():
         # New inactive profiles remain compatible with older site settings.
         values.setdefault(key, default)
+        if key == "OPENOBSERVE_PORT" and "openobserve-lab" not in profiles:
+            continue
         if not values[key].isdigit() or not 1024 <= int(values[key]) <= 65535:
             raise ValueError("Invalid port: " + key)
-    profiles = set(filter(None, values.get("COMPOSE_PROFILES", "").split(",")))
     port_profiles = {
         "GRAFANA_PORT": {"monitoring"},
         "PROMETHEUS_PORT": {"monitoring"},
@@ -286,6 +379,7 @@ def load(path):
         "SPARK_MASTER_UI_PORT": {"compute"},
         "SPARK_WORKER_UI_PORT": {"compute"},
         "SPARK_HISTORY_UI_PORT": {"compute"},
+        "OPENOBSERVE_PORT": {"openobserve-lab"},
     }
     # An inactive profile publishes no port and must not break an older site.
     ports = [
@@ -332,6 +426,7 @@ def load(path):
     if not profiles <= {
         "automation",
         "monitoring",
+        "monitoring-host",
         "compute",
         "orchestration",
         "demo",
@@ -341,11 +436,21 @@ def load(path):
         "vector",
         "lineage",
         "mcp",
+        "openobserve-lab",
+        "sail-lab",
     }:
         raise ValueError(
-            "Profiles may be automation, monitoring, compute, "
-            "orchestration, demo, cdc, bi, notebooks, vector, lineage, mcp."
+            "Profiles may be automation, monitoring, monitoring-host, "
+            "compute, "
+            "orchestration, demo, cdc, bi, notebooks, vector, lineage, mcp, "
+            "openobserve-lab, sail-lab."
         )
+    for profile, required in (
+        ("monitoring-host", "monitoring"),
+        ("sail-lab", "compute"),
+    ):
+        if profile in profiles and required not in profiles:
+            raise ValueError("Select " + required + " with " + profile + ".")
     if profiles & {"demo", "mcp"}:
         if not re.fullmatch(
             r"[A-Za-z0-9]{20,128}", values.get("CONTROL_API_TOKEN", "")
@@ -387,19 +492,66 @@ def load(path):
         values["QDRANT_API_KEY"] == values["QDRANT_READ_ONLY_API_KEY"]
     ):
         raise ValueError("Use distinct Qdrant management and read-only keys.")
-    if profiles & {"notebooks", "compute"}:
+    if profiles & {"notebooks", "compute", "monitoring", "sail-lab"}:
         if (
             not values.get("WORKER_UID", "").isdigit()
             or int(values["WORKER_UID"]) == 0
             or not values.get("WORKER_GID", "").isdigit()
         ):
             raise ValueError("Compute UID must be non-root; GID numeric.")
+    if "openobserve-lab" in profiles:
+        if "monitoring" not in profiles:
+            raise ValueError("Select monitoring with openobserve-lab.")
+        # Reuse the narrowly scoped, offline validator. Importing this helper
+        # never runs its CLI, opens a socket or creates a token.
+        specification = importlib.util.spec_from_file_location(
+            "openobserve_site_validation", ROOT / "scripts/openobserve_lab.py"
+        )
+        lab = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(lab)
+        lab_values = values
+        if private_mount is not None:
+            # GUI containers see only the existing dedicated private mount.
+            # Map one sibling token basename, never an arbitrary host path.
+            mount = Path(private_mount)
+            host = Path(values.get("CONTROL_SETTINGS_DIR", ""))
+            token = Path(values.get("OPENOBSERVE_INGEST_TOKEN_FILE", ""))
+            if (
+                not mount.is_absolute()
+                or mount != Path(path).absolute().parent
+                or not host.is_absolute()
+                or not token.is_absolute()
+                or token.parent != host
+                or ".." in token.parts
+                or token.name == values.get("CONTROL_SETTINGS_NAME")
+            ):
+                raise ValueError(
+                    "Keep the lab token beside site settings for GUI access."
+                )
+            lab_values = {
+                **values,
+                "OPENOBSERVE_INGEST_TOKEN_FILE": str(mount / token.name),
+            }
+        lab.validate_config(lab_values, require_token=True)
     if "notebooks" in profiles:
         workspace = Path(values.get("NOTEBOOKS_DIR", ""))
-        if not workspace.is_absolute() or workspace.resolve().is_relative_to(
-            ROOT
+        if (
+            not workspace.is_absolute()
+            or ".." in workspace.parts
+            or workspace.is_relative_to(ROOT)
+            or ROOT.is_relative_to(workspace)
+            or workspace == Path("/")
         ):
             raise ValueError("Use an external absolute NOTEBOOKS_DIR.")
+        # Share the same private-directory boundary with standalone workspace
+        # preparation. Loading by file also works for GUI/spec-loaded modules
+        # without depending on the caller's ambient PYTHONPATH.
+        specification = importlib.util.spec_from_file_location(
+            "notebook_site_validation", ROOT / "scripts/notebook_workspace.py"
+        )
+        notebook = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(notebook)
+        notebook.reject_private_overlap(workspace, values, settings_path=path)
     if values.get("MCP_ENABLE_MUTATIONS", "false") not in {"true", "false"}:
         raise ValueError("MCP_ENABLE_MUTATIONS must be true or false.")
     ca_file = values.get("CORPORATE_CA_FILE", "")
@@ -408,6 +560,7 @@ def load(path):
     values["DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN"] = buildkit_client_token_mode(
         values
     )
+    validate_monitoring_paths(values, path)
     validate_ssrf(values)
     validate_sql_source_policy(values)
     return synchronize_no_proxy(values)

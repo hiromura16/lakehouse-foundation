@@ -1,0 +1,170 @@
+# Severity comes only from explicit documented fields/positions. Neither stream,
+# logger, exception, HTTP status nor message words infer error or fatal.
+raw = string!(.message)
+service = string!(.compose_service)
+.level_raw = ""
+.level_normalized = "unknown"
+.level_source = "none"
+.level_parser = "fallback"
+.level_parse_status = "unknown_format"
+.logger = "unknown"
+.http_status = null
+.http_method = null
+.http_route = null
+.log_kind = "application"
+.process_key = "default"
+.record_start = true
+explicit = false
+json_body = starts_with(strip_whitespace(raw), "{")
+parsed, error = parse_json(raw)
+if json_body {
+  .level_parser = "json"
+  if error != null || !is_object(parsed) {
+    .level_parse_status = "parse_error"
+  } else {
+    # Prioritize fields in a stable, explicit order. Unknown explicit values do
+    # not fall through to a lower-priority text parser.
+    if exists(parsed.level) { .level_raw = to_string(parsed.level) ?? "[non-string]"; explicit = true; .level_source = "level" }
+    else if exists(parsed.lvl) { .level_raw = to_string(parsed.lvl) ?? "[non-string]"; explicit = true; .level_source = "lvl" }
+    else if exists(parsed.severity) { .level_raw = to_string(parsed.severity) ?? "[non-string]"; explicit = true; .level_source = "severity" }
+    else if exists(parsed.severity_text) { .level_raw = to_string(parsed.severity_text) ?? "[non-string]"; explicit = true; .level_source = "severity_text" }
+    else if exists(parsed.log.level) { .level_raw = to_string(parsed.log.level) ?? "[non-string]"; explicit = true; .level_source = "log.level" }
+    else if exists(parsed."log.level") { .level_raw = to_string(parsed."log.level") ?? "[non-string]"; explicit = true; .level_source = "log.level" }
+    else if exists(parsed.levelname) { .level_raw = to_string(parsed.levelname) ?? "[non-string]"; explicit = true; .level_source = "levelname" }
+    else if includes(["catalog-db", "superset-db", "n8n-db", "airflow-db", "marquez-db"], service) && exists(parsed.error_severity) { .level_raw = to_string(parsed.error_severity) ?? "[non-string]"; explicit = true; .level_source = "error_severity"; .level_parser = "postgres_json" }
+    if is_string(parsed.message) { .message = string!(parsed.message) }
+    else if is_string(parsed.msg) { .message = string!(parsed.msg) }
+    else if is_string(parsed.fields.message) { .message = string!(parsed.fields.message) }
+    else { .message = "[structured event without a supported message field]" }
+    if is_string(parsed.logger) { .logger = truncate(string!(parsed.logger), limit: 128) }
+    else if is_string(parsed.target) { .logger = truncate(string!(parsed.target), limit: 128) }
+    # VRL does not narrow an arbitrary parsed value through an && predicate.
+    # Keep the integer-only contract and compare a separately typed local.
+    if is_integer(parsed.status) {
+      status = to_int(parsed.status) ?? 0
+      if status >= 100 && status <= 599 { .http_status = status }
+    }
+    if is_integer(parsed.http_status) {
+      status = to_int(parsed.http_status) ?? 0
+      if status >= 100 && status <= 599 { .http_status = status }
+    }
+  }
+} else {
+  # Logfmt level is defined by Prometheus/Grafana/Loki/OpenObserve formats.
+  if includes(["prometheus", "grafana", "loki", "node-exporter", "openobserve"], service) {
+    fields, fmt_error = parse_logfmt(raw)
+    .level_parser = "logfmt"
+    if fmt_error == null && exists(fields.level) {
+      .level_raw = to_string(fields.level) ?? "[non-string]"
+      .level_source = "level"
+      explicit = true
+      if is_string(fields.msg) { .message = string!(fields.msg) }
+      if is_string(fields.logger) { .logger = truncate(string!(fields.logger), limit: 128) }
+      status = to_int(fields.status) ?? 0
+      if status >= 100 && status <= 599 { .http_status = status }
+    }
+  }
+  if !explicit && includes(["worker", "demo-api", "demo", "cdc-consumer", "cdc-register", "mcp", "airflow", "airflow-db", "jupyter"], service) {
+    found, parse_error = parse_regex(raw, r'^(?<severity>TRACE|DEBUG|INFO|WARNING|ERROR|CRITICAL):\s+(?<text>.*)$')
+    if parse_error == null {
+      .level_raw = found.severity; .message = found.text
+      .level_parser = "python_uvicorn"; .level_source = "text_position"; explicit = true
+    }
+  }
+  if !explicit && includes(["superset", "superset-init"], service) {
+    found, parse_error = parse_regex(raw, r'^\[[^\]]+\]\s+\[[0-9]+\]\s+\[(?<severity>DEBUG|INFO|WARNING|ERROR|CRITICAL)\]\s+(?<text>.*)$')
+    if parse_error == null {
+      .level_raw = found.severity; .message = found.text
+      .level_parser = "gunicorn"; .level_source = "text_position"; explicit = true
+    }
+  }
+  if !explicit && includes(["catalog-db", "superset-db", "n8n-db", "airflow-db", "marquez-db"], service) {
+    found, parse_error = parse_regex(raw, r'^[0-9]{4}-[0-9]{2}-[0-9]{2}\s+\S+\s+\S+\s+\[(?<pid>[0-9]+)\]\s+(?<severity>DEBUG[1-5]?|INFO|LOG|NOTICE|WARNING|ERROR|FATAL|PANIC|DETAIL|HINT|CONTEXT|STATEMENT):\s+(?<text>.*)$')
+    if parse_error == null {
+      .process_key = found.pid
+      .level_parser = "postgres"
+      .message = found.text
+      if includes(["DETAIL", "HINT", "CONTEXT", "STATEMENT"], found.severity) {
+        .record_start = false
+      } else {
+        .level_raw = found.severity; .level_source = "text_position"; explicit = true
+      }
+    }
+  }
+  if !explicit && includes(["trino", "cdc-kafka", "cdc-connect", "cdc-ui", "spark-master", "spark-worker", "spark-history", "spark-check"], service) {
+    found, parse_error = parse_regex(raw, r'^\[?[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9:.+,Z-]+\]?\s+(?<severity>TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\s+(?<text>.*)$')
+    if parse_error == null {
+      .level_raw = found.severity; .message = found.text
+      .level_parser = "java_text"; .level_source = "text_position"; explicit = true
+    }
+  }
+  if !explicit && includes(["storage", "cadvisor"], service) {
+    found, parse_error = parse_regex(raw, r'^(?<severity>[IWEF])[0-9]{4}\s+[0-9:.]+\s+(?<text>.*)$')
+    if parse_error == null {
+      .level_raw = found.severity; .message = found.text
+      .level_parser = "glog"; .level_source = "documented_prefix"; explicit = true
+    }
+  }
+  if !explicit && service == "superset-redis" {
+    found, parse_error = parse_regex(raw, r'^[0-9]+:[A-Z]\s+[0-9]{2}\s+[A-Za-z]{3}\s+[0-9]{4}\s+[0-9:.]+\s+(?<severity>[.\-*#])\s+(?<text>.*)$')
+    if parse_error == null {
+      .level_raw = found.severity; .message = found.text
+      .level_parser = "redis"; .level_source = "documented_prefix"; explicit = true
+    }
+  }
+  if !explicit && includes(["gateway", "nginx"], service) {
+    found, parse_error = parse_regex(raw, r'^[0-9]{4}/[0-9]{2}/[0-9]{2}\s+[0-9:]+\s+\[(?<severity>debug|info|notice|warn|error|crit|alert|emerg)\]\s+(?<text>.*)$')
+    if parse_error == null {
+      .level_raw = found.severity; .message = found.text
+      .level_parser = "nginx_error"; .level_source = "text_position"; explicit = true
+    }
+  }
+  # A continuation inherits its parent through reduce, never reclassifies it.
+  if !explicit && match(raw, r'^(\s+|Traceback \(most recent call last\):|Caused by:|Suppressed:|During handling of the above exception)') {
+    .record_start = false
+  }
+  # Final exception-class lines are unindented in ordinary Python/Java
+  # tracebacks. They continue a parent only within these application families;
+  # class names never assign severity and standalone lines remain unknown.
+  if !explicit && includes(["worker", "demo-api", "demo", "cdc-consumer", "cdc-register", "mcp", "airflow", "jupyter", "superset", "superset-init", "trino", "cdc-kafka", "cdc-connect", "cdc-ui", "spark-master", "spark-worker", "spark-history", "spark-check"], service) && match(raw, r'^(?:[A-Za-z_][A-Za-z0-9_]*\.)*(?:[A-Za-z_][A-Za-z0-9_]*)?(?:Error|Exception|Interrupt|Exit)(?::|$)') {
+    .record_start = false
+  }
+}
+if explicit {
+  value = upcase(string!(.level_raw))
+  base = {"TRACE":"trace", "DEBUG":"debug", "DEBUG1":"debug", "DEBUG2":"debug", "DEBUG3":"debug", "DEBUG4":"debug", "DEBUG5":"debug", "INFO":"info", "WARN":"warn", "WARNING":"warn", "ERROR":"error", "FATAL":"fatal", "CRITICAL":"fatal"}
+  mapped, map_error = get(base, [value])
+  if map_error == null && is_string(mapped) { .level_normalized = mapped }
+  if includes(["postgres", "postgres_json"], .level_parser) {
+    if includes(["LOG", "NOTICE"], value) { .level_normalized = "info" }
+    if value == "PANIC" { .level_normalized = "fatal" }
+  }
+  if .level_parser == "glog" {
+    if value == "I" { .level_normalized = "info" }
+    if value == "W" { .level_normalized = "warn" }
+    if value == "E" { .level_normalized = "error" }
+    if value == "F" { .level_normalized = "fatal" }
+  }
+  if .level_parser == "nginx_error" {
+    if value == "NOTICE" { .level_normalized = "info" }
+    if includes(["CRIT", "ALERT", "EMERG"], value) { .level_normalized = "fatal" }
+  }
+  if .level_parser == "redis" {
+    if value == "." { .level_normalized = "debug" }
+    if value == "-" { .level_normalized = "debug" }
+    if value == "*" { .level_normalized = "info" }
+    if value == "#" { .level_normalized = "warn" }
+  }
+  .level_parse_status = if .level_normalized == "unknown" { "unrecognized_level" } else { "parsed" }
+}
+
+# Access records carry status independently. Replace the free-form request
+# message to avoid retaining client addresses, query strings or user paths.
+access, access_error = parse_regex(raw, r'"(?<method>GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS)\s+(?<route>[^"\s]+)\s+HTTP/[0-9.]+"\s+(?<status>[1-5][0-9]{2})')
+if access_error == null {
+  .log_kind = "access"
+  .http_method = access.method
+  .http_status = to_int!(access.status)
+  .http_route = if includes(["/health", "/metrics", "/status", "/-/ready", "/api/health"], access.route) { access.route } else { "[redacted-route]" }
+  .message = "HTTP access request"
+}

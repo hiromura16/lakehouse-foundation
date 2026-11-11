@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "reviewed_on": "2026-11-10",
-  "reviewed_source_commit": "b63b9d00d664d3e547679d0da4dd63f76fe1f45f",
+  "reviewed_on": "2026-11-11",
+  "reviewed_source_commit": "49898acc3d324e11d9e4cd3583d814800f043b2c",
   "figures": [
     {
       "id": "01-platform-detail",
-      "title": "全34サービスの配置と起動条件",
-      "subtitle": "Docker Compose 7ファイルを同じprojectへ結合。coreに必要なprofileを追加する。",
+      "title": "全41サービスの配置と起動条件",
+      "subtitle": "Docker Compose 9ファイルを同じprojectへ結合。coreに必要なprofileを追加する。",
       "audience": "基盤設計・導入レビュー",
-      "caption": "core6サービスに11種類のprofileを重ねる単一ホストPoC構成。34は定義数であり、常駐・一度だけの初期化・明示スモークを区別する。",
+      "caption": "core6サービスに14種類のprofileを重ねる41定義の単一ホストPoC構成。監視拡張はsource-only検査であり、host権限と実機受入は別途必要。",
       "sources": [
         "infra/lakehouse/compose.yaml",
         "infra/compute/compose.yaml",
@@ -16,7 +16,9 @@
         "infra/demo/compose.yaml",
         "infra/cdc/compose.yaml",
         "infra/poc/compose.yaml",
-        "infra/mcp/compose.yaml"
+        "infra/mcp/compose.yaml",
+        "infra/openobserve/compose.yaml",
+        "infra/sail/compose.yaml"
       ],
       "panels": [
         {
@@ -127,15 +129,15 @@
           "y": 580,
           "width": 574,
           "height": 330,
-          "title": "monitoring｜監視",
+          "title": "monitoring / monitoring-host",
           "lines": [
-            "prometheus / grafana",
-            "workerとPrometheus自身を収集",
-            "dashboardはGUI保存を保持",
-            "全ホスト監視は別途追加"
+            "通常4：prometheus / grafana / loki / vector",
+            "host追加2：node-exporter / cadvisor",
+            "host root/PIDは別opt-in・事前承認",
+            "通常更新からhost読取りを追加しない"
           ],
           "tone": "teal",
-          "tag": "2定義",
+          "tag": "4定義 + 明示host 2定義",
           "logo": "grafana"
         },
         {
@@ -205,16 +207,50 @@
           "tone": "blue",
           "tag": "1定義",
           "logo": ""
+        },
+        {
+          "key": "openobserve",
+          "x": 52,
+          "y": 1300,
+          "width": 1124,
+          "height": 330,
+          "title": "openobserve-lab｜ログ比較のみ",
+          "lines": [
+            "openobserve：2GiB / 2CPU / 専用volume",
+            "Vectorの秘匿化後eventを第二sinkへ分岐",
+            "通常Loki経路は独立。metrics比較は後続Phase",
+            "実API・配送・保持削除・24時間性能は未受入"
+          ],
+          "tone": "teal",
+          "tag": "任意1定義 / cold runtime未検証",
+          "logo": ""
+        },
+        {
+          "key": "sail",
+          "x": 1200,
+          "y": 1300,
+          "width": 1148,
+          "height": 330,
+          "title": "sail-lab｜合成データのエンジン比較",
+          "lines": [
+            "sail-server：2GiB / sail-benchmark：明示2GiB",
+            "clientは通常replicas 0。専用state volume",
+            "compute必須。Spark共通image事前build",
+            "型・Connect・catalog/S3・性能は実機未受入"
+          ],
+          "tone": "purple",
+          "tag": "任意2定義 / 通常業務表と分離",
+          "logo": ""
         }
       ],
       "edges": [],
       "notes": [
         "Dokploy・Samba・daemon proxyはホスト側の別設定。SQL Serverは外部DB。",
-        "一度だけの初期化は4定義。全profileでは33containerの検証記録があり、34全てが常時稼働する構成ではない。"
+        "初期化4定義と通常0の明示検証2定義を区別する。新規監視・比較Labの実機受入は別途必要。"
       ],
-      "mermaid": "flowchart TB\n  Host[\"ホスト: Dokploy / Samba / Docker proxy\"] --> Core[\"core: storage / catalog-db / catalog-migrate / catalog / trino / worker\"]\n  GUI[\"demo: demo / demo-api\"] --> Core\n  MCP[\"mcp + demo-api\"] --> Core\n  N8N[\"automation: n8n / n8n-db\"] --> Core\n  AF[\"orchestration: airflow / airflow-db\"] --> Core\n  CDC[\"cdc: kafka / connect / ui / register / consumer\"] --> Core\n  Compute[\"compute: master / worker / history / init / smoke\"] --- Core\n  NB[\"notebooks: jupyter\"] --> Compute\n  BI[\"bi: superset / db / redis / init\"] --> Core\n  Extra[\"vector: qdrant / lineage: marquez + db + web\"] --- Core\n  Mon[\"monitoring: prometheus / grafana\"] --> Core\n",
+      "mermaid": "flowchart TB\n  Host[\"ホスト: Dokploy / Samba / Docker proxy\"] --> Core[\"core: storage / catalog-db / catalog-migrate / catalog / trino / worker\"]\n  GUI[\"demo: demo / demo-api\"] --> Core\n  MCP[\"mcp + demo-api\"] --> Core\n  N8N[\"automation: n8n / n8n-db\"] --> Core\n  AF[\"orchestration: airflow / airflow-db\"] --> Core\n  CDC[\"cdc: kafka / connect / ui / register / consumer\"] --> Core\n  Compute[\"compute: master / worker / history / init / smoke\"] --- Core\n  NB[\"notebooks: jupyter\"] --> Compute\n  BI[\"bi: superset / db / redis / init\"] --> Core\n  Extra[\"vector: qdrant / lineage: marquez + db + web\"] --- Core\n  Mon[\"monitoring: prometheus / grafana / loki / vector\"] --> Core\n  Mon -.-> OO[\"openobserve-lab: 秘匿済みログのみ / metrics未実装\"]\n  Sail[\"sail-lab: native server / 明示benchmark通常0\"] --- Core\n  HostMon[\"monitoring-host: node-exporter / cadvisor / 明示承認\"] --> Mon\n",
       "width": 2400,
-      "height": 1500
+      "height": 1850
     },
     {
       "id": "02-batch-flow",
@@ -1608,12 +1644,14 @@
       "title": "監視・状態確認・業務品質を分ける",
       "subtitle": "メトリクス、到達性、業務件数、履歴の4種類を区別する。healthyだけではデータの正しさは分からない。",
       "audience": "運用・品質レビュー",
-      "caption": "Prometheusはworkerと自身の2targetを15秒ごとに収集する。ポータルのhealth、固定品質SQL、n8n/Airflow等の実行履歴は別の観測で、全ホストの監視や長期監査を完成させるものではない。",
+      "caption": "通常監視はPrometheus/Grafana/Loki/Vector。host root/PIDを読むexporterはmonitoring-hostの明示opt-in。curated有限capture・秘匿化・配送のsourceと、公式validator・実host/GUI・容量の受入を区別する。",
       "sources": [
         "infra/monitoring/prometheus.yml",
         "scripts/admin.py",
         "scripts/grafana_setup.py",
-        "infra/demo/poc_quality.py"
+        "infra/demo/poc_quality.py",
+        "infra/openobserve/compose.yaml",
+        "docs/OPENOBSERVE.md"
       ],
       "panels": [
         {
@@ -1626,7 +1664,7 @@
           "lines": [
             "処理の指標を公開",
             "DBA・業務照合とは別",
-            "外部host exporterは未同梱"
+            "host metricsはexporterへ分離"
           ],
           "tone": "blue",
           "tag": "メトリクス対象1",
@@ -1640,7 +1678,7 @@
           "height": 240,
           "title": "Prometheus",
           "lines": [
-            "worker＋Prometheus自身の2target",
+            "通常指標＋host opt-inの収集定義",
             "scrape interval：15秒",
             "保存：15日 / 2GBの設定"
           ],
@@ -1728,10 +1766,10 @@
         }
       ],
       "notes": [
-        "GUI入口カードの数とPrometheus target数は別。会社SQL Server・DB・Kafka・ホスト全体の監視は追加する。",
+        "host/cgroupはmonitoring-hostの別opt-in・read承認後に受入。任意OpenObserveはlog-only、metricsは後続。",
         "Grafana JSON exportはdashboard単体。利用者・権限・全設定の復元はDBと設定のバックアップで確認する。"
       ],
-      "mermaid": "flowchart LR\n  W[\"worker metrics\"] --> P[\"Prometheus / 15s / 2target\"]\n  P --> G[\"Grafana / GUI保存\"]\n  P --> P\n  Portal[\"ポータル\"] --> Health[\"固定health / 到達性\"]\n  Portal --> Quality[\"固定品質SQL / Gold preview\"]\n  Portal --> Jobs[\"最新20job / 非永続\"]\n  Native[\"n8n / Airflow / Spark\"] --> Logs[\"各実行履歴・保存先\"]\n",
+      "mermaid": "flowchart LR\n  W[\"worker metrics\"] --> P[\"Prometheus / 15s / host opt-in\"]\n  P --> G[\"Grafana / GUI保存\"]\n  P --> P\n  Portal[\"ポータル\"] --> Health[\"固定health / 到達性\"]\n  Portal --> Quality[\"固定品質SQL / Gold preview\"]\n  Portal --> Jobs[\"最新20job / 非永続\"]\n  Native[\"n8n / Airflow / Spark\"] --> Logs[\"各実行履歴・保存先\"]\n  Capture[\"明示curated capture\"] --> Vector[\"Vector / 正規化・秘匿化\"]\n  Vector --> Loki[\"Loki / 専用volume7日\"]\n  Loki --> G\n  Vector -.-> OO[\"任意OpenObserve log-only / 独立volume / metrics後続\"]\n  OptIn[\"monitoring-host: 明示opt-in / host root・PID承認\"] --> P\n",
       "width": 1920,
       "height": 1080
     },
@@ -1740,7 +1778,7 @@
       "title": "公開Gitから配置・反映する手順",
       "subtitle": "採用Dokploy0.31.0の画面名を使用。アプリの実行名とデータvolumeの対応を保持する。",
       "audience": "導入・変更管理",
-      "caption": "ホスト準備とprivate設定を行い、生成後appNameへCompose名を合わせる。Composeサービス自身のEnvironmentを保存し、Git Providerと7ファイルCommandからDeployする。GUI保存だけでは反映しない。",
+      "caption": "ホスト準備とprivate設定を行い、生成後appNameへCompose名を合わせる。Composeサービス自身のEnvironmentを保存し、Git Providerと9ファイルCommandからDeployする。GUI保存だけでは反映しない。",
       "sources": [
         "infra/dokploy/install.sh",
         "docs/DOKPLOY.md",
@@ -1851,7 +1889,7 @@
           "title": "06｜Run Command",
           "lines": [
             "Commandはcomposeから",
-            "実appName / 7ファイル / wait"
+            "実appName / 9ファイル / wait"
           ],
           "tone": "purple",
           "tag": "pipeやshell連結は使わない",
@@ -1918,17 +1956,17 @@
         }
       ],
       "notes": [
-        "7Composeの標準Commandは初回から使用可能。起動対象はCOMPOSE_PROFILESで段階追加する。",
+        "9Composeの標準Commandは初回から使用可能。起動対象はCOMPOSE_PROFILESで段階追加する。",
         "CLIかDokployの管理入口を一つに決める。private envとDokployサービスenvは管理者が同期して再配置する。"
       ],
-      "mermaid": "flowchart LR\n  H[\"host / proxy / CA準備\"] --> S[\"private設定 / landing\"]\n  S --> C[\"Compose作成 / 実appName確認\"]\n  C --> G[\"General / Provider / Git\"]\n  G --> E[\"サービスEnvironment / env file ON\"]\n  E --> R[\"Advanced / Run Command / 7file\"]\n  R --> D[\"Deploy / Git再取得\"]\n  D --> V[\"health / one-shot / verify\"]\n",
+      "mermaid": "flowchart LR\n  H[\"host / proxy / CA準備\"] --> S[\"private設定 / landing\"]\n  S --> C[\"Compose作成 / 実appName確認\"]\n  C --> G[\"General / Provider / Git\"]\n  G --> E[\"サービスEnvironment / env file ON\"]\n  E --> R[\"Advanced / Run Command / 9file\"]\n  R --> D[\"Deploy / Git再取得\"]\n  D --> V[\"health / one-shot / verify\"]\n",
       "width": 1920,
       "height": 1080
     },
     {
       "id": "12-persistence-recovery",
       "title": "永続データと復元を一組で管理する",
-      "subtitle": "16種類の名前付きvolume定義と外部bind。cloneや再配置とデータ移行を分ける。",
+      "subtitle": "20種類の名前付きvolume定義と外部bind。cloneや再配置とデータ移行を分ける。",
       "audience": "バックアップ・引継ぎ・復旧",
       "caption": "受領原本とIceberg metadata/data、Lakekeeper DBと暗号鍵を整合した停止点で保管する。各GUIのDB/暗号鍵、SparkとCDCの再開状態、外部landing/workspaceも復元範囲へ含める。",
       "sources": [
@@ -1936,7 +1974,9 @@
         "infra/lakehouse/compose.yaml",
         "infra/compute/compose.yaml",
         "infra/cdc/compose.yaml",
-        "infra/poc/compose.yaml"
+        "infra/poc/compose.yaml",
+        "infra/openobserve/compose.yaml",
+        "infra/sail/compose.yaml"
       ],
       "panels": [
         {
@@ -1969,7 +2009,7 @@
             "airflow-db / airflow-state ＋ Fernet",
             "prometheus / grafana",
             "superset-db / qdrant / marquez-db",
-            "Redisはcache / 専用volumeなし"
+            "Loki / Vector / Lab専用state"
           ],
           "tone": "teal",
           "tag": "GUI編集を保持する",
@@ -2054,10 +2094,10 @@
         }
       ],
       "notes": [
-        "16は全profileのvolume定義数。core用Composeファイルの7定義には任意n8n・監視の4種も含む。",
+        "20は全profileのvolume定義数。core用Composeは9定義。任意Labの2種を含む。",
         "appName・DATA_VOLUME_PREFIX・秘密値を単独変更しない。DB passwordのenv変更だけで既存DBは更新されない。"
       ],
-      "mermaid": "flowchart LR\n  R[\"原本 / Iceberg metadata・data\"] --> B[\"整合する停止点のbackup\"]\n  C[\"catalog DB + 暗号鍵\"] --> B\n  U[\"各GUI DB + 暗号鍵\"] --> B\n  S[\"Spark logs / Kafka・SQLite再開状態\"] --> B\n  F[\"landing / workspace / private設定\"] --> B\n  B -.-> T[\"別環境へ復元してSQL・hash・再開位置を確認\"]\n",
+      "mermaid": "flowchart LR\n  R[\"原本 / Iceberg metadata・data\"] --> B[\"整合する停止点のbackup\"]\n  C[\"catalog DB + 暗号鍵\"] --> B\n  U[\"各GUI DB + 暗号鍵\"] --> B\n  S[\"Spark logs / Kafka・SQLite再開状態\"] --> B\n  F[\"landing / workspace / private設定\"] --> B\n  B -.-> T[\"別環境へ復元してSQL・hash・再開位置を確認\"]\n  L[\"Loki / Vector / 任意Lab専用state\"] --> B\n",
       "width": 1920,
       "height": 1080
     },

@@ -205,6 +205,42 @@ sudo bash infra/dokploy/install.sh --env-file "$LAKEHOUSE_ENV_FILE" --apply
 
 他の設定・秘密値を保持したままprivate switchを0へ編集し、同じdry-run→保守時間のapplyを行います。管理する標準名が削除されたことをpresence診断で確認します。DB／volumeやSwarmを戻す操作は不要です。proxy自体も除去する場合はHTTP(S)大文字・小文字を一組で編集し、別のdaemon／アプリ設定の反映も [会社proxy手順](COMPANY-PROXY.md) で確認します。古いbackup全体で現在の資格情報を上書きしません。
 
+## 監視を更新する前の追加preflight
+
+この確認は**Deployより前**に行います。旧 `monitoring` の通常再配置だけでhost root/PID読取りを追加しないため、node-exporter/cAdvisorは別profile `monitoring-host` に分離しています。通常 `monitoring` はPrometheus・Grafana・Loki・Vectorの4serviceです。`monitoring-host` は `monitoring` が必須で、host読取りの明示承認後だけ追加します。[権限と受入の詳しい手順](OBSERVABILITY.md)
+
+1. 既存のprivate設定・GUI編集済みdashboard・volumeを保持します。通常監視用に `MONITORING_LOG_DIR` の専用spoolと `MONITORING_HOST_ALIAS` を確認します。spoolをlanding、Notebook、private設定、Dockerデータrootと共用しません。
+2. spoolが実在するdirectoryで、path/祖先がsymlinkではなく、`WORKER_UID:GID` と所有者が一致し、mode 0700または0750であること、全祖先が安全かつ通過可能であることを確認します。Vectorの `WORKER_UID/GID` に必要な読取り・通過権限だけを認め、rawログの保管範囲とcapture責任者を決めます。実pathやUIDは私有記録へ残します。
+3. 次は読取りだけの確認例です。例のpathをprivate設定の値へ置き換えます。存在しなければここで停止します。Composeの `create_host_path: false` が作成を代行することはありません。この更新手順はmkdir・自動chown/chmodを行いません。必要な新規path作成・権限変更はhost管理者が別途承認・実施します。
+
+**Bash / Zsh共通**
+
+```bash
+LOG_SPOOL_DIR=/absolute/private/log-spool
+test -d "$LOG_SPOOL_DIR"
+test ! -L "$LOG_SPOOL_DIR"
+stat -c 'mode=%a uid=%u gid=%g' "$LOG_SPOOL_DIR"
+```
+
+4. host/container指標が必要な場合だけ、rootfs/sys/PIDとDockerデータ読取りの範囲を承認します。Docker保存先は推測せず、次の読取り結果をprivate設定の `CADVISOR_DOCKER_DATA_ROOT` へ記録します。通常 `monitoring` だけならこのhost exporter用設定は必須ではありません。
+
+**Bash / Zsh共通**
+
+```bash
+docker info --format '{{.DockerRootDir}}'
+```
+
+5. `monitoring-host` を使う場合だけ `monitoring,monitoring-host` を含めます。元のprofileは必要なものを保持し、`sail-lab` を追加する場合は `compute` も必要です。実機のmount、Docker 29/cgroup v2、値・ラベル・alertはsourceのunit testと別に受入します。
+6. image取得の経路をネットワーク担当と照合します。以下は公開imageのregistry hostで、社内proxyの実値ではありません。許可・CA・認証・mirrorの有無を確認し、daemon pull、BuildKit、runtimeを分けて診断します。
+
+| registry host | 今回の利用 | 確認する範囲 |
+| --- | --- | --- |
+| `ghcr.io` | node-exporter / cAdvisorの固定image | `monitoring-host` を明示した時のpull。通常監視のhost読取りを自動追加しない |
+| `docker.io` | Grafana / Loki、`timberio/vector` | 既存Grafanaと新規log経路の固定image。daemonとBuildKitの経路を別確認 |
+| `public.ecr.aws` | 任意OpenObserve Labの公式image | `openobserve-lab` を使う場合だけ追加。通常Lokiの必須宛先にしない |
+
+社内の認証proxy・registry mirrorを使用する場合は実際に接続するendpointを私有記録で照合します。mirror用hostや会社CAを公開ファイルへ固定しません。取得が失敗してもprivileged・socket・公開bind追加で回避しません。準備後に同じprivate設定の `plan` を確認します。`plan` は設定だけで、host存在/modeを保証しません。CLIの `up` / `predeploy` はmonitoring有効時だけCompose呼出し前にspool metadataを検査します。内容やfile inventoryの検査・書込みprobe・自動作成はありません。Dokployのraw ComposeはCLI predeployを自動実行しないため、この手動確認を省略せず、サービスEnvironmentを揃えてから次のDeploy手順へ進みます。
+
 ## 4. CLIで動いている構成を引き継ぐ場合だけ停止する
 
 **既に同じDokployサービスで管理している場合は、この停止を飛ばして手順5へ進みます。** CLIで動かしたDB／S3をDokployへ引き継ぐ場合だけ、旧 `COMPOSE_PROJECT_NAME`、profile、volumeの実名、外部ディレクトリを控えます。
@@ -228,7 +264,7 @@ named volumeは保持されます。**停止前にプロジェクト名をDokplo
 1. **General → Provider → Git** を選びます。Repository URLは `https://github.com/hiromura16/lakehouse-foundation.git`、Branchは `main`、Compose Pathは `infra/lakehouse/compose.yaml` として **Save** します。公開HTTPSのためSSH Keyは不要です。
 2. **Composeサービス自身のEnvironmentタブ**を開きます。カード名は **Environment Settings** です。upgrade後のprivate envと一致させ、**Create Environment FileをON → Save** します。
 3. `COMPOSE_PROJECT_NAME` が画面の実appNameと一致し、移行用 `DATA_VOLUME_PREFIX`、既存の秘密値、`LAKEHOUSE_NO_PROXY`、proxy両case、CA、landing／privateディレクトリが保持されたことを確認します。
-4. **Advanced → Run Command → Command** を確認し、配置対象のComposeファイルとprofileを合わせます。coreのみなら空欄の既定Commandを利用できます。追加機能を使っている場合は既存profileを不用意に空へ戻さず、[7ファイルの指定](DOKPLOY.md#任意composeを重ねる)を維持します。
+4. **Advanced → Run Command → Command** を確認し、配置対象のComposeファイルとprofileを合わせます。coreのみなら空欄の既定Commandを利用できます。追加機能を使っている場合は既存profileを不用意に空へ戻さず、[9ファイルの指定](DOKPLOY.md#任意composeを重ねる)を維持します。
 
 GitHubタブは接続済みGitHub Provider用の別方式です。公開URLの直接入力にはGitタブを使います。[0.31.0のGitフォーム](https://github.com/Dokploy/dokploy/blob/v0.31.0/apps/dokploy/components/dashboard/compose/general/generic/save-git-provider-compose.tsx)
 

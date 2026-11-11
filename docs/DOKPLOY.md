@@ -1,7 +1,7 @@
 # Dokploy 0.31.0でGitから配置する
 
 <!-- doc-purpose:start -->
-> **役割:** Dokploy 0.31.0の画面で、生成appName・個別Environment・7つのComposeを揃えて配置する。
+> **役割:** Dokploy 0.31.0の画面で、生成appName・個別Environment・9つのComposeを揃えて配置する。
 >
 > **対象読者:** 基盤構築担当 / 運用担当
 >
@@ -125,6 +125,8 @@ lakehouse-foundation          Project
 
 **期待結果:** Generalタブの **Deploy Settings** に `Compose` と表示されます。`Stack` は選びません。本構成はローカルbuild、Compose依存条件、inline configsを使用します。Dokploy自身がSwarmで動くことと、アプリをStackで配置することは別です。[0.31.0のCompose Type定義](https://github.com/Dokploy/dokploy/blob/v0.31.0/packages/server/src/db/schema/compose.ts)
 
+CLIのproject選択にshellの`COMPOSE_PROJECT_NAME`指定は使えません。private設定（spark-checkの明示`--project-name`があればその値）とshell値が食い違うと、操作前に停止します。shell変数を`unset COMPOSE_PROJECT_NAME`で解除し、private設定を実appNameへ合わせてください。`--project-name`はspark-check専用です。raw Composeの補間優先順位とは区別します。
+
 ## 3. General → Provider → Gitへ公開URLを登録する
 
 Generalタブの **Provider** カードで **Git** タブを選びます。GitHubのURLを直接入力する場合も、選ぶのはこの **Git** です。
@@ -202,13 +204,13 @@ GUI操作ハブが保存する外部 `site.env` と、Dokploy Environmentは別�
 
 ## 6. 初回はcoreだけをDeployする
 
-[初回ガイド](START-HERE.md) と同じ標準ルートでは、profileは空欄のまま、下の「任意Composeを重ねる」の**7ファイルのCommandを初回から登録**します。未選択profileのサービスは起動しません。
+[初回ガイド](START-HERE.md) と同じ標準ルートでは、profileは空欄のまま、下の「任意Composeを重ねる」の**9ファイルのCommandを初回から登録**します。未選択profileのサービスは起動しません。
 
 coreだけを最小設定で確認する別の方法もあります。coreのみ・追加File Mountsなしで既定コマンドを使う場合は、**Advanced → Run Command → Commandを空欄**にしてSaveします。表示される **Default Command** の `-p` が実appName、`--env-file` が `infra/lakehouse/.env`、`-f` が指定Composeであることを読み取ります。なお、カスタムCommandが設定済みのときはDefault Command欄もその内容を表示します。確定名はヘッダーを正とし、手入力の `-p` を無条件に信用しません。初回は **Pull latest images on deploy** をOFFにします。tagを任意更新する指示ではなく、公開lockを使います。[Run Command画面](https://github.com/Dokploy/dokploy/blob/v0.31.0/apps/dokploy/components/dashboard/compose/advanced/add-command.tsx)
 
 Generalへ戻り、初回は **Auto DeployをOFF**のまま **Deploy → Deploy Composeの確認**を実行します。Deploymentsタブへ移り、今回の実行ログを開きます。**Deployはsourceを取得し直します。Rebuildはsourceを取得し直しません。** Gitの修正を取り込むときにRebuildだけを押しても更新されません。[Deploy／Rebuild画面](https://github.com/Dokploy/dokploy/blob/v0.31.0/apps/dokploy/components/dashboard/compose/general/actions.tsx)、[Git clone実装](https://github.com/Dokploy/dokploy/blob/v0.31.0/packages/server/src/utils/providers/git.ts)
 
-ログの `App Name`、`Source Type: docker git`、`Compose Type: docker-compose`、実行Commandを確認します。Git取得 → worker build → Compose起動が進みます。7ファイルの標準Commandは `--wait` を指定します。空欄時の既定コマンドは `--wait` を含まないため、**Deploy成功と全serviceのhealthyは別々に確認**します。[0.31.0のコマンド生成](https://github.com/Dokploy/dokploy/blob/v0.31.0/packages/server/src/utils/builders/compose.ts#L125)
+ログの `App Name`、`Source Type: docker git`、`Compose Type: docker-compose`、実行Commandを確認します。Git取得 → worker build → Compose起動が進みます。9ファイルの標準Commandは `--wait` を指定します。空欄時の既定コマンドは `--wait` を含まないため、**Deploy成功と全serviceのhealthyは別々に確認**します。[0.31.0のコマンド生成](https://github.com/Dokploy/dokploy/blob/v0.31.0/packages/server/src/utils/builders/compose.ts#L125)
 
 ## 7. Containers・Logs・往復試験で受け入れる
 
@@ -237,12 +239,12 @@ verifyは既存workerへexecする往復試験です。別名でCLIの `up` を�
 
 ## 任意Composeを重ねる
 
-coreのファイルだけで扱える追加profileは `automation`／`monitoring` です。GUI/API、Spark、Airflow、CDC、PoC、MCPを使うときは7ファイルを同じCompose projectへ重ねます。**Advanced → Run Commandカード → Command欄**へ、次を**一行**で入力してSaveします。見出しに「Custom Command」というタブを探す必要はありません。
+coreのファイルだけで扱える追加profileは `automation`／`monitoring` です。GUI/API、Spark、Airflow、CDC、PoC、MCPを使うときは9ファイルを同じCompose projectへ重ねます。**Advanced → Run Commandカード → Command欄**へ、次を**一行**で入力してSaveします。見出しに「Custom Command」というタブを探す必要はありません。
 
 以下の `lakehouse-development-platform-a1b2c3` は、**手順2で控えた実appNameに置き換えます**。元の入力slugや別環境の名前を使いません。
 
 ```text
-compose -p lakehouse-development-platform-a1b2c3 --env-file infra/lakehouse/.env -f infra/lakehouse/compose.yaml -f infra/compute/compose.yaml -f infra/orchestration/compose.yaml -f infra/demo/compose.yaml -f infra/cdc/compose.yaml -f infra/poc/compose.yaml -f infra/mcp/compose.yaml up -d --build --remove-orphans --wait --wait-timeout 600
+compose -p lakehouse-development-platform-a1b2c3 --env-file infra/lakehouse/.env -f infra/lakehouse/compose.yaml -f infra/compute/compose.yaml -f infra/orchestration/compose.yaml -f infra/demo/compose.yaml -f infra/cdc/compose.yaml -f infra/poc/compose.yaml -f infra/mcp/compose.yaml -f infra/openobserve/compose.yaml -f infra/sail/compose.yaml up -d --build --remove-orphans --wait --wait-timeout 600
 ```
 
 0.31.0は先頭に `docker` を付けるので、入力の先頭は `compose` です。カスタム指定は既定コマンド全体を置換します。`$VAR`、改行、`;`、pipe、shell置換等は拒否されるため、`-p`へ変数を埋め込まず実名を入力します。`Pull latest images on deploy` はカスタム指定時には効きません。[入力検査と実行実装](https://github.com/Dokploy/dokploy/blob/v0.31.0/packages/server/src/utils/builders/compose.ts#L78)
@@ -311,3 +313,6 @@ Git Sourceのclone先を固定して入力する必要はありません。`/lan
 | credentials/暗号鍵 | 対象DBや製品側の変更手順、復元可能な控え | 新認証と旧保存内容の復号。env変更だけで完了しない |
 
 Deployの失敗時は、Git取得、build、container起動、アプリ初期化のどこまで進んだかを分けます。前段が成功したから後段を一括で巻き戻せるとは限りません。旧コードへの切替も、既に進んだDB migrationとデータ形式に互換性があることを確かめてから行います。
+
+
+Notebook workspaceのread-only計画と承認後のapply/probe、既存projectを明示したSpark検証、機械可読な結果は [compute配置前・検証手順](COMPUTE-VALIDATION.md) を参照します。通常Deployでspark-checkが常駐しないのは正常です。local tagのpull方針はFROM/uv/JAR通信や未解決のBuildKit auth session timeoutを修復する保証ではありません。

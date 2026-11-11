@@ -1,0 +1,99 @@
+# Shared topology. Files are composed explicitly by entrypoint.sh; this is not
+# a YAML include/import convention. No environment interpolation is enabled.
+data_dir: /var/lib/vector
+acknowledgements:
+  enabled: false
+proxy:
+  enabled: false
+api:
+  enabled: false
+sources:
+  curated:
+    type: file
+    include: [/var/lib/lakehouse-log-spool/*.jsonl]
+    read_from: beginning
+    ignore_checkpoints: false
+    max_line_bytes: 131072
+    max_read_bytes: 131072
+    glob_minimum_cooldown_ms: 1000
+    fingerprint:
+      # Captures are immutable, never auto-deleted; distinct files may share
+      # their first line, so checksum-first-line would alias overlap windows.
+      strategy: device_and_inode
+  internal:
+    type: internal_metrics
+    namespace: vector
+    scrape_interval_secs: 15
+transforms:
+  envelope:
+    type: remap
+    inputs: [curated]
+    file: transforms/envelope.vrl
+    drop_on_error: true
+    drop_on_abort: true
+  severity:
+    type: remap
+    inputs: [envelope]
+    file: transforms/severity.vrl
+    drop_on_error: true
+  multiline:
+    type: reduce
+    inputs: [severity]
+    group_by: [source_identity, stream, process_key]
+    starts_when: .record_start == true
+    expire_after_ms: 1000
+    flush_period_ms: 250
+    max_events: 32
+    merge_strategies:
+      message: concat_newline
+      source_identity: discard
+      compose_project: discard
+      compose_service: discard
+      host_alias: discard
+      container_alias: discard
+      stream: discard
+      process_key: discard
+      capture_truncated: max
+      line_count: sum
+      level_raw: discard
+      level_normalized: discard
+      level_source: discard
+      level_parser: discard
+      level_parse_status: discard
+      timestamp: discard
+      source_timestamp: discard
+      source_position: discard
+      logger: discard
+      http_status: discard
+      http_method: discard
+      http_route: discard
+      log_kind: discard
+      record_start: discard
+  redacted:
+    type: remap
+    inputs: [multiline]
+    file: transforms/redact.vrl
+    drop_on_error: true
+  parser_metrics:
+    type: log_to_metric
+    inputs: [redacted]
+    metrics:
+      - type: counter
+        field: line_count
+        name: lakehouse_log_parse_events_total
+        increment_by_value: false
+        tags:
+          service: "svc_{{ compose_service }}"
+          parser: "parser_{{ level_parser }}"
+          status: "parse_{{ level_parse_status }}"
+      - type: counter
+        field: truncated
+        name: lakehouse_log_truncated_events_total
+        increment_by_value: true
+        tags:
+          service: "svc_{{ compose_service }}"
+sinks:
+  metrics:
+    type: prometheus_exporter
+    inputs: [internal*, parser_metrics]
+    address: 0.0.0.0:9598

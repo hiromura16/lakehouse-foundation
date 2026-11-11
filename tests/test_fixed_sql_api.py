@@ -10,7 +10,19 @@ from hashlib import sha256
 from pathlib import Path
 from unittest import mock
 
-from fastapi.testclient import TestClient
+# Skip only an absent optional package; keep broken installs as errors.
+try:
+    from fastapi.testclient import TestClient
+except ModuleNotFoundError as error:
+    if (
+        error.name != "fastapi"
+        or importlib.util.find_spec("fastapi") is not None
+    ):
+        raise
+    raise unittest.SkipTest(
+        "Optional tests need fastapi. In a uv virtual environment, run "
+        "uv pip sync --require-hashes requirements-dev.lock."
+    ) from error
 
 ROOT = Path(__file__).resolve().parents[1]
 with mock.patch.object(sys, "path", [str(ROOT / "infra/demo"), *sys.path]):

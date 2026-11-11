@@ -1,8 +1,13 @@
 flowchart LR
-  W["worker metrics"] --> P["Prometheus / 15s / 2target"]
+  W["worker metrics"] --> P["Prometheus / 15s / host opt-in"]
   P --> G["Grafana / GUI保存"]
   P --> P
   Portal["ポータル"] --> Health["固定health / 到達性"]
   Portal --> Quality["固定品質SQL / Gold preview"]
   Portal --> Jobs["最新20job / 非永続"]
   Native["n8n / Airflow / Spark"] --> Logs["各実行履歴・保存先"]
+  Capture["明示curated capture"] --> Vector["Vector / 正規化・秘匿化"]
+  Vector --> Loki["Loki / 専用volume7日"]
+  Loki --> G
+  Vector -.-> OO["任意OpenObserve log-only / 独立volume / metrics後続"]
+  OptIn["monitoring-host: 明示opt-in / host root・PID承認"] --> P

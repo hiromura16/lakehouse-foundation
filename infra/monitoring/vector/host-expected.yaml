@@ -1,0 +1,15 @@
+# Read only for the exact monitoring-host profile. This states operator intent,
+# never exporter health; absence remains unknown when this Vector is down.
+# Vector v0.61.0 source: src/sources/static_metrics.rs (official tag).
+sources:
+  internal_host_expected:
+    type: static_metrics
+    namespace: lakehouse
+    interval_secs: 15
+    metrics:
+      - name: host_collection_expected
+        kind: absolute
+        tags: {host_alias: local}
+        value:
+          gauge:
+            value: 1.0

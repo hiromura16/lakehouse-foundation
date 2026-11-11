@@ -3,6 +3,7 @@
 import contextlib
 import importlib.util
 import io
+import json
 import os
 import runpy
 import subprocess
@@ -10,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,8 +24,8 @@ SETTINGS = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(SETTINGS)
 
 
-class ControlEnvironmentTests(unittest.TestCase):
-    """Select the intended file and retain the real private-file validator."""
+class ControlFixture:
+    """Provide synthetic settings and an entirely mocked CLI subprocess."""
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="control-settings-")
@@ -51,6 +53,7 @@ class ControlEnvironmentTests(unittest.TestCase):
         errors = io.StringIO()
         exit_code = None
         with (
+            mock.patch.object(sys, "path", [str(ROOT / "scripts"), *sys.path]),
             mock.patch.dict(os.environ, environment, clear=True),
             mock.patch.dict(sys.modules, {"settings": SETTINGS}),
             mock.patch.object(sys, "argv", [str(CONTROL), *arguments]),
@@ -71,6 +74,10 @@ class ControlEnvironmentTests(unittest.TestCase):
                 exit_code = error.code
         return exit_code, process, output.getvalue(), errors.getvalue()
 
+
+class ControlEnvironmentTests(ControlFixture, unittest.TestCase):
+    """Select the intended file and retain the real private-file validator."""
+
     def test_explicit_file_takes_precedence_over_environment(self):
         exit_code, process, output, _ = self.invoke(
             ["--env-file", str(self.env_file), "plan"],
@@ -85,6 +92,192 @@ class ControlEnvironmentTests(unittest.TestCase):
         self.assertEqual(
             output, "Compose configuration valid. Profiles: core only\n"
         )
+
+    def test_spark_target_overrides_project_interpolation_only_explicitly(
+        self,
+    ):
+        """A stale shell project cannot select another validation target."""
+        with mock.patch.object(
+            sys, "path", [str(ROOT / "scripts"), *sys.path]
+        ):
+            import compute_check
+        with (
+            mock.patch.object(
+                compute_check, "run_check", return_value=0
+            ) as run,
+            mock.patch.dict(
+                os.environ, {"COMPOSE_PROJECT_NAME": "selected-app"}
+            ),
+        ):
+            code, process, _, _ = self.invoke(
+                [
+                    "--env-file",
+                    str(self.env_file),
+                    "--project-name",
+                    "selected-app",
+                    "spark-check",
+                ]
+            )
+        self.assertEqual(code, 0)
+        process.assert_not_called()
+        command, values, environment = run.call_args.args
+        self.assertEqual(
+            command[command.index("--project-name") + 1], "selected-app"
+        )
+        self.assertEqual(values["COMPOSE_PROJECT_NAME"], "selected-app")
+        self.assertEqual(environment["COMPOSE_PROJECT_NAME"], "selected-app")
+        self.assertEqual(environment["NO_PROXY"], environment["no_proxy"])
+
+    def test_project_shell_conflict_fails_before_any_action(self):
+        """Issue23: refuse ambiguity without exposing project/secret values."""
+        with mock.patch.object(
+            sys, "path", [str(ROOT / "scripts"), *sys.path]
+        ):
+            import compute_check
+        for action in ("status", "verify", "grafana-init", "spark-check"):
+            for explicit in (
+                (False, True) if action == "spark-check" else (False,)
+            ):
+                arguments = ["--env-file", str(self.env_file)]
+                if explicit:
+                    arguments += ["--project-name", "selected-app"]
+                arguments.append(action)
+                with (
+                    self.subTest(action=action, explicit=explicit),
+                    mock.patch.dict(
+                        os.environ, {"COMPOSE_PROJECT_NAME": "stale-app"}
+                    ),
+                    mock.patch.object(compute_check, "run_check") as smoke,
+                ):
+                    code, process, output, errors = self.invoke(arguments)
+                self.assertIsNotNone(code)
+                process.assert_not_called()
+                smoke.assert_not_called()
+                diagnostic = str(code) + errors
+                self.assertIn("COMPOSE_PROJECT_NAME", diagnostic)
+                self.assertNotIn("stale-app", diagnostic + output)
+                if action == "spark-check":
+                    self.assertIn("LAKEHOUSE_SPARK_RESULT=", output)
+
+    def test_private_notebook_overlap_refused_before_compose_or_metadata(self):
+        """Raw Compose/GUI plans must reject the same private boundaries."""
+        original = self.env_file.read_text()
+        control = self.env_file.parent.parent / "other-private"
+        for candidate in (
+            self.env_file.parent,
+            self.env_file.parent / "books",
+            self.env_file.parent.parent,
+            control,
+            control / "books",
+        ):
+            text = []
+            updates = {
+                "COMPOSE_PROFILES": "notebooks",
+                "NOTEBOOKS_DIR": str(candidate),
+                "CONTROL_SETTINGS_DIR": str(control),
+            }
+            for line in original.splitlines():
+                key = line.partition("=")[0]
+                text.append(
+                    key + "=" + updates[key] if key in updates else line
+                )
+            self.env_file.write_text("\n".join(text) + "\n")
+            with self.assertRaisesRegex(ValueError, "PRIVATE_SETTINGS"):
+                SETTINGS.load(self.env_file)
+            for action in ("plan", "predeploy", "up", "notebook-workspace"):
+                code, process, _, _ = self.invoke(
+                    ["--env-file", str(self.env_file), action]
+                )
+                self.assertIsNotNone(code)
+                process.assert_not_called()
+        self.env_file.write_text(original)
+
+    def test_matching_and_unset_shell_project_keep_existing_actions(self):
+        """The ambiguity guard must not change ordinary explicit selection."""
+        project = SETTINGS.load(self.env_file)["COMPOSE_PROJECT_NAME"]
+        with mock.patch.object(
+            sys, "path", [str(ROOT / "scripts"), *sys.path]
+        ):
+            import compute_check
+        fake_grafana = SimpleNamespace(
+            setup=mock.Mock(return_value={"status": "disabled"})
+        )
+        for action in ("status", "verify", "grafana-init", "spark-check"):
+            for inherited in (None, project):
+                with (
+                    self.subTest(action=action, inherited=inherited),
+                    mock.patch.dict(os.environ, {}, clear=True),
+                    mock.patch.dict(
+                        sys.modules, {"grafana_setup": fake_grafana}
+                    ),
+                    mock.patch.object(
+                        compute_check, "run_check", return_value=0
+                    ),
+                ):
+                    if inherited is not None:
+                        os.environ["COMPOSE_PROJECT_NAME"] = inherited
+                    code, _, _, errors = self.invoke(
+                        ["--env-file", str(self.env_file), action]
+                    )
+                self.assertIn(code, (None, 0))
+                self.assertEqual(errors, "")
+
+    def test_notebook_alias_cannot_bypass_private_boundary_in_settings(self):
+        """Reject leaf/ancestor links before GUI or raw Compose can bind."""
+        original = self.env_file.read_text()
+        alias = self.env_file.parent.parent / "notebook-alias"
+        alias.symlink_to(self.env_file.parent, target_is_directory=True)
+        for candidate in (alias, alias / "books"):
+            lines = []
+            for line in original.splitlines():
+                if line.startswith("COMPOSE_PROFILES="):
+                    line = "COMPOSE_PROFILES=notebooks"
+                if line.startswith("NOTEBOOKS_DIR="):
+                    line = "NOTEBOOKS_DIR=" + str(candidate)
+                lines.append(line)
+            self.env_file.write_text("\n".join(lines) + "\n")
+            with self.assertRaisesRegex(ValueError, "INACCESSIBLE_COMPONENT"):
+                SETTINGS.load(self.env_file)
+            code, process, _, _ = self.invoke(
+                ["--env-file", str(self.env_file), "plan"]
+            )
+            self.assertIsNotNone(code)
+            process.assert_not_called()
+        self.env_file.write_text(original)
+
+    def test_workspace_profile_off_apply_probe_is_a_nonmutating_noop(self):
+        """Explicit preparation cannot require an inactive notebook path."""
+        with mock.patch.object(
+            sys, "path", [str(ROOT / "scripts"), *sys.path]
+        ):
+            code, process, output, _ = self.invoke(
+                [
+                    "--env-file",
+                    str(self.env_file),
+                    "--apply",
+                    "--probe",
+                    "notebook-workspace",
+                ]
+            )
+        self.assertIsNone(code)
+        self.assertFalse(json.loads(output)["enabled"])
+        process.assert_not_called()
+
+    def test_narrow_validation_flags_cannot_modify_other_lifecycle_actions(
+        self,
+    ):
+        for flags in (
+            ["--project-name", "another-app"],
+            ["--apply"],
+            ["--probe"],
+            ["--local-only"],
+        ):
+            with self.subTest(flags=flags):
+                code, process, _, _ = self.invoke(
+                    ["--env-file", str(self.env_file), *flags, "plan"]
+                )
+                self.assertEqual(code, 2)
+                process.assert_not_called()
 
     def test_environment_fallback_runs_through_the_private_validator(self):
         exit_code, process, output, _ = self.invoke(
@@ -236,6 +429,242 @@ class ControlEnvironmentTests(unittest.TestCase):
         self.env_file.write_text(content)
         with self.assertRaisesRegex(ValueError, "Active host service ports"):
             SETTINGS.load(self.env_file)
+
+
+@unittest.skipUnless(
+    os.name == "posix"
+    and os.geteuid() != 0
+    and all(
+        hasattr(os, key) for key in ("O_PATH", "O_NOFOLLOW", "O_DIRECTORY")
+    ),
+    "Metadata tests require a nonroot Linux UID and disposable directories.",
+)
+class MonitoringSpoolTests(ControlFixture, unittest.TestCase):
+    """Inspect only owned temporary metadata; never run Docker or a probe."""
+
+    def setUp(self):
+        super().setUp()
+        with mock.patch.object(
+            sys, "path", [str(ROOT / "scripts"), *sys.path]
+        ):
+            import notebook_workspace
+        original_safe = notebook_workspace.parent_safe
+
+        def synthetic_root(metadata, path, uid):
+            # Sandbox root/tmp may be mapped to nobody. Model normal root
+            # ownership only for these fixed ancestors in disposable tests;
+            # production checks and all selected directory metadata stay real.
+            if str(path) in {"/", "/tmp"} and metadata.st_uid == 65534:
+                metadata = SimpleNamespace(st_uid=0, st_mode=metadata.st_mode)
+            return original_safe(metadata, path, uid)
+
+        patched = mock.patch.object(
+            notebook_workspace, "parent_safe", synthetic_root
+        )
+        patched.start()
+        self.addCleanup(patched.stop)
+
+    def configure_monitoring(self, spool, *, profiles="monitoring"):
+        """Choose temporary landing/spool paths in synthetic settings."""
+        self.landing = self.env_file.parent.parent / "landing"
+        self.landing.mkdir(mode=0o700, exist_ok=True)
+        values = dict(
+            line.split("=", 1)
+            for line in self.env_file.read_text().splitlines()
+            if line and not line.startswith("#")
+        )
+        values.update(
+            COMPOSE_PROFILES=profiles,
+            LANDING_DIR=str(self.landing),
+            MONITORING_LOG_DIR=str(spool),
+        )
+        self.env_file.write_text(
+            "\n".join(key + "=" + value for key, value in values.items())
+            + "\n"
+        )
+
+    def invoke_action(self, action):
+        """Keep every subprocess and Grafana seed synthetic."""
+        with mock.patch.dict(
+            sys.modules,
+            {
+                "grafana_setup": mock.Mock(
+                    setup=mock.Mock(return_value={"status": "exists"})
+                )
+            },
+        ):
+            return self.invoke(["--env-file", str(self.env_file), action])
+
+    def test_missing_spool_blocks_up_and_predeploy_before_compose(self):
+        spool = self.env_file.parent.parent / "missing-spool"
+        self.configure_monitoring(spool)
+        for action in ("up", "predeploy"):
+            with self.subTest(action=action):
+                code, process, output, _ = self.invoke_action(action)
+                self.assertIn("MONITORING_LOG_DIR is not ready", code)
+                self.assertFalse(json.loads(output)["ready"])
+                self.assertNotIn(str(spool), output)
+                process.assert_not_called()
+                self.assertFalse(spool.exists())
+
+    def test_file_symlinks_and_unsafe_modes_never_reach_compose(self):
+        base = self.env_file.parent.parent
+        cases = {}
+        regular = base / "regular"
+        regular.write_bytes(b"synthetic preserved bytes")
+        cases["regular"] = regular
+        target = base / "target"
+        target.mkdir(mode=0o700)
+        link = base / "link"
+        link.symlink_to(target, target_is_directory=True)
+        cases["leaf-link"] = link
+        dangling = base / "dangling"
+        dangling.symlink_to(base / "absent", target_is_directory=True)
+        cases["dangling-link"] = dangling
+        cases["ancestor-link"] = link / "spool"
+        unsafe = base / "unsafe"
+        unsafe.mkdir(mode=0o755)
+        cases["unsafe-mode"] = unsafe
+        for name, spool in cases.items():
+            self.configure_monitoring(spool)
+            for action in ("up", "predeploy"):
+                with self.subTest(case=name, action=action):
+                    code, process, _, _ = self.invoke_action(action)
+                    self.assertIsNotNone(code)
+                    process.assert_not_called()
+        self.assertEqual(regular.read_bytes(), b"synthetic preserved bytes")
+        self.assertTrue(link.is_symlink())
+        self.assertTrue(dangling.is_symlink())
+        self.assertEqual(unsafe.stat().st_mode & 0o7777, 0o755)
+
+    def test_foreign_directory_uid_or_gid_is_rejected_without_chown(self):
+        spool = self.env_file.parent.parent / "spool"
+        spool.mkdir(mode=0o700)
+        self.configure_monitoring(spool)
+        selected = spool.stat()
+        original_fstat = os.fstat
+        for field in (4, 5):
+
+            def inspect(descriptor, field=field):
+                metadata = original_fstat(descriptor)
+                if (metadata.st_dev, metadata.st_ino) == (
+                    selected.st_dev,
+                    selected.st_ino,
+                ):
+                    changed = list(metadata)
+                    changed[field] += 1
+                    return os.stat_result(changed)
+                return metadata
+
+            for action in ("up", "predeploy"):
+                with (
+                    self.subTest(field=field, action=action),
+                    mock.patch("os.fstat", side_effect=inspect),
+                    mock.patch("os.chown", side_effect=AssertionError),
+                ):
+                    code, process, output, _ = self.invoke_action(action)
+                    self.assertIn("MONITORING_LOG_DIR is not ready", code)
+                    self.assertEqual(
+                        json.loads(output)["reason"],
+                        "MONITORING_DIRECTORY_OWNER_MISMATCH",
+                    )
+                    process.assert_not_called()
+        self.assertEqual(
+            (spool.stat().st_uid, spool.stat().st_gid),
+            (selected.st_uid, selected.st_gid),
+        )
+
+    def test_unsafe_parent_blocks_without_repair(self):
+        parent = self.env_file.parent.parent / "shared-parent"
+        parent.mkdir(mode=0o775)
+        parent.chmod(0o775)
+        spool = parent / "spool"
+        spool.mkdir(mode=0o700)
+        self.configure_monitoring(spool)
+        code, process, output, _ = self.invoke_action("up")
+        self.assertIn("MONITORING_LOG_DIR is not ready", code)
+        self.assertEqual(
+            json.loads(output)["reason"], "MONITORING_PARENT_UNSAFE"
+        )
+        process.assert_not_called()
+        self.assertEqual(parent.stat().st_mode & 0o7777, 0o775)
+
+    def test_existing_private_spool_is_read_only_and_precedes_build(self):
+        spool = self.env_file.parent.parent / "spool"
+        spool.mkdir(mode=0o700)
+        data = spool / "existing-private.jsonl"
+        data.write_bytes(b"synthetic unchanged log bytes\n")
+        data.chmod(0o600)
+        self.configure_monitoring(spool)
+        original_open = os.open
+
+        def open_read_only(path, flags, *arguments, **options):
+            self.assertFalse(
+                flags & (os.O_CREAT | os.O_TRUNC | os.O_WRONLY | os.O_RDWR)
+            )
+            return original_open(path, flags, *arguments, **options)
+
+        for mode in (0o700, 0o750):
+            spool.chmod(mode)
+            before = spool.stat()
+            for action in ("up", "predeploy"):
+                with (
+                    self.subTest(mode=mode, action=action),
+                    mock.patch("os.open", side_effect=open_read_only),
+                    mock.patch("os.mkdir", side_effect=AssertionError),
+                    mock.patch("os.chmod", side_effect=AssertionError),
+                    mock.patch("os.chown", side_effect=AssertionError),
+                    mock.patch("os.unlink", side_effect=AssertionError),
+                    mock.patch("os.write", side_effect=AssertionError),
+                ):
+                    code, process, output, _ = self.invoke_action(action)
+                self.assertIsNone(code)
+                report = json.loads(output.splitlines()[0])
+                self.assertEqual(report["setting"], "MONITORING_LOG_DIR")
+                self.assertTrue(report["ready"])
+                self.assertFalse(report["mutated"])
+                self.assertEqual(report["probe"], "not_run")
+                commands = [call.args[0] for call in process.call_args_list]
+                if action == "up":
+                    self.assertIn("up", commands[0])
+                    self.assertIn("--build", commands[0])
+                    self.assertEqual(commands[1][-1], "bootstrap")
+                else:
+                    self.assertEqual(commands[0][-2:], ["config", "--quiet"])
+            after = spool.stat()
+            self.assertEqual(
+                (
+                    before.st_mode,
+                    before.st_uid,
+                    before.st_gid,
+                    before.st_mtime_ns,
+                    before.st_ctime_ns,
+                ),
+                (
+                    after.st_mode,
+                    after.st_uid,
+                    after.st_gid,
+                    after.st_mtime_ns,
+                    after.st_ctime_ns,
+                ),
+            )
+        self.assertEqual(data.read_bytes(), b"synthetic unchanged log bytes\n")
+
+    def test_plan_is_configuration_only_and_profile_off_needs_no_spool(self):
+        spool = self.env_file.parent.parent / "missing-spool"
+        self.configure_monitoring(spool)
+        code, process, output, _ = self.invoke_action("plan")
+        self.assertIsNone(code)
+        self.assertNotIn("MONITORING_LOG_DIR", output)
+        self.assertEqual(process.call_args.args[0][-2:], ["config", "--quiet"])
+        self.configure_monitoring(spool, profiles="")
+        for action in ("up", "predeploy"):
+            with self.subTest(action=action):
+                code, process, output, _ = self.invoke_action(action)
+                self.assertIsNone(code)
+                self.assertNotIn("MONITORING_LOG_DIR", output)
+                self.assertTrue(process.called)
+                self.assertFalse(spool.exists())
 
 
 if __name__ == "__main__":

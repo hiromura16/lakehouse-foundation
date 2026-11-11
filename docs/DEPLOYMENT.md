@@ -135,7 +135,7 @@ python3 scripts/configure.py --output /absolute/private/site.env
 | `PROMETHEUS_PORT` | `9090`。monitoring有効時のみ使用 |
 | `N8N_PORT` | `5678`。automation有効時のみ使用 |
 | `AIRFLOW_PORT` | `8081`。orchestration有効時のみ使用 |
-| `COMPOSE_PROFILES` | 初期は空。`automation,monitoring,compute,orchestration,demo,cdc,bi,notebooks,vector,lineage,mcp` から必要なものをカンマ区切り |
+| `COMPOSE_PROFILES` | 初期は空。`automation,monitoring,monitoring-host,compute,orchestration,demo,cdc,bi,notebooks,vector,lineage,mcp,openobserve-lab,sail-lab` から必要なものをカンマ区切り |
 | `S3_BUCKET_RAW` | `lakehouse-raw` |
 | `S3_BUCKET_WAREHOUSE` | `lakehouse-warehouse` |
 | `WAREHOUSE_NAME` | `lakehouse` |
@@ -146,7 +146,7 @@ python3 scripts/configure.py --output /absolute/private/site.env
 
 同じ `COMPOSE_PROJECT_NAME` と同じ設定ファイルを継続して使います。既存ボリュームを使う状態でDBパスワードや暗号鍵だけを変更すると、接続や復号に失敗します。設定ファイルはデータと合わせて安全にバックアップしてください。
 
-`DATA_VOLUME_PREFIX` が空欄または未設定なら、名前付きvolumeは `<Composeプロジェクト名>_<volumeキー>` となります。定義はcore7個、compute2個、Airflow2個、CDC2個、PoC3個の計16個で、実際に使うものは有効profileによります。[全キー一覧](CONFIGURATION.md#data_volume_prefixを使う場面) から実体を確認します。ランディングやprivate設定等のbind mountはこの数に含めません。指定するとデータの物理名だけがその接頭辞へ変わります。コンテナ・ネットワークの識別子である `COMPOSE_PROJECT_NAME` やDokployの `appName` と区別し、既存volume名を維持する移行専用として扱います。値は空欄、または先頭が小文字英字で、小文字英数字・ハイフン・アンダースコアからなる41文字以内です。
+`DATA_VOLUME_PREFIX` が空欄または未設定なら、名前付きvolumeは `<Composeプロジェクト名>_<volumeキー>` となります。定義はcore9個、compute2個、Airflow2個、CDC2個、PoC3個、OpenObserve1個、Sail1個の計20個で、実際に使うものは有効profileによります。[全キー一覧](CONFIGURATION.md#data_volume_prefixを使う場面) から実体を確認します。ランディングやprivate設定等のbind mountはこの数に含めません。指定するとデータの物理名だけがその接頭辞へ変わります。コンテナ・ネットワークの識別子である `COMPOSE_PROJECT_NAME` やDokployの `appName` と区別し、既存volume名を維持する移行専用として扱います。値は空欄、または先頭が小文字英字で、小文字英数字・ハイフン・アンダースコアからなる41文字以内です。
 
 volumeの自動rename・コピーは行いません。移行前に使用する全volumeの解決名と既存の実名を照合し、CDC・compute・PoC等の追加分も含めます。旧writerを停止してから一つの配置へ切り替えます。別の環境と同じ接頭辞を共有せず、移行後も指定を保持します。詳細は [Dokployで既存volumeを引き継ぐ手順](DOKPLOY.md#既存volume名を引き継ぐ場合) を参照します。
 
@@ -316,7 +316,7 @@ python3 scripts/mark-ready.py /srv/lakehouse/landing/csv/erp_products.csv
 
 ## 6. 任意のプロファイルを追加する
 
-private envの `COMPOSE_PROFILES` を編集します。
+`monitoring` 追加前に [専用spoolの準備](OBSERVABILITY.md) を確認し、`MONITORING_LOG_DIR` を設定します。node-exporter/cAdvisorは別opt-inの `monitoring-host` で、承認と `CADVISOR_DOCKER_DATA_ROOT` の設定後だけ追加します。spool未準備ならautomationだけにします。private envの `COMPOSE_PROFILES` を編集します。
 
 ```dotenv
 COMPOSE_PROFILES=automation,monitoring
@@ -330,7 +330,7 @@ COMPOSE_PROFILES=automation,monitoring
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env up
 ```
 
-`automation` はn8nと専用DB、`monitoring` はGrafanaとPrometheusを追加します。n8nの初回利用者登録や、通知先・業務ワークフローの設定は別途行います。Grafanaの初期資格情報は生成されたprivate envを参照し、公開文書に貼り付けません。
+`automation` はn8nと専用DB、`monitoring` はGrafana・Prometheus・Loki・Vectorの4serviceを追加します。host root/PID読取りは別profileの `monitoring-host` だけです。先に [専用spoolと任意host監視の準備](OBSERVABILITY.md) を確認します。n8nの初回利用者登録や、通知先・業務ワークフローの設定は別途行います。Grafanaの初期資格情報は生成されたprivate envを参照し、公開文書に貼り付けません。
 
 n8nの提供テンプレートをimportし、手動トリガーからワーカーの `/run` へ `medallion` を依頼できます。n8nの資格情報画面でHeader Authを作り、`Authorization` に `Bearer <WORKER_TOKEN>` を設定します。実トークンはprivate envの値を使い、テンプレートへ保存しません。列のマッピングや型変換の規則はSQLを編集し、GUIでは開始条件や接続を設定します。
 
@@ -515,7 +515,7 @@ Dokployルートでは、新規のDokploy導入を済ませてからGitサービ
 
 ## 資源を見積もる担当者へ
 
-Composeの `mem_limit` は設定上限で、実測RSSや必要host RAMの保証ではありません。全profileの常駐service上限は、公開構成の集計で約30.56GiBです。one-shot、build、OS、Docker/Dokploy、file cacheやbackupの余力は別に考えます。profile別の値と共有serviceの重複は [実装台帳](reports/IMPLEMENTATION-INVENTORY.md#9-資源上限の見積もりに使う値) を確認してください。
+Composeの `mem_limit` は設定上限で、実測RSSや必要host RAMの保証ではありません。全profileの常駐service上限は、公開構成の集計で約35.94GiBです。one-shot、build、OS、Docker/Dokploy、file cacheやbackupの余力は別に考えます。profile別の値と共有serviceの重複は [実装台帳](reports/IMPLEMENTATION-INVENTORY.md#9-資源上限の見積もりに使う値) を確認してください。
 
 1. coreだけを受け入れ、実際の入力件数・fileサイズ・処理時間を記録します。
 2. demo/monitoring、n8n等を一つずつ追加し、起動時ピークと平常時を分けます。
@@ -533,10 +533,15 @@ Composeの `mem_limit` は設定上限で、実測RSSや必要host RAMの保証�
 | APIだけ新token、clientは旧値 | DB/暗号鍵 | 正しい一組へ同期し、同じappへ反映 |
 | DB schema更新後に起動失敗 | 更新前の整合backup | 単純な旧image起動を復旧と決めず、正式手順か別環境復元 |
 
-自作imageのlocal tagは `COMPOSE_PROJECT_NAME` にも依存します。保守用のraw Composeでbuildする場合は、shellに残る別環境のproject/profile/port値まで混入しないよう、[運用の7Compose補助関数](OPERATIONS.md#postgresqlの論理dump例) を同じrepoルートで使います。設定を別の値へ展開した `config` 全文は秘密を含み得るため公開しません。
+自作imageのlocal tagは `COMPOSE_PROJECT_NAME` にも依存します。保守用のraw Composeでbuildする場合は、shellに残る別環境のproject/profile/port値まで混入しないよう、[運用の9Compose補助関数](OPERATIONS.md#postgresqlの論理dump例) を同じrepoルートで使います。設定を別の値へ展開した `config` 全文は秘密を含み得るため公開しません。
 
 ## 構成を拡張する開発者の受入
 
 新serviceを加える場合、Composeのservice定義に加えてprofile、依存順、health、one-shotか常駐か、資源上限、log保持、volume/bind、実行UID、port公開範囲、proxy/CA、設定検査を決めます。Docker socketをUIへ渡して便利さを作る前提にはしません。
 
 新規/再配置、profile未選択/選択、既存volume/空volume、proxy/直接、CAあり/なしを分けて構文・起動・小さい業務往復を確認します。初期化が冪等でも、DB major更新や秘密鍵rotationの安全性まで保証するわけではありません。追加の永続データはbackup/restore一覧と構成図にも反映します。
+
+
+Notebook workspaceのread-only計画と承認後のapply/probe、既存projectを明示したSpark検証、機械可読な結果は [compute配置前・検証手順](COMPUTE-VALIDATION.md) を参照します。通常Deployでspark-checkが常駐しないのは正常です。local tagのpull方針はFROM/uv/JAR通信や未解決のBuildKit auth session timeoutを修復する保証ではありません。
+
+通常monitoringは専用spoolの準備が必要です。host root/PIDの読取りは別opt-inの `monitoring-host` だけで、配置前に承認します。GUI保持・検証未了事項は [段階的な監視基盤](OBSERVABILITY.md) を参照してください。

@@ -107,6 +107,23 @@ JARは次のMaven Central URLからビルド時に取得します。公式のSHA
 - [Spark runtime JAR](https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-4.1_2.13/1.12.0/iceberg-spark-runtime-4.1_2.13-1.12.0.jar) / [SHA-512](https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-4.1_2.13/1.12.0/iceberg-spark-runtime-4.1_2.13-1.12.0.jar.sha512)
 - [AWS bundle JAR](https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-aws-bundle/1.12.0/iceberg-aws-bundle-1.12.0.jar) / [SHA-512](https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-aws-bundle/1.12.0/iceberg-aws-bundle-1.12.0.jar.sha512)
 
+### Iceberg RESTのOAuth2・signer警告（Issue #24）
+
+成功中の接続設定はこの変更では維持します。実認証・table config応答・Spark/Notebookの読書きを再検証していないため、警告を消す目的でtokenや認証方式を変更しません。実際のtoken、接続資格情報、catalogの応答内容を公開記録へ保存しません。
+
+| 警告 | 固定版ソースから確認した発生条件 | 対応方針 |
+| --- | --- | --- |
+| `Inferring rest.auth.type=oauth2` | Iceberg 1.12.0は方式未指定でtoken/credentialがあるとOAuth2を推論。Spark smoke・Notebook session・Sail benchmarkのSpark側の設定で説明可能 | 認証なしと確認できた環境ではtoken除去と`rest.auth.type=none`が正式な候補。今回は変更しない |
+| OAuth2 server URI不足 | OAuth2Managerにtoken/credentialがあり`oauth2-server-uri`がないと警告。警告だけでtoken取得失敗とは判断しない | OAuth2を実際に使う場合だけ、承認済みIdPのtoken endpointを指定する |
+| `signer.uri is deprecated` | S3 signerのpropertiesにキーが存在すると警告。remote signingの既定falseだけでは発生しない | Lakekeeperのtable configが有力な供給元。実応答は未確認 |
+| `signer.endpoint is deprecated` | 同上。Lakekeeper v0.14.3はremote signing時に両キーを生成する | 単純なproperty名の置換はしない。catalog/clientの標準signing対応を合わせて確認 |
+
+根拠はIceberg 1.12.0の[AuthManagers](https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/core/src/main/java/org/apache/iceberg/rest/auth/AuthManagers.java)、[AuthProperties/none](https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/core/src/main/java/org/apache/iceberg/rest/auth/AuthProperties.java)、[OAuth2Manager](https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/core/src/main/java/org/apache/iceberg/rest/auth/OAuth2Manager.java#L294)、[S3 signer](https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/aws/src/main/java/org/apache/iceberg/aws/s3/signer/S3V4RestSignerClient.java#L237)、[Lakekeeper v0.14.3の生成処理](https://github.com/lakekeeper/lakekeeper/blob/v0.14.3/crates/lakekeeper/src/service/storage/s3.rs#L630)です。実際のserver応答を調べていないため、signer警告の供給元は推論と区別します。
+
+[RESTCatalogProperties](https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/core/src/main/java/org/apache/iceberg/rest/RESTCatalogProperties.java#L111)は両signerキーを1.12.0で非推奨、1.13.0で削除予定、直接のreplacementなしとしています。`rest.remote-signing.endpoint`/`rest.remote-signing.config`はclientが設定する内部値で、利用者の後継設定として追加しません。正式な移行先は[REST応答のremote-signing-configと標準table sign endpoint](https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/open-api/rest-catalog-open-api.yaml#L4251)です。削除予定を、特定日に必ずエラー化する保証とは扱いません。方式推論そのものの削除予定は固定版ソースに明記されていません。OAuth2 URI未指定時のfallbackは将来版で削除予定ですが、時期は未確定で、REST仕様の旧OAuth endpointの2.0削除予定とも別です。
+
+次回のIceberg/Lakekeeper更新では、(1)実際の認証方式、(2)応答に旧signerキーがあるか、(3)remote-signing-configと標準sign endpointの互換、(4)Spark smoke・Notebookのread/write・Sail benchmarkのSpark側・Trinoの読戻し、(5)四つの警告の有無を記録します。公開記録はキー存在や成功/失敗に限定し、値を含むログは出しません。認証なしのSpark候補は`spark.sql.catalog.lakehouse.rest.auth.type=none`です。Lakekeeperのallowallは認可設定なので、それ単独で実認証なしとは判断しません。Sail Connectは別catalog経路、Trino 484は[別体系のiceberg.rest-catalog.security/oauth2.server-uri](https://github.com/trinodb/trino/blob/484/docs/src/main/sphinx/object-storage/metastores.md#L489)であり、Sparkのpropertyを混用しません。
+
 ### 常駐SparkとJupyterからの利用
 
 `compute` profileはMaster・Worker・History Serverの3サービスを常駐させます。
@@ -158,9 +175,9 @@ export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 ./scripts/lakehouse.sh --env-file "$LAKEHOUSE_ENV_FILE" spark-check
 ```
 
-この操作は `compute` プロファイルの `spark-check` を一時コンテナとして起動し、local[2]で既存の相互参照を確認します。通常の `up` ではこの一時serviceだけをreplicas 0にし、上記Master・Worker・Historyを常駐させます。Docker Composeを直接使う場合は同じ追加Composeを全て指定し、`--profile compute build spark-volumes-init` を実行した後、`--profile compute run --rm --no-deps spark-check` を実行します。
+この操作は既存project/core/volumeとMaster/Workerのreadinessを確認した後、`compute` の一時 `spark-check` でlocal[2]の相互参照を確認します。分散executorでこのjobが実行された証拠ではありません。通常の `up` ではこの一時serviceだけをreplicas 0にし、上記Master・Worker・Historyを常駐させます。Docker Composeを直接使う場合は同じ追加Composeを全て指定し、`--profile compute build spark-volumes-init` を実行した後、`--profile compute run --rm --no-deps spark-check` を実行します。
 
-`infra/compute/smoke.sql` は専用の `compatibility.spark_roundtrip` 表を作成・置換します。固定の3行に日本語・decimalを含め、Sparkで書いた表をSparkで読み、その後Trinoの `iceberg.compatibility.spark_roundtrip` から同じ行を読みます。再実行でも追記による二重化をせず、業務表は対象にしません。成功時は版と行数だけを出力し、鍵や接続文字列を表示しません。
+`infra/compute/smoke.sql` は専用の `compatibility.spark_roundtrip` 表を作成・置換します。固定の3行に日本語・decimalを含め、Sparkで書いた表をSparkで読み、その後Trinoの `iceberg.compatibility.spark_roundtrip` から同じ行を読みます。再実行でも追記による二重化をせず、業務表は対象にしません。成功/失敗は版・12段階・時刻・件数・由来・cleanupを持つ安全なJSONへ出力し、鍵や接続文字列を表示しません。
 
 この一時スモークは小さなlocal実行の読み書き確認です。常駐clusterの受入では、別途Jupyterから分散task・Python UDF・Arrow処理を実行し、Masterの完了アプリ、Workerのexecutor、Historyのevent logを照合します。大量データ、複数writerの競合、複数ホスト、認証付きOIDC、Iceberg v3の機能は別の確認です。
 
@@ -184,7 +201,8 @@ root = Path.cwd()
 values = load(sys.argv[1])
 command = ["docker", "compose", "--env-file", sys.argv[1]]
 for name in (
-    "lakehouse", "compute", "orchestration", "demo", "cdc", "poc", "mcp"
+    "lakehouse", "compute", "orchestration", "demo", "cdc", "poc", "mcp",
+    "openobserve", "sail",
 ):
     command.extend(["-f", str(root / "infra" / name / "compose.yaml")])
 subprocess.run(command + sys.argv[2:], env=environment(values), check=True)
@@ -337,3 +355,20 @@ Sparkの受入ではlocal smokeとremote実行を両方記録します。local s
 ## 固定SQL sourceとCDCの検証範囲
 
 SQL Server 2022向けDDLは型・PK・所有権・固定captureを静的検査し、SQLFluffで全文parseします。Debezium 3.7.1.Finalの設定は3.7公式仕様に合わせ、fixed-demoだけexclusive初回snapshot、adaptive日時、decimal文字列を使います。Pythonの合成イベント・in-memory catalogueによるreplay試験と、実SQL Server→Kafka→Icebergの受入試験は別です。実接続・Agent・外部Proxy・Java/PythonのCA検証・イメージbuildは導入先で確認します。[固定source手順と制約](SQLSERVER-FIXED-DEMO.md)
+
+
+新しいplan/apply/probe、projectの優先順、local-only、結果の保存と未受入事項は [COMPUTE-VALIDATION.md](COMPUTE-VALIDATION.md) を正本とします。raw Composeだけのsmokeではhost preflightとprivate結果保存を行わないため、通常は同じprojectを明示するCLIの専用操作を使います。Deployの管理入口は切り替えません。
+
+通常monitoringは専用spoolの準備が必要です。host root/PIDの読取りは別opt-inの `monitoring-host` だけで、配置前に承認します。GUI保持・検証未了事項は [段階的な監視基盤](OBSERVABILITY.md) を参照してください。
+
+## SQL Server catalog/databaseの混在collation
+
+固定sourceの003/004/005は、catalog/table variable等の異なる由来の文字列を両辺`Latin1_General_100_BIN2`で比較します。混在例`Latin1_General_CI_AS_KS_WS`/`Latin1_General_CI_AS`やcase-sensitive DBを対象にした合成fixtureを用意しています。実SQL Server 2022での互換性試験は未実行で、AST/SQLFluff成功から動作保証しません。006・canonical checker・runtime完全一致は維持しています。
+
+Go sqlcmd v1.10.0の`:r`は引用符をfile名から除去しない公式実装のため、ODBC版/一般資料と扱いを区別します。会社で使用中の版は未確認です。実行file/版を記録し、合成includeで空白入りpathを確認してから使います。wrapperはprivate directoryを作業場所にし、相対basenameを`:r`へ渡す例とします。[失敗後の診断・client互換性](SQLSERVER-DDL-RECOVERY.md)
+
+## 任意のOpenObserve・Sail比較Lab
+
+[OpenObserve](OPENOBSERVE.md) はOSS v1.1.2と固定BusyBox probeを使い、Vectorの秘匿化後ログを第二sinkへ送るsource定義です。metrics remote_write・第三者Grafana pluginは未追加です。`openobserve-data` とbootstrap管理者/tokenを分離し、Lab無効時に資格情報を要求しません。runtimeのbinary/VRL/配送、保持削除、24時間耐久は未受入です。
+
+[Sail](SAIL-LAB.md) はPySail 0.7.3 wheelと既存Spark 4.1.4から派生するclientを固定します。Sailを入れただけでSparkの互換性・高速化が成立したとは扱いません。共通Spark imageの事前build、cold build順序、Connect、Lakekeeper/S3、UTC7・NULL・decimal・日本語・再実行・性能を別々に受入します。通常clientはreplicas 0です。

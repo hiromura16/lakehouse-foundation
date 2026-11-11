@@ -32,6 +32,21 @@ class ServiceDefinition:
 
 SERVICES = (
     ServiceDefinition(
+        "openobserve",
+        "OpenObserve Logs Lab",
+        "openobserve-lab",
+        "OPENOBSERVE_PORT",
+        5080,
+        "/",
+        "http://openobserve:5080/healthz",
+        "Lokiと同じ秘匿済みログを比較します。loopback接続を使用します。",
+        (
+            "OPENOBSERVE_ROOT_USER_EMAIL",
+            "OPENOBSERVE_ROOT_USER_PASSWORD",
+            "OPENOBSERVE_INGEST_TOKEN_FILE",
+        ),
+    ),
+    ServiceDefinition(
         "swagger",
         "操作API / Swagger",
         "demo",

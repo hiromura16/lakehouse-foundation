@@ -467,6 +467,11 @@ def render_settings():
     st.caption(
         "変更は非公開の設定へ保存します。反映に再配置が必要な項目があります。"
     )
+    st.caption(
+        "monitoringは通常監視です。hostの読取りはmonitoring-hostを追加した"
+        "場合だけ有効になり、monitoringも必要です。sail-labにはcomputeも"
+        "必要です。保存後、配置側でも同じprofileを明示して再配置します。"
+    )
     result = call_api("/settings")
     if result is None:
         return
@@ -488,6 +493,13 @@ def render_settings():
         "BIND_IP": "画面を公開するアドレス",
         "LANDING_DIR": "ファイルの受け口（ホストの絶対パス）",
         "COMPOSE_PROFILES": "追加機能（カンマ区切り）",
+        "MONITORING_LOG_DIR": "ログcapture専用directory（Git外）",
+        "MONITORING_HOST_ALIAS": "ログ用の架空host識別名",
+        "CADVISOR_DOCKER_DATA_ROOT": "確認済みDocker保存先（読取り専用）",
+        "OPENOBSERVE_PORT": "OpenObserve比較UIのloopback port",
+        "OPENOBSERVE_ROOT_USER_EMAIL": "OpenObserve管理者ID（Lab専用）",
+        "OPENOBSERVE_ROOT_USER_PASSWORD": "OpenObserve管理者password",
+        "OPENOBSERVE_INGEST_TOKEN_FILE": "取込専用tokenのprivate JSON file",
         "SOURCE_SQLSERVER_HOST": "業務参照元SQL Server",
         "SOURCE_SQLSERVER_DATABASE": "業務参照元のDB名",
         "SOURCE_SQLSERVER_USER": "参照元reader（SELECT専用）",

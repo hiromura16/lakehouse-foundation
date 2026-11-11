@@ -26,7 +26,7 @@ setopt INTERACTIVE_COMMENTS
 ```
 <!-- shell-usage:end -->
 
-確認日: 2026-11-10（JST）。初回配置・作業端末・権限は [START-HERE.md](START-HERE.md) で準備します。以下の `up` はCLI管理の環境だけで使います。Dokploy管理では同じprivate設定とComposeサービスのEnvironmentを揃え、7ファイルを使ってDeployします。[0.31.0の配置手順](DOKPLOY.md)
+確認日: 2026-11-10（JST）。初回配置・作業端末・権限は [START-HERE.md](START-HERE.md) で準備します。以下の `up` はCLI管理の環境だけで使います。Dokploy管理では同じprivate設定とComposeサービスのEnvironmentを揃え、9ファイルを使ってDeployします。[0.31.0の配置手順](DOKPLOY.md)
 
 
 操作画面を、素材投入だけでなく、サービスの入口、データの意味、読み取り確認、接続診断、履歴、同梱ヘルプから使えるようにしています。既定URLは `http://localhost:8501/`、操作APIとSwaggerは `http://localhost:8502/docs` です。実行する操作と、その結果を確認する操作を分けます。
@@ -43,7 +43,7 @@ export LAKEHOUSE_ENV_FILE=/absolute/private/site.env
 ./scripts/lakehouse.sh up
 ```
 
-追加サービスは必要なprofileだけを選びます。Sparkの常駐Master/Worker/Historyは `compute` です。監視は `monitoring`、n8nは `automation`、Airflowは `orchestration`、Kafka管理画面は `cdc`、BIは `bi`、Notebookは `notebooks`、ベクトルDBは `vector`、lineageは `lineage` です。既存private設定では、追加された設定項目と容量を確認してから再配置します。ポータルからDockerの権限を使って自動インストールする仕組みではありません。
+追加サービスは必要なprofileだけを選びます。Sparkの常駐Master/Worker/Historyは `compute` です。通常監視は `monitoring`、host root/PID読取りのexporterは明示opt-inの `monitoring-host`、n8nは `automation`、Airflowは `orchestration`、Kafka管理画面は `cdc`、BIは `bi`、Notebookは `notebooks`、ベクトルDBは `vector`、lineageは `lineage` です。既存private設定では、追加された設定項目と容量を確認してから再配置します。ポータルからDockerの権限を使って自動インストールする仕組みではありません。
 
 ## 入口カードの読み方
 
