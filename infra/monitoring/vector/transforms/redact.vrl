@@ -4,7 +4,7 @@ text = string!(.message)
 content_identity = sha2(text, variant: "SHA-256")
 # Prefer losing a sensitive message over preserving fragments of escaped or
 # multiline credentials. Severity/source metadata still remains inspectable.
-sensitive = match(text, r'(?is)\b(?:authorization|proxy-authorization|cookie|set-cookie|password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|secret[_-]?key|aws_access_key_id|aws_secret_access_key|aws_session_token|secret[_-]?access[_-]?key|access[_-]?key[_-]?id|session[_-]?token|client[_-]?secret|access[_-]?token|refresh[_-]?token|id[_-]?token)\b[\s"\\\x27]*[:=]') || match(text, r'(?is)\b(?:bearer|basic)\s+[^\s]+') || match(text, r'\b(?:AKIA|ASIA)[A-Z0-9]{16}\b') || match(text, r'\bsk-[A-Za-z0-9_-]{16,}\b') || match(text, r'(?i)(?:https?|s3)://[^\s/@]+:[^\s/@]+@')
+sensitive = match(text, r'(?is)\b(?:authorization|proxy-authorization|cookie|set-cookie|password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|secret[_-]?key|aws_access_key_id|aws_secret_access_key|aws_session_token|secret[_-]?access[_-]?key|access[_-]?key[_-]?id|session[_-]?token|client[_-]?secret|access[_-]?token|refresh[_-]?token|id[_-]?token)\b[\s"\\\x27]*[:=]') || match(text, r'(?is)\b(?:bearer|basic)\s+[^\s]+') || match(text, r'\b(?:AKIA|ASIA)[A-Z0-9]{16}\b') || match(text, r'\bsk-[A-Za-z0-9_-]{16,}\b') || match(text, r'(?i)\b[a-z][a-z0-9+.\-]*://[^\s/@]+:[^\s/@]+@')
 # Drop the entire sensitive assignment/header; no captured secret is echoed.
 text = replace(text, r'(?im)\b(?:authorization|proxy-authorization)\s*[=:]\s*(?:"[^"\n]*"|[^\r\n]+)', "[REDACTED_AUTH]")
 text = replace(text, r'(?i)\b(?:bearer|basic)\s+[A-Za-z0-9+/_=.~\-]+', "[REDACTED_AUTH]")
@@ -12,7 +12,7 @@ text = replace(text, r'(?im)(?:"|\b)(?:cookie|set-cookie)(?:"|\b)\s*[:=]\s*(?:"[
 text = replace(text, r'(?is)(?:"|\b)(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|secret[_-]?key|aws_access_key_id|aws_secret_access_key|aws_session_token|secret[_-]?access[_-]?key|access[_-]?key[_-]?id|session[_-]?token|client[_-]?secret|access[_-]?token|refresh[_-]?token|id[_-]?token)(?:"|\b)\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|\x27[^\x27]*\x27|[^\s;,}\]]+)', "[REDACTED_SECRET]")
 text = replace(text, r'\b(?:AKIA|ASIA)[A-Z0-9]{16}\b', "[REDACTED_AWS_KEY]")
 text = replace(text, r'\bsk-[A-Za-z0-9_-]{16,}\b', "[REDACTED_API_KEY]")
-text = replace(text, r'(?i)(?:https?|s3)://[^\s/@]+:[^\s/@]+@', "[REDACTED_URL_USERINFO]")
+text = replace(text, r'(?i)\b[a-z][a-z0-9+.\-]*://[^\s/@]+:[^\s/@]+@', "[REDACTED_URL_USERINFO]")
 # Access clients are not useful low-cardinality observability identifiers.
 text = replace(text, r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', "[IP]")
 if sensitive { text = "[REDACTED: sensitive log content]" }

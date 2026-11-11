@@ -1267,6 +1267,66 @@
         "http_status": null,
         "record_start": true
       }
+    },
+    {
+      "name": "redaction-dsn-postgresql",
+      "kind": "redaction",
+      "message": "postgresql://sample:synthetic-value@service.invalid/db",
+      "expected_message": "[REDACTED: sensitive log content]"
+    },
+    {
+      "name": "redaction-dsn-postgresql-psycopg2",
+      "kind": "redaction",
+      "message": "postgresql+psycopg2://sample:synthetic-value@service.invalid/db",
+      "expected_message": "[REDACTED: sensitive log content]"
+    },
+    {
+      "name": "redaction-dsn-redis",
+      "kind": "redaction",
+      "message": "redis://sample:synthetic-value@service.invalid/db",
+      "expected_message": "[REDACTED: sensitive log content]"
+    },
+    {
+      "name": "redaction-dsn-rediss",
+      "kind": "redaction",
+      "message": "rediss://sample:synthetic-value@service.invalid/db",
+      "expected_message": "[REDACTED: sensitive log content]"
+    },
+    {
+      "name": "redaction-dsn-amqp",
+      "kind": "redaction",
+      "message": "amqp://sample:synthetic-value@service.invalid/db",
+      "expected_message": "[REDACTED: sensitive log content]"
+    },
+    {
+      "name": "redaction-dsn-mongodb",
+      "kind": "redaction",
+      "message": "mongodb://sample:synthetic-value@service.invalid/db",
+      "expected_message": "[REDACTED: sensitive log content]"
+    },
+    {
+      "name": "redaction-dsn-mongodb-srv",
+      "kind": "redaction",
+      "message": "mongodb+srv://sample:synthetic-value@service.invalid/db",
+      "expected_message": "[REDACTED: sensitive log content]"
+    },
+    {
+      "name": "redaction-dsn-mssql-pyodbc",
+      "kind": "redaction",
+      "message": "mssql+pyodbc://sample:synthetic-value@service.invalid/db",
+      "expected_message": "[REDACTED: sensitive log content]"
+    },
+    {
+      "name": "safe-dsn-no-userinfo-postgresql",
+      "kind": "redaction",
+      "message": "postgresql://service.invalid/db",
+      "expected_message": "postgresql://service.invalid/db"
+    },
+    {
+      "name": "safe-dsn-no-userinfo-redis",
+      "kind": "redaction",
+      "message": "redis://service.invalid/db",
+      "expected_message": "redis://service.invalid/db"
     }
   ]
 }

@@ -4172,6 +4172,406 @@ tests:
         assert_eq!(.http_status, null)
 
         assert_eq!(.record_start, true)'
+- name: redaction-dsn-postgresql
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: efad1476da6db0eaf0ee5ecd4f4a7b5236fcbc35580d612afc2da0615f8c5655
+      stream: stdout
+      message: postgresql://sample:synthetic-value@service.invalid/db
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: unit.logger
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "[REDACTED: sensitive log content]")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "unit.logger")'
+- name: redaction-dsn-postgresql-psycopg2
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: c8a2443e24d20d994ed2347ad322db67fed00f6ce570f86599a19e877de1e579
+      stream: stdout
+      message: postgresql+psycopg2://sample:synthetic-value@service.invalid/db
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: unit.logger
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "[REDACTED: sensitive log content]")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "unit.logger")'
+- name: redaction-dsn-redis
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 6f34f25e8b3c34d0d44e58aa407aacb7ab133823fdc02666b18f72b75c5aefbe
+      stream: stdout
+      message: redis://sample:synthetic-value@service.invalid/db
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: unit.logger
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "[REDACTED: sensitive log content]")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "unit.logger")'
+- name: redaction-dsn-rediss
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: eb3dd805addc25133682b67717337366bd5555aa83c397790e3de1d6926561aa
+      stream: stdout
+      message: rediss://sample:synthetic-value@service.invalid/db
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: unit.logger
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "[REDACTED: sensitive log content]")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "unit.logger")'
+- name: redaction-dsn-amqp
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 619cc8097bc060bece01d26a2d1ae499c4fb66aec954cc2ef7ec7bccb0cbb224
+      stream: stdout
+      message: amqp://sample:synthetic-value@service.invalid/db
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: unit.logger
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "[REDACTED: sensitive log content]")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "unit.logger")'
+- name: redaction-dsn-mongodb
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 573889534cbf7437d91ac73842e0bf72fcb46467825be53efa59e2e21d243023
+      stream: stdout
+      message: mongodb://sample:synthetic-value@service.invalid/db
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: unit.logger
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "[REDACTED: sensitive log content]")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "unit.logger")'
+- name: redaction-dsn-mongodb-srv
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: d31fdec6f2028315fc3e7a009eff6207225717a0dcebbd7d0ef89473633412eb
+      stream: stdout
+      message: mongodb+srv://sample:synthetic-value@service.invalid/db
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: unit.logger
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "[REDACTED: sensitive log content]")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "unit.logger")'
+- name: redaction-dsn-mssql-pyodbc
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: bd09409699c00f1b507ca5ffb4272571866398b4fd0bda348acef5bd5900a1ee
+      stream: stdout
+      message: mssql+pyodbc://sample:synthetic-value@service.invalid/db
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: unit.logger
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "[REDACTED: sensitive log content]")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "unit.logger")'
+- name: safe-dsn-no-userinfo-postgresql
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 4b26e52ffe22934bd4e9777d7c9126fe407ba8bb4174fc4761f164239997e667
+      stream: stdout
+      message: postgresql://service.invalid/db
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: unit.logger
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "postgresql://service.invalid/db")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "unit.logger")'
+- name: safe-dsn-no-userinfo-redis
+  inputs:
+  - insert_at: redacted
+    type: log
+    log_fields:
+      timestamp: '2026-01-01T00:00:00Z'
+      source_timestamp: '2026-01-01T00:00:00Z'
+      compose_project: synthetic
+      compose_service: worker
+      host_alias: lab
+      container_alias: worker-1
+      source_identity: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      source_position: 3cb99d56bfee15015df8e8e8bb3e006b2cb33965108b466eb57f9f9803ae91da
+      stream: stdout
+      message: redis://service.invalid/db
+      line_count: 1
+      capture_truncated: 0
+      level_raw: INFO
+      level_normalized: info
+      level_source: level
+      level_parser: json
+      level_parse_status: parsed
+      logger: unit.logger
+      http_status: null
+      http_method: null
+      http_route: null
+      log_kind: application
+  outputs:
+  - extract_from: redacted
+    conditions:
+    - type: vrl
+      source: 'assert_eq!(.message, "redis://service.invalid/db")
+
+        assert_eq!(.level, "info")
+
+        assert_eq!(.level_normalized, "info")
+
+        assert_eq!(.truncated, 0)
+
+        assert_eq!(.logger, "unit.logger")'
 - name: envelope-ansi-before-severity
   inputs:
   - insert_at: envelope
