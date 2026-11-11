@@ -71,7 +71,7 @@ jobs:
       run: |
         python scripts/compose_inventory.py --check
         python infra/monitoring/vector/tests/build_fixtures.py --check
-        python infra/sail/runner.py plan
+        python scripts/sail_benchmark.py plan
         python scripts/monitoring_assets.py --check
         python scripts/validate_observability.py --run
     - name: Check generated report figures and offline gallery

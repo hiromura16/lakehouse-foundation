@@ -4,6 +4,8 @@ import copy
 import io
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 import urllib.error
@@ -688,6 +690,30 @@ class RunnerTests(unittest.TestCase):
         with redirect_stdout(output):
             self.assertEqual(runner.main(["timestamp7-probe"]), 2)
         self.assertIn("not-live-engine", output.getvalue())
+
+    def test_public_cli_plan_has_no_ambient_pythonpath_requirement(self):
+        """Run CI's real interface from an unrelated disposable directory."""
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory(prefix="sail-cli-plan-") as directory:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(root / "scripts/sail_benchmark.py"),
+                    "plan",
+                ],
+                cwd=directory,
+                env={"PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "1"},
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        self.assertEqual(result.returncode, 0, "The public plan CLI failed.")
+        receipt = json.loads(result.stdout.split("=", 1)[1])
+        self.assertEqual(receipt["status"], "plan")
+        workflow = (root / ".github/workflows/validate.yml").read_text()
+        self.assertIn("python scripts/sail_benchmark.py plan", workflow)
+        self.assertNotIn("python infra/sail/runner.py plan", workflow)
 
     def test_comparison_rejects_missing_stage_unknown_cleanup_and_bool_counts(
         self,
