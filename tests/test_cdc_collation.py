@@ -350,6 +350,81 @@ class CdcCollationTests(unittest.TestCase):
                     "not general Unicode identifier equivalence", discovery
                 )
 
+    def test_shared_role_rejection_resolves_identity_without_authorizing_it(
+        self,
+    ):
+        """Names can differ while native lookup resolves the same principal.
+
+        Inspect the AST grouping: both rejection branches must remain inside
+        parentheses before the exact fixed-capture exclusion. This is a
+        source contract, not evidence of SQL Server's saved CDC spelling.
+        """
+        for name, sql in self.sources.items():
+            with self.subTest(name=name):
+                start = sql.index("IF EXISTS (", sql.index("THROW 51114"))
+                end = sql.index("DECLARE @AllowedReadObjects", start)
+                tree = parse_sql(sql[start:end])
+                self.assertEqual(
+                    len(list(tree.recursive_crawl("throw_statement"))), 1
+                )
+                self.assertIn("THROW 51115", tree.raw)
+                guards = list(tree.recursive_crawl("if_clause"))
+                self.assertEqual(len(guards), 1)
+                guard = guards[0]
+                where = next(guard.recursive_crawl("where_clause"))
+                expression = next(where.recursive_crawl("expression"))
+                outer = significant(expression.segments)
+                self.assertEqual(
+                    [part.raw.upper() for part in outer[1:4]],
+                    ["AND", "NOT", "EXISTS"],
+                )
+                self.assertEqual(len(outer), 5)
+                self.assertTrue(outer[0].is_type("bracketed"))
+                identity = next(outer[0].recursive_crawl("expression"))
+                tokens = significant(identity.segments)
+                self.assertEqual(
+                    [token.raw for token in tokens],
+                    [
+                        "ct.role_name",
+                        "COLLATE",
+                        BIN2,
+                        "=",
+                        "N'lh_demo_cdc_reader'",
+                        "COLLATE",
+                        BIN2,
+                        "OR",
+                        "DATABASE_PRINCIPAL_ID(ct.role_name)",
+                        "=",
+                        "DATABASE_PRINCIPAL_ID(N'lh_demo_cdc_reader')",
+                    ],
+                )
+                exclusion = list(outer[4].recursive_crawl("table_reference"))
+                self.assertEqual([ref.raw for ref in exclusion], ["@Targets"])
+                self.assertEqual(comparison_findings(outer[4]), (1, []))
+                self.assertEqual(
+                    [
+                        ref.raw
+                        for ref in outer[4].recursive_crawl("column_reference")
+                    ],
+                    ["t.capture_instance", "ct.capture_instance"],
+                )
+                # The new native name resolution must occur only in this
+                # rejection guard; existing authorization stays exact BIN2.
+                self.assertEqual(
+                    sql.count("DATABASE_PRINCIPAL_ID(ct.role_name)"), 1
+                )
+                self.assertLess(
+                    sql.index("THROW 51115"),
+                    sql.index("EXEC @Result=sys.sp_cdc_"),
+                )
+                self.assertIn(
+                    "ct.role_name COLLATE "
+                    + BIN2
+                    + "\n          <> N'lh_demo_cdc_reader' COLLATE "
+                    + BIN2,
+                    sql,
+                )
+
     def test_failure_output_compares_observed_presence_without_attribution(
         self,
     ):

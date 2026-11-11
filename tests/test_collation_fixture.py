@@ -281,6 +281,10 @@ class FaultInjectionContractTests(unittest.TestCase):
             FIXTURE.prepare_legacy_cdc(),
             FIXTURE.preserve_legacy(),
             FIXTURE.successful_permissions(),
+            (FIXTURE.HERE / "role_alias.sql").read_text(),
+            FIXTURE.role_alias_identity(),
+            FIXTURE.role_alias_probe("SELECT 1;", "004"),
+            FIXTURE.role_alias_probe("SELECT 1;", "005"),
             FIXTURE.expect_failure(
                 "THROW 51990,'Synthetic',1;",
                 51990,
@@ -343,6 +347,144 @@ class FaultInjectionContractTests(unittest.TestCase):
             )
             self.assertIn("WHERE sentinel_id=" + str(index), calls[index])
             self.assertIn("IF ERROR_NUMBER()<>50000 THROW", calls[index])
+
+
+class RoleAliasFixtureTests(unittest.TestCase):
+    """Check source/mock contracts, not actual CI/CS catalog behavior."""
+
+    def test_alias_setup_uses_supported_cdc_and_observes_actual_saved_identity(
+        self,
+    ):
+        setup = (FIXTURE.HERE / "role_alias.sql").read_text()
+        self.assertIn("EXEC sys.sp_cdc_enable_table", setup)
+        self.assertIn("@role_name=N'LH_DEMO_CDC_READER'", setup)
+        observation = FIXTURE.role_alias_identity()
+        self.assertIn("@SavedRole=role_name", observation)
+        self.assertIn(
+            "@SavedRoleId=DATABASE_PRINCIPAL_ID(@SavedRole)", observation
+        )
+        self.assertIn("WHEN @SavedRoleId=@FixedRoleId", observation)
+        self.assertIn(
+            "@SavedRole COLLATE Latin1_General_100_BIN2", observation
+        )
+        self.assertIn("@SavedRoleId IS NULL", observation)
+        self.assertNotRegex(setup + observation, r"(?i)UPDATE\s+cdc\.")
+        self.assertIn(
+            "tests/integration/sqlserver_collation/role_alias.sql",
+            FIXTURE.source_hashes(),
+        )
+
+    def test_probes_refuse_shared_identity_before_asserting_unchanged_metadata(
+        self,
+    ):
+        for number in ("004", "005"):
+            with self.subTest(number=number):
+                body = FIXTURE.role_alias_probe("SELECT 1;", number)
+                self.assertIn("IF @SamePrincipal=1", body)
+                self.assertIn("IF ERROR_NUMBER()<>51115 THROW", body)
+                for part in ("Captures", "Roles", "Members", "Grants"):
+                    self.assertIn("DECLARE @Before" + part, body)
+                    self.assertIn("@Before" + part + "<>", body)
+                self.assertLess(
+                    body.index("IF ERROR_NUMBER()<>51115 THROW"),
+                    body.index("IF @BeforeCaptures<>"),
+                )
+                self.assertIn("role_alias_" + number + "_preserved", body)
+                self.assertIn("distinct_role_" + number + "_passed", body)
+                self.assertIn("WHERE object_id=@AliasCapture", body)
+                self.assertIn(
+                    "DATABASE_PRINCIPAL_ID(role_name)=@SavedRoleId", body
+                )
+                self.assertIn("Legacy fixture permissions changed", body)
+                self.assertNotIn("SELECT * FROM cdc.change_tables", body)
+                for asynchronous in (
+                    "start_lsn",
+                    "end_lsn",
+                    "has_drop_pending",
+                ):
+                    self.assertNotIn(asynchronous, body)
+                self.assertNotIn("UPPER(", body)
+                self.assertNotRegex(body, r"(?i)UPDATE\s+cdc\.")
+        with self.assertRaises(FIXTURE.FixtureError):
+            FIXTURE.role_alias_probe("SELECT 1;", "003")
+
+    def test_canonicalization_or_missing_observations_remain_coverage_gaps(
+        self,
+    ):
+        def observed(same, different):
+            return {
+                "stage": "role_alias_metadata",
+                "same_principal": same,
+                "saved_case_different": different,
+            }
+
+        for records, expected in (
+            ([], (False, False, 0)),
+            ([observed(True, False)], (False, False, 1)),
+            ([observed(True, True)], (True, False, 1)),
+            ([observed(False, True)], (False, True, 1)),
+            ([observed(True, True), observed(False, True)], (True, True, 2)),
+        ):
+            with self.subTest(expected=expected):
+                result = FIXTURE.role_alias_coverage(records)
+                self.assertEqual(tuple(result.values()), expected)
+
+    def test_runner_isolated_role_case_runs_both_scripts_with_explicit_consent(
+        self,
+    ):
+        runner = FIXTURE.Runner(
+            "tcp:127.0.0.1,1433", "sqlcmd", "synthetic", NONCE, VERSION
+        )
+        calls = []
+        with mock.patch.object(
+            runner, "execute", side_effect=lambda *a, **k: calls.append(a[1])
+        ):
+            runner.shared_role_alias("role_ci", "Latin1_General_CI_AS")
+        self.assertEqual(len(calls), 7)
+        self.assertIn("CREATE DATABASE", calls[0])
+        self.assertIn("role_alias_metadata", calls[4])
+        self.assertIn("role_alias_004_rejected", calls[5])
+        self.assertIn("role_alias_005_rejected", calls[6])
+        self.assertIn("ConfirmDisableCdc nvarchar(4000)=N''1''", calls[6])
+        self.assertEqual(runner.databases_created, 1)
+        self.assertNotIn("DROP DATABASE", "\n".join(calls))
+
+    def test_observation_receipt_requires_boolean_evidence_and_omits_raw_names(
+        self,
+    ):
+        runner = FIXTURE.Runner(
+            "tcp:127.0.0.1,1433", "sqlcmd", "synthetic", NONCE, VERSION
+        )
+        baseline = {
+            "stage": "role_alias_metadata",
+            "status": "observed",
+            "same_principal": True,
+            "saved_case_different": False,
+        }
+        for changes in (
+            {},
+            {"same_principal": 1},
+            {"same_principal": "true"},
+            {"saved_role": "LH_DEMO_CDC_READER"},
+            {"status": "passed"},
+        ):
+            receipt = dict(baseline, **changes)
+            completed = subprocess.CompletedProcess(
+                [], 0, (FIXTURE.PREFIX + json.dumps(receipt)).encode()
+            )
+            with mock.patch.object(
+                FIXTURE.subprocess, "run", return_value=completed
+            ):
+                if not changes:
+                    self.assertEqual(
+                        runner.execute(DATABASE, "SELECT 1;")[0][
+                            "saved_case_different"
+                        ],
+                        False,
+                    )
+                else:
+                    with self.assertRaises(FIXTURE.FixtureError):
+                        runner.execute(DATABASE, "SELECT 1;")
 
 
 class SqlcmdBoundaryTests(unittest.TestCase):

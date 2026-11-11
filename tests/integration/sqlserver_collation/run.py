@@ -76,6 +76,14 @@ FIXED_STAGES = (
         "untrusted_checker_preserved",
         "corrupt_capture_preflight_refused",
         "corrupt_capture_preserved",
+        "role_alias_baseline",
+        "role_alias_metadata",
+        "role_alias_004_rejected",
+        "role_alias_005_rejected",
+        "role_alias_004_preserved",
+        "role_alias_005_preserved",
+        "distinct_role_004_passed",
+        "distinct_role_005_passed",
     }
     | {"validation_006_captures_" + str(n) for n in (0, 6)}
     | {
@@ -165,6 +173,7 @@ def source_hashes():
         ROOT / "scripts/sqlserver_safety.sql",
         HERE / "run.py",
         HERE / "mixed_collation.sql",
+        HERE / "role_alias.sql",
     ]
     return {
         str(path.relative_to(ROOT)): hashlib.sha256(
@@ -346,6 +355,7 @@ def expect_failure(source, number, stage, *, inspect_residual=False):
         51018,
         51019,
         51113,
+        51115,
         51123,
         51990,
         51991,
@@ -563,6 +573,126 @@ IF EXISTS (
 """
 
 
+def role_alias_identity():
+    """Observe actual saved spelling and native lookup, not a CI simulation."""
+    return """DECLARE @SavedRole sysname,@SavedRoleId int,
+ @FixedRoleId int=DATABASE_PRINCIPAL_ID(N'lh_demo_cdc_reader'),
+ @AliasCapture int,@SamePrincipal bit,@SavedCaseDifferent bit;
+SELECT @SavedRole=role_name,@AliasCapture=object_id FROM cdc.change_tables
+WHERE capture_instance COLLATE Latin1_General_100_BIN2
+    =N'fixture_role_alias_v1' COLLATE Latin1_General_100_BIN2;
+SET @SavedRoleId=DATABASE_PRINCIPAL_ID(@SavedRole);
+IF @AliasCapture IS NULL OR @SavedRole IS NULL OR @SavedRoleId IS NULL
+ OR @FixedRoleId IS NULL
+ OR DATABASE_PRINCIPAL_ID(N'LH_DEMO_CDC_READER') IS NULL
+ OR @SavedRoleId<>DATABASE_PRINCIPAL_ID(N'LH_DEMO_CDC_READER')
+ THROW 51984, 'Synthetic CDC role identity could not be established.', 1;
+SET @SamePrincipal=CONVERT(bit,CASE
+ WHEN @SavedRoleId=@FixedRoleId THEN 1 ELSE 0 END);
+SET @SavedCaseDifferent=CONVERT(bit,CASE
+ WHEN @SavedRole COLLATE Latin1_General_100_BIN2
+     <>N'lh_demo_cdc_reader' COLLATE Latin1_General_100_BIN2
+ THEN 1 ELSE 0 END);
+"""
+
+
+def role_alias_probe(source, number):
+    """Assert reject-only identity discovery and preserve unrelated metadata.
+
+    Same-principal sharing must raise 51115 before any mutation. When the
+    catalog resolves a genuinely different principal, normal fixed lifecycle
+    remains possible. The saved alias capture itself is always preserved.
+    """
+    if number not in {"004", "005"}:
+        raise FixtureError("FIXED_ROLE_ALIAS_STAGE_REQUIRED")
+    queries = {
+        # SQL Agent can advance start/end LSNs or drop-pending progress while
+        # these scripts are correctly refusing a change. Compare stable
+        # identity/definition only; do not confuse progress with DDL mutation.
+        "Captures": (
+            "SELECT object_id,source_object_id,capture_instance,role_name,"
+            "index_name,supports_net_changes FROM cdc.change_tables "
+            "ORDER BY object_id"
+        ),
+        "Roles": (
+            "SELECT principal_id,name,type,owning_principal_id "
+            "FROM sys.database_principals ORDER BY principal_id"
+        ),
+        "Members": (
+            "SELECT role_principal_id,member_principal_id "
+            "FROM sys.database_role_members "
+            "ORDER BY role_principal_id,member_principal_id"
+        ),
+        "Grants": (
+            "SELECT class,major_id,minor_id,grantee_principal_id,"
+            "grantor_principal_id,permission_name,state "
+            "FROM sys.database_permissions "
+            "ORDER BY class,major_id,minor_id,grantee_principal_id,"
+            "permission_name"
+        ),
+    }
+    hashes = {
+        name: "HASHBYTES('SHA2_256',CONVERT(nvarchar(max),("
+        + query
+        + " FOR JSON PATH,INCLUDE_NULL_VALUES)))"
+        for name, query in queries.items()
+    }
+    before = "".join(
+        "DECLARE @Before" + name + " varbinary(32)=" + digest + ";\n"
+        for name, digest in hashes.items()
+    )
+    unchanged = "\n OR ".join(
+        "@Before" + name + "<>" + digest for name, digest in hashes.items()
+    )
+    return (
+        role_alias_identity()
+        + "IF @SamePrincipal=1\nBEGIN\n"
+        + before
+        + expect_failure(source, 51115, "role_alias_" + number + "_rejected")
+        + "IF "
+        + unchanged
+        + "\n"
+        + " THROW 51984, 'Rejected role sharing changed metadata.', 1;\n"
+        + assert_fixed_captures(6)
+        + record("role_alias_" + number + "_preserved")
+        + "END\nELSE\nBEGIN\n"
+        + "EXEC sys.sp_executesql "
+        + literal(source)
+        + ";\n"
+        + assert_fixed_captures(6 if number == "004" else 0)
+        + record("distinct_role_" + number + "_passed")
+        + "END;\n"
+        + """IF NOT EXISTS (SELECT 1 FROM cdc.change_tables
+ WHERE object_id=@AliasCapture
+ AND source_object_id=OBJECT_ID(N'dbo.fixture_role_alias_data')
+ AND capture_instance COLLATE Latin1_General_100_BIN2
+     =N'fixture_role_alias_v1' COLLATE Latin1_General_100_BIN2
+ AND role_name COLLATE Latin1_General_100_BIN2
+     =@SavedRole COLLATE Latin1_General_100_BIN2
+ AND DATABASE_PRINCIPAL_ID(role_name)=@SavedRoleId)
+ THROW 51984, 'Unrelated synthetic role-alias capture changed.', 1;
+"""
+        + preserve_legacy()
+    )
+
+
+def role_alias_coverage(records):
+    """Do not call canonicalized spelling an exercised saved-alias case."""
+    observations = [
+        row for row in records if row["stage"] == "role_alias_metadata"
+    ]
+    return {
+        "same_principal_saved_alias_exercised": any(
+            row["same_principal"] and row["saved_case_different"]
+            for row in observations
+        ),
+        "distinct_principal_exercised": any(
+            not row["same_principal"] for row in observations
+        ),
+        "observation_count": len(observations),
+    }
+
+
 class Runner:
     """Execute only explicit synthetic stages; never forward raw SQL output."""
 
@@ -648,11 +778,26 @@ class Runner:
                 "observed_468",
                 "forced_column_collations",
                 "case_alias_detected",
+                "same_principal",
+                "saved_case_different",
             }
             if set(value) - allowed or any(
                 type(v) not in {int, bool} or not -1 <= int(v) <= 1000000
                 for key, v in value.items()
                 if key not in {"stage", "status"}
+            ):
+                raise FixtureError("SYNTHETIC_RESULT_INVALID")
+            if value["stage"] == "role_alias_metadata" and (
+                set(value)
+                != {
+                    "stage",
+                    "status",
+                    "same_principal",
+                    "saved_case_different",
+                }
+                or value["status"] != "observed"
+                or type(value["same_principal"]) is not bool
+                or type(value["saved_case_different"]) is not bool
             ):
                 raise FixtureError("SYNTHETIC_RESULT_INVALID")
             value["case"] = self.case
@@ -854,6 +999,38 @@ DECLARE @BadCapture int=(SELECT object_id FROM cdc.change_tables
             + record("validation_006_captures_" + str(count)),
         )
 
+    def shared_role_alias(self, suffix, collation):
+        """Exercise aliases in a fresh DB without editing CDC metadata."""
+        database, selected = self.fresh(suffix, collation)
+        self.execute(
+            database,
+            prepare_legacy_cdc()
+            + render("003", selected)
+            + render("004", selected)
+            + assert_fixed_captures(6)
+            + record("role_alias_baseline"),
+        )
+        self.execute(
+            database,
+            (HERE / "role_alias.sql").read_text()
+            + role_alias_identity()
+            + """DECLARE @Evidence nvarchar(max)=N'LAKEHOUSE_SQL_FIXTURE=' + (
+ SELECT N'role_alias_metadata' AS stage,N'observed' AS status,
+ @SamePrincipal AS same_principal,
+ @SavedCaseDifferent AS saved_case_different
+ FOR JSON PATH,WITHOUT_ARRAY_WRAPPER);
+PRINT @Evidence;
+""",
+        )
+        for number in ("004", "005"):
+            self.execute(
+                database,
+                role_alias_probe(
+                    render(number, selected, confirm=(number == "005")),
+                    number,
+                ),
+            )
+
     def checker_identity(self, case):
         database, selected = self.fresh(
             "checker_" + case, "Latin1_General_CI_AS"
@@ -963,6 +1140,10 @@ def plan():
         ),
         "checker_cases": list(CHECKER_CASES),
         "outer_transaction_cases": ["003", "004", "005", "preflight"],
+        "role_alias_cases": (
+            "supported CDC creation in fresh CI/CS databases; read back saved "
+            "spelling/principal IDs; canonicalization is a coverage gap"
+        ),
         "ansi_nulls_off_case": (
             "not forced; SQL2022 ANSI_NULLS behavior requires observation"
         ),
@@ -1011,6 +1192,8 @@ def main(argv=None):
     try:
         runner.lifecycle("ci", "Latin1_General_CI_AS")
         runner.lifecycle("cs", "Latin1_General_CS_AS")
+        runner.shared_role_alias("role_ci", "Latin1_General_CI_AS")
+        runner.shared_role_alias("role_cs", "Latin1_General_CS_AS")
         for case in plan()["checker_cases"]:
             runner.checker_identity(case)
         if source_hashes() != initial_hashes:
@@ -1036,11 +1219,24 @@ def main(argv=None):
             )
         )
         return 1
+    role_coverage = role_alias_coverage(runner.records)
+    role_coverage_complete = all(
+        role_coverage[key]
+        for key in (
+            "same_principal_saved_alias_exercised",
+            "distinct_principal_exercised",
+        )
+    )
     print(
         json.dumps(
             {
                 "schema_version": 1,
-                "status": "passed",
+                "status": (
+                    "passed"
+                    if role_coverage_complete
+                    else "passed_with_coverage_gaps"
+                ),
+                "role_alias_coverage": role_coverage,
                 "confirmed_databases_created": runner.databases_created,
                 "candidate_synthetic_databases": candidates,
                 "fixture_owner_sha256": hashlib.sha256(
@@ -1054,7 +1250,7 @@ def main(argv=None):
             }
         )
     )
-    return 0
+    return 0 if role_coverage_complete else 3
 
 
 if __name__ == "__main__":

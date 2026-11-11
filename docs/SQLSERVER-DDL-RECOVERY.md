@@ -29,6 +29,8 @@ catalog側の文字列列と、table variable側の文字列列が異なるcolla
 
 binary比較だけへ置き換えてcase aliasを検索対象から消さないよう、CDCの衝突発見ではcatalog解決のobject IDも使用します。同名captureが別sourceに存在する場合も作成前に停止します。ASCII固定名の`UPPER`/BIN2比較はcase aliasを拒否する事前検出にだけ使い、再利用・adoptionや変更対象の一致はBIN2完全一致だけです。許可表やEXCEPTではcaseを含む固定の比較意味を維持し、`DATABASE_DEFAULT`へ環境依存で寄せません。Unicodeの`N'...'`は維持します。
 
+004/005の共有CDC gating role検査では、保存名のBIN2完全一致に加え、`DATABASE_PRINCIPAL_ID(ct.role_name)`と固定roleのprincipal ID一致もORで検出します。case-insensitiveなcatalogで別表記が同じprincipalへ解決される場合を、変更前に51115で拒否するためです。このORは拒否範囲だけを広げます。fixed capture・role owner/kind・member・permissionの認可は完全一致のままで、case-sensitive環境の別principalを同一視しません。名前解決がNULLの場合も既存の完全一致検査や未知object保護を省略しません。
+
 Microsoftの[collation precedence](https://learn.microsoft.com/en-us/sql/t-sql/statements/collation-precedence-transact-sql?view=sql-server-ver16)では、列同士と変数・literalの優先順位を区別しています。006やcheckerのcatalog＋literalを、003の異種列比較と同じ障害と断定しません。
 
 ## 2. 途中失敗後はrollbackを推測しない
@@ -161,3 +163,7 @@ python3 tests/integration/sqlserver_collation/run.py \
 ```
 
 fixtureの強制列collation差はerror468の再現用で、選択serverの実catalog collation差を測ったものではありません。Agentの確認は共有job ID保持までで、全設定・進捗の認証ではありません。SQL Server 2022のANSI_NULLS OFF負例も未再現です。Goの版検査mockや`:r`のsource読取りを、Windows clientでの実パス試験成功とは記録しません。
+
+追加のrole-alias fixtureは別の新規owned CI/CS DBで、固定6captureと無関係なcaptureを準備します。後者にはCDCの正式手続きで大文字表記のgating roleを指定し、実際の保存名と解決されたprincipalを読み戻します。同じprincipalなら004/005とも51115を期待し、capture/role/member/permission・legacy共有jobが変わらないことを検査します。別principalなら固定6件だけの通常lifecycleと無関係captureの保持を検査します。system metadataをUPDATEして別表記を捏造しません。
+
+出力の`role_alias_coverage`は保存名が実際に異なる同一principalケースと、別principalケースの実行有無を分けます。SQL Serverが保存名を正規化した場合、または選択serverのcatalogで別principalを再現できなかった場合、結果は`passed_with_coverage_gaps`・exit code 3となり、該当ケースの実機受入は未完了です。拒否前後のcapture比較には固定identity/定義列を使い、Agentが非同期更新するLSNやdrop-pending進捗を変更と誤認しません。この追加fixtureも現環境では未実行です。

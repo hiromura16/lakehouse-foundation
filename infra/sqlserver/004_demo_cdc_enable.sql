@@ -458,8 +458,13 @@ IF EXISTS (
     THROW 51114, 'Existing capture scalar types differ from the fixed source.', 1;
 IF EXISTS (
     SELECT 1 FROM cdc.change_tables ct
-    WHERE ct.role_name COLLATE Latin1_General_100_BIN2
-       = N'lh_demo_cdc_reader' COLLATE Latin1_General_100_BIN2 AND NOT EXISTS (
+    -- Native identity also finds saved case aliases in a CI catalog. This
+    -- broadens rejection only; authorization still requires exact BIN2 names.
+    WHERE (ct.role_name COLLATE Latin1_General_100_BIN2
+       = N'lh_demo_cdc_reader' COLLATE Latin1_General_100_BIN2
+       OR DATABASE_PRINCIPAL_ID(ct.role_name)
+          = DATABASE_PRINCIPAL_ID(N'lh_demo_cdc_reader'))
+      AND NOT EXISTS (
         SELECT 1 FROM @Targets t
         WHERE t.capture_instance COLLATE Latin1_General_100_BIN2
            = ct.capture_instance COLLATE Latin1_General_100_BIN2
