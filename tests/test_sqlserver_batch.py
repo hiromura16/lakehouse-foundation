@@ -878,6 +878,25 @@ class WatermarkBatchTests(unittest.TestCase):
         self.assertEqual(self.control.committed, before)
         self.assertEqual(len(self.seen), 1)
 
+    def test_policy_enforces_documented_timing_boundaries(self):
+        overlap = "SOURCE_SQLSERVER_BATCH_OVERLAP_SECONDS"
+        lag = "SOURCE_SQLSERVER_BATCH_SAFETY_LAG_SECONDS"
+        for delay in ("0", "3600"):
+            with self.subTest(delay=delay):
+                self.assertEqual(
+                    BATCH.batch_policy({overlap: "86400", lag: delay}),
+                    (86400, int(delay)),
+                )
+        for policy in (
+            {overlap: "86400", lag: "3601"},
+            {overlap: "86400", lag: "86400"},
+            {overlap: "86401", lag: "3600"},
+            {overlap: "3599", lag: "3600"},
+        ):
+            with self.subTest(policy=policy):
+                with self.assertRaises(BATCH.BatchError):
+                    BATCH.batch_policy(policy)
+
     def test_policy_is_strict_and_preserves_seventh_digit_in_subtraction(self):
         self.assertEqual(BATCH.batch_policy({}), (300, 5))
         self.assertEqual(

@@ -133,15 +133,15 @@ def source_identity(values):
 def batch_policy(values):
     """Bound the explicitly documented overlap and visibility safety window."""
     result = []
-    for key, default, minimum in (
-        ("SOURCE_SQLSERVER_BATCH_OVERLAP_SECONDS", "300", 1),
-        ("SOURCE_SQLSERVER_BATCH_SAFETY_LAG_SECONDS", "5", 0),
+    for key, default, minimum, maximum in (
+        ("SOURCE_SQLSERVER_BATCH_OVERLAP_SECONDS", "300", 1, 86400),
+        ("SOURCE_SQLSERVER_BATCH_SAFETY_LAG_SECONDS", "5", 0, 3600),
     ):
         value = values.get(key, default)
         if (
             not isinstance(value, str)
             or not value.isdigit()
-            or not (minimum <= int(value) <= 86400)
+            or not (minimum <= int(value) <= maximum)
         ):
             raise BatchError("Invalid bounded SQL batch timing policy.")
         result.append(int(value))
