@@ -173,7 +173,10 @@ def execute(job, *, public_diagnostics=False):
             return outcome
         container = candidate.decode("ascii")
         copied = subprocess.run(
-            ["docker", "cp", str(public), container + ":/validation"],
+            # --workdir pre-creates /validation/vector for Vector. Copy
+            # contents explicitly so an existing /validation does not gain
+            # another nested validation/ directory (Docker cp semantics).
+            ["docker", "cp", str(public) + "/.", container + ":/validation"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=30,

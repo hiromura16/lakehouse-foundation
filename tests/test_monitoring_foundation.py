@@ -311,6 +311,7 @@ class MonitoringPathAndValidatorTests(unittest.TestCase):
                 )
                 return subprocess.CompletedProcess(command, 0, b"a" * 64)
             if command[1] == "cp":
+                self.assertTrue(command[2].endswith("/validation/."))
                 actual = {
                     str(p.relative_to(command[2]))
                     for p in Path(command[2]).rglob("*")
@@ -344,6 +345,48 @@ class MonitoringPathAndValidatorTests(unittest.TestCase):
             [c[1] for c in calls], ["create", "cp", "start", "rm"]
         )
         self.assertEqual(calls[-1][-1], "a" * 64)
+
+    def test_vector_copy_preserves_config_at_precreated_workdir(self):
+        """Docker cp must copy contents, even when workdir already exists."""
+        import shutil
+        import subprocess
+        import tempfile
+
+        import validate_observability as validator
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            workdir = root / "validation/vector"
+
+            def fake(command, **_kwargs):
+                if command[1] == "create":
+                    self.assertIn("/validation/vector", command)
+                    workdir.mkdir(parents=True)
+                    return subprocess.CompletedProcess(command, 0, b"a" * 64)
+                if command[1] == "cp":
+                    source = Path(command[2])
+                    destination = root / "validation"
+                    # Reproduce directory/content selection by Docker cp.
+                    if not command[2].endswith("/."):
+                        destination /= source.name
+                    shutil.copytree(source, destination, dirs_exist_ok=True)
+                if command[1] == "start":
+                    for name in ("common.yaml", "loki.yaml"):
+                        self.assertTrue((workdir / name).is_file())
+                    self.assertTrue(
+                        (workdir / "transforms/envelope.vrl").is_file()
+                    )
+                return subprocess.CompletedProcess(command, 0)
+
+            with mock.patch.object(
+                validator.subprocess, "run", side_effect=fake
+            ):
+                selected = next(
+                    job for job in validator.jobs() if job[0] == "vector-loki"
+                )
+                self.assertEqual(
+                    validator.execute(selected)["status"], "passed"
+                )
 
     def test_validator_cleanup_failure_cannot_be_success(self):
         import subprocess
