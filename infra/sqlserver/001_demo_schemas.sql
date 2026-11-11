@@ -53,7 +53,7 @@ ELSE IF EXISTS (
 -- Any unexpected object in the fixed schemas requires separate DBA review.
 IF EXISTS (
     SELECT 1 FROM sys.objects o JOIN sys.schemas s ON o.schema_id=s.schema_id
-    WHERE o.type IN ('U','V','P','FN','IF','TF')
+    WHERE o.is_ms_shipped=0 AND o.parent_object_id=0
       AND s.name IN (N'lh_demo_erp',N'lh_demo_mes',N'lh_demo_ctl')
       AND s.name+N'.'+o.name NOT IN (
         N'lh_demo_erp.products',N'lh_demo_erp.work_orders',

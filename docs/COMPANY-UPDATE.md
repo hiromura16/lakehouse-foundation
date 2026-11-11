@@ -280,3 +280,11 @@ verifyは既存workerへexecします。Dokploy管理中に、別プロジェク
 | healthyにならない／データが違う | [障害対応](TROUBLESHOOTING.md)。volume削除でやり直さない |
 
 更新前の状態へ戻す場合も、データのschema互換性・元のGit版・秘密値・volumeの組を確認します。旧コードを起動し直すだけで復元が保証されるわけではありません。[更新・復元runbook](OPERATIONS.md)
+
+## 固定SQL sourceの拡張を反映する場合
+
+コードのレビュー・公開反映後、既存private設定へ通常の `configure.py --upgrade` を実行し、新しいownership ID/tokenは初回設定後に保持します。Source/Demoの接続・TLS、shared-source明示許可、別control principal、CDC mode/state volumeを [固定SQL source手順](SQLSERVER-FIXED-DEMO.md) に従って確認します。旧設定や秘密値を新しい生成ファイルで置き換えません。
+
+DDLはアプリDeployと別工程です。DBAが001→002→003→006で固定sourceを受け入れ、GUIで投入・snapshot・増分を確認した後だけ004を適用します。実SQL Serverで未検証のDDLをアプリ起動時に自動実行することはありません。005は明示的な無効化専用で通常更新に含めません。[段階別受入とrollback](COMPANY-ROLLOUT.md#固定sql-sourceバッチcdcを追加するときの受入順)
+
+既存Dokploy、Swarm、管理者、保存volumeは保持します。固定SQLの新コード・unit/staticテスト成功は、BuildKit proxy対策やCDCの会社側での成功を保証しません。初回は実機受入の証拠を別に取得します。

@@ -161,6 +161,11 @@ class BoundaryTests(unittest.TestCase):
         for key, value in (
             ("SOURCE_SQLSERVER_HOST", "another.example.invalid"),
             ("SOURCE_SQLSERVER_PORT", "1444"),
+            ("SOURCE_SQLSERVER_HOST", VALUES["SOURCE_SQLSERVER_HOST"].upper()),
+            (
+                "SOURCE_SQLSERVER_DATABASE",
+                VALUES["SOURCE_SQLSERVER_DATABASE"].upper(),
+            ),
         ):
             with self.subTest(setting=key):
                 with self.assertRaisesRegex(
@@ -207,6 +212,16 @@ class BoundaryTests(unittest.TestCase):
                 for call in cursor.execute.call_args_list
             )
         )
+
+    def test_connected_database_case_alias_is_not_adopted(self):
+        """Match the DBA SQL's literal database identity on every server."""
+        cursor = mock.Mock()
+        cursor.fetchone.return_value = (
+            VALUES["DEMO_SQLSERVER_DATABASE"].upper(),
+        )
+        with self.assertRaisesRegex(DEMO.SqlServerError, "database"):
+            DEMO.ownership(cursor, VALUES)
+        self.assertEqual(cursor.execute.call_count, 1)
 
     def test_missing_control_credentials_never_fall_back_to_reader(self):
         for key in (

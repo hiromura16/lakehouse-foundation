@@ -87,6 +87,20 @@ class FixedSqlContractTests(unittest.TestCase):
                     sql, r"(?i)\[(?:pocctl|legacy)\]|\[dbo\]\.\["
                 )
 
+    def test_unknown_objects_are_checked_without_a_partial_type_allowlist(
+        self,
+    ):
+        """Include CLR functions, synonyms and sequences in DBA preflight."""
+        for filename in FILES:
+            with self.subTest(filename=filename):
+                sql = source(filename)
+                beginning = sql.index("FROM sys.objects o JOIN sys.schemas s")
+                end = sql.index("THROW 51005", beginning)
+                guard = sql[beginning:end]
+                self.assertIn("o.is_ms_shipped=0", guard)
+                self.assertIn("o.parent_object_id=0", guard)
+                self.assertNotIn("o.type IN", guard)
+
     def test_null_marker_version_and_unowned_existing_role_are_refused(self):
         """Keep standalone SQL guards strict despite SQL NULL comparisons."""
         for filename in FILES:

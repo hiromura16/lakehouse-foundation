@@ -123,9 +123,9 @@ class SqlServerError(ValueError):
 def endpoint(values, prefix):
     """Return an internal comparison tuple; never return it through an API."""
     return (
-        values.get(prefix + "_HOST", "").casefold(),
+        values.get(prefix + "_HOST", ""),
         values.get(prefix + "_PORT", "1433"),
-        values.get(prefix + "_DATABASE", "").casefold(),
+        values.get(prefix + "_DATABASE", ""),
     )
 
 
@@ -348,7 +348,7 @@ def ownership(cursor, values, role="demo"):
     prefix = "DEMO_SQLSERVER" if role == "demo" else "SOURCE_SQLSERVER"
     cursor.execute("SELECT DB_NAME()")
     row = cursor.fetchone()
-    if not row or row[0].casefold() != values[prefix + "_DATABASE"].casefold():
+    if not row or row[0] != values[prefix + "_DATABASE"]:
         raise SqlServerError(
             "The connected database did not match fixed settings."
         )

@@ -231,3 +231,5 @@ SQLの本番接続を試すボタンや、Docker socket、任意shell、既存�
 ## 固定疑似ERP/MESをSQL Serverへ投入する
 
 投入先に固定SQLとLanding併用の2方式を追加しました。従来のランダムschema方式と分け、DBAが固定DDLを適用した後に所有権・限定権限を診断します。書込み許可と共有sourceへの追加同意を両方必要とします。入力・型・run ID・有限microbatch・I/U/Dの手順は [固定SQL source](SQLSERVER-FIXED-DEMO.md) を参照してください。
+
+固定SQLの投入後は「処理・検証」でsnapshot/増分を明示実行し、「接続状態」の固定SQL観測欄でbatch、実watermark、CDCを照会します。CDC rebuildは同意後のqueue受付と、同じrequest IDの処理完了を区別して表示します。batch/CDC別のGold previewは件数上限付きで、全件検証の代わりではありません。[画面ごとの受入条件](SQLSERVER-FIXED-DEMO.md#8-current-statereplaygui監視)

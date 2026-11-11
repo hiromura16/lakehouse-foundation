@@ -27,6 +27,8 @@ ENV UV_OFFLINE=1
 COPY scripts/admin.py ./admin.py
 COPY scripts/sqlserver_demo.py ./scripts/sqlserver_demo.py
 COPY scripts/sqlserver_safety.sql ./scripts/sqlserver_safety.sql
+COPY scripts/sqlserver_batch.py ./scripts/sqlserver_batch.py
+COPY scripts/sql_batch_worker.py ./scripts/sql_batch_worker.py
 COPY medallion ./medallion
 COPY infra/cdc/*.py ./cdc/
 ENV PYTHONPATH=/opt/lakehouse

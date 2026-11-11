@@ -867,19 +867,24 @@ class WorkerProtocolExtensionTests(unittest.TestCase):
     def test_sql_provenance_is_added_only_to_sql_namespace_queries(self):
         self.worker.ROOT = ROOT
         sql = []
-        with (
-            mock.patch.object(self.worker, "ensure_tables"),
-            mock.patch.object(self.worker, "query", side_effect=sql.append),
-        ):
-            result = self.worker.medallion("sql_")
-        self.assertEqual(result["sql_statements"], 14)
-        silver = next(
-            statement
-            for statement in sql
-            if "sql_silver.erp_products" in statement
-        )
-        self.assertIn("_source_database", silver)
-        self.assertIn("_source_updated_at", silver)
+        for prefix in ("sql_", "sqlcdc_"):
+            with self.subTest(prefix=prefix):
+                sql.clear()
+                with (
+                    mock.patch.object(self.worker, "ensure_tables"),
+                    mock.patch.object(
+                        self.worker, "query", side_effect=sql.append
+                    ),
+                ):
+                    result = self.worker.medallion(prefix)
+                self.assertEqual(result["sql_statements"], 14)
+                silver = next(
+                    statement
+                    for statement in sql
+                    if prefix + "silver.erp_products" in statement
+                )
+                self.assertIn("_source_database", silver)
+                self.assertIn("_source_updated_at", silver)
         sql.clear()
         with (
             mock.patch.object(self.worker, "ensure_tables"),

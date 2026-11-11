@@ -263,3 +263,38 @@ SSRFの設定値、内部workerの例外、NO_PROXYとの違い、GUI保存と�
 設定を保存する人とDeployする人、sourceの不正行を直す人、n8n/Airflowの実行担当、blocked queryを確認する人、バックアップ/復元を行う人を決めます。各担当は「どの設定と保存物を使うか」「失敗時に何を再実行してよいか」「未受入は何か」を説明できる状態にします。
 
 DB資格情報や暗号鍵、会社の対応表、GUI exportの原本、Notebook outputを公開repoへ戻しません。報告書には確認結果と一般化した図を載せ、機密を含む証跡の管理先は会社の私有記録で引き継ぎます。[受入の評価票](reports/EVALUATION-PLAN.md)・[証跡対応表](reports/EVIDENCE-MATRIX.md)・[運用](OPERATIONS.md)
+
+## 固定SQL source・バッチ・CDCを追加するときの受入順
+
+この拡張は既存のLanding受入を終えた後に追加します。ブランチのコードが手元でテスト済みでも、会社DBの準備や実CDC成功を意味しません。親レビューと公開反映が済んだリビジョンを選び、[固定SQL sourceの詳細](SQLSERVER-FIXED-DEMO.md) を順に実施します。
+
+| 段階 | 担当と操作 | 合格の証拠・停止条件 |
+| --- | --- | --- |
+| 更新前 | Git SHA、private設定backup、各volume、旧capture/role/jobを私有記録へ控える | 未commit編集があれば上書きしない。旧データ・資格情報は公開repoへ戻さない |
+| Dokploy | private設定upgrade→dry-run→承認済み手順で既存serviceへ反映 | 大小6proxy変数とBuildKit設定の有無だけ確認。volume・管理者・Swarmを作り直さない |
+| Phase 1 | DBAの001→002→003→006、GUI診断、clean 20件の固定投入 | 所有権・3つの限定principal・固定6表。旧資産不変。広いwriterを無条件に許可しない |
+| Phase 2 | SOURCE readerで全snapshot→SQL用メダリオン | 6表のSource/Bronze件数、PK、日本語、decimal、NULL/空、原値と日時を照合。再実行skip |
+| Phase 3 | 別control writerを設定→control付きsnapshot→有限microbatch→増分 | checkpointed=true。成功ACK後だけ6watermarkが進む。replayで増殖なし。窓外遅延と物理削除は全件照合 |
+| Phase 4 | DBAの004→CDC設定とprofile反映 | 旧capture/job維持、固定6capture、専用connector RUNNING、Rawにr/c/u/d/tombstone。snapshot中は投入を停止 |
+| Phase 5 | Current/GoldとGUI監視、明示rebuild | DELETE後の現在値除去、Raw履歴保持、offset/lag、同一Raw snapshotから再構築。失敗を受付成功と混同しない |
+
+増分のcontrol writerはSOURCE readerやDEMO writerと別の既存DB principalです。指定された3アカウントだけで狭いcontrol principalが存在しない場合、DBAの準備が必要です。アプリがreaderの権限を拡大したり、新規loginを自動作成したりすることはありません。
+
+会社ではまずCDCを追加せず `demo,monitoring,bi` のままPhase 1〜3を確認します。その後 `CDC_SOURCE_MODE=fixed-demo` と `demo,monitoring,bi,cdc` に切り替えます。既存generic connector/history/stateは消さず、必要なら専用 `CDC_STATE_VOLUME_NAME` を指定します。同じLakehouse上で別sourceへ同じSQL分析namespaceを使い回しません。新しい空stateへ差し替えるだけでは既存Rawの処理再開を許可しません。
+
+**Bash / Zsh共通**
+
+```bash
+free -h
+docker stats --no-stream
+```
+
+CDC追加前後にメモリとSwapを計測します。Kafka/Connect/consumerのCompose上限だけから、約23 GiBのVMへ無条件に収まるとは判断しません。workerの件数照合、GUIの観測、DBAのAgent監視を私有の受入記録へ残します。
+
+## 固定SQL拡張を戻すとき
+
+1. 新しい素材投入とバッチ受付を止め、実行中jobとworker/CDCの結果を確認します。HTTP timeoutを処理停止の証拠にしません。
+2. 既存の管理入口でCDC consumer/connectorの処理を止める計画を立て、Kafka・state・Iceberg・private設定を一組で保全します。DBAと外部プロセスの停止順を調整します。
+3. 既知の互換リビジョンと設定へ戻します。新schemaを読めない旧コードを同じstateへ接続しません。profileを外すだけではSQL Serverのcaptureやcleanupは止まりません。
+4. CDC無効化が必要なら、DBAが履歴・独立capture/jobを確認し、別手順005へ明示同意します。新しい表やschema、watermark、volume、旧captureを削除するrollbackは提供しません。
+5. 途中のsnapshot/current materializationは表ごとにcommitされます。戻しただけで全表の世代が一致したとは扱わず、全snapshotまたは検証済みRaw rebuildで照合します。query取消未確定のblockedを自動解除しません。

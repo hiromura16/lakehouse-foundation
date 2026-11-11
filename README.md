@@ -188,7 +188,7 @@ python3 scripts/generate-demo.py --destination landing \
 ./scripts/lakehouse.sh verify
 ```
 
-通常のSQL素材投入は、専用DB・SOURCE/system DB拒否・明示同意の下で新規schemaへINSERTします。CDCテストの固定追加・更新・削除は、さらに専用DBの所有権tokenを照合します。通常のsource生成からworker・n8n・Airflowを起動しません。[素材投入](docs/DEMO-GUI.md) · [異常の期待結果](docs/ANOMALY-SCENARIOS.md)
+従来のランダムSQL schema方式は、専用DB・SOURCE/system DB拒否・明示同意の下で新規schemaへINSERTします。CDCテストの固定追加・更新・削除は、さらに専用DBの所有権tokenを照合します。通常のsource生成からworker・n8n・Airflowを起動しません。[素材投入](docs/DEMO-GUI.md) · [異常の期待結果](docs/ANOMALY-SCENARIOS.md)
 
 ## 必要なprofileだけを追加する
 
@@ -247,4 +247,4 @@ Dokploy管理ではGUIのStop、CLI管理では `./scripts/lakehouse.sh down` �
 
 この基盤は、固定の入力契約と明示的な処理APIを持つPoCの出発点です。GUIで設定できる範囲は [GUIの選択](docs/GUI-OPTIONS.md)、コード変更を伴う範囲は [拡張手順](docs/CUSTOMIZATION.md) で確認します。任意のMES/ERPスキーマを接続するだけで自動的に業務指標へ変換する機能ではありません。
 
-固定SQL Serverの疑似ERP/MESを使う場合は、[所有権付き固定sourceの手順](docs/SQLSERVER-FIXED-DEMO.md)を参照します。
+固定SQL Serverの疑似ERP/MESは、[所有権付き固定sourceの手順](docs/SQLSERVER-FIXED-DEMO.md)で準備します。GUIの固定投入→フルsnapshot→watermark増分→固定6表CDC→Raw履歴と再構築可能なCurrent Stateを段階的に検証できます。SOURCE readerは読取専用を維持し、checkpointには別の限定principalを使います。GUI・Swagger・固定Gold previewを備え、実SQL Server/Kafka/Icebergの受入は導入先で別途行います。

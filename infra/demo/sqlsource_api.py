@@ -73,6 +73,36 @@ class SqlDiagnostic(BaseModel):
     ]
 
 
+class CheckpointRow(BaseModel):
+    """Expose only one validated composite position and completed batch ID."""
+
+    model_config = ConfigDict(strict=True)
+    timestamp: str | None = Field(
+        pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z$"
+    )
+    primary_key: str | None = Field(pattern=r"^[!-~]{1,160}$")
+    snapshot_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class CheckpointStatus(BaseModel):
+    """Distinguish an absent control identity from an observed baseline."""
+
+    model_config = ConfigDict(strict=True)
+    configured: bool
+    baseline_complete: bool
+    watermarks: dict[
+        Literal[
+            "erp_products",
+            "erp_work_orders",
+            "erp_sales_orders",
+            "erp_shipments",
+            "mes_events",
+            "mes_downtime",
+        ],
+        CheckpointRow,
+    ]
+
+
 class BatchConsent(BaseModel):
     """Confirm downstream writes, without connection or SQL parameters."""
 
@@ -151,6 +181,34 @@ def sqlsource_router(store, jobs, authorize):
                     "message": "操作の完了を待ちます。",
                 },
             ) from None
+
+    @router.get("/checkpoints", response_model=CheckpointStatus)
+    def checkpoint_status():
+        """Observe actual SQL control rows, never acquire a write lease."""
+        if not jobs.operation.acquire(blocking=False):
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "OPERATION_RUNNING",
+                    "message": "操作の完了を待ってください。",
+                },
+            )
+        try:
+            return batch_module().inspect_checkpoints(
+                store.reader_settings(include_control=True)
+            )
+        except Exception:
+            raise HTTPException(
+                422,
+                detail={
+                    "code": "CHECKPOINT_UNAVAILABLE",
+                    "message": (
+                        "限定control設定・所有権・baselineを確認します。"
+                    ),
+                },
+            ) from None
+        finally:
+            jobs.operation.release()
 
     @router.get("/status", response_model=SqlDiagnostic)
     def source_status():

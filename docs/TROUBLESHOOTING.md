@@ -322,3 +322,9 @@ APIの待機timeout、workerのエラー、Trinoのquery取消は別の状態で
 ### SQL増分のbaseline・世代・結果不明
 
 まずcontrol付きsnapshotの `checkpointed=true` と6表のbaselineを確認します。限定control principalがない、3 identityが重複する、checkpointの世代がworkerと違う、全件置換が未完なら増分を強行しません。worker timeoutは終了の証拠ではありません。状態を再確認し、必要ならcontrol付きフルsnapshotで照合します。更新窓の外の遅延commitと物理DELETEは通常増分だけで検出できません。[保証範囲](SQLSERVER-FIXED-DEMO.md#6-watermark増分バッチ)
+
+## 固定SQLのCDCやrebuildが止まる
+
+まず `CDC_SOURCE_MODE` と保存先を確認します。genericの `cdc_*` とfixed-demoの `sqlcdc_*` は別です。Source reader、固定capture、private CA/Java truststore、既存connector設定を順に照合します。空payloadはtombstoneではなく、Raw保存後の解釈エラーとして止まる場合があります。
+
+rebuildの202は完了ではありません。同じrequest IDを再照会し、欠落Raw、offset gap、source identity不一致、query取消未確定を確認します。Rawやstateの削除、イベントのskip、offsetの手動巻戻しを成功への近道にしません。Icebergの複数表は独立commitなので、途中失敗後は利用を止め、保全した履歴から再照合します。[再生条件と保存境界](SQLSERVER-FIXED-DEMO.md#8-current-statereplaygui監視)

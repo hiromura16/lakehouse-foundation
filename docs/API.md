@@ -348,3 +348,17 @@ API仕様は `openapi.json` をクライアント生成の入力にできます�
 ### 増分とcheckpoint
 
 `POST /sql-source/batches/incremental` はstrictな同意だけを受け付け、6表のbaselineと別control writerを必要とします。snapshotはcontrol未設定でも利用できますが、その場合は `checkpointed=false` です。増分の成功は `checkpointed=true` を含む応答で確認します。抽出窓件数と変更件数・反映後件数を区別し、物理DELETEや窓を超える遅延を完全検出したとは扱いません。[順序と限界](SQLSERVER-FIXED-DEMO.md#6-watermark増分バッチ)
+
+### SQLバッチ・固定CDCの観測と再構築
+
+すべて既存のBearer認証を必要とし、Swagger UIにも表示します。接続先、認証、任意SQL/table/URLを要求パラメーターにしません。未準備・未観測を成功やlag=0で埋めません。
+
+| endpoint | 入力 | 応答の意味 |
+| --- | --- | --- |
+| `GET /sql-source/checkpoints` | 追加入力なし | 別control資格情報で実watermarkをSELECTだけで照会。configured/baseline_completeと固定6表の位置。読取readerへ書込み権限を追加しない |
+| `GET /sql-source/pipeline-status` | 追加入力なし | SQL分析表の件数、batch完了台帳、未完の適用状態。SQL checkpointとは別に確認 |
+| `GET /sql-source/cdc/status` | 追加入力なし | connector/task、内部consumerの観測時刻・offset/lag・rebuild状態、Raw/Current件数。driver/SQL例外の原文は出さない |
+| `POST /sql-source/cdc/rebuild` | strictな `{"confirm": true}` のみ | 202と32桁hex request_id、status=queued、completed=false。同じIDの状態をGETで追跡し、受付を処理完了にしない |
+| `GET /sql-source/preview` | `origin=batch|cdc`、`dataset=production|sales`、`limit=1..100` | allowlistのGoldだけを個別snapshot固定で参照。decimalは文字列・日付はISO。未知の列は公開しない |
+
+consumerの管理APIはCompose内部8001で、hostへ公開しません。GUI APIが固定URLへWORKER_TOKENを使って仲介し、tokenやtopicの実値を返しません。ブラウザから直接consumerへ接続する必要はありません。再構築の条件・非原子的な保存境界・rollbackは [Current Stateの手順](SQLSERVER-FIXED-DEMO.md#8-current-statereplaygui監視) を参照します。
