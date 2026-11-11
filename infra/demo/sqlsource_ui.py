@@ -45,3 +45,35 @@ def render_sql_source(call_api):
                             "SQL操作を受け付けました。完了を照会します。"
                         )
         st.caption("DMLの完了はKafka/Icebergへの到着成功を意味しません。")
+
+
+def render_sql_batches(call_api):
+    """Keep extraction separate from source generation and require consent."""
+    st.subheader("固定SQL sourceから取り込む")
+    st.caption(
+        "SOURCE readerで固定6表を読み、SQL用Bronze・Silver・Goldを更新します。"
+        "Landing用・CDC用の分析表は別です。読取り中は短時間のlockを使います。"
+    )
+    confirmed = st.checkbox(
+        "固定SQL sourceの全snapshotを取得しSQL用分析表を置換する",
+        key="sql-snapshot-consent",
+    )
+    if st.button(
+        "SQL Serverフルスナップショット",
+        key="sql-snapshot",
+        disabled=not confirmed,
+    ):
+        result = call_api(
+            "/sql-source/batches/snapshot",
+            method="POST",
+            payload={"confirm": True},
+        )
+        if result is not None:
+            st.session_state["active_job"] = result["id"]
+            st.session_state["job_kind"] = "pipeline"
+            st.session_state["job_result"] = result
+            st.success("snapshot処理を受け付けました。最終状態を確認します。")
+    st.caption(
+        "途中失敗では表の世代が混ざることがあります。再実行で収束を確認し、"
+        "SQL用GoldをSupersetへ登録します。workerのtimeoutは結果不明です。"
+    )

@@ -390,3 +390,9 @@ GUI/API/CLI/n8n/Airflowは、同じworkerの登録済み処理へ至る別の入
 4. 原因を直し、同じ入力・同じ環境で再実行します。別の素材を追加してからやり直すと、比較対象まで変わります。
 
 定期運用へ進む場合は、実行担当をn8nかAirflowの一つに決めます。開始時刻、入力完成の判定、再試行上限、二重起動時の扱い、通知、成功後に利用者へ公開するタイミングを先に定義します。同梱の手動フロー/DAGに定期実行や通知が実装済みと説明しないでください。
+
+## 固定SQL sourceからBIまでの操作
+
+所有権付きSQLの準備・診断・固定投入は [固定SQL source](SQLSERVER-FIXED-DEMO.md) を使います。素材の投入後、処理・検証タブでSQL Serverフルスナップショットを明示実行します。SQL用Goldは `iceberg.sql_gold.factory_daily_production` です。通常Landingの `gold` と取り違えません。
+
+Superset 6.1.0でSQL用GoldをDatasetへ登録したら、Charts → 新規chart → **Line Chart** を選びます。Data側で **X-axis** を `production_date`、**Metrics** を `AVG(yield_pct)`、**Dimensions** を `factory_id` とし、名前を「工場別 日次歩留まり率」として「製造実績ダッシュボード」へ保存します。日時・工場の各粒度が1行であることを先に確認します。複数日・工場の比率を総合評価するときは単純平均と全体比率を区別します。[指標の意味](POC-TOOLS.md)

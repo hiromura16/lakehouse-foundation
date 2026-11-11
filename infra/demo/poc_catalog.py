@@ -484,6 +484,13 @@ def capabilities(values=None) -> dict:
         ("save_settings", "PATCH", "/settings", "write", "private設定の保存"),
         ("generate", "POST", "/jobs", "write", "合成素材だけを生成"),
         (
+            "sql_snapshot",
+            "POST",
+            "/sql-source/batches/snapshot",
+            "write",
+            "固定SQLの全件snapshotとSQL用メダリオン更新",
+        ),
+        (
             "fixed_sql_status",
             "GET",
             "/sql-source/status",

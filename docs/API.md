@@ -340,3 +340,7 @@ API仕様は `openapi.json` をクライアント生成の入力にできます�
 `GET /sql-source/status` は固定schema・所有権・権限・6表の状態を読み取ります。DB接続先・認証・所有権hashは返しません。`POST /sql-source/demo/{insert|update|delete}` はstrict booleanの `confirm: true` と12桁hexの `run_id` を受け付け、固定試験productへのDMLを非同期実行します。任意table・SQLは受け付けません。
 
 `POST /jobs` のdestinationは `fixed-sqlserver` / `landing-fixed-sqlserver` を追加し、`allow_sql_write` と `confirm_shared_source_database` をともにtrueとします。`run_id` は省略時に自動生成します。SQLのDMLや素材生成成功と、後続取込の成功は別です。[安全条件・準備](SQLSERVER-FIXED-DEMO.md)
+
+### SQL snapshotの明示処理
+
+`POST /sql-source/batches/snapshot` は `{"confirm": true}` だけを受け付ける非同期jobです。SOURCE readerで固定6表を読み、共有Landingの検査済みJSONをworkerへ渡します。workerへ送るのは固定action・batch ID・観測時刻だけで、SQL認証は含みません。全6表・派生SQL・件数照合後に完了し、timeoutは結果不明とします。[再実行と切り戻し](SQLSERVER-FIXED-DEMO.md#5-フルスナップショットを取り込む)

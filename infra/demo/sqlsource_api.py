@@ -5,12 +5,14 @@ All DB exceptions stop at a fixed error boundary. Source reader credentials
 are never promoted to a writer; the DBA applies owned DDL separately.
 """
 
+import importlib
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from job_manager import JobConflict, OperationFailure
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from service import fixed_sql_module
+from sqlsource_client import public_result, send_batch
 
 
 class SqlConsent(BaseModel):
@@ -71,6 +73,26 @@ class SqlDiagnostic(BaseModel):
     ]
 
 
+class BatchConsent(BaseModel):
+    """Confirm downstream writes, without connection or SQL parameters."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    confirm: bool
+
+    @model_validator(mode="after")
+    def explicit_consent(self):
+        """Require a strict boolean true for processing writes."""
+        if self.confirm is not True:
+            raise ValueError("Explicit processing consent is required.")
+        return self
+
+
+def batch_module():
+    """Load the reader with the shared process-local TLS safety adapter."""
+    fixed_sql_module()  # Adds only this repository's scripts to import path.
+    return importlib.import_module("sqlserver_batch")
+
+
 def sqlsource_router(store, jobs, authorize):
     """Bind fixed operations to the applied private configuration snapshot."""
     router = APIRouter(
@@ -78,6 +100,44 @@ def sqlsource_router(store, jobs, authorize):
         tags=["固定SQL source"],
         dependencies=[Depends(authorize)],
     )
+
+    @router.post("/batches/snapshot", status_code=202)
+    def snapshot(body: BatchConsent):
+        """Queue a read-only source snapshot and worker materialization."""
+        del body  # Validation already required explicit processing consent.
+        values = store.reader_settings()
+
+        def run_snapshot(_):
+            """Return success only after a matching worker acknowledgement."""
+            try:
+
+                def callback(batch_id, stamp):
+                    """Send file identity; keep credentials source-side."""
+                    return send_batch(
+                        store.applied.get("WORKER_TOKEN", ""), batch_id, stamp
+                    )
+
+                return public_result(
+                    batch_module().run_snapshot(values, jobs.output, callback)
+                )
+            except OperationFailure:
+                raise
+            except Exception:
+                raise OperationFailure(
+                    "SQL_SNAPSHOT_FAILED",
+                    "SOURCEの読取権限・所有権・型とworkerの状態を確認します。",
+                ) from None
+
+        try:
+            return jobs.submit_pipeline("sql-snapshot", run_snapshot)
+        except JobConflict:
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "OPERATION_RUNNING",
+                    "message": "操作の完了を待ちます。",
+                },
+            ) from None
 
     @router.get("/status", response_model=SqlDiagnostic)
     def source_status():

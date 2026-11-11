@@ -67,8 +67,20 @@ class Cursor:
         self.calls.append((statement, arguments))
         self.next = None
         table = re.search(r"\[lh_demo_(?:erp|mes)\]\.\[[a-z_]+\]", statement)
-        if statement.startswith("SELECT run_id, original_values FROM "):
-            self.next = self.rows.get((table[0], arguments[0]))
+        if (
+            statement.startswith("SELECT ")
+            and ", run_id, original_values FROM " in statement
+        ):
+            # Model a case-insensitive SQL collation with space padding, while
+            # keeping the actual stored PK visible in the returned row.
+            requested = arguments[0].casefold().rstrip(" ")
+            for (origin, key), values in self.rows.items():
+                if (
+                    origin == table[0]
+                    and key.casefold().rstrip(" ") == requested
+                ):
+                    self.next = (key, *values)
+                    break
         elif statement.startswith("INSERT INTO ") and table:
             if self.fail_insert == table[0]:
                 raise RuntimeError("synthetic-driver-private-information")
@@ -205,6 +217,32 @@ class BoundaryTests(unittest.TestCase):
             values.pop(key)
             with self.subTest(setting=key):
                 with self.assertRaises(DEMO.SqlServerError):
+                    DEMO.validate_settings(values, role="control")
+
+    def test_control_principal_cannot_reuse_source_or_demo_identity(self):
+        for reused in ("SOURCE_SQLSERVER_USER", "DEMO_SQLSERVER_USER"):
+            with self.subTest(reused=reused):
+                settings = {
+                    **VALUES,
+                    "SOURCE_SQLSERVER_CONTROL_USER": VALUES[reused].upper(),
+                }
+                driver = mock.Mock()
+                with mock.patch.dict(
+                    sys.modules, {"pymssql": SimpleNamespace(connect=driver)}
+                ):
+                    with self.assertRaisesRegex(
+                        DEMO.SqlServerError, "must differ"
+                    ):
+                        with DEMO.connection(settings, role="control"):
+                            self.fail("A reused control principal connected")
+                driver.assert_not_called()
+
+    def test_control_missing_comparison_identity_is_not_assumed_safe(self):
+        for missing in ("SOURCE_SQLSERVER_USER", "DEMO_SQLSERVER_USER"):
+            values = dict(VALUES)
+            values.pop(missing)
+            with self.subTest(missing=missing):
+                with self.assertRaisesRegex(DEMO.SqlServerError, "identities"):
                     DEMO.validate_settings(values, role="control")
 
     def test_missing_writer_is_reported_without_echoing_secrets(self):
@@ -481,6 +519,57 @@ class WriteTests(unittest.TestCase):
         )
         self.assertEqual(self.handle.commits, 2)
 
+    def test_case_or_space_equivalent_source_key_does_not_update_any_row(self):
+        for physical in ("p001", "P001 "):
+            with self.subTest(physical=physical):
+                self.handle = Handle()
+                self.handle.reader.rows[
+                    ("[lh_demo_erp].[products]", physical)
+                ] = (RUN, "existing-original")
+                before = copy.deepcopy(self.handle.reader.rows)
+                with self.assertRaisesRegex(DEMO.SqlServerError, "collation"):
+                    DEMO.write_data(
+                        GENERATOR.build_data(42, 1, 7, "clean"),
+                        VALUES,
+                        run_id=RUN,
+                        consent=True,
+                    )
+                self.assertEqual(self.handle.reader.rows, before)
+                self.assertEqual(self.handle.commits, 0)
+                self.assertEqual(self.handle.rollbacks, 1)
+                self.assertFalse(
+                    any(
+                        statement.startswith(("INSERT ", "UPDATE ", "DELETE "))
+                        for statement, _ in self.handle.reader.calls
+                    )
+                )
+
+    def test_case_or_space_equivalent_cdc_key_rejects_each_mutation(self):
+        key = "CDC-" + RUN
+        for physical in (key.lower(), key + " "):
+            for action in ("insert", "update", "delete"):
+                with self.subTest(physical=physical, action=action):
+                    self.handle = Handle()
+                    self.handle.reader.rows[
+                        ("[lh_demo_erp].[products]", physical)
+                    ] = (RUN, "existing-original")
+                    before = copy.deepcopy(self.handle.reader.rows)
+                    with self.assertRaisesRegex(
+                        DEMO.SqlServerError, "collation"
+                    ):
+                        DEMO.mutate(VALUES, action, run_id=RUN, consent=True)
+                    self.assertEqual(self.handle.reader.rows, before)
+                    self.assertEqual(self.handle.commits, 0)
+                    self.assertEqual(self.handle.rollbacks, 1)
+                    self.assertFalse(
+                        any(
+                            statement.startswith(
+                                ("INSERT ", "UPDATE ", "DELETE ")
+                            )
+                            for statement, _ in self.handle.reader.calls
+                        )
+                    )
+
     def test_source_updated_at_is_server_owned_not_generator_history(self):
         data = GENERATOR.build_data(42, 1, 7, "clean")
         DEMO.write_data(data, VALUES, run_id=RUN, consent=True)
@@ -628,6 +717,9 @@ class PermissionTests(unittest.TestCase):
         denied_object=None,
         column_permission=None,
         role="demo",
+        object_type="U",
+        unknown_object=False,
+        unknown_permission=False,
     ):
         cursor = mock.Mock()
         result = [None]
@@ -642,7 +734,7 @@ class PermissionTests(unittest.TestCase):
                 result[0] = tuple(
                     [None if unknown else int(broad)] + [0] * (count - 1)
                 )
-            elif "fn_my_permissions" in statement:
+            elif statement.startswith("SELECT permission_name FROM"):
                 result[0] = [("CONTROL",)] if dangerous else []
             elif "FROM sys.sql_modules m" in statement:
                 result[0] = (DEMO.SAFETY_DEFINITION, 1)
@@ -661,15 +753,19 @@ class PermissionTests(unittest.TestCase):
                         or (effective == 1 and name not in arguments[2:])
                     ):
                         result[0] = (999, 1)
+            elif "o.type NOT IN" in statement:
+                result[0] = (999,) if unknown_object else None
             elif "sys.objects o" in statement:
                 operation = arguments[0]
                 name = denied_object[1] if denied_object else None
+                audited_kind = "'" + object_type + "'" in statement
                 unsafe = (
-                    denied_object
+                    audited_kind
+                    and denied_object
                     and operation == denied_object[0]
-                    and name not in arguments[2:]
+                    and name not in arguments[1:]
                 )
-                result[0] = (999,) if unsafe else None
+                result[0] = (999,) if unsafe or unknown_permission else None
             elif "SELECT COUNT_BIG(*) FROM sys.tables" in statement:
                 result[0] = (len(arguments),)
             elif (
@@ -694,6 +790,78 @@ class PermissionTests(unittest.TestCase):
         cursor.fetchall.side_effect = lambda: result[0]
         cursor.statements = statements
         return cursor
+
+    def test_clr_synonym_external_sequence_and_queue_grants_are_refused(self):
+        cases = (
+            ("PC", "EXECUTE", "source"),
+            ("FN", "EXECUTE", "source"),
+            ("FS", "EXECUTE", "source"),
+            ("AF", "EXECUTE", "source"),
+            ("IF", "SELECT", "demo"),
+            ("TF", "SELECT", "demo"),
+            ("FT", "SELECT", "demo"),
+            ("SN", "INSERT", "demo"),
+            ("SN", "UPDATE", "source"),
+            ("SN", "DELETE", "control"),
+            ("SN", "EXECUTE", "source"),
+            ("ET", "SELECT", "demo"),
+            ("SO", "UPDATE", "source"),
+            ("SQ", "RECEIVE", "source"),
+        )
+        for kind, operation, role in cases:
+            with self.subTest(kind=kind, operation=operation, role=role):
+                cursor = self.cursor(
+                    object_type=kind,
+                    denied_object=(operation, "legacy.unrelated"),
+                    role=role,
+                )
+                self.assertFalse(DEMO.permissions_safe(cursor, role=role))
+
+    def test_unknown_object_or_missing_permission_metadata_is_refused(self):
+        for options in (
+            {"unknown_object": True},
+            {"unknown_permission": True},
+        ):
+            with self.subTest(options=options):
+                self.assertFalse(DEMO.permissions_safe(self.cursor(**options)))
+
+    def test_query_contract_uses_applicable_permissions_not_guessed_pairs(
+        self,
+    ):
+        """Inspect SQL contracts; this is not a SQL Server execution test."""
+        cursor = self.cursor()
+        self.assertTrue(DEMO.permissions_safe(cursor))
+        object_queries = [
+            statement
+            for statement, _ in cursor.statements
+            if "sys.objects o" in statement
+        ]
+        self.assertTrue(object_queries)
+        unknown = [
+            statement
+            for statement in object_queries
+            if "o.type NOT IN" in statement
+        ]
+        self.assertEqual(len(unknown), 1)
+        applicable = [
+            statement
+            for statement in object_queries
+            if "OUTER APPLY sys.fn_my_permissions" in statement
+        ]
+        self.assertEqual(len(applicable), 9)
+        for statement in applicable:
+            self.assertIn("COALESCE(o.parent_object_id,0)>0", statement)
+            self.assertIn("p.permission_name IS NULL", statement)
+            self.assertNotIn("HAS_PERMS_BY_NAME", statement)
+            for kind in ("PC", "FT", "SN", "ET", "SO", "SQ"):
+                self.assertIn("'" + kind + "'", statement)
+        self.assertTrue(
+            {"C", "D", "F", "PK", "UQ", "EC"}
+            <= set(DEMO.NON_GRANTABLE_CHILD_TYPES)
+        )
+        self.assertFalse(
+            {"C", "F", "PK", "UQ", "EC"} & set(DEMO.PERMISSION_OBJECT_TYPES)
+        )
 
     def test_broad_role_unknown_membership_and_dangerous_grant_are_denied(
         self,

@@ -259,3 +259,7 @@ extractorには全取り込みサービスを止める分散lockや、6表をま
 ## 合成データの固定SQL sourceを読む場合
 
 既存の汎用抽出は読取り専用のLanding bridgeです。固定6表を同じ開発DBで使う場合は、所有権・限定writer・GUI同意を備えた [固定SQL source](SQLSERVER-FIXED-DEMO.md) を使います。SOURCE readerへ書込み権限を足してwatermarkを更新しません。既存抽出のNULL→空文字という旧契約と、固定sourceの原値JSON/NULL保持を同一視しません。
+
+### 固定6表のsnapshot経路
+
+固定SQL modeの明示snapshotは原値JSONを使い、SQL実PK・UTC7桁の更新時刻とともに読取り専用で抽出します。共有Landingに完全なJSONを公開した後、DB認証を持たないworkerがSQL用の層を更新します。元値のNULLと空文字を区別し、件数照合後に完了台帳を確定します。sourceの型付き列だけをJSONと非同期に手動変更しません。[操作・上限・再実行](SQLSERVER-FIXED-DEMO.md#5-フルスナップショットを取り込む)

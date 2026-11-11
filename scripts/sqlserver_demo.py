@@ -57,6 +57,43 @@ CAPTURE_INSTANCES = {
     for name, item in TABLES.items()
 }
 SYSTEM_DATABASES = {"master", "model", "msdb", "tempdb"}
+# These are schema-contained OBJECT securables, not an applicability matrix
+# for individual permission names. fn_my_permissions supplies the permissions
+# that actually apply to each kind, including CLR routines and synonyms.
+PERMISSION_OBJECT_TYPES = (
+    "U",
+    "V",
+    "P",
+    "PC",
+    "X",
+    "FN",
+    "FS",
+    "AF",
+    "IF",
+    "TF",
+    "FT",
+    "SN",
+    "ET",
+    "SO",
+    "SQ",
+    "R",
+    "D",
+)
+# Child constraints, DML triggers and internal metadata cannot receive
+# independent OBJECT grants. Standalone legacy defaults (D, parent=0) remain
+# audited. Unknown visible user-object kinds are refused for manual review.
+NON_GRANTABLE_CHILD_TYPES = (
+    "C",
+    "D",
+    "F",
+    "PK",
+    "UQ",
+    "EC",
+    "TR",
+    "TA",
+    "IT",
+    "ST",
+)
 IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
 RUN_ID = re.compile(r"[0-9a-f]{12}")
 TLS_LOCK = threading.RLock()
@@ -135,6 +172,26 @@ def validate_settings(values, *, consent=False, role="demo"):
         ):
             raise SqlServerError(
                 "Complete the selected fixed SQL credentials."
+            )
+    if role == "control":
+        # A missing comparison identity is not proof of separate principals.
+        # Only usernames are needed here; DEMO credentials stay excluded from
+        # the batch reader/control configuration passed by SettingsStore.
+        principals = [
+            selected.get(key, "")
+            for key in (
+                "SOURCE_SQLSERVER_CONTROL_USER",
+                "SOURCE_SQLSERVER_USER",
+                "DEMO_SQLSERVER_USER",
+            )
+        ]
+        if any(not isinstance(user, str) or not user for user in principals):
+            raise SqlServerError(
+                "Configure the three distinct fixed SQL principal identities."
+            )
+        if len({user.casefold() for user in principals}) != 3:
+            raise SqlServerError(
+                "The control principal must differ from source and demo users."
             )
     host = selected[prefix + "_HOST"]
     database = selected[prefix + "_DATABASE"]
@@ -448,34 +505,41 @@ def permissions_safe(cursor, role="demo"):
         "UPDATE": writable,
         "DELETE": deletable,
         "EXECUTE": [SAFETY_CHECKER] if role != "source" else [],
+        "RECEIVE": [],
         "ALTER": [],
         "CONTROL": [],
         "TAKE OWNERSHIP": [],
     }
     if role == "source":
         allowed_by_operation.pop("SELECT")
+    known_types = ",".join(
+        "'" + kind + "'" for kind in PERMISSION_OBJECT_TYPES
+    )
+    child_types = ",".join(
+        "'" + kind + "'" for kind in NON_GRANTABLE_CHILD_TYPES
+    )
+    eligible = (
+        "o.is_ms_shipped=0 AND NOT (COALESCE(o.parent_object_id,0)>0 "
+        "AND COALESCE(o.type,'') IN (" + child_types + "))"
+    )
+    # A future or unsupported securable must not fall outside a finite audit
+    # list and silently pass. Refuse it without trying inapplicable grants.
+    cursor.execute(
+        "SELECT TOP (1) o.object_id FROM sys.objects o WHERE "
+        + eligible
+        + " AND (o.type IS NULL OR o.parent_object_id IS NULL "
+        "OR o.type NOT IN (" + known_types + "))"
+    )
+    if cursor.fetchone():
+        return False
     for operation, allowed in allowed_by_operation.items():
-        # Use only object kinds to which the tested permission applies. For
-        # example EXECUTE against a table can yield NULL rather than false.
-        kinds = (
-            "('P','FN','AF','FS')"
-            if operation == "EXECUTE"
-            else (
-                "('U','V','IF','TF')"
-                if operation == "SELECT"
-                else (
-                    "('U','V')"
-                    if operation in {"INSERT", "UPDATE", "DELETE"}
-                    else "('U','V','P','FN','IF','TF')"
-                )
-            )
-        )
-        check = (
-            "HAS_PERMS_BY_NAME(QUOTENAME(s.name)+N'.'+QUOTENAME(o.name),"
-            " N'OBJECT', %s)"
-        )
-        clause = check + " IS NULL OR (" + check + " = 1"
-        arguments = [operation, operation]
+        # Calling HAS_PERMS_BY_NAME with a guessed permission/object pairing
+        # can produce NULL for an unsupported permission, or miss CLR/synonym
+        # grants when the type list is incomplete. Audit effective rows,
+        # including column grants. OUTER APPLY also retains an empty/failed
+        # lookup as NULL, so incomplete metadata cannot silently pass.
+        clause = "p.permission_name IS NULL OR (p.permission_name=%s"
+        arguments = [operation]
         if allowed:
             clause += (
                 " AND s.name+N'.'+o.name NOT IN ("
@@ -486,10 +550,13 @@ def permissions_safe(cursor, role="demo"):
         clause += ")"
         cursor.execute(
             "SELECT TOP (1) o.object_id FROM sys.objects o JOIN "
-            "sys.schemas s ON o.schema_id=s.schema_id WHERE "
-            "o.is_ms_shipped=0 AND o.type IN "
-            + kinds
-            + " AND ("
+            "sys.schemas s ON o.schema_id=s.schema_id OUTER APPLY "
+            "sys.fn_my_permissions(QUOTENAME(s.name)+N'.'+"
+            "QUOTENAME(o.name),N'OBJECT') p WHERE "
+            + eligible
+            + " AND o.type IN ("
+            + known_types
+            + ") AND ("
             + clause
             + ")",
             tuple(arguments),
@@ -871,7 +938,9 @@ def write_data(
             primary = "[" + item["pk"] + "]"
             for key, typed, payload in rows:
                 cursor.execute(
-                    "SELECT run_id, original_values FROM "
+                    "SELECT "
+                    + primary
+                    + ", run_id, original_values FROM "
                     + target
                     + " WITH (UPDLOCK,HOLDLOCK) WHERE "
                     + primary
@@ -879,12 +948,20 @@ def write_data(
                     (key,),
                 )
                 prior = cursor.fetchone()
-                if prior and prior[0] != run_id:
+                # SQL collations may compare case, accents or trailing spaces
+                # as equal. Never update an equivalent-but-different physical
+                # PK while recording another key in original_values.
+                if prior and prior[0] != key:
+                    raise SqlServerError(
+                        "A SQL-collation key collision was refused; existing "
+                        "data was preserved."
+                    )
+                if prior and prior[1] != run_id:
                     raise SqlServerError(
                         "A fixed source key belongs to another run; existing "
                         "data was preserved."
                     )
-                if prior and prior[1] == payload:
+                if prior and prior[2] == payload:
                     result["skipped"] += 1
                     continue
                 if prior:
@@ -950,13 +1027,18 @@ def mutate(values, action, *, run_id, consent=False):
         cursor = handle.cursor()
         check_writer(cursor, selected)
         cursor.execute(
-            "SELECT run_id, original_values FROM "
+            "SELECT product_id, run_id, original_values FROM "
             + target
             + " WITH (UPDLOCK,HOLDLOCK) WHERE product_id=%s",
             (key,),
         )
         previous = cursor.fetchone()
-        if previous and previous[0] != run_id:
+        if previous and previous[0] != key:
+            raise SqlServerError(
+                "A SQL-collation CDC key collision was refused; existing "
+                "data was preserved."
+            )
+        if previous and previous[1] != run_id:
             raise SqlServerError(
                 "The CDC test product is not owned by this run."
             )
