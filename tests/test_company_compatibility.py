@@ -122,6 +122,47 @@ class PrivateSettingsCompatibilityTests(
 ):
     """Keep deployment choices and credentials through proxy normalization."""
 
+    def test_fixed_batch_defaults_and_bounded_policy_are_validated(self):
+        """Never turn an invalid overlap into an unbounded SQL scan."""
+        original = self.read_literal()
+        self.assertEqual(
+            original["SOURCE_SQLSERVER_BATCH_OVERLAP_SECONDS"], "300"
+        )
+        self.assertEqual(
+            original["SOURCE_SQLSERVER_BATCH_SAFETY_LAG_SECONDS"], "5"
+        )
+        self.assertEqual(original["SOURCE_SQLSERVER_CONTROL_PASSWORD"], "")
+        for suffix, value in (
+            ("OVERLAP_SECONDS", "0"),
+            ("OVERLAP_SECONDS", "86401"),
+            ("SAFETY_LAG_SECONDS", "-1"),
+            ("SAFETY_LAG_SECONDS", "1.5"),
+        ):
+            values = {**original, "SOURCE_SQLSERVER_BATCH_" + suffix: value}
+            self.write_literal(values)
+            with self.assertRaises(ValueError):
+                SETTINGS.load(self.env_file)
+
+    def test_batch_upgrade_preserves_control_and_ownership_credentials(self):
+        """Adding overlap policy must not rotate an installed ownership key."""
+        original = self.read_literal()
+        original.pop("SOURCE_SQLSERVER_BATCH_OVERLAP_SECONDS")
+        original.pop("SOURCE_SQLSERVER_BATCH_SAFETY_LAG_SECONDS")
+        original["SOURCE_SQLSERVER_CONTROL_PASSWORD"] = "synthetic-control"
+        self.write_literal(original)
+        self.configure("--upgrade")
+        upgraded = self.read_literal()
+        self.assertEqual(
+            upgraded["SOURCE_SQLSERVER_BATCH_OVERLAP_SECONDS"], "300"
+        )
+        for key in (
+            "SOURCE_SQLSERVER_CONTROL_PASSWORD",
+            "DEMO_SQLSERVER_OWNERSHIP_TOKEN",
+            "DEMO_SQLSERVER_INSTALLATION_ID",
+            "S3_SECRET_KEY",
+        ):
+            self.assertEqual(upgraded[key], original[key])
+
     def test_buildkit_default_is_generated_and_not_a_secret(self):
         """Persist a strict private switch without treating it as a token."""
         values = self.read_literal()

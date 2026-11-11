@@ -429,3 +429,7 @@ Docker 29／Buildx Bake／社内proxyで判明した互換性修正の取り込�
 ## 固定SQL sourceの追加設定
 
 固定schema・shared source許可・installation ID・ownership token・暗号化とPoC証明書検証の既定を [固定SQL source設定表](SQLSERVER-FIXED-DEMO.md#1-private設定を生成upgradeする) にまとめています。生成/upgradeは既存値を保持します。固定schemaを任意名へ変更したり、SOURCE認証をwriterへ転用したりしません。
+
+### SQLバッチの制御principalと窓
+
+`SOURCE_SQLSERVER_CONTROL_USER/PASSWORD` は空が既定で、SOURCE readerやDEMO writerとは異なる既存principalを指定します。接続先とTLSはSOURCEの設定を使います。重なり窓 `SOURCE_SQLSERVER_BATCH_OVERLAP_SECONDS=300`（1〜86400）、安全遅延 `SOURCE_SQLSERVER_BATCH_SAFETY_LAG_SECONDS=5`（0〜3600）はprivate設定・GUIで保存し、再配置後に反映します。単に窓を広げても完全CDCやDELETE検出にはなりません。[baseline・checkpoint・復旧](SQLSERVER-FIXED-DEMO.md#6-watermark増分バッチ)

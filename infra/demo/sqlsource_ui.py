@@ -77,3 +77,30 @@ def render_sql_batches(call_api):
         "途中失敗では表の世代が混ざることがあります。再実行で収束を確認し、"
         "SQL用GoldをSupersetへ登録します。workerのtimeoutは結果不明です。"
     )
+    st.info(
+        "増分の前に専用control writerを設定し、snapshotの結果で"
+        "checkpointed=trueを確認します。readerへ書込み権限は追加しません。"
+    )
+    incremental = st.checkbox(
+        "重ね読みした増分を反映し、成功後だけ専用watermarkを更新する",
+        key="sql-incremental-consent",
+    )
+    if st.button(
+        "Watermark増分バッチ", key="sql-incremental", disabled=not incremental
+    ):
+        result = call_api(
+            "/sql-source/batches/incremental",
+            method="POST",
+            payload={"confirm": True},
+        )
+        if result is not None:
+            st.session_state["active_job"] = result["id"]
+            st.session_state["job_kind"] = "pipeline"
+            st.session_state["job_result"] = result
+            st.success(
+                "増分処理を受け付けました。完了とcheckpointを確認します。"
+            )
+    st.caption(
+        "countsは重ね読みを含む抽出件数です。新規行数とは異なります。"
+        "窓を超える遅延commit・物理DELETEは全件照合かCDCで補います。"
+    )

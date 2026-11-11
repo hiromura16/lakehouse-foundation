@@ -16,7 +16,8 @@ import os
 import re
 import sys
 import tempfile
-from datetime import datetime
+from contextlib import contextmanager
+from datetime import datetime, timedelta
 from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
@@ -129,6 +130,80 @@ def source_identity(values):
     ).hexdigest()
 
 
+def batch_policy(values):
+    """Bound the explicitly documented overlap and visibility safety window."""
+    result = []
+    for key, default, minimum in (
+        ("SOURCE_SQLSERVER_BATCH_OVERLAP_SECONDS", "300", 1),
+        ("SOURCE_SQLSERVER_BATCH_SAFETY_LAG_SECONDS", "5", 0),
+    ):
+        value = values.get(key, default)
+        if (
+            not isinstance(value, str)
+            or not value.isdigit()
+            or not (minimum <= int(value) <= 86400)
+        ):
+            raise BatchError("Invalid bounded SQL batch timing policy.")
+        result.append(int(value))
+    if result[0] < result[1]:
+        raise BatchError("SQL overlap must cover the configured safety lag.")
+    return tuple(result)
+
+
+def subtract_seconds(value, seconds):
+    """Subtract whole seconds while preserving the seventh fractional digit."""
+    value = canonical_timestamp(value)
+    try:
+        shifted = datetime.fromisoformat(value[:19]) - timedelta(
+            seconds=seconds
+        )
+    except (ValueError, OverflowError):
+        raise BatchError(
+            "SQL batch timing window is outside datetime2."
+        ) from None
+    return shifted.strftime("%Y-%m-%dT%H:%M:%S") + value[19:]
+
+
+def validate_checkpoints(checkpoints, tables, *, required=False):
+    """Refuse partial, unknown or internally inconsistent control rows."""
+    if (
+        not isinstance(checkpoints, dict)
+        or (checkpoints and set(checkpoints) != set(tables))
+        or (required and set(checkpoints) != set(tables))
+    ):
+        raise BatchError(
+            "A complete six-table SQL snapshot baseline is required."
+        )
+    snapshots = set()
+    for row in checkpoints.values():
+        if not isinstance(row, dict) or set(row) != {
+            "timestamp",
+            "primary_key",
+            "snapshot_id",
+        }:
+            raise BatchError("Invalid SQL batch checkpoint shape.")
+        stamp, key = row["timestamp"], row["primary_key"]
+        if stamp is None:
+            if key is not None:
+                raise BatchError("An empty SQL watermark cannot have a key.")
+        elif (
+            canonical_timestamp(stamp) != stamp
+            or not isinstance(key, str)
+            or not BUSINESS_KEY.fullmatch(key)
+        ):
+            raise BatchError("Invalid composite SQL watermark.")
+        if not isinstance(row["snapshot_id"], str) or not re.fullmatch(
+            r"[0-9a-f]{64}", row["snapshot_id"]
+        ):
+            raise BatchError("The SQL checkpoint has no completed batch ID.")
+        snapshots.add(row["snapshot_id"])
+    if len(snapshots) > 1:
+        raise BatchError(
+            "SQL checkpoint rows are from different batch generations."
+        )
+    return checkpoints
+
+
 def safe_landing(path):
     """Require an external landing directory without symlink parents."""
     path = Path(path).expanduser().absolute()
@@ -172,8 +247,8 @@ def publish_exact(path, payload):
         temporary.unlink(missing_ok=True)
 
 
-def read_snapshot(values, adapter, max_rows):
-    """Read six tables under shared locks before publishing any files."""
+def read_snapshot(values, adapter, max_rows, *, checkpoints=None):
+    """Read six full tables or a bounded overlap window under shared locks."""
     if type(max_rows) is not int or not 1 <= max_rows <= MAX_ROWS:
         raise BatchError("SQL snapshot row limit must be 1..100000.")
     selected = adapter.validate_settings(values, role="source")
@@ -184,7 +259,7 @@ def read_snapshot(values, adapter, max_rows):
         "source_system": "sqlserver-fixed-demo",
         "source_identity": source_identity(selected),
         "source_database": selected["SOURCE_SQLSERVER_DATABASE"],
-        "mode": "snapshot",
+        "mode": "incremental" if checkpoints is not None else "snapshot",
         "tables": {},
     }
     # Reserve ample JSON framing overhead while checking rows as they arrive.
@@ -211,9 +286,41 @@ def read_snapshot(values, adapter, max_rows):
             cursor.fetchone()
         cursor.execute("SELECT CONVERT(varchar(27), SYSUTCDATETIME(), 126)")
         observed_at = canonical_timestamp(cursor.fetchone()[0])
+        if checkpoints is not None:
+            validate_checkpoints(checkpoints, adapter.TABLES, required=True)
+            overlap, lag = batch_policy(selected)
+            upper_bound = subtract_seconds(observed_at, lag)
+            document.update(
+                before_watermarks=checkpoints,
+                overlap_seconds=overlap,
+                safety_lag_seconds=lag,
+                upper_bound=upper_bound,
+            )
         for name, table in adapter.TABLES.items():
             origin = adapter.table_name(name)
-            cursor.execute("SELECT COUNT_BIG(*) FROM " + origin)
+            predicate = ""
+            parameters = ()
+            if checkpoints is not None:
+                checkpoint = checkpoints[name]
+                lower = (
+                    subtract_seconds(checkpoint["timestamp"], overlap)
+                    if checkpoint["timestamp"]
+                    else "0001-01-01T00:00:00.0000000Z"
+                )
+                # The overlap cursor starts before all valid ASCII keys at
+                # its timestamp. The persisted high cursor still includes PK.
+                predicate = (
+                    " WHERE ([updated_at] > CONVERT(datetime2(7), %s, 126) "
+                    "OR ([updated_at] = CONVERT(datetime2(7), %s, 126) AND ["
+                    + table["pk"]
+                    + "] COLLATE Latin1_General_100_BIN2 > %s)) "
+                    "AND [updated_at] <= CONVERT(datetime2(7), %s, 126)"
+                )
+                parameters = (lower[:-1], lower[:-1], "", upper_bound[:-1])
+            cursor.execute(
+                "SELECT COUNT_BIG(*) FROM " + origin + predicate,
+                parameters or None,
+            )
             expected = cursor.fetchone()[0]
             if type(expected) is not int or not 0 <= expected <= max_rows:
                 raise BatchError("SQL snapshot exceeds its table row limit.")
@@ -235,9 +342,13 @@ def read_snapshot(values, adapter, max_rows):
                 + "], [original_values], "
                 "CONVERT(varchar(27), [updated_at], 126), [run_id] FROM "
                 + origin
-                + " ORDER BY ["
+                + predicate
+                + " ORDER BY "
+                + ("[updated_at], " if checkpoints is not None else "")
+                + "["
                 + table["pk"]
-                + "] COLLATE Latin1_General_100_BIN2"
+                + "] COLLATE Latin1_General_100_BIN2",
+                parameters or None,
             )
             rows = []
             seen = set()
@@ -260,6 +371,12 @@ def read_snapshot(values, adapter, max_rows):
                         "source_updated_at": canonical_timestamp(updated_at),
                         "run_id": run_id,
                     }
+                    if checkpoints is not None and not (
+                        lower <= row["source_updated_at"] <= upper_bound
+                    ):
+                        raise BatchError(
+                            "The SQL reader returned a row outside its window."
+                        )
                     budget -= (
                         len(
                             json.dumps(
@@ -287,12 +404,16 @@ def read_snapshot(values, adapter, max_rows):
     return document, observed_at
 
 
-def prepare_snapshot(values, landing, *, adapter=None, max_rows=MAX_ROWS):
-    """Publish a stable content ID and ready marker after a complete read."""
+def prepare_snapshot(
+    values, landing, *, adapter=None, max_rows=MAX_ROWS, checkpoints=None
+):
+    """Publish a complete snapshot or internal checkpointed window document."""
     landing = safe_landing(landing)
     adapter = adapter or source_adapter()
     try:
-        document, observed_at = read_snapshot(values, adapter, max_rows)
+        document, observed_at = read_snapshot(
+            values, adapter, max_rows, checkpoints=checkpoints
+        )
         payload = json.dumps(
             document,
             ensure_ascii=False,
@@ -311,10 +432,26 @@ def prepare_snapshot(values, landing, *, adapter=None, max_rows=MAX_ROWS):
             target.with_name(target.name + ".ready"),
             (batch_id + "\n").encode("ascii"),
         )
+        watermarks = {}
+        for name, table in document["tables"].items():
+            positions = [
+                (row["source_updated_at"], row["source_pk"])
+                for row in table["rows"]
+            ]
+            if checkpoints is not None and checkpoints[name]["timestamp"]:
+                positions.append(
+                    (
+                        checkpoints[name]["timestamp"],
+                        checkpoints[name]["primary_key"],
+                    )
+                )
+            stamp, key = max(positions, default=(None, None))
+            watermarks[name] = {"timestamp": stamp, "primary_key": key}
         return {
             "batch_id": batch_id,
             "observed_at": observed_at,
-            "mode": "snapshot",
+            "mode": document["mode"],
+            "_watermarks": watermarks,
             "counts": {
                 name: len(table["rows"])
                 for name, table in document["tables"].items()
@@ -345,7 +482,7 @@ def validate_acknowledgement(result, prepared):
         or not 0 <= result["sql_statements"] <= 1000
     ):
         raise BatchError("The worker did not confirm this complete SQL batch.")
-    return {
+    public = {
         "batch_id": prepared["batch_id"],
         "apply_id": result["apply_id"],
         "observed_at": prepared["observed_at"],
@@ -355,14 +492,208 @@ def validate_acknowledgement(result, prepared):
         "counts": dict(prepared["counts"]),
         "sql_statements": result["sql_statements"],
     }
+    for key in ("changed_counts", "current_counts"):
+        if key in result:
+            counts = result[key]
+            if (
+                not isinstance(counts, dict)
+                or set(counts) != set(prepared["counts"])
+                or any(
+                    type(count) is not int or not 0 <= count <= MAX_ROWS
+                    for count in counts.values()
+                )
+            ):
+                raise BatchError("Invalid worker SQL row-change counts.")
+            public[key] = dict(counts)
+    return public
+
+
+@contextmanager
+def checkpoint_lease(values, adapter):
+    """Hold a narrow control transaction until worker acknowledgement.
+
+    UPDLOCK/HOLDLOCK includes the empty-key range, serializing first snapshot
+    initialization as well as updates. The source reader uses another login
+    and connection; it never executes the DML below.
+    """
+    selected = adapter.validate_settings(values, role="control")
+    with adapter.connection(selected, role="control") as handle:
+        cursor = handle.cursor()
+        cursor.execute("SET LOCK_TIMEOUT 5000")
+        cursor.execute("SET XACT_ABORT ON")
+        cursor.execute("SET NOCOUNT OFF")
+        cursor.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+        adapter.ownership(cursor, selected, role="control")
+        if not adapter.permissions_safe(cursor, role="control"):
+            raise BatchError(
+                "The checkpoint writer requires narrow control rights."
+            )
+        cursor.execute(
+            "SELECT TOP (7) [source_table], "
+            "CONVERT(varchar(27), [last_watermark], 126), "
+            "[last_primary_key], [snapshot_id] "
+            "FROM [lh_demo_ctl].[batch_watermarks] WITH (UPDLOCK, HOLDLOCK) "
+            "ORDER BY [source_table]"
+        )
+        before = {}
+        for name, stamp, key, snapshot_id in cursor.fetchmany(7):
+            if name in before or name not in adapter.TABLES:
+                raise BatchError(
+                    "Unknown or duplicate SQL control checkpoint."
+                )
+            before[name] = {
+                "timestamp": canonical_timestamp(stamp) if stamp else None,
+                "primary_key": key,
+                "snapshot_id": snapshot_id,
+            }
+        validate_checkpoints(before, adapter.TABLES)
+        yield handle, cursor, before
+
+
+def advance_checkpoints(handle, cursor, before, prepared):
+    """CAS all six positions in one transaction after exact worker success."""
+    for name, position in prepared["_watermarks"].items():
+        stamp = position["timestamp"]
+        sql_stamp = stamp[:-1] if stamp else None
+        row = before.get(name)
+        if row is None:
+            cursor.execute(
+                "INSERT INTO [lh_demo_ctl].[batch_watermarks] "
+                "([source_table], [last_watermark], [last_primary_key], "
+                "[snapshot_id]) VALUES "
+                "(%s, CONVERT(datetime2(7), %s, 126), %s, %s)",
+                (
+                    name,
+                    sql_stamp,
+                    position["primary_key"],
+                    prepared["batch_id"],
+                ),
+            )
+        else:
+            previous = row["timestamp"][:-1] if row["timestamp"] else None
+            cursor.execute(
+                "UPDATE [lh_demo_ctl].[batch_watermarks] "
+                "SET [last_watermark]=CONVERT(datetime2(7), %s, 126), "
+                "[last_primary_key]=%s, [snapshot_id]=%s, "
+                "[updated_at]=SYSUTCDATETIME() WHERE [source_table]=%s "
+                "AND ([last_watermark]=CONVERT(datetime2(7), %s, 126) "
+                "OR ([last_watermark] IS NULL AND %s IS NULL)) "
+                "AND ([last_primary_key]=%s "
+                "OR ([last_primary_key] IS NULL AND %s IS NULL)) "
+                "AND [snapshot_id]=%s",
+                (
+                    sql_stamp,
+                    position["primary_key"],
+                    prepared["batch_id"],
+                    name,
+                    previous,
+                    previous,
+                    row["primary_key"],
+                    row["primary_key"],
+                    row["snapshot_id"],
+                ),
+            )
+        if cursor.rowcount != 1:
+            raise BatchError(
+                "The SQL checkpoint changed; no positions were advanced."
+            )
+    handle.commit()
+
+
+def run_checkpointed(
+    values, landing, worker_callback, adapter, max_rows, mode
+):
+    """Keep callback failures outside driver exception redaction."""
+    callback_error = None
+    failure = None
+    result = None
+    try:
+        with checkpoint_lease(values, adapter) as (handle, cursor, before):
+            try:
+                if mode == "incremental":
+                    validate_checkpoints(before, adapter.TABLES, required=True)
+                prepared = prepare_snapshot(
+                    values,
+                    landing,
+                    adapter=adapter,
+                    max_rows=max_rows,
+                    checkpoints=before if mode == "incremental" else None,
+                )
+                try:
+                    reply = worker_callback(
+                        prepared["batch_id"], prepared["observed_at"]
+                    )
+                except Exception as error:
+                    # Preserve a controlled unknown-worker-outcome exception.
+                    # Keep unknown worker outcomes distinct from SQL failures.
+                    callback_error = error
+                    raise BatchError(
+                        "The worker did not acknowledge the SQL batch."
+                    )
+                result = validate_acknowledgement(reply, prepared)
+                advance_checkpoints(handle, cursor, before, prepared)
+            except Exception as error:
+                failure = error
+                try:
+                    handle.rollback()
+                except Exception:
+                    pass
+    except Exception:
+        raise BatchError(
+            "SQL control transaction failed; private details withheld."
+        ) from None
+    if callback_error is not None:
+        raise callback_error
+    if failure is not None:
+        if isinstance(failure, BatchError):
+            raise failure
+        raise BatchError(
+            "SQL batch checkpoint failed; inspect private control state."
+        ) from None
+    return {**result, "checkpointed": True}
 
 
 def run_snapshot(
     values, landing, worker_callback, *, adapter=None, max_rows=MAX_ROWS
 ):
     """Read, publish and explicitly request the separate downstream action."""
+    if any(
+        values.get("SOURCE_SQLSERVER_CONTROL_" + suffix)
+        for suffix in ("USER", "PASSWORD")
+    ):
+        return run_checkpointed(
+            values,
+            landing,
+            worker_callback,
+            adapter or source_adapter(),
+            max_rows,
+            "snapshot",
+        )
     prepared = prepare_snapshot(
         values, landing, adapter=adapter, max_rows=max_rows
     )
     result = worker_callback(prepared["batch_id"], prepared["observed_at"])
-    return validate_acknowledgement(result, prepared)
+    return {
+        **validate_acknowledgement(result, prepared),
+        "checkpointed": False,
+    }
+
+
+def run_incremental(
+    values, landing, worker_callback, *, adapter=None, max_rows=MAX_ROWS
+):
+    """Merge a bounded window; physical deletes require full reconciliation.
+
+    Timestamp+PK is not a commit LSN. Updates that commit after the overlap
+    window has passed can still be missed. Use full snapshots or CDC to close
+    that gap; this function never advertises complete change capture.
+    """
+    batch_policy(values)
+    return run_checkpointed(
+        values,
+        landing,
+        worker_callback,
+        adapter or source_adapter(),
+        max_rows,
+        "incremental",
+    )

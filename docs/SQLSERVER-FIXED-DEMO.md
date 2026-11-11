@@ -185,3 +185,36 @@ SQL BronzeとSilver/隔離に `_source_system`、`_source_database`、`_source_s
 ## 権限診断の範囲
 
 runtimeは有効なobject権限、広いrole、固定対象のmetadata・trigger・FKを検査します。ただしSQL Serverのmetadata visibilityで隠れた他schemaの子FKまでは、固定親tableのVIEW DEFINITIONだけで全件証明できません。DBAが初回の全体検査を行い、固定表へ外部FKやtriggerを後付けしない契約を維持します。診断のためにruntimeへDB全体のCONTROLや広い書込み権限を与えません。
+
+## 6. watermark増分バッチ
+
+private設定の `SOURCE_SQLSERVER_CONTROL_USER/PASSWORD` に、DBAが用意した別の限定principalを指定します。接続先・TLSはSOURCE設定を共有しますが、SOURCE readerの認証を流用しません。DEMO writerの名前も比較用に必要です。3つのidentityは異なるものとし、DEMOのパスワードをバッチへ渡しません。
+
+| 設定 | 既定 | 制限・用途 |
+| --- | --- | --- |
+| `SOURCE_SQLSERVER_BATCH_OVERLAP_SECONDS` | `300` | 1〜86400秒。前回位置より過去を重ねて読む |
+| `SOURCE_SQLSERVER_BATCH_SAFETY_LAG_SECONDS` | `5` | 0〜3600秒。現在より少し前を上限にする |
+| `SOURCE_SQLSERVER_CONTROL_USER/PASSWORD` | 空 | `batch_watermarks`だけのSELECT/INSERT/UPDATE。readerへ書込み権限を追加しない |
+
+最初にcontrol設定を反映した状態でフルsnapshotを実行し、結果の **checkpointed=true** を確認します。control両項目が空でもsnapshot自体は使えますが、checkpointed=falseで増分のbaselineを作りません。片方だけの設定やreader/adminの流用は拒否します。
+
+その後、素材の投入で有限microbatchを選び、例えば3回・5秒間隔で投入します。最後の投入から安全遅延の時間を置き、処理・検証の **Watermark増分バッチ** を選んで同意します。Swaggerは `POST /sql-source/batches/incremental` に `{"confirm": true}` を送ります。任意table・SQL・watermark値をAPIから指定しません。
+
+### 読取りと確定の順番
+
+1. 限定control writerが所有権・有効権限を検査し、専用checkpointの6行をtransaction内の更新lockで保持します。他のバッチは短いlock timeoutで拒否されます。
+2. 別connectionのSOURCE readerが6表を読みます。`updated_at`と固定BIN2主キーの組合せを使い、過去の重なり窓から安全遅延の上限までを抽出します。UTCの7桁をfloatやPythonのmicrosecondへ丸めません。
+3. SOURCEの共有lockを解放した後にworkerへ依頼します。workerはSQL用現在値をPKとSQL更新時刻でupsertし、6表・派生SQL・件数を検査します。
+4. 完了batch ID・観測・全件数が一致したACKを受けてから、control writerが6表分の位置を比較付きで更新して一度にcommitします。途中失敗やworker結果不明ではこの更新へ進みません。
+
+`counts` は重ね読みを含む抽出窓の行数です。`changed_counts` は今回の実行で新規・更新された行、`current_counts` は反映後の現在値件数です。同じ行を再読しても、PK upsertで行数を増やしません。増分でもPoC用の現在表を読み込んでArrowで置き換えるため、大規模な分散MERGE方式ではありません。現在値の直列化は全体64 MiB、各表10万行までに制限します。
+
+### 捕捉の限界と復旧
+
+`updated_at`はcommit LSNではありません。安全遅延と重ね読みだけでは、窓より古いtimestampを持つ遅いcommitや物理DELETEを完全には捕捉できません。外部から更新時刻を巻き戻す操作も保証しません。定期的なフルsnapshot照合、またはCDCで補います。truncate/reloadを通常の増分として扱いません。
+
+原本・Iceberg各表・完了台帳・SQL checkpointは別々のcommitです。worker timeoutの間も処理が継続することがあります。SQL commit応答の喪失も「結果不明」であり、rollback呼出しだけから未commitを断定できません。workerの状態、`sql_control`の世代とSQL checkpointを再読して照合します。世代が一致しない場合や未完の全件置換がある場合は、control付きfull snapshotで再照合します。表やwatermarkを削除して再開を強行しません。
+
+### 日時精度の正本
+
+7桁を完全保持する正本は、raw/original JSONと `_source_updated_at` 等の文字列です。既存Silverの業務日時は `FROM_ISO8601_TIMESTAMP` による `TIMESTAMP(3) WITH TIME ZONE` で、ミリ秒の解析型です。全層の型付き日時で7桁を保つとは説明しません。7桁での時系列比較が必要な業務は、原本文字列を利用するか、Iceberg/Trinoの型・format互換性を実機検証した別のschema変更として扱います。[採用Trino 481の日時関数](https://github.com/trinodb/trino/blob/481/docs/src/main/sphinx/functions/datetime.md)

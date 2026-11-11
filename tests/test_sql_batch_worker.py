@@ -170,6 +170,26 @@ def document(keys=("K1",)):
     }
 
 
+def incremental_document(baseline, *, keys=("K1",), observed=LATER):
+    """Build an overlap-window contract from a known completed snapshot."""
+    body = document(keys)
+    body.update(
+        mode="incremental",
+        before_watermarks={
+            source["table"]: {
+                "timestamp": SOURCE_UPDATED,
+                "primary_key": "K1",
+                "snapshot_id": baseline,
+            }
+            for source in CONTRACTS
+        },
+        overlap_seconds=300,
+        safety_lag_seconds=5,
+        upper_bound=WORKER.subtract_seconds(observed, 5),
+    )
+    return body
+
+
 class SnapshotWorkerTests(unittest.TestCase):
     """Exercise source identity, completion and deterministic replay."""
 
@@ -648,6 +668,126 @@ class SnapshotWorkerTests(unittest.TestCase):
         body["tables"]["erp_products"]["rows"][0]["source_updated_at"] = LAST
         with self.assertRaises(WORKER.SqlBatchError):
             self.load(body)
+        self.assertEqual(self.events, [])
+
+    def test_incremental_merges_equal_timestamp_keys_and_replay_changes_zero(
+        self,
+    ):
+        first = self.load()
+        original = copy.deepcopy(
+            self.catalog.tables["sql_bronze.erp_products"].rows[0]
+        )
+        body = incremental_document(first["batch_id"], keys=("K1", "K2"))
+        result = self.load(body, LATER)
+        self.assertEqual(result["counts"]["erp_products"], 2)
+        self.assertEqual(result["changed_counts"]["erp_products"], 1)
+        self.assertEqual(result["current_counts"]["erp_products"], 2)
+        rows = self.catalog.tables["sql_bronze.erp_products"].rows
+        self.assertEqual(rows[0], original)
+        before = list(self.events)
+        replay = self.load(body, LATER)
+        self.assertTrue(replay["skipped"])
+        self.assertTrue(
+            all(count == 0 for count in replay["changed_counts"].values())
+        )
+        self.assertEqual(self.events, before)
+
+    def test_incremental_later_observation_updates_a_tied_clock_key(
+        self,
+    ):
+        first = self.load()
+        body = incremental_document(first["batch_id"])
+        body["tables"]["erp_products"]["rows"][0]["values"]["product_name"] = (
+            "更新"
+        )
+        result = self.load(body, LATER)
+        self.assertEqual(result["changed_counts"]["erp_products"], 1)
+        rows = self.catalog.tables["sql_bronze.erp_products"].rows
+        self.assertEqual(rows[0]["product_name"], "更新")
+        self.assertEqual(rows[0]["_source_updated_at"], SOURCE_UPDATED)
+
+    def test_incremental_has_no_implicit_delete_or_regression(self):
+        first = self.load(document(("K1", "K2")))
+        body = incremental_document(first["batch_id"], keys=("K1",))
+        row = body["tables"]["erp_products"]["rows"][0]
+        row["source_updated_at"] = "2026-04-01T10:59:00.0000001Z"
+        row["values"]["product_name"] = "Old replay"
+        result = self.load(body, LATER)
+        self.assertTrue(result["skipped"])
+        rows = self.catalog.tables["sql_bronze.erp_products"].rows
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["product_name"], "日本語製品")
+        self.assertEqual(result["changed_counts"]["erp_products"], 0)
+
+    def test_incremental_requires_a_completed_known_snapshot_generation(self):
+        body = incremental_document("a" * 64)
+        with self.assertRaises(WORKER.SqlBatchError):
+            self.load(body, LATER)
+        self.assertEqual(self.events, [])
+        first = self.load()
+        body = incremental_document("b" * 64)
+        before = list(self.events)
+        with self.assertRaises(WORKER.SqlBatchError):
+            self.load(body, LATER)
+        self.assertEqual(self.events, before)
+        self.assertNotEqual(first["batch_id"], "b" * 64)
+
+    def test_incremental_rejects_late_rows_outside_declared_window(self):
+        first = self.load()
+        body = incremental_document(first["batch_id"])
+        body["tables"]["erp_products"]["rows"][0]["source_updated_at"] = (
+            "2026-04-01T10:50:00.0000001Z"
+        )
+        before = list(self.events)
+        with self.assertRaises(WORKER.SqlBatchError):
+            self.load(body, LATER)
+        self.assertEqual(self.events, before)
+        body["tables"]["erp_products"]["rows"][0]["source_updated_at"] = (
+            SOURCE_UPDATED
+        )
+        body["upper_bound"] = LAST
+        with self.assertRaises(WORKER.SqlBatchError):
+            self.load(body, LATER)
+        self.assertEqual(self.events, before)
+
+    def test_incremental_partial_failure_replays_all_layers_before_completion(
+        self,
+    ):
+        first = self.load()
+        body = incremental_document(first["batch_id"], keys=("K1", "K2"))
+        self.admin.medallion.side_effect = RuntimeError("synthetic-failure")
+        with self.assertRaises(RuntimeError):
+            self.load(body, LATER)
+        self.assertEqual(
+            len(self.catalog.tables["sql_control.batches"].rows), 1
+        )
+        self.assertEqual(
+            self.catalog.tables["sql_control.progress"].rows[0]["mode"],
+            "incremental",
+        )
+        self.admin.medallion.side_effect = lambda _: {"sql_statements": 14}
+        result = self.load(body, LATER)
+        self.assertFalse(result["skipped"])
+        self.assertEqual(result["current_counts"]["erp_products"], 2)
+        self.assertEqual(
+            len(self.catalog.tables["sql_control.batches"].rows), 2
+        )
+
+    def test_incremental_cannot_repair_an_unfinished_full_snapshot(self):
+        first = self.load()
+        self.admin.medallion.side_effect = RuntimeError("synthetic-failure")
+        with self.assertRaises(RuntimeError):
+            self.load(document(("K1", "K2")), LATER)
+        before = list(self.events)
+        body = incremental_document(first["batch_id"], observed=LAST)
+        with self.assertRaises(WORKER.SqlBatchError):
+            self.load(body, LAST)
+        self.assertEqual(self.events, before)
+
+    def test_materialization_memory_bound_precedes_storage_mutation(self):
+        with mock.patch.object(WORKER, "MAX_CURRENT_BYTES", 1):
+            with self.assertRaises(WORKER.SqlBatchError):
+                self.load()
         self.assertEqual(self.events, [])
 
 

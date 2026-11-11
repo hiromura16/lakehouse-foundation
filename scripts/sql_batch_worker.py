@@ -12,13 +12,14 @@ This single-writer PoC has no distributed multi-table transaction.
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from pathlib import Path
 
 MAX_BYTES = 16 * 1024 * 1024
 MAX_ROWS = 100000
 MAX_HISTORY = 100000
+MAX_CURRENT_BYTES = 64 * 1024 * 1024
 ROOT = Path(__file__).resolve().parents[1]
 SQL_SOURCE_COLUMNS = (
     "_source_system",
@@ -130,21 +131,28 @@ def read_document(batch_id, landing):
 
 def validate_document(document, contracts):
     """Validate all six tables before any S3, catalog or Iceberg mutation."""
+    expected = {
+        "format_version",
+        "source_system",
+        "source_identity",
+        "source_database",
+        "mode",
+        "tables",
+    }
+    if isinstance(document, dict) and document.get("mode") == "incremental":
+        expected |= {
+            "before_watermarks",
+            "upper_bound",
+            "overlap_seconds",
+            "safety_lag_seconds",
+        }
     if (
         not isinstance(document, dict)
-        or set(document)
-        != {
-            "format_version",
-            "source_system",
-            "source_identity",
-            "source_database",
-            "mode",
-            "tables",
-        }
+        or set(document) != expected
         or type(document["format_version"]) is not int
         or document["format_version"] != 1
         or document["source_system"] != "sqlserver-fixed-demo"
-        or document["mode"] != "snapshot"
+        or document["mode"] not in {"snapshot", "incremental"}
         or not isinstance(document["source_identity"], str)
         or not re.fullmatch(r"[0-9a-f]{64}", document["source_identity"])
         or not isinstance(document["source_database"], str)
@@ -160,6 +168,8 @@ def validate_document(document, contracts):
         or set(document["tables"]) != {item["table"] for item in contracts}
     ):
         raise SqlBatchError("The SQL batch does not match the fixed source.")
+    if document["mode"] == "incremental":
+        validate_window(document, contracts)
     counts = {}
     for contract in contracts:
         name = contract["table"]
@@ -208,6 +218,61 @@ def validate_document(document, contracts):
     return counts
 
 
+def subtract_seconds(value, seconds):
+    """Move a UTC window boundary without rounding its seventh digit."""
+    value = timestamp(value)
+    try:
+        shifted = datetime.fromisoformat(value[:19]) - timedelta(
+            seconds=seconds
+        )
+    except (ValueError, OverflowError):
+        raise SqlBatchError("Invalid SQL visibility window.") from None
+    return shifted.strftime("%Y-%m-%dT%H:%M:%S") + value[19:]
+
+
+def validate_window(document, contracts):
+    """Require complete fixed-table baselines and a bounded overlap policy."""
+    before = document["before_watermarks"]
+    overlap, lag = document["overlap_seconds"], document["safety_lag_seconds"]
+    if (
+        not isinstance(before, dict)
+        or set(before) != {source["table"] for source in contracts}
+        or type(overlap) is not int
+        or not 1 <= overlap <= 86400
+        or type(lag) is not int
+        or not 0 <= lag <= overlap
+    ):
+        raise SqlBatchError("Invalid SQL overlap policy or snapshot baseline.")
+    timestamp(document["upper_bound"])
+    generations = set()
+    for checkpoint in before.values():
+        if not isinstance(checkpoint, dict) or set(checkpoint) != {
+            "timestamp",
+            "primary_key",
+            "snapshot_id",
+        }:
+            raise SqlBatchError("Invalid SQL checkpoint contract.")
+        if checkpoint["timestamp"] is None:
+            if checkpoint["primary_key"] is not None:
+                raise SqlBatchError(
+                    "An empty SQL watermark cannot have a key."
+                )
+        else:
+            timestamp(checkpoint["timestamp"])
+            if not isinstance(checkpoint["primary_key"], str) or not (
+                BUSINESS_KEY.fullmatch(checkpoint["primary_key"])
+            ):
+                raise SqlBatchError("Invalid SQL checkpoint key.")
+        batch_id = checkpoint["snapshot_id"]
+        if not isinstance(batch_id, str) or not re.fullmatch(
+            r"[0-9a-f]{64}", batch_id
+        ):
+            raise SqlBatchError("The SQL checkpoint has no completed batch.")
+        generations.add(batch_id)
+    if len(generations) != 1:
+        raise SqlBatchError("SQL checkpoint rows have different generations.")
+
+
 def table_rows(table, *, maximum=MAX_HISTORY):
     """Bound control/current table scans; reject silent PoC limit overflow."""
     rows = table.scan(limit=maximum + 1).to_arrow().to_pylist()
@@ -247,14 +312,17 @@ def prior_state(catalog):
     ):
         raise SqlBatchError("Invalid existing SQL source identity state.")
     for row in history:
-        if row.get("mode") != "snapshot" or apply_identifier(
+        if row.get("mode") not in {
+            "snapshot",
+            "incremental",
+        } or apply_identifier(
             row.get("batch_id"), row.get("observed_at")
         ) != row.get("apply_id"):
             raise SqlBatchError("Invalid SQL completion ledger.")
     for row in progress:
         if (
             row.get("status") not in {"applying", "idle"}
-            or row.get("mode") != "snapshot"
+            or row.get("mode") not in {"snapshot", "incremental"}
             or apply_identifier(row.get("batch_id"), row.get("observed_at"))
             != row.get("apply_id")
             or (
@@ -324,7 +392,12 @@ def set_progress(admin, catalog, observation, status):
 def acknowledgement(row, *, skipped):
     """Return only bounded counts and public completion identifiers."""
     try:
-        counts = json.loads(row["counts_json"])
+        saved = json.loads(row["counts_json"])
+        counts = (
+            saved["selected"]
+            if isinstance(saved, dict) and ("selected" in saved)
+            else saved
+        )
         statements = int(row["sql_statements"])
     except (ValueError, TypeError, KeyError):
         raise SqlBatchError("Invalid SQL completion counts.") from None
@@ -337,7 +410,7 @@ def acknowledgement(row, *, skipped):
         or not 0 <= statements <= 1000
     ):
         raise SqlBatchError("Invalid SQL completion counts.")
-    return {
+    result = {
         "batch_id": row["batch_id"],
         "apply_id": row["apply_id"],
         "observed_at": row["observed_at"],
@@ -347,6 +420,27 @@ def acknowledgement(row, *, skipped):
         "counts": counts,
         "sql_statements": statements,
     }
+    if isinstance(saved, dict) and "selected" in saved:
+        if set(saved) != {"selected", "changed", "current"}:
+            raise SqlBatchError("Invalid SQL completion count groups.")
+        for key, field in (
+            ("changed", "changed_counts"),
+            ("current", "current_counts"),
+        ):
+            values = saved[key]
+            if (
+                not isinstance(values, dict)
+                or set(values) != set(counts)
+                or any(
+                    type(value) is not int or not 0 <= value <= MAX_ROWS
+                    for value in values.values()
+                )
+            ):
+                raise SqlBatchError("Invalid SQL completed row-change counts.")
+            result[field] = dict(values)
+            if key == "changed" and skipped:
+                result[field] = {name: 0 for name in counts}
+    return result
 
 
 def bronze_rows(document, contract, batch_id, ingested_at):
@@ -372,6 +466,88 @@ def bronze_rows(document, contract, batch_id, ingested_at):
     ]
 
 
+def materialization_plan(admin, catalog, document, batch_id, ingested_at):
+    """Validate all current rows and calculate idempotent PK merges first."""
+    planned, changes, totals = {}, {}, {}
+    byte_budget = MAX_CURRENT_BYTES
+    for contract in admin.CONTRACT:
+        name = contract["table"]
+        incoming = bronze_rows(document, contract, batch_id, ingested_at)
+        if document["mode"] == "snapshot":
+            rows = incoming
+            changes[name] = len(incoming)
+        else:
+            identifier = "sql_bronze." + name
+            if not catalog.table_exists(identifier):
+                raise SqlBatchError(
+                    "Restore the complete SQL snapshot baseline."
+                )
+            current = table_rows(
+                catalog.load_table(identifier), maximum=MAX_ROWS
+            )
+            indexed = {}
+            for row in current:
+                key = row.get("_source_pk")
+                if (
+                    not isinstance(key, str)
+                    or not BUSINESS_KEY.fullmatch(key)
+                    or row.get(contract["columns"][0]) != key
+                    or key in indexed
+                    or row.get("_source_system") != document["source_system"]
+                    or not isinstance(row.get("_source_database"), str)
+                    or row["_source_database"].casefold()
+                    != document["source_database"].casefold()
+                    or row.get("_source_schema")
+                    != document["tables"][name]["schema"]
+                    or row.get("_source_table")
+                    != document["tables"][name]["table"]
+                ):
+                    raise SqlBatchError(
+                        "SQL current state does not match its source."
+                    )
+                timestamp(row.get("_source_updated_at"))
+                indexed[key] = row
+            changed = 0
+            for row in incoming:
+                key = row["_source_pk"]
+                previous = indexed.get(key)
+                if previous:
+                    if (
+                        row["_source_updated_at"]
+                        < previous["_source_updated_at"]
+                    ):
+                        continue
+                    unchanged = all(
+                        previous.get(column) == row.get(column)
+                        for column in (
+                            *contract["columns"],
+                            "_source_updated_at",
+                            "_run_id",
+                        )
+                    )
+                    if unchanged:
+                        continue
+                # Equal SQL clock values are ordered by the later observation.
+                # This supports rapid same-key updates within the overlap.
+                indexed[key] = row
+                changed += 1
+            rows = [indexed[key] for key in sorted(indexed)]
+            changes[name] = changed
+        if len(rows) > MAX_ROWS:
+            raise SqlBatchError("SQL current state exceeds its PoC row limit.")
+        for row in rows:
+            byte_budget -= len(
+                json.dumps(row, ensure_ascii=False).encode("utf-8")
+            )
+            if byte_budget < 0:
+                raise SqlBatchError(
+                    "SQL current state exceeds its memory bound."
+                )
+        planned[name] = rows
+        totals[name] = len(rows)
+    return planned, changes, totals
+
+
 def load(admin, batch_id, observed_at, *, landing=Path("/landing")):
     """Materialize one snapshot and acknowledge its exact observed apply ID.
 
@@ -382,6 +558,31 @@ def load(admin, batch_id, observed_at, *, landing=Path("/landing")):
     apply_id = apply_identifier(batch_id, observed_at)
     payload, document = read_document(batch_id, landing)
     counts = validate_document(document, admin.CONTRACT)
+    if document["mode"] == "incremental":
+        if document["upper_bound"] != subtract_seconds(
+            observed_at, document["safety_lag_seconds"]
+        ):
+            raise SqlBatchError(
+                "SQL visibility bound does not match observation."
+            )
+        for name, table in document["tables"].items():
+            checkpoint = document["before_watermarks"][name]
+            lower = (
+                subtract_seconds(
+                    checkpoint["timestamp"], document["overlap_seconds"]
+                )
+                if checkpoint["timestamp"]
+                else "0001-01-01T00:00:00.0000000Z"
+            )
+            if any(
+                not lower
+                <= row["source_updated_at"]
+                <= document["upper_bound"]
+                for row in table["rows"]
+            ):
+                raise SqlBatchError(
+                    "An incremental row is outside its visibility window."
+                )
     if any(
         row["source_updated_at"] > observed_at
         for table in document["tables"].values()
@@ -416,6 +617,20 @@ def load(admin, batch_id, observed_at, *, landing=Path("/landing")):
     pending = next(
         (row for row in progress if row["status"] == "applying"), None
     )
+    if document["mode"] == "incremental":
+        baseline = next(iter(document["before_watermarks"].values()))[
+            "snapshot_id"
+        ]
+        if not any(row["mode"] == "snapshot" for row in history) or not any(
+            row["batch_id"] == baseline for row in history
+        ):
+            raise SqlBatchError(
+                "A completed full SQL snapshot baseline is required."
+            )
+        if pending and pending["mode"] == "snapshot":
+            raise SqlBatchError(
+                "Reconcile the unfinished full snapshot before increments."
+            )
     exact = [row for row in history if row["apply_id"] == apply_id]
     if exact:
         if len(exact) != 1:
@@ -449,6 +664,13 @@ def load(admin, batch_id, observed_at, *, landing=Path("/landing")):
         )
     if len(history) >= MAX_HISTORY:
         raise SqlBatchError("SQL observation history reached its PoC limit.")
+    planned, changed_counts, current_counts = materialization_plan(
+        admin,
+        catalog,
+        document,
+        batch_id,
+        datetime.now(timezone.utc).isoformat(),
+    )
     # All source structures and current identity were checked before mutation.
     admin.S3.put_object(
         Bucket=admin.os.environ["S3_BUCKET_RAW"],
@@ -466,16 +688,30 @@ def load(admin, batch_id, observed_at, *, landing=Path("/landing")):
     }
     # A pending apply means some business tables may already contain another
     # generation. Matching the last completed content is then insufficient.
-    unchanged = bool(not pending and latest and latest["batch_id"] == batch_id)
+    unchanged = bool(
+        not pending
+        and (
+            (
+                document["mode"] == "snapshot"
+                and latest
+                and latest["batch_id"] == batch_id
+            )
+            or (
+                document["mode"] == "incremental"
+                and not any(changed_counts.values())
+            )
+        )
+    )
+    if unchanged:
+        changed_counts = {name: 0 for name in counts}
     set_progress(admin, catalog, observation, "applying")
     statements = 0
     if not unchanged:
         admin.ensure_tables("sql_")
-        ingested_at = datetime.now(timezone.utc).isoformat()
         for contract in admin.CONTRACT:
             name = contract["table"]
             table = catalog.load_table("sql_bronze." + name)
-            rows = bronze_rows(document, contract, batch_id, ingested_at)
+            rows = planned[name]
             table.overwrite(
                 admin.pa.Table.from_pylist(
                     rows, schema=table.schema().as_arrow()
@@ -490,7 +726,9 @@ def load(admin, batch_id, observed_at, *, landing=Path("/landing")):
                 catalog.load_table("sql_bronze." + name), maximum=MAX_ROWS
             )
             keys = [row[contract["columns"][0]] for row in rows]
-            if len(rows) != counts[name] or len(set(keys)) != len(keys):
+            if len(rows) != current_counts[name] or len(set(keys)) != len(
+                keys
+            ):
                 raise SqlBatchError("SQL source and Bronze counts differ.")
     completion = {
         "apply_id": apply_id,
@@ -498,7 +736,14 @@ def load(admin, batch_id, observed_at, *, landing=Path("/landing")):
         "source_identity": identity,
         "mode": document["mode"],
         "observed_at": observed_at,
-        "counts_json": json.dumps(counts, sort_keys=True),
+        "counts_json": json.dumps(
+            {
+                "selected": counts,
+                "changed": changed_counts,
+                "current": current_counts,
+            },
+            sort_keys=True,
+        ),
         "sql_statements": str(statements),
     }
     # Complete the data ledger before clearing the durable dirty-state flag.
