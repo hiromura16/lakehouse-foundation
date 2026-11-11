@@ -16,6 +16,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
     "grafana_settings", ROOT / "scripts/settings.py"
@@ -43,6 +45,22 @@ EXISTING = {
 
 class GrafanaSetupTests(unittest.TestCase):
     """Prove create-only API semantics and private export behavior."""
+
+    def test_standard_dashboard_needs_no_external_plugin_download(self):
+        """Keep built-in panels and GUI volume, with optional downloads off."""
+        services = yaml.safe_load(
+            (ROOT / "infra/lakehouse/compose.yaml").read_text()
+        )["services"]
+        grafana = services["grafana"]
+        self.assertEqual(
+            grafana["environment"]["GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES"],
+            "false",
+        )
+        self.assertEqual(
+            grafana["environment"]["GF_PLUGINS_PREINSTALL_DISABLED"], "true"
+        )
+        self.assertIn("grafana:/var/lib/grafana", grafana["volumes"])
+        self.assertNotIn("GF_PLUGINS_DISABLE_PLUGINS", grafana["environment"])
 
     def test_template_uses_new_api_and_remains_editable(self):
         """Wrap the classic model without stored IDs or stale versions."""

@@ -314,3 +314,7 @@ APIの待機timeout、workerのエラー、Trinoのquery取消は別の状態で
 | 実施済み | 読取確認と変更操作を区別し、変更前後の判定を残す |
 
 原因候補は一度に一つずつ変えます。例えばproxy、CA、image版を同時に変更すると、何が原因だったか判定できません。隔離環境で成功したあとも、会社のDNS・proxy・SQL認証・Sambaクライアントは導入先の条件で受け入れます。報告に使う合成データの期待値と、会社DBの実件数を混在させません。
+
+## 固定SQLの診断が拒否する
+
+[固定SQL source](SQLSERVER-FIXED-DEMO.md) のDB・固定schema・installation/version・所有権・限定権限を順に確認します。旧PoCロールや制御schema全体のINSERT/UPDATEを持つwriterは、安全条件を満たさない場合があります。アプリから権限を緩めずDBAに影響を確認します。型不正は原値JSONに残りますが、不正PKは投入を拒否します。driverの生例外はAPIへ返しません。

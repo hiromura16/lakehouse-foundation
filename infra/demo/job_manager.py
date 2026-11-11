@@ -33,7 +33,12 @@ class JobManager:
             key: value
             for key, value in settings.items()
             if key.startswith("DEMO_SQLSERVER_")
-            or key == "SOURCE_SQLSERVER_DATABASE"
+            or key
+            in {
+                "SOURCE_SQLSERVER_HOST",
+                "SOURCE_SQLSERVER_PORT",
+                "SOURCE_SQLSERVER_DATABASE",
+            }
         }
         self.operation = threading.Lock()
         self.lock = threading.RLock()
@@ -197,9 +202,17 @@ class JobManager:
                     break
                 if time.monotonic() >= deadline:
                     raise TimeoutError("Source job deadline exceeded.")
+                extra = {}
+                if options["destination"] in {
+                    "fixed-sqlserver",
+                    "landing-fixed-sqlserver",
+                }:
+                    extra["confirm_shared_source_database"] = options.get(
+                        "confirm_shared_source_database", False
+                    )
                 result = self.generator(
                     self.output,
-                    run_id=identifier,
+                    run_id=options.get("run_id") or identifier,
                     batch=batch,
                     seed=options["seed"],
                     orders=options["orders"],
@@ -212,6 +225,7 @@ class JobManager:
                     images=options["images"],
                     allow_sql_write=options["allow_sql_write"],
                     settings=settings,
+                    **extra,
                 )
                 with self.lock:
                     self.jobs[identifier]["results"].append(result)

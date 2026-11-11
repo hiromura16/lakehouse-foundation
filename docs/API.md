@@ -334,3 +334,9 @@ HTTP timeoutでjob IDを受け取れなかった場合、既に受付/commitさ�
 | workerの実操作 | [admin.py](../scripts/admin.py) | 対応action、Trino失敗/取消、blocked、再実行 |
 
 API仕様は `openapi.json` をクライアント生成の入力にできますが、認証や意味上の境界を自動解決するものではありません。変更後は認証なし、未知入力、409競合、成功、timeout/不明結果、秘密値非表示を試し、Swaggerと [capabilities](../infra/demo/poc_catalog.py) のread/write分類も揃えます。現在の1worker/メモリ内履歴を複数workerや永続queueへ広げる場合は、排他・永続化・再開契約を先に設計します。[変更手順](CUSTOMIZATION.md)
+
+## 固定SQL sourceの操作
+
+`GET /sql-source/status` は固定schema・所有権・権限・6表の状態を読み取ります。DB接続先・認証・所有権hashは返しません。`POST /sql-source/demo/{insert|update|delete}` はstrict booleanの `confirm: true` と12桁hexの `run_id` を受け付け、固定試験productへのDMLを非同期実行します。任意table・SQLは受け付けません。
+
+`POST /jobs` のdestinationは `fixed-sqlserver` / `landing-fixed-sqlserver` を追加し、`allow_sql_write` と `confirm_shared_source_database` をともにtrueとします。`run_id` は省略時に自動生成します。SQLのDMLや素材生成成功と、後続取込の成功は別です。[安全条件・準備](SQLSERVER-FIXED-DEMO.md)

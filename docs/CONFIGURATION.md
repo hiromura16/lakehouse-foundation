@@ -425,3 +425,7 @@ Docker 29／Buildx Bake／社内proxyで判明した互換性修正の取り込�
 設定を一つ増やす時は生成器だけを更新して終わりにしません。[configure.py](../scripts/configure.py) の新規/upgrade、[settings.py](../scripts/settings.py) の形式・profile条件、各Composeの補間とsecret/mount、[GUI保存](../infra/demo/control_settings.py) のallowlistと秘密分類、native clientの反映方法を一組で確認します。
 
 受入では、新規生成、古いprivate fileのupgrade、既存backupがある更新、変更不要のno-op、GUI保存/秘密非表示、選択profile/未選択profile、CLI/raw Compose/Dokploy、再配置後の実通信を区別します。社内の実値はtest fixtureへコピーせず、合成値で境界を試験します。
+
+## 固定SQL sourceの追加設定
+
+固定schema・shared source許可・installation ID・ownership token・暗号化とPoC証明書検証の既定を [固定SQL source設定表](SQLSERVER-FIXED-DEMO.md#1-private設定を生成upgradeする) にまとめています。生成/upgradeは既存値を保持します。固定schemaを任意名へ変更したり、SOURCE認証をwriterへ転用したりしません。

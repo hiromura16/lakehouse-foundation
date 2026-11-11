@@ -546,7 +546,13 @@ def main(argv=None):
     )
     parser.add_argument(
         "--destination",
-        choices=["landing", "sqlserver", "both"],
+        choices=[
+            "landing",
+            "sqlserver",
+            "both",
+            "fixed-sqlserver",
+            "landing-fixed-sqlserver",
+        ],
         default="landing",
         help=(
             "投入先。landing=ファイル、sqlserver=専用DB、both=両方。"
@@ -571,7 +577,16 @@ def main(argv=None):
     parser.add_argument(
         "--allow-sql-write",
         action="store_true",
-        help="専用DEMO DBの新規schemaへのCREATE/INSERTに明示同意する",
+        help="SQL書込みに同意する。固定modeは追加同意とDBAの事前DDLが必要",
+    )
+    parser.add_argument(
+        "--confirm-fixed-source",
+        action="store_true",
+        help="所有権付き固定3schemaへの書込みに追加同意する",
+    )
+    parser.add_argument(
+        "--run-id",
+        help="固定SQL modeの12桁hex識別子。省略時は自動生成",
     )
     parser.add_argument(
         "--anomaly",
@@ -624,6 +639,48 @@ def main(argv=None):
         return
     if args.output is None:
         parser.error("--output is required unless --list-scenarios is used.")
+    if args.destination in {"fixed-sqlserver", "landing-fixed-sqlserver"}:
+        # Reuse the API's source-only writer and its two consent boundaries.
+        # Do not relax the legacy random-schema SOURCE database rejection.
+        if (
+            not args.allow_sql_write
+            or not args.confirm_fixed_source
+            or args.env_file is None
+            or args.force
+            or args.test_trust_server_certificate
+        ):
+            raise ValueError(
+                "Fixed SQL needs both consents and a private env; "
+                "force and the legacy TLS test flag are not supported."
+            )
+        try:
+            from settings import load
+
+            specification = importlib.util.spec_from_file_location(
+                "fixed_source_cli_service", ROOT / "infra/demo/service.py"
+            )
+            service = importlib.util.module_from_spec(specification)
+            specification.loader.exec_module(service)
+            result = service.generate_batch(
+                args.output,
+                run_id=args.run_id or secrets.token_hex(6),
+                seed=args.seed,
+                orders=args.orders,
+                days=args.days,
+                scenario=args.scenario,
+                destination=args.destination,
+                images=args.images,
+                allow_sql_write=True,
+                confirm_shared_source_database=True,
+                settings=load(args.env_file),
+                anomalies=args.anomaly,
+                anomaly_rate=args.anomaly_rate,
+                allow_file_faults=args.allow_file_faults,
+            )
+        except Exception:
+            raise RuntimeError("Fixed source generation failed.") from None
+        print(json.dumps(result, ensure_ascii=False))
+        return
     anomalies = SCENARIOS.validate_selection(
         args.anomaly,
         args.destination,

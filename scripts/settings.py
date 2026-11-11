@@ -64,6 +64,36 @@ def buildkit_client_token_mode(values):
     return value
 
 
+def validate_sql_source_policy(values):
+    """Validate inactive SQL defaults without enabling a DB connection.
+
+    A shared source remains denied by default. Live ownership/permissions and
+    explicit request consent are additionally checked by the fixed adapter.
+    """
+    for key in (
+        "DEMO_SQLSERVER_ALLOW_SHARED_SOURCE_DATABASE",
+        "DEMO_SQLSERVER_TRUST_SERVER_CERTIFICATE",
+        "SOURCE_SQLSERVER_TRUST_SERVER_CERTIFICATE",
+    ):
+        values.setdefault(key, "false")
+        if values[key] not in {"true", "false"}:
+            raise ValueError("Use true or false for " + key)
+    for prefix in ("DEMO", "SOURCE"):
+        key = prefix + "_SQLSERVER_ENCRYPT"
+        values.setdefault(key, "true")
+        if values[key] != "true":
+            raise ValueError("SQL source encryption must remain enabled.")
+    for suffix, schema in (
+        ("ERP_SCHEMA", "lh_demo_erp"),
+        ("MES_SCHEMA", "lh_demo_mes"),
+        ("CONTROL_SCHEMA", "lh_demo_ctl"),
+    ):
+        key = "DEMO_SQLSERVER_" + suffix
+        values.setdefault(key, schema)
+        if values[key] != schema:
+            raise ValueError("Only the fixed SQL demo schemas are allowed.")
+
+
 def normalize_no_proxy(values):
     """Merge private bypass values without consulting the host environment."""
     result = list(REQUIRED_NO_PROXY)
@@ -343,6 +373,7 @@ def load(path):
         values
     )
     validate_ssrf(values)
+    validate_sql_source_policy(values)
     return synchronize_no_proxy(values)
 
 
