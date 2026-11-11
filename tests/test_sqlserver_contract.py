@@ -10,6 +10,8 @@ import re
 import unittest
 from pathlib import Path
 
+from sqlfluff.core import Linter
+
 ROOT = Path(__file__).resolve().parents[1]
 DIRECTORY = ROOT / "infra/sqlserver"
 SPEC = importlib.util.spec_from_file_location(
@@ -48,6 +50,16 @@ def table_blocks():
 
 class FixedSqlContractTests(unittest.TestCase):
     """Check safe scopes and stable six-table typed definitions."""
+
+    def test_fixed_ddl_parses_with_pinned_tsql_grammar(self):
+        """Parse all fixed DDL without executing SQL or skipping guards."""
+        linter = Linter(dialect="tsql")
+        for filename in FILES:
+            with self.subTest(filename=filename):
+                parsed = linter.parse_string(
+                    (DIRECTORY / filename).read_text(), fname=filename
+                )
+                self.assertEqual(parsed.violations, [])
 
     def test_each_script_guards_connected_database_and_ownership(self):
         for filename in FILES:
@@ -232,7 +244,7 @@ class FixedSqlContractTests(unittest.TestCase):
         )
         self.assertNotIn("@", checker)
         self.assertNotIn("sp_executesql", checker)
-        self.assertIn("DATALENGTH(m.definition)", sql)
+        self.assertIn("DATALENGTH(m.[definition])", sql)
         self.assertIn("m.execute_as_principal_id", sql)
         self.assertIn("COALESCE(o.principal_id,s.principal_id)", sql)
         self.assertNotIn("CREATE OR ALTER", sql)

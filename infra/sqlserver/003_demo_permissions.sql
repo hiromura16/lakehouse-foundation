@@ -138,8 +138,8 @@ IF NOT EXISTS (
       AND COALESCE(o.principal_id,s.principal_id)=DATABASE_PRINCIPAL_ID(N'dbo')
       AND m.execute_as_principal_id=DATABASE_PRINCIPAL_ID(N'dbo')
       AND m.uses_ansi_nulls=1 AND m.uses_quoted_identifier=1
-      AND DATALENGTH(m.definition)=DATALENGTH(@SafetyDefinition)
-      AND m.definition COLLATE Latin1_General_100_BIN2
+      AND DATALENGTH(m.[definition])=DATALENGTH(@SafetyDefinition)
+      AND m.[definition] COLLATE Latin1_General_100_BIN2
           = @SafetyDefinition COLLATE Latin1_General_100_BIN2
 )
     THROW 51019, 'Safety checker identity/definition mismatch; preserve it.', 1;
