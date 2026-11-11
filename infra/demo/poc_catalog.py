@@ -227,6 +227,11 @@ HELP_DOCUMENTS = {
     "company": ("会社への導入", "COMPANY-ROLLOUT.md", "導入と受入の順序"),
     "configuration": ("設定一覧", "CONFIGURATION.md", "設定と反映の区別"),
     "demo": ("素材投入GUI", "DEMO-GUI.md", "素材生成と専用SQLへの投入"),
+    "fixed-sql": (
+        "固定SQL source",
+        "SQLSERVER-FIXED-DEMO.md",
+        "所有権・限定権限・同意と固定6表の検証",
+    ),
     "anomalies": (
         "異常シナリオ",
         "ANOMALY-SCENARIOS.md",
@@ -478,6 +483,20 @@ def capabilities(values=None) -> dict:
         ("settings", "GET", "/settings", "read", "非秘密設定と設定済みの印"),
         ("save_settings", "PATCH", "/settings", "write", "private設定の保存"),
         ("generate", "POST", "/jobs", "write", "合成素材だけを生成"),
+        (
+            "fixed_sql_status",
+            "GET",
+            "/sql-source/status",
+            "read",
+            "所有権付き固定SQLの状態",
+        ),
+        (
+            "fixed_sql_dml",
+            "POST",
+            "/sql-source/demo/{action}",
+            "write",
+            "固定試験レコードのINSERT・UPDATE・DELETE",
+        ),
         (
             "pipeline",
             "POST",

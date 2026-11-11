@@ -246,3 +246,5 @@ Dokploy管理ではGUIのStop、CLI管理では `./scripts/lakehouse.sh down` �
 | 評価・意思決定担当 | 対象commitと根拠を付けてPoC結果を整理する | 未評価の会社接続・性能・復元・AI精度を別の受入として扱う |
 
 この基盤は、固定の入力契約と明示的な処理APIを持つPoCの出発点です。GUIで設定できる範囲は [GUIの選択](docs/GUI-OPTIONS.md)、コード変更を伴う範囲は [拡張手順](docs/CUSTOMIZATION.md) で確認します。任意のMES/ERPスキーマを接続するだけで自動的に業務指標へ変換する機能ではありません。
+
+固定SQL Serverの疑似ERP/MESを使う場合は、[所有権付き固定sourceの手順](docs/SQLSERVER-FIXED-DEMO.md)を参照します。

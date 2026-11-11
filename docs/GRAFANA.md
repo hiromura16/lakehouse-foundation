@@ -195,3 +195,7 @@ Dashboardの受入ではGUI変更→Save→再読込→同じvolumeで再起動�
 - [Dashboard API](https://grafana.com/docs/grafana/latest/developer-resources/api-reference/http-api/dashboard/)。照合時の文書はv13.3を表示。キットの使用先は `/apis/dashboard.grafana.app/v1/namespaces/default/dashboards` で、legacy APIやv1beta1へのfallbackはありません。
 - [Import](https://grafana.com/docs/grafana/latest/visualizations/dashboards/build-dashboards/import-dashboards/)、[GUI設定](https://grafana.com/docs/grafana/latest/visualizations/dashboards/build-dashboards/modify-dashboard-settings/)、[OSS API認証](https://grafana.com/docs/grafana/latest/developer-resources/api-reference/http-api/authentication/)。一般のService Account Token対応と、同梱CLIのBasic認証を区別しました。
 - [Prometheus 3.16のPromQL](https://prometheus.io/docs/prometheus/3.16/querying/basics/) と `prometheus.yml` / `foundation.json` / `grafana_setup.py`。収集先、表示式、create-only初期化とprivate exportを照合しました。
+
+## 外部pluginを使わない会社PoC
+
+標準dashboardは組込みPrometheus datasourceとpanelを使います。Composeで `GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES=false` と `GF_PLUGINS_PREINSTALL_DISABLED=true` を設定し、外部pluginの更新確認・初回自動取得を抑えます。GUI保存先のvolumeや組込み機能は維持します。独自pluginを追加するときは、許可された取得経路・署名・versionを管理者が別途評価します。これだけで全外向き通信を遮断する意味ではありません。[Grafanaの公式設定](https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/)

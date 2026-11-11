@@ -17,6 +17,7 @@ import struct
 import tempfile
 import zlib
 from datetime import datetime, timedelta
+from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
 
@@ -49,6 +50,25 @@ SQL_KEYS = {
 } | {"SOURCE_SQLSERVER_DATABASE"}
 
 
+@lru_cache(maxsize=1)
+def fixed_sql_module():
+    """Load the fixed source adapter without opening any connection."""
+    specification = importlib.util.spec_from_file_location(
+        "fixed_sql_source", ROOT / "scripts/sqlserver_demo.py"
+    )
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return module
+
+
+def scenario_destination(destination):
+    """Reuse existing anomaly policies while keeping SQL modes separate."""
+    return {
+        "fixed-sqlserver": "sqlserver",
+        "landing-fixed-sqlserver": "both",
+    }.get(destination, destination)
+
+
 def validate_options(run_id, batch, seed, orders, days, scenario, destination):
     """run/batchの識別子、件数、期間、出力先を副作用なしで検査する。
 
@@ -71,7 +91,13 @@ def validate_options(run_id, batch, seed, orders, days, scenario, destination):
             raise ValueError(f"{name} must be an integer in {lower}..{upper}.")
     if scenario not in {"clean", "edge"}:
         raise ValueError("scenario must be clean or edge.")
-    if destination not in {"landing", "sqlserver", "both"}:
+    if destination not in {
+        "landing",
+        "sqlserver",
+        "both",
+        "fixed-sqlserver",
+        "landing-fixed-sqlserver",
+    }:
         raise ValueError("Unknown source destination.")
 
 
@@ -186,6 +212,7 @@ def generate_batch(
     anomalies=(),
     anomaly_rate=10,
     allow_file_faults=False,
+    confirm_shared_source_database=False,
 ):
     """1batchの入力を検査し、同じ出力dirのsource writerを排他する。
 
@@ -195,17 +222,31 @@ def generate_batch(
     """
     validate_options(run_id, batch, seed, orders, days, scenario, destination)
     anomalies = SCENARIOS.validate_selection(
-        anomalies, destination, images, allow_file_faults, anomaly_rate
+        anomalies,
+        scenario_destination(destination),
+        images,
+        allow_file_faults,
+        anomaly_rate,
     )
     if type(images) is not bool or type(allow_sql_write) is not bool:
         raise ValueError("images and allow_sql_write must be booleans.")
-    sql = destination in {"sqlserver", "both"}
+    fixed = destination in {"fixed-sqlserver", "landing-fixed-sqlserver"}
+    sql = destination != "landing"
     if sql and not allow_sql_write:
         raise ValueError("Explicit SQL write consent is required.")
-    if destination == "sqlserver" and images:
+    if destination in {"sqlserver", "fixed-sqlserver"} and images:
         raise ValueError("Synthetic images require a landing destination.")
     # 工程1: 出力先を作る前に入力/同意/専用SQL設定を検査する。
-    values = sql_settings(settings) if sql else None
+    if fixed:
+        if confirm_shared_source_database is not True:
+            raise ValueError(
+                "Explicit fixed source database consent required."
+            )
+        values = fixed_sql_module().validate_settings(
+            settings or {}, consent=True
+        )
+    else:
+        values = sql_settings(settings) if sql else None
     output = GENERATOR.output_directory(Path(output))
     for name in ["csv", "json", "images", "manifests"]:
         child = output / name
@@ -309,13 +350,28 @@ def _publish_batch(
             (output / relative, payload, policies.get("images/inspection.png"))
         )
     # 工程3: SQL commitの前に同名出力を拒否し、既存runを上書きしない。
-    if destination != "sqlserver" and any(
+    if destination not in {"sqlserver", "fixed-sqlserver"} and any(
         path.exists() or path.with_name(path.name + ".ready").exists()
         for path, _, _ in targets
     ):
         raise ValueError("Batch filenames already exist; choose a new run.")
-    schema = GENERATOR.write_sql(data, values) if values is not None else None
-    if destination != "sqlserver":
+    fixed_result = None
+    if destination in {"fixed-sqlserver", "landing-fixed-sqlserver"}:
+        fixed_result = fixed_sql_module().write_data(
+            data,
+            values,
+            run_id=run_id,
+            seed=seed,
+            scenario=scenario,
+            days=days,
+            consent=True,
+        )
+        schema = None
+    else:
+        schema = (
+            GENERATOR.write_sql(data, values) if values is not None else (None)
+        )
+    if destination not in {"sqlserver", "fixed-sqlserver"}:
         # SQLとfileは別の確定点。bothの片側失敗を一括rollbackとは扱わない。
         for path, payload, policy in targets:
             publish_source(path, payload, policy)
@@ -343,6 +399,8 @@ def _publish_batch(
             ],
             "intentional_file_faults": bool(faults),
         }
+    if fixed_result is not None:
+        result["fixed_sql"] = fixed_result
     # 工程4: 全対象を公開できた後にだけ、非秘密の最終manifestを公開する。
     # source-onlyなので、ここからworkerやschedulerを呼び出さない。
     GENERATOR.publish_file(

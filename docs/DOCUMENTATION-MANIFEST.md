@@ -56,6 +56,7 @@
 | [n8n・Airflow・Grafanaを画面から使う](<GUI-WALKTHROUGHS.md>) | n8n・Airflow・Grafanaで接続、認証、手動実行、履歴、保存を順に確かめる。 | 対応profileを配置した後、同梱ジョブを画面から1回実行して確認するとき。 | active |
 | [PoC操作ポータル](<POC-PORTAL.md>) | 操作ポータルの各ページから、サービス入口・データ・診断・履歴へ移動する。 | GUIを開いた後、目的の操作と結果確認の画面を探すとき。 | active |
 | [BI・Notebook・ベクトル検索・データ系統を追加する](<POC-TOOLS.md>) | Superset・Jupyter・Qdrant・MarquezのGUIと合成デモを追加して用途別に検証する。 | coreの検証後にBI、Notebook、数値vector、手動lineageを試すとき。 | active |
+| [固定SQL sourceで疑似ERP・MESを検証する](<SQLSERVER-FIXED-DEMO.md>) | 所有権付き固定SQL表への合成データ投入と、読取専用バッチ・CDCの段階的な受入を行う。 | 同じ開発DBの固定6表で投入・snapshot・増分・CDCを比較するとき。 | active |
 | [合成入力を最初に作る](<../samples/README.md>) | 実データを使わずに最初の6契約素材を生成し、出力と後続処理の境界を確認する。 | 空の検証用landingに小さい固定条件の合成入力を初めて用意するとき。 | active |
 
 ### 04 設計・拡張
@@ -130,6 +131,7 @@
 | [PoC操作ポータル](<POC-PORTAL.md>) | 操作ポータルの各ページから、サービス入口・データ・診断・履歴へ移動する。 |
 | [BI・Notebook・ベクトル検索・データ系統を追加する](<POC-TOOLS.md>) | Superset・Jupyter・Qdrant・MarquezのGUIと合成デモを追加して用途別に検証する。 |
 | [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>) | 既存SQL Serverを読取専用SELECTで抽出し、6契約のlanding素材を作成する。 |
+| [固定SQL sourceで疑似ERP・MESを検証する](<SQLSERVER-FIXED-DEMO.md>) | 所有権付き固定SQL表への合成データ投入と、読取専用バッチ・CDCの段階的な受入を行う。 |
 | [症状から確認する](<TROUBLESHOOTING.md>) | 観測した症状から設定・起動・通信・job・データの失敗箇所を絞り込む。 |
 | [PoCの評価計画と受入条件](<reports/EVALUATION-PLAN.md>) | 配置・品質・CDC・AI・復旧の評価範囲と受入条件を、実施前に記入する。 |
 | [合成入力を最初に作る](<../samples/README.md>) | 実データを使わずに最初の6契約素材を生成し、出力と後続処理の境界を確認する。 |
@@ -174,6 +176,7 @@
 | [採用版の公式リファレンスと文書監査](<REFERENCES.md>) | 採用版の公式仕様・tag・公開実装・検証記録の根拠を照合する。 |
 | [BashとZshの両方で手順を実行する](<SHELLS.md>) | 会社VMのZshとBashでコマンドを使い分け、対話入力・コメント・shebang・引用の違いを確認する。 |
 | [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>) | 既存SQL Serverを読取専用SELECTで抽出し、6契約のlanding素材を作成する。 |
+| [固定SQL sourceで疑似ERP・MESを検証する](<SQLSERVER-FIXED-DEMO.md>) | 所有権付き固定SQL表への合成データ投入と、読取専用バッチ・CDCの段階的な受入を行う。 |
 | [SSRF対策と内部接続の設定](<SSRF.md>) | n8nの宛先制御、内部worker通信、proxyと固定APIの境界を設定する。 |
 | [初めて構築する人の一本道ガイド](<START-HERE.md>) | 新規Linux環境の準備からcore配置と合成データ検証までを順に進める。 |
 | [症状から確認する](<TROUBLESHOOTING.md>) | 観測した症状から設定・起動・通信・job・データの失敗箇所を絞り込む。 |
@@ -249,6 +252,7 @@
 | [レビュー指摘を改善へ取り込む](<REVIEW-WORKFLOW.md>) | issue・PR・依頼文書の指摘を対象commitで確認し、安全な回帰と差分へつなげる。 |
 | [BashとZshの両方で手順を実行する](<SHELLS.md>) | 会社VMのZshとBashでコマンドを使い分け、対話入力・コメント・shebang・引用の違いを確認する。 |
 | [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>) | 既存SQL Serverを読取専用SELECTで抽出し、6契約のlanding素材を作成する。 |
+| [固定SQL sourceで疑似ERP・MESを検証する](<SQLSERVER-FIXED-DEMO.md>) | 所有権付き固定SQL表への合成データ投入と、読取専用バッチ・CDCの段階的な受入を行う。 |
 | [SSRF対策と内部接続の設定](<SSRF.md>) | n8nの宛先制御、内部worker通信、proxyと固定APIの境界を設定する。 |
 | [検証記録](<VALIDATION.md>) | 既存の合成環境・公開clone・CI・互換性修正で確認した条件と限界を読む。 |
 | [構成図とロゴの出典](<assets/README.md>) | 全体図・AI候補図・公式ロゴの出典と、詳細図素材の配置を確認する。 |

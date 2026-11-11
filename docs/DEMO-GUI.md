@@ -227,3 +227,7 @@ Streamlit **1.67.0** の [fragment](https://github.com/streamlit/streamlit/blob/
 入力欄・表示は [app.py](../infra/demo/app.py)、APIへの通信は [client.py](../infra/demo/client.py)、素材処理は [service.py](../infra/demo/service.py) です。新しい選択欄を足すときは、APIの型・上限、共通の異常検査、manifest、AppTest/認証API試験まで確認します。画面だけで検査しても、APIを直接呼ぶ利用者の入力は制限できません。
 
 SQLの本番接続を試すボタンや、Docker socket、任意shell、既存秘密値の読み戻しをこの画面へ追加する構成にはしていません。必要な新機能は、目的・対象・権限・失敗時の扱いを決めて [カスタマイズ](CUSTOMIZATION.md) へ進みます。
+
+## 固定疑似ERP/MESをSQL Serverへ投入する
+
+投入先に固定SQLとLanding併用の2方式を追加しました。従来のランダムschema方式と分け、DBAが固定DDLを適用した後に所有権・限定権限を診断します。書込み許可と共有sourceへの追加同意を両方必要とします。入力・型・run ID・有限microbatch・I/U/Dの手順は [固定SQL source](SQLSERVER-FIXED-DEMO.md) を参照してください。

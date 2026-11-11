@@ -369,6 +369,9 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: 'false'
       GF_ANALYTICS_REPORTING_ENABLED: 'false'
       GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+      # 標準dashboardは組込み機能だけを使う。外部pluginの取得は管理者の別作業。
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: 'false'
+      GF_PLUGINS_PREINSTALL_DISABLED: 'true'
     configs:
       - source: grafana-datasource
         target: /etc/grafana/provisioning/datasources/prometheus.yml

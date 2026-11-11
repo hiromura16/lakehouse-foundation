@@ -255,3 +255,7 @@ PY
 extractorには全取り込みサービスを止める分散lockや、6表をまとめるtransactionはありません。定期運用は抽出成功→marker/manifest確認→明示medallion→業務照合の一つの実行責任者に揃えます。n8n/Airflowへ接続する場合も、extractor成功の判定前にworkerを同時起動しません。
 
 開発者が対象を増やす場合は、[入力契約](../medallion/sources.json)、mapping検査、型/日時のserialize、Bronze取り込み、Silver/隔離/Gold、独立期待値を一緒に変更します。任意SQLをGUIへ通すことで列対応を回避する設計にはしません。現在の抽出制御は [read_mapping / extract_tables / main](../scripts/extract-sqlserver.py)、TLSと素材公開の試験は [source extractor tests](../tests/test_extract_sqlserver.py) が入口です。
+
+## 合成データの固定SQL sourceを読む場合
+
+既存の汎用抽出は読取り専用のLanding bridgeです。固定6表を同じ開発DBで使う場合は、所有権・限定writer・GUI同意を備えた [固定SQL source](SQLSERVER-FIXED-DEMO.md) を使います。SOURCE readerへ書込み権限を足してwatermarkを更新しません。既存抽出のNULL→空文字という旧契約と、固定sourceの原値JSON/NULL保持を同一視しません。

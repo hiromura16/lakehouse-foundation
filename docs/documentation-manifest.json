@@ -753,6 +753,27 @@
       "status": "active"
     },
     {
+      "path": "docs/SQLSERVER-FIXED-DEMO.md",
+      "title": "固定SQL sourceで疑似ERP・MESを検証する",
+      "purpose": "所有権付き固定SQL表への合成データ投入と、読取専用バッチ・CDCの段階的な受入を行う。",
+      "audience": [
+        "基盤構築担当",
+        "データ利用担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "同じ開発DBの固定6表で投入・snapshot・増分・CDCを比較するとき。",
+      "category": "03 データ・操作",
+      "prerequisites": [
+        "docs/DEMO-GUI.md",
+        "docs/SOURCE-SQLSERVER.md"
+      ],
+      "next": [
+        "docs/CDC.md",
+        "docs/TROUBLESHOOTING.md"
+      ],
+      "status": "active"
+    },
+    {
       "path": "docs/SSRF.md",
       "title": "SSRF対策と内部接続の設定",
       "purpose": "n8nの宛先制御、内部worker通信、proxyと固定APIの境界を設定する。",

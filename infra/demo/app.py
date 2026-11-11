@@ -11,6 +11,7 @@ from poc_ui import (
     render_network,
     render_portal,
 )
+from sqlsource_ui import render_sql_source
 
 st.set_page_config(page_title="Lakehouse PoC ポータル", page_icon="🏭")
 st.title("Lakehouse PoC ポータル")
@@ -135,12 +136,21 @@ def render_source_form():
     )
     streaming = mode_label.startswith("ストリーミング")
     destination_label = st.selectbox(
-        "投入先", ["ランディング", "専用の検証SQL Server", "両方"]
+        "投入先",
+        [
+            "ランディング",
+            "専用の検証SQL Server",
+            "両方",
+            "固定疑似ERP/MES SQL Server",
+            "ランディング + 固定SQL source",
+        ],
     )
     destination = {
         "ランディング": "landing",
         "専用の検証SQL Server": "sqlserver",
         "両方": "both",
+        "固定疑似ERP/MES SQL Server": "fixed-sqlserver",
+        "ランディング + 固定SQL source": "landing-fixed-sqlserver",
     }[destination_label]
     catalog = call_api("/scenarios")
     if catalog is None:
@@ -149,11 +159,16 @@ def render_source_form():
     st.session_state["source-scenario-catalog"] = catalog
     selection, items = render_scenario_selection(catalog)
     images = st.checkbox(
-        "合成の検査画像PNGも作る", disabled=destination == "sqlserver"
+        "合成の検査画像PNGも作る",
+        disabled=destination in {"sqlserver", "fixed-sqlserver"},
     )
     incompatibilities = []
     for item in items:
-        if destination not in item["supported_destinations"]:
+        policy_destination = {
+            "fixed-sqlserver": "sqlserver",
+            "landing-fixed-sqlserver": "both",
+        }.get(destination, destination)
+        if policy_destination not in item["supported_destinations"]:
             incompatibilities.append(
                 item["label"] + "は現在の投入先では使えません。"
             )
@@ -187,10 +202,28 @@ def render_source_form():
                 "指定回数で終了します。Kafkaへの直接送信ではありません。"
             )
         consent = False
+        fixed_consent = False
+        run_id = st.text_input("run ID（空欄なら自動生成、12桁hex）", value="")
         if destination != "landing":
-            st.info("専用の既存DEMO DBへ、毎回新しいschemaを作成します。")
+            fixed = destination in {
+                "fixed-sqlserver",
+                "landing-fixed-sqlserver",
+            }
+            st.info(
+                "固定6表へ投入します。型に入らない原値はJSON列に保持します。"
+                if fixed
+                else "専用の既存DEMO DBへ新しいschemaを作成します。"
+            )
             consent = st.checkbox("検証DBへの書き込みを明示的に許可する")
-            st.caption("会社の参照元DB・システムDBへの投入は拒否されます。")
+            if fixed:
+                fixed_consent = st.checkbox(
+                    "固定3schema・所有権を確認し、"
+                    "共有source DBへの書込みに同意する"
+                )
+            else:
+                st.caption(
+                    "会社の参照元DB・システムDBへの投入は拒否されます。"
+                )
         submitted = st.form_submit_button(
             "素材の投入を開始",
             type="primary",
@@ -215,8 +248,15 @@ def render_source_form():
                 "days": int(days),
                 **selection,
                 "destination": destination,
-                "images": images and destination != "sqlserver",
+                "images": images
+                and destination
+                not in {
+                    "sqlserver",
+                    "fixed-sqlserver",
+                },
                 "allow_sql_write": consent,
+                "confirm_shared_source_database": fixed_consent,
+                "run_id": run_id or None,
             },
         )
         if result is not None:
@@ -648,6 +688,7 @@ with help_tab:
     render_help(call_api)
 with source_tab:
     render_source_form()
+    render_sql_source(call_api)
     render_cdc_form()
 with pipeline_tab:
     render_pipeline()
