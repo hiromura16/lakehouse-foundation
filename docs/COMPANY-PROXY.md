@@ -36,6 +36,66 @@ setopt INTERACTIVE_COMMENTS
 | Dockerホスト管理者 | daemon用 `proxy.env` とsystemd drop-in、ホストCA | 承認済み保守時間の反映後、固定imageを取得できる |
 | 同じ配置担当／Dokploy管理者 | imageと既存アプリ | build成功、health、内部S3/Trino、許可HTTPSの実通信 |
 
+## Dokploy配置で確認する3つのproxy適用面
+
+| 適用面 | 必要な設定・反映 | 別に検証する通信 |
+| --- | --- | --- |
+| 1. Docker daemon / builder | daemon用6変数、builder自身のproxy/CA | registryのbase image pull・metadata取得 |
+| 2. Dokployサービス | private `site.env` → 本リポジトリinstaller → Dokploy本体の6変数 | コンテナ内のGitHub cloneとBuildKit clientの認証経路 |
+| 3. Lakehouse build/runtime | Composeのbuild args・必要なservice env、imageのCA | uv/JAR等の取得、完成アプリの外向きHTTPと内部bypass |
+
+HTTP(S) proxy両方がprivate設定にある場合、Dokployサービスへ大小6変数を揃えます。HTTP(S)の入力は大文字を正本とし、対応する小文字も同値です。NO_PROXYは必須内部名と `LAKEHOUSE_NO_PROXY` / `NO_PROXY` / `no_proxy` のprivate値をマージして標準名の両caseへ渡します。`site.env` の生成・upgrade、installer dry-run、既存サービスへの同期は [Dokploy更新手順](COMPANY-UPDATE.md#dokployサービス自身へproxyとbuildkit設定を同期する) に従います。daemon専用 `proxy.env` にはDokploy switchやcanonicalキーを追加しません。
+
+次は配置先VMで行う読取診断です。サービスenvの生出力やproxy URLを表示せず、7つの管理キーの有無だけを表示します。値の一致を検証した結果ではありません。
+
+**Bash / Zsh共通**
+
+```bash
+docker service inspect dokploy \
+  --format '{{range .Spec.TaskTemplate.ContainerSpec.Env}}{{println .}}{{end}}' |
+awk -F= '
+  BEGIN {
+    n = split("HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy BUILDKIT_NO_CLIENT_TOKEN", keys, " ")
+  }
+  { present[$1] = 1 }
+  END {
+    for (i = 1; i <= n; i++) {
+      print keys[i] "=" (present[keys[i]] ? "SET" : "NOT_SET")
+    }
+  }
+'
+```
+
+続いて、同じDokploy本体コンテナでGit・registry・token endpointを確認します。複数候補がある場合は対象host/taskを管理者が先に確定し、別serviceのコンテナを選ばないようにします。公開Git URLと固定HTTPS先だけを使い、proxyやtokenの本文は表示しません。
+
+**Bash / Zsh共通**
+
+```bash
+DOKPLOY_CONTAINER="$(
+  docker ps --filter label=com.docker.swarm.service.name=dokploy \
+    --format '{{.Names}}' | head -n 1
+)"
+: "${DOKPLOY_CONTAINER:?Dokploy container is not running on this host}"
+docker exec "$DOKPLOY_CONTAINER" \
+  git ls-remote https://github.com/hiromura16/lakehouse-foundation HEAD
+
+docker exec "$DOKPLOY_CONTAINER" sh -c '
+  for url in https://registry-1.docker.io/v2/ https://ghcr.io/v2/; do
+    curl --silent --show-error --connect-timeout 15 --max-time 45 \
+      --output /dev/null --write-out "HTTP=%{http_code} time=%{time_total}\n" "$url"
+  done
+  curl --silent --show-error --connect-timeout 15 --max-time 45 \
+    --output /dev/null --write-out "HTTP=%{http_code} time=%{time_total}\n" \
+    "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/python:pull"
+'
+```
+
+レジストリ `/v2/` のHTTP **401** は未認証要求が認証入口へ到達した結果です。token endpointのHTTP **200** はその固定の公開token要求が成功した結果です。401をproxy障害と読み替えず、200を全imageの認証・権限・build成功と読み替えません。curlの生エラーにはproxy等のprivate情報が含まれる場合があるため、共有するのは合否・status・所要時間だけです。
+
+`git ls-remote`、通常の `docker pull`、上記curlが通る一方、buildの `load metadata` が約120秒後に `failed to authorize: DeadlineExceeded: context deadline exceeded` で止まる場合は、BuildKit client/builderのtoken取得経路・同梱版・proxy/CAを別途調べます。private `DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN=1` をDokploy本体へ同期する実装を用意していますが、**今回のproxy障害を直す保証ではなく、実経路での検証が残る対策候補**です。TLSやregistry認証を無効化する設定ではありません。比較試験では0/1以外の変更を重ねず、キャッシュにない固定base imageのmetadata取得まで記録します。
+
+参考: [Docker daemon proxy](https://docs.docker.com/engine/daemon/proxy/)、[build proxy arguments](https://docs.docker.com/build/building/variables/#proxy-arguments)、[service updateのenv操作](https://docs.docker.com/reference/cli/docker/service/update/)、[BuildKit client tokenの実装](https://github.com/moby/buildkit/blob/master/session/auth/authprovider/authprovider.go)。上流masterの実装は採用CLIへの同梱確認を代替しません。
+
 ## 1. 接続条件を担当部署へ確認する
 
 | 確認項目 | 決める内容 |

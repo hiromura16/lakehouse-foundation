@@ -55,6 +55,43 @@ Dokployとアプリの配置先が別サーバーの場合、privateディレク
 
 private記録へ、Project名、Environment名、サービスの表示名、**作成後のappName**、配置先サーバー、Git branchとcommit、private envの保管先を控えます。URL・認証・CA実path・生ログを公開Gitへ書きません。
 
+## Dokploy自身のGit取得とBuildKitをproxy環境で準備する
+
+Docker daemon、Dokployサービス、Lakehouseのbuild/runtimeは別の通信主体です。daemon用proxyだけでは、Dokployコンテナ内の `git clone` の成功を保証しません。また、通常の `docker pull` が成功しても、BuildKitのmetadata解決・レジストリtoken取得が同じ経路を使うとは限りません。
+
+private `site.env` の `HTTP_PROXY` / `HTTPS_PROXY` に値があると、installerはDokployサービスへ同じ値の大文字・小文字を渡します。両方のproxyを設定した場合、`HTTP_PROXY,HTTPS_PROXY,NO_PROXY,http_proxy,https_proxy,no_proxy` の6変数が揃います。`NO_PROXY` は必須内部名とprivateの3項目をマージした値です。`LAKEHOUSE_NO_PROXY` という独自名はサービスへ渡さず、標準名の両caseへ変換します。未設定のHTTP(S)変数を空文字で追加しません。
+
+| private設定 | Dokployサービスの動作 |
+| --- | --- |
+| `DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN=1`（生成・upgrade既定） | `BUILDKIT_NO_CLIENT_TOKEN=1` を管理対象として追加・更新 |
+| `DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN=0` | 管理対象の `BUILDKIT_NO_CLIENT_TOKEN` を除去 |
+| 空欄・0/1以外 | planで拒否。空欄を無効化の代用にしない |
+
+このswitchはBuildKit client側のtoken取得経路を変えるための**検証未了の対策候補**です。`failed to authorize: DeadlineExceeded` / `context deadline exceeded` の解消保証、認証やTLS検証の無効化、会社proxyでの成功実績を意味しません。[BuildKitの実装](https://github.com/moby/buildkit/blob/master/session/auth/authprovider/authprovider.go) は上流masterへの参照であり、採用Docker CLIへ同梱されたBuildKitの挙動と現地で照合します。
+
+配置先VMの独立cloneでprivate設定をupgradeし、ローカルのエディターでproxy・switch・既存ネットワーク値を確認します。ファイル全文やproxy値をログへ出しません。
+
+**Bash / Zsh共通**
+
+```bash
+export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
+python3 scripts/configure.py --output "$LAKEHOUSE_ENV_FILE" --upgrade
+bash infra/dokploy/install.sh --env-file "$LAKEHOUSE_ENV_FILE"
+```
+
+有効な設定でのdry-runの標準出力は次の2行だけです。Docker・network・ファイル変更は行いません。`SET` は設定がある意味で、疎通や稼働観測ではありません。
+
+```text
+Dokploy service proxy: SET
+Dokploy BuildKit client token mode: enabled
+```
+
+反映を行う保守時間の手順は [既存Dokployサービスへの反映](COMPANY-UPDATE.md#dokployサービス自身へproxyとbuildkit設定を同期する) にあります。新規導入時はservice createへ必要なenvを配列で渡します。既存導入時は所有権・Swarm identity等を確認し、管理する7キーだけを1回のservice updateで同期します。重複キーを除去してから追加し、同じ設定の2回目はenv updateを省略します。DB・管理者・アプリ・Git Provider・volume・Traefikを作り直しません。
+
+更新後は旧taskの `1/1` だけで成功とせず、update完了とRunningを最大120秒の収束待機で照合します。失敗時はreplicas・許可したtask state・task errorの `SET/NOT_SET` を表示します。raw task errorは秘密値を含み得るため表示しません。ネットワークやownershipの不一致は強制変更せず停止します。通常のinstaller全体ではimage取得やUI readinessなど別の待機もあります。
+
+DokployのComposeサービス自身のEnvironmentタブへproxyを保存するだけでは、**Dokploy本体サービス**の環境変数は変わりません。逆に本体への同期だけではアプリのbuild/runtimeのproxyを代替しません。確認コマンドとHTTP 401/200の読み方は [会社proxyの3つの適用面](COMPANY-PROXY.md#dokploy配置で確認する3つのproxy適用面) を使います。
+
 ## 1. ProjectとEnvironmentを作る
 
 ブラウザーでProject一覧の **Create Project** を押し、Nameに `lakehouse-foundation`、Descriptionに用途を入力して作成します。0.31.0では **production Environmentが自動作成**されます。最初の検証用にはEnvironment選択のメニューから **Create Environment** を押し、Nameを `development` として **Create** します。作業前に選択中のEnvironmentを毎回確認します。[Project作成実装](https://github.com/Dokploy/dokploy/blob/v0.31.0/packages/server/src/services/project.ts)、[Environment選択画面](https://github.com/Dokploy/dokploy/blob/v0.31.0/apps/dokploy/components/dashboard/project/advanced-environment-selector.tsx)

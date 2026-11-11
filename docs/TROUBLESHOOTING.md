@@ -74,6 +74,31 @@ test -f infra/proxy/empty-ca.pem && test ! -s infra/proxy/empty-ca.pem
 
 最初の終了コード0が「存在する空regular file」、planの0が「選択設定の構文検査成功」です。会社更新の順は [COMPANY-UPDATE.md](COMPANY-UPDATE.md) へ進みます。
 
+## DokployのGit clone timeoutとBuildKit auth timeout
+
+| 症状 | 意味・調べる経路 | 次の確認 |
+| --- | --- | --- |
+| `Failed to connect to github.com port 443` | Dokploy本体からのGit取得がtimeout | daemonとは別に本体のproxy6変数、CA、Git経路を確認 |
+| 通常pullは通るが `load metadata` で失敗 | daemon pullとBuildKit client/builderのmetadata/auth経路が異なる可能性 | 同じ本体内のGit・registry・token疎通、builderと同梱CLI版 |
+| `failed to authorize: DeadlineExceeded` / `context deadline exceeded` | token取得等が期限内に完了しなかった。原因は確定しない | private switch、proxy/CA適用面、許可先と認証応答を個別比較 |
+| `/v2/` がHTTP401 | 未認証レジストリ入口へ到達した | 認証成功ではない。token endpoint、対象imageの権限を別確認 |
+| 公開token endpointがHTTP200 | その固定token要求が到達・成功した | token本文は表示せず、実buildを別確認 |
+| installerがenv同期後にtimeout／paused | 本体が期待specへ収束していない | 安全なreplicas/task state/error presence、既存volume保持。rawログはprivateに調査 |
+
+[会社proxyの読取診断](COMPANY-PROXY.md#dokploy配置で確認する3つのproxy適用面) と [本体の同期手順](COMPANY-UPDATE.md#dokployサービス自身へproxyとbuildkit設定を同期する) を使います。`DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN=1` は標準名へ変換される**検証未了の対策候補**で、特定障害の解消保証ではありません。0で管理する標準名を除去できます。空欄・true等の値は使いません。通常のpullやcurlの成功だけで「BuildKit対策済み」とは記録しません。
+
+### 正確な固定imageを手動pullする一時回避
+
+導入先で必要性を判断した場合だけ、失敗したbase imageと同じtag・digestをソースのlock/Dockerfileから選びます。次は本リポジトリのuv固定baseを用いる例です。実行後の再Deployが進んでも、キャッシュ依存の一時回避であり、毎回の手動pullを恒久運用にしません。
+
+**Bash / Zsh共通**
+
+```bash
+docker pull ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490
+```
+
+`latest` や別digestへの置換、認証・TLS無効化、Swarmやvolumeの削除で症状を消さないでください。対策後はキャッシュにない固定baseのmetadata取得まで確認し、ローカルmock検証と会社の実経路の結果を分けます。
+
 ## GUI・APIのエラー
 
 | 症状／HTTP | 観測するもの | 判断・操作 |

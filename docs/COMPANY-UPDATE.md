@@ -171,6 +171,40 @@ fi
 
 これらの復旧経路は [configure.py](../scripts/configure.py)、[settings.py](../scripts/settings.py)、[回帰テスト](../tests/test_company_compatibility.py) で確認できます。コード更新の受入と、企業proxyや本物の業務DBの現地受入は引き続き分けます。
 
+## Dokployサービス自身へproxyとBuildKit設定を同期する
+
+これはアプリのEnvironment更新とは別の、本リポジトリinstallerが所有するDokploy本体の更新です。以下は導入先で保守時間に行う手順であり、ソース修正のローカルテストで実サービスへapplyした記録ではありません。管理外のDokploy／Swarmは取り込まず停止するので、所有権labelやinstallation identityを後付けして拒否を回避しません。
+
+1. 手順1のprivate backupと、手順3のupgradeを先に完了します。proxyの両caseと既存NO_PROXY追加先を保持します。
+2. ローカルのエディターで `DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN=1` を確認します。既定1、無効化は0です。空欄・`true` 等はplanで拒否します。proxy値をコマンド引数へ直書きしません。
+3. 次のdry-runで、proxyの `SET/NOT_SET` とBuildKitの `enabled/disabled` の2行を確認します。host変更・通信はありません。
+
+**Bash / Zsh共通**
+
+```bash
+: "${LAKEHOUSE_ENV_FILE:?Select the existing private site.env first}"
+bash infra/dokploy/install.sh --env-file "$LAKEHOUSE_ENV_FILE"
+```
+
+4. 反映対象・private設定・保守時間を確認した導入先の管理者が実行します。既存Swarmのpool/identity等が一致しない場合は停止し、再初期化しません。
+
+**Bash / Zsh共通**
+
+```bash
+sudo bash infra/dokploy/install.sh --env-file "$LAKEHOUSE_ENV_FILE" --apply
+```
+
+新規の場合はcreate、既存の場合は所有権確認後のenv同期です。HTTP(S)の空欄は対応する管理変数を削除し、0は `BUILDKIT_NO_CLIENT_TOKEN` を削除します。管理対象7キーの現在値を内部比較して、差分か重複がある場合だけ1回の `--env-rm` / `--env-add` updateを行います。同じ設定を再適用しても不要なenv updateを発生させません。既存のその他env・mount・volume・管理者・アプリ・Git Provider・Swarm IDを保持します。管理するproxy値を手動変更して残す方式ではありません。
+
+更新後は旧taskの `1/1` だけでなくupdate完了とRunningを最大120秒で確認します。timeout／paused等は失敗として停止し、replicas・許可したtask state・task errorの有無だけを出します。rawエラー・service inspect全文には秘密値が含まれ得るため、公開ログに貼りません。installer全体のimage取得やUI待機はこの120秒とは別です。
+
+5. [会社proxyの読取診断](COMPANY-PROXY.md#dokploy配置で確認する3つのproxy適用面) で、管理キーのpresence、同じDokployコンテナのGit取得、registry401、token endpoint200を確認します。
+6. その結果を記録してから、手順5以降で同じComposeアプリへ通常のDeployを行います。キャッシュにない固定base imageのmetadata取得で再発しないことも別途確認します。1の設定だけで障害解消済みとは判断しません。
+
+### BuildKit設定だけ元へ戻す
+
+他の設定・秘密値を保持したままprivate switchを0へ編集し、同じdry-run→保守時間のapplyを行います。管理する標準名が削除されたことをpresence診断で確認します。DB／volumeやSwarmを戻す操作は不要です。proxy自体も除去する場合はHTTP(S)大文字・小文字を一組で編集し、別のdaemon／アプリ設定の反映も [会社proxy手順](COMPANY-PROXY.md) で確認します。古いbackup全体で現在の資格情報を上書きしません。
+
 ## 4. CLIで動いている構成を引き継ぐ場合だけ停止する
 
 **既に同じDokployサービスで管理している場合は、この停止を飛ばして手順5へ進みます。** CLIで動かしたDB／S3をDokployへ引き継ぐ場合だけ、旧 `COMPOSE_PROJECT_NAME`、profile、volumeの実名、外部ディレクトリを控えます。

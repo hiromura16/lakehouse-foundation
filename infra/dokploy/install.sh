@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Portable, private Dokploy foundation. The default operation only prints a plan.
+set +x  # Private env and Docker arguments must never enter shell trace output.
 set -Eeuo pipefail
 umask 077
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -44,13 +45,7 @@ BRIDGE_CIDR=${SETTINGS[6]:-}
 BIND_IPS=(127.0.0.1)
 [[ $BIND_IP == 127.0.0.1 ]] || BIND_IPS+=("$BIND_IP")
 
-printf 'Dokploy v0.31.0 plan (%s)\n' "$([[ $APPLY == true ]] && printf apply || printf dry-run)"
-printf '  UI: http://%s:%s/ (plus loopback)\n' "$BIND_IP" "$ADMIN_PORT"
-printf '  Traefik: private IPv4 %s, TCP 80/443 and UDP 443\n' "$BIND_IP"
-printf '  Allowed clients: %s\n' "$ALLOWED_CIDRS"
-printf '  Swarm advertise: %s; pool: %s; subnet prefix: %s\n' "$ADVERTISE_ADDR" "$ADDRESS_POOL" "$SUBNET_SIZE"
-printf '  Docker gateway bridge: %s\n' "${BRIDGE_CIDR:-auto-detect from docker_gwbridge}"
-printf '  Persistent state: %s; existing unrelated resources will be refused.\n' "$CONFIG"
+python3 "$SCRIPT_DIR/config.py" service-plan "$ENV_FILE"
 [[ $APPLY == true ]] || exit 0
 [[ $EUID == 0 ]] || die '--apply requires root; preserve --env-file when invoking sudo.'
 [[ $(uname -m) == x86_64 ]] || die 'This image lock supports x86-64 Linux hosts.'
@@ -175,7 +170,8 @@ if ! docker service inspect dokploy-postgres >/dev/null 2>&1; then
     --log-driver json-file --log-opt max-size=10m --log-opt max-file=3 "$POSTGRES_IMAGE"
 fi
 if ! docker service inspect dokploy >/dev/null 2>&1; then
-  docker service create --detach --name dokploy --label "lab.owner=$OWNER" \
+  python3 "$SCRIPT_DIR/service_env.py" --env-file "$ENV_FILE" create -- \
+    service create --detach --name dokploy --label "lab.owner=$OWNER" \
     --replicas 1 --constraint 'node.role==manager' --network dokploy-network \
     --mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock \
     --mount type=bind,source=/etc/dokploy,target=/etc/dokploy \
@@ -187,8 +183,10 @@ if ! docker service inspect dokploy >/dev/null 2>&1; then
     --env TZ=UTC --env RELEASE_TAG=v0.31.0 \
     --update-parallelism 1 --update-order stop-first \
     --log-driver json-file --log-opt max-size=10m --log-opt max-file=3 "$DOKPLOY_IMAGE"
+else
+  # Reconcile only the seven managed env names; never recreate DB or Swarm.
+  python3 "$SCRIPT_DIR/service_env.py" --env-file "$ENV_FILE" sync
 fi
-docker service scale dokploy-postgres=1 dokploy=1
 python3 "$SCRIPT_DIR/config.py" render-nginx "$CONFIG/nginx.conf" \
   "$ALLOWED_CIDRS" "$ADDRESS_POOL" "$ACTUAL_BRIDGE"
 if ! docker container inspect "$GATEWAY" >/dev/null 2>&1; then
@@ -224,5 +222,5 @@ else
   docker start dokploy-traefik >/dev/null
 fi
 systemctl enable docker
-printf 'Dokploy is ready at http://%s:%s/. Create the first administrator account.\n' "$BIND_IP" "$ADMIN_PORT"
+printf 'Dokploy is ready. Use the private configured UI address.\n'
 printf 'Keep API keys private. Recheck private port bindings after Dokploy UI upgrades.\n'

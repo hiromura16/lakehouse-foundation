@@ -56,6 +56,14 @@ REQUIRED_NO_PROXY = (
 BYPASS_KEYS = ("LAKEHOUSE_NO_PROXY", "NO_PROXY", "no_proxy")
 
 
+def buildkit_client_token_mode(values):
+    """Validate the private 0/1 switch; never accept shell-like booleans."""
+    value = values.get("DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN", "1")
+    if value not in {"0", "1"}:
+        raise ValueError("DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN must be 0 or 1.")
+    return value
+
+
 def normalize_no_proxy(values):
     """Merge private bypass values without consulting the host environment."""
     result = list(REQUIRED_NO_PROXY)
@@ -331,6 +339,9 @@ def load(path):
     ca_file = values.get("CORPORATE_CA_FILE", "")
     if ca_file and not Path(ca_file).is_absolute():
         raise ValueError("CORPORATE_CA_FILE must be absolute when configured.")
+    values["DOKPLOY_BUILDKIT_NO_CLIENT_TOKEN"] = buildkit_client_token_mode(
+        values
+    )
     validate_ssrf(values)
     return synchronize_no_proxy(values)
 
