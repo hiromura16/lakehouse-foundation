@@ -1,10 +1,23 @@
 """Source/AST recovery contracts only; no SQL Server execution is implied."""
 
+import importlib.util
 import re
 import unittest
 from pathlib import Path
 
-from sqlfluff.core import Linter
+# Skip only an absent optional package; keep broken installs as errors.
+try:
+    from sqlfluff.core import Linter
+except ModuleNotFoundError as error:
+    if (
+        error.name != "sqlfluff"
+        or importlib.util.find_spec("sqlfluff") is not None
+    ):
+        raise
+    raise unittest.SkipTest(
+        "Optional tests need sqlfluff. In a uv virtual environment, run "
+        "uv pip sync --require-hashes requirements-dev.lock."
+    ) from error
 
 ROOT = Path(__file__).resolve().parents[1]
 DIRECTORY = ROOT / "infra/sqlserver"

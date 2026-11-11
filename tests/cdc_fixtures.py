@@ -2,12 +2,26 @@
 
 import calendar
 import copy
+import importlib.util
 import json
 import sys
+import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-import pyarrow as pa
+# Skip only an absent optional package; keep broken installs as errors.
+try:
+    import pyarrow as pa
+except ModuleNotFoundError as error:
+    if (
+        error.name != "pyarrow"
+        or importlib.util.find_spec("pyarrow") is not None
+    ):
+        raise
+    raise unittest.SkipTest(
+        "Optional tests need pyarrow. In a uv virtual environment, run "
+        "uv pip sync --require-hashes requirements-dev.lock."
+    ) from error
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "infra/cdc"))
