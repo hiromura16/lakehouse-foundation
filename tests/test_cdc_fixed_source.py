@@ -8,7 +8,11 @@ import contextlib
 import copy
 import json
 import re
+import shlex
+import shutil
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -124,6 +128,65 @@ def metadata_adapter(fault=None):
     if fault == "ownership":
         adapter.ownership.side_effect = ValueError("private-marker-value")
     return adapter, cursor, handle, roles
+
+
+class CdcImageLayoutTests(unittest.TestCase):
+    """Import from Dockerfile COPY inputs without building or deploying."""
+
+    def test_fixed_adapter_imports_from_the_actual_image_copy_layout(self):
+        dockerfile = (ROOT / "infra/cdc/Dockerfile").read_text()
+        with tempfile.TemporaryDirectory() as directory:
+            image = Path(directory)
+            for line in dockerfile.splitlines():
+                if not line.startswith("COPY "):
+                    continue
+                parts = shlex.split(line)
+                if parts[1].startswith("--") or not parts[-1].startswith("./"):
+                    continue
+                destination = image / parts[-1]
+                for pattern in parts[1:-1]:
+                    sources = list(ROOT.glob(pattern))
+                    self.assertTrue(sources, pattern)
+                    for source in sources:
+                        if source.is_dir():
+                            shutil.copytree(source, destination)
+                        else:
+                            target = (
+                                destination / source.name
+                                if parts[-1].endswith("/")
+                                else destination
+                            )
+                            target.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(source, target)
+            smoke = (
+                "import sys; from pathlib import Path; "
+                "root = Path.cwd(); "
+                "sys.path[:0] = [str(root / 'cdc'), str(root)]; "
+                "import fixed_source, connector, consumer; "
+                "adapter = fixed_source.source_adapter(); "
+                "assert Path(adapter.__file__).parent == root / 'scripts'; "
+                "assert adapter.SAFETY_DEFINITION; "
+                "assert len(fixed_source.table_mapping()) == 6"
+            )
+            result = subprocess.run(
+                [sys.executable, "-I", "-c", smoke],
+                cwd=image,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            # Prove isolation: the checkout cannot mask a missing image asset.
+            (image / "scripts/sqlserver_safety.sql").unlink()
+            missing = subprocess.run(
+                [sys.executable, "-I", "-c", smoke],
+                cwd=image,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn("sqlserver_safety.sql", missing.stderr)
 
 
 class FixedCdcConfigurationTests(unittest.TestCase):
