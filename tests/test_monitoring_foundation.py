@@ -34,7 +34,7 @@ class MonitoringFoundationTests(unittest.TestCase):
         for name in ("node-exporter", "cadvisor"):
             with self.subTest(name=name):
                 service = self.services[name]
-                self.assertEqual(service["profiles"], ["monitoring"])
+                self.assertEqual(service["profiles"], ["monitoring-host"])
                 self.assertNotIn("ports", service)
                 self.assertNotIn("network_mode", service)
                 self.assertNotIn("privileged", service)
@@ -53,6 +53,25 @@ class MonitoringFoundationTests(unittest.TestCase):
                     service["logging"]["options"],
                     {"max-size": "10m", "max-file": "3"},
                 )
+
+    def test_normal_monitoring_never_selects_host_root_or_pid_access(self):
+        """A redeploy with existing monitoring cannot opt into host access."""
+        selected = {
+            name: service
+            for name, service in self.services.items()
+            if "monitoring" in service.get("profiles", [])
+        }
+        self.assertEqual(set(selected), {"prometheus", "grafana", "loki", "vector"})
+        for service in selected.values():
+            self.assertNotEqual(service.get("pid"), "host")
+            for mount in service.get("volumes", []):
+                if isinstance(mount, dict):
+                    self.assertNotIn(mount.get("source"), {"/", "/proc", "/sys"})
+        host = {
+            name for name, service in self.services.items()
+            if "monitoring-host" in service.get("profiles", [])
+        }
+        self.assertEqual(host, {"node-exporter", "cadvisor"})
 
     def test_node_namespace_gaps_are_explicit_not_fake_host_network(self):
         """No unsupported netlink, D-Bus or network-namespace shortcut."""
@@ -132,6 +151,30 @@ class MonitoringFoundationTests(unittest.TestCase):
             "container_start_time_seconds",
             alerts["TrinoMemoryFailureEvidence"]["expr"],
         )
+
+    def test_optional_exporters_use_fixed_dns_discovery_not_absent_targets(self):
+        """DNS absence creates no static up=0 target for an opt-out host."""
+        config = yaml.safe_load(
+            (ROOT / "infra/monitoring/prometheus.yml").read_text()
+        )
+        jobs = {job["job_name"]: job for job in config["scrape_configs"]}
+        for name, target, port in (
+            ("node", "node-exporter", 9100),
+            ("cadvisor", "cadvisor", 8080),
+        ):
+            job = jobs[name]
+            self.assertNotIn("static_configs", job)
+            self.assertEqual(job["dns_sd_configs"], [{
+                "names": [target], "type": "A", "port": port,
+                "refresh_interval": "15s",
+            }])
+            self.assertEqual(job["relabel_configs"], [
+                {"target_label": "host_alias", "replacement": "local"},
+                {"target_label": "instance", "replacement": f"{target}:{port}"},
+            ])
+        for name in ("prometheus", "lakehouse", "loki", "vector"):
+            self.assertIn("static_configs", jobs[name])
+            self.assertNotIn("dns_sd_configs", jobs[name])
 
     def test_generated_dashboards_have_unique_ids_and_no_external_plugins(
         self,
@@ -235,7 +278,7 @@ class MonitoringPathAndValidatorTests(unittest.TestCase):
         import settings
 
         values = {
-            "COMPOSE_PROFILES": "monitoring",
+            "COMPOSE_PROFILES": "monitoring,monitoring-host",
             "LANDING_DIR": "/srv/lab/landing",
             "NOTEBOOKS_DIR": "/srv/lab/notebooks",
         }
@@ -274,7 +317,7 @@ class MonitoringPathAndValidatorTests(unittest.TestCase):
             file.write_bytes(b"unchanged")
             link = base / "link"
             link.symlink_to(directory, target_is_directory=True)
-            values = {"COMPOSE_PROFILES": "monitoring"}
+            values = {"COMPOSE_PROFILES": "monitoring,monitoring-host"}
             for bad in (file, link, link / "child"):
                 with self.assertRaises(ValueError):
                     settings.validate_monitoring_paths(
@@ -425,11 +468,13 @@ class MonitoringPathAndValidatorTests(unittest.TestCase):
                         "docker",
                         "logs",
                         "--tail",
-                        "100",
+                        "1000",
                         "a" * 64,
                     ],
                 )
-                return subprocess.CompletedProcess(command, 0, b"x" * 20000)
+                return subprocess.CompletedProcess(
+                    command, 0, b"first-error\n" + b"x" * 20000 + b"\nsummary"
+                )
             return subprocess.CompletedProcess(command, 0)
 
         with mock.patch.object(validator.subprocess, "run", side_effect=fake):
@@ -438,6 +483,8 @@ class MonitoringPathAndValidatorTests(unittest.TestCase):
             )
         self.assertEqual(result["status"], "failed")
         self.assertEqual(len(result["public_diagnostic"]), 8192)
+        self.assertTrue(result["public_diagnostic"].startswith("first-error"))
+        self.assertTrue(result["public_diagnostic"].endswith("summary"))
         self.assertEqual(calls[-1], ["docker", "rm", "--force", "a" * 64])
         calls.clear()
         with mock.patch.object(validator.subprocess, "run", side_effect=fake):

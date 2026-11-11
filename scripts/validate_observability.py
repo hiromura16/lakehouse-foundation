@@ -222,16 +222,21 @@ def execute(job, *, public_diagnostics=False):
             # plus the empty synthetic token above. Never read application
             # logs or reuse an operator container/real private configuration.
             diagnostic = subprocess.run(
-                ["docker", "logs", "--tail", "100", container],
+                ["docker", "logs", "--tail", "1000", container],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 timeout=5,
                 check=False,
             )
             if diagnostic.returncode == 0:
-                outcome["public_diagnostic"] = diagnostic.stdout.decode(
-                    "utf-8", errors="replace"
-                )[-8192:]
+                rendered = diagnostic.stdout.decode("utf-8", errors="replace")
+                # Keep the first compiler error as well as the final summary;
+                # syntax errors often cause many later cascading messages.
+                outcome["public_diagnostic"] = (
+                    rendered
+                    if len(rendered) <= 8192
+                    else rendered[:4096] + rendered[-4096:]
+                )
         return outcome
     except (OSError, subprocess.TimeoutExpired):
         outcome["status"] = "unavailable-or-timeout"
