@@ -11,6 +11,7 @@ x-effective-no-proxy: &effective_no_proxy "${LAKEHOUSE_NO_PROXY:-localhost,127.0
 # Connect・登録器・consumerで外部DBとtopic/mappingの識別を揃える。
 # SQL Server/Kafkaへの接続をHTTP proxyで中継する設定ではない。
 x-cdc-environment: &cdc_environment
+  CDC_SOURCE_MODE: ${CDC_SOURCE_MODE:-generic}
   CDC_SQLSERVER_HOST: ${CDC_SQLSERVER_HOST:-}
   CDC_SQLSERVER_PORT: ${CDC_SQLSERVER_PORT:-1433}
   CDC_SQLSERVER_DATABASE: ${CDC_SQLSERVER_DATABASE:-}
@@ -27,6 +28,37 @@ x-cdc-environment: &cdc_environment
   CDC_BATCH_SIZE: ${CDC_BATCH_SIZE:-100}
   CDC_POLL_SECONDS: ${CDC_POLL_SECONDS:-5}
   CDC_CONNECT_PORT: ${CDC_CONNECT_PORT:-8083}
+  # fixed-demoは同じSOURCE読取接続を利用する。DEMO writer/制御writerは渡さない。
+  SOURCE_SQLSERVER_HOST: ${SOURCE_SQLSERVER_HOST:-}
+  SOURCE_SQLSERVER_PORT: ${SOURCE_SQLSERVER_PORT:-1433}
+  SOURCE_SQLSERVER_DATABASE: ${SOURCE_SQLSERVER_DATABASE:-}
+  SOURCE_SQLSERVER_USER: ${SOURCE_SQLSERVER_USER:-}
+  SOURCE_SQLSERVER_PASSWORD: ${SOURCE_SQLSERVER_PASSWORD:-}
+  SOURCE_SQLSERVER_ENCRYPT: ${SOURCE_SQLSERVER_ENCRYPT:-true}
+  SOURCE_SQLSERVER_TRUST_SERVER_CERTIFICATE: ${SOURCE_SQLSERVER_TRUST_SERVER_CERTIFICATE:-false}
+  SOURCE_SQLSERVER_HOSTNAME_IN_CERTIFICATE: ${SOURCE_SQLSERVER_HOSTNAME_IN_CERTIFICATE:-}
+  SOURCE_SQLSERVER_TIMEZONE: ${SOURCE_SQLSERVER_TIMEZONE:-UTC}
+
+# 所有権検査はPythonだけで行う。Java Connectへmarker/tokenを配布しない。
+x-fixed-cdc-identity: &fixed_cdc_identity
+  DEMO_SQLSERVER_INSTALLATION_ID: ${DEMO_SQLSERVER_INSTALLATION_ID:-}
+  DEMO_SQLSERVER_OWNERSHIP_TOKEN: ${DEMO_SQLSERVER_OWNERSHIP_TOKEN:-}
+  DEMO_SQLSERVER_ERP_SCHEMA: ${DEMO_SQLSERVER_ERP_SCHEMA:-lh_demo_erp}
+  DEMO_SQLSERVER_MES_SCHEMA: ${DEMO_SQLSERVER_MES_SCHEMA:-lh_demo_mes}
+  DEMO_SQLSERVER_CONTROL_SCHEMA: ${DEMO_SQLSERVER_CONTROL_SCHEMA:-lh_demo_ctl}
+  # CAは固定targetへread-only bind。空欄ならsystem trustを使用する。
+  SOURCE_SQLSERVER_CA_FILE: ${SOURCE_SQLSERVER_CA_FILE:+/run/source-certs/source-ca.pem}
+
+# system trustはSOURCE_CA_FILEを空欄にする。custom PEMはprivate Compose overrideで
+# この固定targetのmountを置換する。0byte placeholderのままではpreflightを拒否。
+# generic CDCが使用しないSOURCE pathを勝手にmountして既存配置を壊さない。
+x-source-ca-mount: &source_ca_mount
+  type: bind
+  source: ../proxy/empty-ca.pem
+  target: /run/source-certs/source-ca.pem
+  read_only: true
+  bind:
+    create_host_path: false
 
 # 管理対象を識別し、内部CDCサービスのTraefik自動公開を止める。
 x-cdc-labels: &cdc_labels
@@ -166,9 +198,11 @@ services:
     labels: *cdc_labels
     logging: *cdc_logging
     mem_limit: 256m
-    environment: *cdc_environment
+    environment:
+      <<: [*cdc_environment, *fixed_cdc_identity]
     command: [python, /opt/lakehouse/cdc/connector.py]
     volumes:
+      - *source_ca_mount
       - type: bind
         source: ${CDC_CONFIG_DIR:-/srv/lakehouse/cdc}
         target: /run/cdc
@@ -192,7 +226,7 @@ services:
     mem_limit: 1024m
     cpus: 2
     environment:
-      <<: *cdc_environment
+      <<: [*cdc_environment, *fixed_cdc_identity]
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_BUCKET_RAW: ${S3_BUCKET_RAW}
@@ -203,6 +237,7 @@ services:
       no_proxy: *effective_no_proxy
     volumes:
       - cdc-state:/state
+      - *source_ca_mount
       - type: bind
         source: ${CDC_CONFIG_DIR:-/srv/lakehouse/cdc}
         target: /run/cdc
@@ -224,4 +259,4 @@ volumes:
   cdc-kafka:
     name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_cdc-kafka
   cdc-state:
-    name: ${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_cdc-state
+    name: ${CDC_STATE_VOLUME_NAME:-${DATA_VOLUME_PREFIX:-${COMPOSE_PROJECT_NAME:-lakehouse}}_cdc-state}

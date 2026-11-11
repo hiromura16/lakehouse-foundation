@@ -1,6 +1,8 @@
 [sqlfluff]
 dialect = trino
 max_line_length = 88
+# Parse every generated query and guarded SQL Server migration in full.
+large_file_skip_byte_limit = 0
 
 [sqlfluff:indentation]
 indent_unit = space

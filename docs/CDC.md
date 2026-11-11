@@ -45,6 +45,8 @@ Kafbat UI を起動します。通常のファイル投入と、SELECT だけの
 | 既存のCLIまたはDokploy配置 | 選んだ一つの管理入口からcdc profileを起動 | register成功、connector/task RUNNING、consumer進捗 |
 | 許可端末の画面／SQL | 管理者がlag・raw/current/Goldを照合 | 導入先の受入記録が揃う |
 
+固定の疑似ERP/MES 6表を使う場合は、先に [固定SQL sourceのCDC手順](SQLSERVER-FIXED-DEMO.md#7-固定6表のcdc準備とraw履歴) を読み、`CDC_SOURCE_MODE=fixed-demo` を選びます。本書の外部mapping・`CDC_SQLSERVER_*`・`cdc_*` の説明は既定の `generic` モードです。fixed-demoはSOURCE readerを使い、保存先を `sqlcdc_events` / `sqlcdc_*` に分けます。接続体系や旧captureを置き換えません。
+
 ## 1. どこに保存されるか
 
 ```mermaid

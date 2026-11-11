@@ -502,6 +502,8 @@ def render_settings():
         "DEMO_SQLSERVER_CONTROL_SCHEMA": "固定制御schema（変更不可）",
         "DEMO_SQLSERVER_TRUST_SERVER_CERTIFICATE": "DEMO:証明書検証省略",
         "SOURCE_SQLSERVER_TRUST_SERVER_CERTIFICATE": "SOURCE:証明書検証省略",
+        "CDC_SOURCE_MODE": "CDC sourceの種類（generic / fixed-demo）",
+        "CDC_STATE_VOLUME_NAME": "CDC状態volume名（既存は保持）",
         "N8N_SSRF_PROTECTION_ENABLED": "n8nのSSRF保護（true/false）",
         "N8N_SSRF_BLOCKED_IP_RANGES": "拒否するIP範囲（defaultは製品既定）",
         "N8N_SSRF_ALLOWED_IP_RANGES": "例外として許可するIP範囲",

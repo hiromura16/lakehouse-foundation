@@ -58,6 +58,8 @@ def prepare(values, version):
         raise ValueError("Cannot determine the reviewed repository commit.")
     selected["OwnershipHash"] = hashlib.sha256(token.encode()).hexdigest()
     selected["RepositoryVersion"] = version
+    # Disabling fixed CDC is a separate DBA action; default input refuses it.
+    selected["ConfirmDisableCdc"] = "0"
     return "-- Private DBA input. Not executed by this tool.\n" + "".join(
         ":setvar " + key + ' "' + value + '"\n'
         for key, value in selected.items()

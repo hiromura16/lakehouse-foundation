@@ -142,6 +142,8 @@ values = {
     "DEMO_SQLSERVER_ENCRYPT": "true",
     "DEMO_SQLSERVER_TRUST_SERVER_CERTIFICATE": "false",
     "CDC_CONFIG_DIR": str(target.parent / "cdc"),
+    "CDC_SOURCE_MODE": "generic",
+    "CDC_STATE_VOLUME_NAME": "",
     "CDC_SQLSERVER_HOST": "",
     "CDC_SQLSERVER_PORT": "1433",
     "CDC_SQLSERVER_DATABASE": "",

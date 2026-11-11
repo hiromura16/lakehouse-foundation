@@ -41,6 +41,7 @@ class PrepareSqlTests(unittest.TestCase):
         self.assertIn(sha256(token.encode()).hexdigest(), output)
         self.assertIn(':setvar TargetDatabase "fixture_database"', output)
         self.assertNotIn("PASSWORD", output)
+        self.assertIn(':setvar ConfirmDisableCdc "0"', output)
 
     def test_sqlcmd_injection_and_reused_credentials_are_rejected(self):
         for changes in (

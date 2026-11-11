@@ -487,6 +487,31 @@ class FixedServiceProbeTests(unittest.TestCase):
         self.assertNotIn("unit-vector-admin", str(rendered))
         self.assertNotIn("unit-vector-reader", str(rendered))
 
+    def test_fixed_cdc_cards_require_source_reader_without_writer_auth(self):
+        """Fixed mode readiness must not depend on generic CDC credentials."""
+        services = sys.modules["poc_services"]
+        values = {
+            "COMPOSE_PROFILES": "cdc",
+            "CDC_SOURCE_MODE": "fixed-demo",
+            "SOURCE_SQLSERVER_HOST": "fixture.example.invalid",
+            "SOURCE_SQLSERVER_DATABASE": "fixture_database",
+            "SOURCE_SQLSERVER_USER": "fixture_reader",
+            "SOURCE_SQLSERVER_PASSWORD": "fixture-reader-secret",
+            "DEMO_SQLSERVER_INSTALLATION_ID": "a" * 32,
+            "DEMO_SQLSERVER_OWNERSHIP_TOKEN": "b" * 64,
+        }
+        cards = services.service_cards(values, {"kafbat": True})
+        selected = next(card for card in cards if card["id"] == "kafbat")
+        self.assertEqual(selected["state"], "available")
+        self.assertNotIn("fixture-reader-secret", str(cards))
+        values.pop("SOURCE_SQLSERVER_PASSWORD")
+        cards = services.service_cards(values, {"kafbat": True})
+        selected = next(card for card in cards if card["id"] == "kafbat")
+        self.assertEqual(selected["state"], "unconfigured")
+        self.assertEqual(
+            selected["missing_settings"], ["SOURCE_SQLSERVER_PASSWORD"]
+        )
+
     def test_compute_probes_only_the_three_fixed_spark_ui_origins(self):
         services = sys.modules["poc_services"]
         client = mock.MagicMock()

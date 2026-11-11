@@ -122,6 +122,73 @@ class PrivateSettingsCompatibilityTests(
 ):
     """Keep deployment choices and credentials through proxy normalization."""
 
+    def test_fixed_cdc_policy_is_explicit_and_volume_is_a_name(self):
+        """Keep generic CDC defaults and reject private path substitution."""
+        original = self.read_literal()
+        self.assertEqual(original["CDC_SOURCE_MODE"], "generic")
+        self.assertEqual(original["CDC_STATE_VOLUME_NAME"], "")
+        for key, value in (
+            ("CDC_SOURCE_MODE", "automatic"),
+            ("CDC_STATE_VOLUME_NAME", "../private"),
+            ("CDC_STATE_VOLUME_NAME", "invalid/name"),
+        ):
+            self.write_literal({**original, key: value})
+            with self.assertRaises(ValueError):
+                SETTINGS.load(self.env_file)
+
+    def test_fixed_cdc_ca_requires_blank_system_trust_or_private_pem(self):
+        """Never interpret the historical 'system' sentinel as a PEM path."""
+        values = {
+            **self.read_literal(),
+            "COMPOSE_PROFILES": "cdc",
+            "CDC_SOURCE_MODE": "fixed-demo",
+            "SOURCE_SQLSERVER_CA_FILE": "system",
+        }
+        self.write_literal(values)
+        with self.assertRaises(ValueError):
+            SETTINGS.load(self.env_file)
+        values["SOURCE_SQLSERVER_CA_FILE"] = ""
+        values["CDC_STATE_VOLUME_NAME"] = "fixture-fixed-state"
+        self.write_literal(values)
+        loaded = SETTINGS.load(self.env_file)
+        self.assertEqual(
+            loaded["CDC_STATE_VOLUME_NAME"], "fixture-fixed-state"
+        )
+
+    def test_cdc_upgrade_preserves_existing_settings_and_secrets(self):
+        """Adding mode selection cannot rotate existing source credentials."""
+        original = self.read_literal()
+        original.pop("CDC_SOURCE_MODE")
+        original.pop("CDC_STATE_VOLUME_NAME")
+        original["SOURCE_SQLSERVER_PASSWORD"] = "fixture-source-secret"
+        self.write_literal(original)
+        self.configure("--upgrade")
+        upgraded = self.read_literal()
+        self.assertEqual(upgraded["CDC_SOURCE_MODE"], "generic")
+        self.assertEqual(
+            upgraded["SOURCE_SQLSERVER_PASSWORD"],
+            original["SOURCE_SQLSERVER_PASSWORD"],
+        )
+
+    def test_fixed_cdc_custom_pem_needs_independent_java_trust(self):
+        """Do not report a Python-only CA path as a complete CDC setup."""
+        values = {
+            **self.read_literal(),
+            "COMPOSE_PROFILES": "cdc",
+            "CDC_SOURCE_MODE": "fixed-demo",
+            "SOURCE_SQLSERVER_CA_FILE": "/synthetic/source-ca.pem",
+            "SOURCE_SQLSERVER_TRUST_SERVER_CERTIFICATE": "false",
+        }
+        self.write_literal(values)
+        with self.assertRaisesRegex(ValueError, "Java CDC truststore"):
+            SETTINGS.load(self.env_file)
+        values["CDC_SQLSERVER_TRUSTSTORE"] = "/run/cdc/example.p12"
+        self.write_literal(values)
+        self.assertEqual(
+            SETTINGS.load(self.env_file)["SOURCE_SQLSERVER_CA_FILE"],
+            "/synthetic/source-ca.pem",
+        )
+
     def test_fixed_batch_defaults_and_bounded_policy_are_validated(self):
         """Never turn an invalid overlap into an unbounded SQL scan."""
         original = self.read_literal()

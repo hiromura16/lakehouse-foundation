@@ -16,7 +16,8 @@ import time
 from urllib.error import HTTPError
 from urllib.request import ProxyHandler, Request, build_opener
 
-from config import mappings, read_env, settings
+from config import read_env, selected_mapping, settings
+from fixed_source import EXTRA_COLUMNS, preflight, validate_mapping
 
 
 def configuration(values, mapping):
@@ -26,6 +27,9 @@ def configuration(values, mapping):
     Host names and database names are still private configuration values, so
     the full result must not be copied into public logs or documentation.
     """
+    fixed = values.get("CDC_SOURCE_MODE") == "fixed-demo"
+    if fixed:
+        validate_mapping(mapping)
     selected = [
         re.escape(item["source_schema"] + "." + item["source_table"])
         for item in mapping.values()
@@ -37,6 +41,19 @@ def configuration(values, mapping):
         for item in mapping.values()
         for column in item["columns"]
     ]
+    if fixed:
+        selected_columns += [
+            re.escape(
+                item["source_schema"]
+                + "."
+                + item["source_table"]
+                + "."
+                + column
+            )
+            for item in mapping.values()
+            for column in EXTRA_COLUMNS
+        ]
+    credential_prefix = "SOURCE_SQLSERVER" if fixed else "CDC_SQLSERVER"
     result = {
         "connector.class": (
             "io.debezium.connector.sqlserver.SqlServerConnector"
@@ -45,8 +62,8 @@ def configuration(values, mapping):
         "database.hostname": values["CDC_SQLSERVER_HOST"],
         "database.port": values["CDC_SQLSERVER_PORT"],
         "database.names": values["CDC_SQLSERVER_DATABASE"],
-        "database.user": "${env:CDC_SQLSERVER_USER}",
-        "database.password": "${env:CDC_SQLSERVER_PASSWORD}",
+        "database.user": "${env:" + credential_prefix + "_USER}",
+        "database.password": "${env:" + credential_prefix + "_PASSWORD}",
         "topic.prefix": values["CDC_TOPIC_PREFIX"],
         "table.include.list": ",".join(selected),
         "column.include.list": ",".join(selected_columns),
@@ -55,15 +72,19 @@ def configuration(values, mapping):
             "_history_" + values["CDC_TOPIC_PREFIX"]
         ),
         "snapshot.mode": "initial",
-        "snapshot.isolation.mode": "read_committed",
+        # The fixed PoC favors a linear baseline over concurrent source writes.
+        # Exclusive snapshot locks last until the initial snapshot completes.
+        "snapshot.isolation.mode": "exclusive" if fixed else "read_committed",
         "include.schema.changes": "false",
         "tombstones.on.delete": "true",
         "decimal.handling.mode": "string",
-        "time.precision.mode": "connect",
+        "time.precision.mode": "adaptive" if fixed else "connect",
         "driver.encrypt": "true",
-        "driver.trustServerCertificate": values[
-            "CDC_TEST_TRUST_SERVER_CERTIFICATE"
-        ],
+        "driver.trustServerCertificate": (
+            values.get("SOURCE_SQLSERVER_TRUST_SERVER_CERTIFICATE", "false")
+            if fixed
+            else values["CDC_TEST_TRUST_SERVER_CERTIFICATE"]
+        ),
         "key.converter": "org.apache.kafka.connect.json.JsonConverter",
         "key.converter.schemas.enable": "false",
         "value.converter": "org.apache.kafka.connect.json.JsonConverter",
@@ -71,6 +92,17 @@ def configuration(values, mapping):
         "topic.creation.default.partitions": "1",
         "topic.creation.default.replication.factor": "1",
     }
+    if fixed:
+        result.update(
+            {
+                "provide.transaction.metadata": "true",
+                "event.processing.failure.handling.mode": "fail",
+                "event.converting.failure.handling.mode": "fail",
+            }
+        )
+        for scope in ("tables", "databases"):
+            key = "schema.history.internal.store.only.captured." + scope
+            result[key + ".ddl"] = "true"
     truststore = values.get("CDC_SQLSERVER_TRUSTSTORE", "")
     if truststore:
         if not truststore.startswith("/run/cdc/") or ".." in truststore:
@@ -79,7 +111,7 @@ def configuration(values, mapping):
         result["driver.trustStorePassword"] = (
             "${env:CDC_SQLSERVER_TRUSTSTORE_PASSWORD}"
         )
-    hostname = values.get("CDC_SQLSERVER_HOSTNAME_IN_CERTIFICATE", "")
+    hostname = values.get(credential_prefix + "_HOSTNAME_IN_CERTIFICATE", "")
     if hostname:
         if not re.fullmatch(r"[A-Za-z0-9_.*-]+", hostname):
             raise ValueError("Invalid SQL certificate hostname.")
@@ -106,6 +138,9 @@ def register(values, mapping, endpoint):
     configuration errors stop the operation. Existing configs allow only an
     equal extra name field; drift is rejected without PUT, PATCH or DELETE.
     """
+    if values.get("CDC_SOURCE_MODE") == "fixed-demo":
+        # Refuse before any Connect POST if SQL ownership/read scope differs.
+        preflight(values, mapping)
     opener = build_opener(ProxyHandler({}))
     name = values["CDC_CONNECTOR_NAME"]
     candidate = configuration(values, mapping)
@@ -200,7 +235,7 @@ def main():
         raise ValueError(
             "Use the internal or loopback Kafka Connect endpoint."
         )
-    register(values, mappings(args.table_map), args.endpoint)
+    register(values, selected_mapping(values, args.table_map), args.endpoint)
 
 
 if __name__ == "__main__":

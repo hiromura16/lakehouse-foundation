@@ -24,7 +24,7 @@ COPY scripts ./scripts
 COPY medallion ./medallion
 COPY docs ./docs
 COPY infra/demo ./infra/demo
-COPY infra/cdc/config.py ./infra/cdc/config.py
+COPY infra/cdc/config.py infra/cdc/fixed_source.py ./infra/cdc/
 # Serve Swagger from this image; runtime browsers need no public CDN.
 RUN /opt/venv/bin/python infra/demo/fetch_swagger.py
 # No package or interpreter resolution occurs when the services start.

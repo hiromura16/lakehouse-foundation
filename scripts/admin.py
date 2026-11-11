@@ -181,7 +181,7 @@ def schema(prefix, layer):
     通常処理、CDC、実行ごとの隔離検証だけを受け付ける。任意prefixを
     許してしまうと、検証の後片付けが通常表へ及ぶため入力を制限する。
     """
-    if prefix not in {"", "cdc_", "sql_"} and not re.fullmatch(
+    if prefix not in {"", "cdc_", "sql_", "sqlcdc_"} and not re.fullmatch(
         r"verify_[0-9a-f]+_", prefix
     ):
         raise ValueError("Invalid data namespace prefix.")
