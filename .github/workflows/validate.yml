@@ -87,6 +87,23 @@ jobs:
       run: python scripts/shell_examples.py --check
     - name: Check Trino SQL
       run: sqlfluff lint --dialect trino medallion
+    - name: Set up pinned Node LTS for the React portal
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: '24.22.3'
+    - name: Install locked frontend tools without lifecycle scripts
+      working-directory: frontend
+      run: npm ci --ignore-scripts --no-audit --no-fund
+    - name: Check React source, synthetic transport contracts and static build
+      working-directory: frontend
+      run: |
+        npm run format:check
+        npm run check
+        npm test
+        npm run build
+        npm audit --omit=dev --audit-level=high
+    - name: Verify compiled assets through the real gateway with a synthetic backend
+      run: python scripts/check_react_build.py
     - name: Parse fixed SQL Server DDL without a database
       shell: bash
       run: |

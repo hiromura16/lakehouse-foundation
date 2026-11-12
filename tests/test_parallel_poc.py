@@ -61,6 +61,7 @@ class ParallelPocTests(unittest.TestCase):
         self.assertEqual(
             values["COMPOSE_PROFILES"], "demo,monitoring,bi,automation"
         )
+        self.assertEqual(values["PORTAL_UI_MODE"], "react")
         self.assertEqual(values["LANDING_DIR"], str(self.data / "landing"))
         self.assertEqual(values["NOTEBOOKS_DIR"], str(self.data / "notebooks"))
         self.assertEqual(

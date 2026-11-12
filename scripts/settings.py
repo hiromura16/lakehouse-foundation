@@ -97,11 +97,22 @@ def public_origin(value):
 
 def validate_portal_links(values):
     """旧設定はlocalを維持し、未設定の公開リンクは空のまま保持する。"""
+    values.setdefault("PORTAL_UI_MODE", "streamlit")
+    if values["PORTAL_UI_MODE"] not in {"streamlit", "react"}:
+        raise ValueError("PORTAL_UI_MODEはstreamlitまたはreactを指定します。")
     values.setdefault("PORTAL_LINK_MODE", "local")
     if values["PORTAL_LINK_MODE"] not in {"local", "public"}:
         raise ValueError("PORTAL_LINK_MODEはlocalまたはpublicを指定します。")
     for key in PUBLIC_URL_KEYS.values():
         values[key] = public_origin(values.setdefault(key, ""))
+    if (
+        values["PORTAL_UI_MODE"] == "react"
+        and values["PORTAL_LINK_MODE"] == "public"
+        and not values["DEMO_GUI_PUBLIC_URL"]
+    ):
+        raise ValueError(
+            "Reactの外部利用にはポータルのHTTPS originが必要です。"
+        )
 
 
 # Keep this list aligned with actual Compose services and installer services.

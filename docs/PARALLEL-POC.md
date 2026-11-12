@@ -313,6 +313,7 @@ data root以下のlanding・notebooks・log-spoolを作成したり、その所�
 | `DATA_VOLUME_PREFIX` | 空。新しいproject名でnamed volumeを分離 |
 | `BIND_IP` | `127.0.0.1`。外部公開を追加しない |
 | `COMPOSE_PROFILES` | 初回は`demo,monitoring,bi,automation` |
+| `PORTAL_UI_MODE` | 新規presetは`react`。通常生成・既存upgradeは`streamlit`を維持 |
 | host UI/API port | 公開既定portに20000を加算。使用中portがないかは別途確認 |
 | `LANDING_DIR` / `NOTEBOOKS_DIR` / `MONITORING_LOG_DIR` | 指定data root以下の`landing` / `notebooks` / `log-spool` |
 | private設定・secret | この環境用に生成。mainから持ち込まない |
@@ -456,9 +457,10 @@ host bindや既存mainのvolumeへ再帰chownする処理ではありません�
 | MCP | `MCP_PORT` | http://localhost:28503/mcp |
 | OpenObserve | `OPENOBSERVE_PORT` | http://localhost:25080/ |
 
-28501は既存機能を操作するPortalです。表・列を組み立てる新しいメタデータ駆動GUIは
-引き続き8510の単独previewで並行評価します。previewのcontract案をこの新projectへ
-自動適用する機能や実DB Discoveryの完成を意味しません。
+新規presetの28501は[React版 Lakehouse Studio](REACT-PORTAL.md)を選びます。
+サービス・基本操作・メタデータの下書きを評価できます。8510の単独previewも保持します。
+どちらのcontract案も新projectへ自動適用せず、実DB Discoveryの完成を意味しません。
+既存projectを自動でReactへ変更せず、詳細なSQL/CDC等はStreamlitを選択して継続できます。
 
 Sail RPC、Loki、Vector、exporter、DB、Kafka brokerにはhost向けURLを追加しません。
 Sailの受入は明示benchmark、ログはGrafana Explore、DB状態は既存の認証付き操作面で確認します。

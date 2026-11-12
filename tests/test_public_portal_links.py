@@ -102,6 +102,30 @@ class PublicOriginTests(unittest.TestCase):
             with self.subTest(mode=mode), self.assertRaises(ValueError):
                 SETTINGS.validate_portal_links({"PORTAL_LINK_MODE": mode})
 
+    def test_ui_mode_defaults_to_legacy_and_accepts_only_named_modes(self):
+        values = {}
+        SETTINGS.validate_portal_links(values)
+        self.assertEqual(values["PORTAL_UI_MODE"], "streamlit")
+        SETTINGS.validate_portal_links({"PORTAL_UI_MODE": "react"})
+        for mode in ("REACT", "", "custom-server"):
+            with self.subTest(mode=mode), self.assertRaises(ValueError):
+                SETTINGS.validate_portal_links({"PORTAL_UI_MODE": mode})
+
+    def test_public_react_requires_its_origin_before_deploy_plan(self):
+        with self.assertRaises(ValueError):
+            SETTINGS.validate_portal_links(
+                {"PORTAL_UI_MODE": "react", "PORTAL_LINK_MODE": "public"}
+            )
+        values = {
+            "PORTAL_UI_MODE": "react",
+            "PORTAL_LINK_MODE": "public",
+            "DEMO_GUI_PUBLIC_URL": "https://portal.example.com/",
+        }
+        SETTINGS.validate_portal_links(values)
+        self.assertEqual(
+            values["DEMO_GUI_PUBLIC_URL"], "https://portal.example.com"
+        )
+
 
 class PublicCardTests(unittest.TestCase):
     """リンクだけを変更し、到達性判定を公開URLへ向けない。"""
@@ -229,6 +253,7 @@ class PublicSettingsTests(unittest.TestCase):
         self.assertEqual(values["PORTAL_LINK_MODE"], "local")
         for key in SETTINGS.PUBLIC_URL_KEYS.values():
             self.assertIn(key + "=\n", self.path.read_text())
+        self.assertEqual(values["PORTAL_UI_MODE"], "streamlit")
 
     def test_upgrade_adds_keys_without_rotating_secrets(self):
         original = SETTINGS.load(self.path)

@@ -127,6 +127,7 @@ def parallel_lab_overrides():
         "MONITORING_LOG_DIR": str(root / "log-spool"),
         "MONITORING_HOST_ALIAS": "onboarding-lab",
         "COMPOSE_PROFILES": "demo,monitoring,bi,automation",
+        "PORTAL_UI_MODE": "react",
         "CDC_CONNECTOR_NAME": args.project_name + "-source",
         "CDC_TOPIC_PREFIX": args.project_name,
         "CDC_GROUP_ID": args.project_name + "-cdc",
@@ -164,6 +165,8 @@ values = {
     "SPARK_WORKER_UI_PORT": "8085",
     "SPARK_HISTORY_UI_PORT": "18080",
     "DEMO_GUI_PORT": "8501",
+    # Older deployments keep the existing UI until an operator selects React.
+    "PORTAL_UI_MODE": "streamlit",
     "DEMO_API_PORT": "8502",
     "CDC_CONNECT_PORT": "8083",
     "CDC_UI_PORT": "8084",

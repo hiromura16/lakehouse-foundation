@@ -14,6 +14,10 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+新しい[React版 Lakehouse Studio](REACT-PORTAL.md)も選択できます。
+通常の既定は`PORTAL_UI_MODE=streamlit`、新規`parallel-lab`は`react`です。
+以下は既存Streamlitの詳細操作を含み、Reactへの移植範囲・ログイン・切替は専用手順で確認します。
+
 **ソース登録の下書き**タブでは、YAMLを書かずにテーブル・列・業務方針を選び、
 未承認contract案と確認事項を作れます。DBへ接続しない
 [単独プレビューと操作手順](SOURCE-ONBOARDING.md)も用意しています。

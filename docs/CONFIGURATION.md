@@ -14,6 +14,15 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+## Portalの画面を選ぶ
+
+`PORTAL_UI_MODE`は`streamlit`または`react`です。通常の生成・upgradeは既存画面を維持する
+`streamlit`、新規`parallel-lab` presetは`react`を選びます。同じ`DEMO_GUI_PORT`を使います。
+Reactをpublicモードで使う場合、`DEMO_GUI_PUBLIC_URL`へ正確なHTTPS originが必要です。
+Composeはその値を`PORTAL_PUBLIC_ORIGIN`、project名を`PORTAL_PROJECT_NAME`として渡します。
+別のprivate keyやtokenをbrowser bundleへ追加しません。保存は配置と別で、再配置まで反映待ちです。
+[Reactの認証・origin・切替と制約](REACT-PORTAL.md)
+
 <!-- shell-usage:start -->
 **コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
 

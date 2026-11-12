@@ -1,4 +1,4 @@
-# 役割: Streamlit画面と認証付きFastAPI/Swaggerを追加する操作面。
+# 役割: React/従来Streamlit画面と認証付きFastAPI/Swaggerを追加する操作面。
 # coreの後に同じprojectへ結合する。素材生成と後続の取込/変換は別の明示操作。
 # 読む順序: demo-apiの書込境界 → landing/private bind → 画面のAPI接続。
 # demoはAPIと画面、mcpはAPIだけを起動対象にする。GUIはmcpから暗黙起動しない。
@@ -89,7 +89,7 @@ services:
       timeout: 5s
       retries: 30
 
-  # Streamlit serverから内部APIを呼ぶ。hostのディレクトリを直接mountしない。
+  # React BFF/従来Streamlit serverから内部APIを呼ぶ。host bindは持たない。
   # demo-apiのhealthyを待つため、画面と書込処理の起動条件を分離できる。
   demo:
     profiles: [demo]
@@ -107,6 +107,12 @@ services:
     environment:
       DEMO_API_URL: http://demo-api:8000
       CONTROL_API_TOKEN: ${CONTROL_API_TOKEN:-}
+      # React serves one origin and holds the API credential on the server.
+      # Selecting a UI never grants database or deployment permissions.
+      PORTAL_UI_MODE: ${PORTAL_UI_MODE:-streamlit}
+      PORTAL_LINK_MODE: ${PORTAL_LINK_MODE:-local}
+      PORTAL_PUBLIC_ORIGIN: ${DEMO_GUI_PUBLIC_URL:-}
+      PORTAL_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-lakehouse}
     ports:
       - ${BIND_IP:-127.0.0.1}:${DEMO_GUI_PORT:-8501}:8501
     depends_on:

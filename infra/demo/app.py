@@ -571,7 +571,9 @@ def render_settings():
     for key in values:
         if key in basic:
             group = "基本"
-        elif key == "PORTAL_LINK_MODE" or key.endswith("_PUBLIC_URL"):
+        elif key in {"PORTAL_LINK_MODE", "PORTAL_UI_MODE"} or key.endswith(
+            "_PUBLIC_URL"
+        ):
             group = "外部アクセス"
         elif key.startswith(("SOURCE_SQLSERVER_", "DEMO_SQLSERVER_")):
             group = "SQL接続"
@@ -607,7 +609,19 @@ def render_settings():
                     )
                 for key in keys:
                     value = str(values[key])
-                    if key == "PORTAL_LINK_MODE":
+                    if key == "PORTAL_UI_MODE":
+                        ui_modes = {
+                            "streamlit": "従来の検証画面（Streamlit）",
+                            "react": "新しいワークスペース（React）",
+                        }
+                        entered = st.selectbox(
+                            "ポータルの画面",
+                            list(ui_modes),
+                            index=list(ui_modes).index(value),
+                            format_func=ui_modes.get,
+                            help="保存後に配置側から反映します。",
+                        )
+                    elif key == "PORTAL_LINK_MODE":
                         entered = st.selectbox(
                             "サービスを開く場所",
                             list(link_modes),

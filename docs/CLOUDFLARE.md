@@ -14,6 +14,11 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+React版を公開する場合は[同一originの認証と設定](REACT-PORTAL.md#3-外部ブラウザーから開く)も
+確認します。`DEMO_GUI_PUBLIC_URL`とアクセスするPortalのHTTPS originを一致させます。
+Accessの認証とPoC所有者sessionは別で、Access loginを管理者権限へ自動変換しません。
+各製品への公開リンク設定だけでTunnel/Access/native URLが完成したとは扱いません。
+
 照合日: 2026-11-10。Cloudflareは外部のmanagedサービスで、このリポジトリに同梱するOSS・Compose profileではありません。社内のIceberg基盤を維持したまま入口を整える用途と、許可したデータをクラウド側へ置く用途を分けます。この資料は連携の設計・評価手順で、アカウント・ドメイン・Tunnel・課金サービスを自動的に有効化するものではありません。cloudflaredの採用版・lockも未設定です。
 
 ## この基盤への当てはめ

@@ -28,6 +28,14 @@ __pycache__/
 .pytest_cache/
 /infra/demo/static/
 
+# Frontend build/cache/test output is reproducible, never private source.
+/frontend/node_modules/
+/frontend/dist/
+/frontend/.vite/
+/frontend/.test-dist/
+/frontend/test-results/
+/frontend/playwright-report/
+
 # Public zero-byte placeholder only; real CA certificates remain private.
 !infra/proxy/empty-ca.pem
 
