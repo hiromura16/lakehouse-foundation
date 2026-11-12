@@ -395,6 +395,70 @@ Kafka 4.4.0、Debezium 3.7.1.Final、Kafbat UI v1.5.0、Python Kafka client 2.16
 組み合わせています。client の追加依存は hash 付き lock、基盤依存は既存 worker の
 lock を使います。更新時は SQL Server の対応版と protocol を再確認してください。
 
+### digest更新とregistry検証
+
+`images.lock.json` を変更したら、次の正規手順でComposeのimage行と台帳を生成します。
+台帳は手編集しません。専用の品質検査venvから実行します。
+
+**Bash / Zsh共通**
+
+```bash
+python scripts/cdc_images.py --write-compose
+python scripts/compose_inventory.py
+python scripts/cdc_images.py
+python scripts/compose_inventory.py --check
+python scripts/cdc_images.py --registry
+python scripts/cdc_images.py --registry --pull-smoke
+```
+
+既定の検査は公開lockとCompose/Dockerfileの一致だけを確認し、networkやdaemonを
+使いません。`--registry` はDocker CLI/buildxでタグ、固定digest、linux/amd64の
+子manifestとimage configを個別に読みます。外部3serviceと、CDC用自作imageの
+Python/uv入力を検査し、未登録の外部image追加も拒否します。`--pull-smoke` は
+利用権限のあるDocker daemonへ同じ固定参照を実際にpullし、OS/architectureと
+RepoDigestの一致を確認します。container起動やDB接続は行いません。
+
+OCI index（Docker manifest listを含む）のdigestと、platform別manifestのdigestは
+異なります。lockへはmultiarch indexを固定し、その中のlinux/amd64を検査します。
+attestation用のunknown/unknownを実行対象platformとして扱いません。
+
+2026-11-12のregistry照合では、Debeziumのindexは
+`sha256:d24bacbb16ce2e75ce42aabc6c14bf679201051eb93e4c60aa204ec5a28e1ab0`、
+amd64の子は
+`sha256:73d1c7c8edb0f9ddd2b9cbe02ef5aefcf7d57b63941a60622d9f2cf95140c2b3`
+でした。Kafkaの既存index
+`sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f`
+とamd64の子
+`sha256:76af3d0116abbb33b4cd964af410d4921c33d1f663e7a95d5453a9c35a84869b`
+は有効なので変更していません。タグの存在だけでは固定digestの存在を証明できません。
+
+旧Debezium pin `53c6d042…` はcommit `c5a79b6` で初めて入り、今回の照合では
+registryから明示的なnot foundが返りました。当時の検査にregistry照合がなく、
+形式上正しいpinがComposeとlockへ入り得たことが再発防止上の原因です。
+過去のregistry応答記録がないため、転記誤りか上流での削除かは断定できません。
+
+`MANIFEST_MISSING` と `PLATFORM_MISSING` は明示的な欠落です。timeout・429・5xxは
+`REGISTRY_TRANSIENT` として最大3回、2秒・4秒の間隔で再試行し、解消しなければ
+失敗にします。Interrupted/cancelled、認証拒否、Docker権限拒否、未知のエラーを
+「imageが存在しない」と読み替えません。タグとpinが異なる場合も自動更新せず、
+上流の再公開と互換性を調べてからlockを変更します。
+
+共有Python入力はindexではなくamd64 manifestを固定しています。この場合は現在の
+タグのindexがその固定manifestをlinux/amd64として含み、configも一致することを
+要求します。JSONの `tag_contains_platform_pin: true` はこの関係を示します。
+indexと子manifestの違いをタグ移動と誤認せず、無関係な共有lockを変更しません。
+
+[registry CI](../.github/workflows/cdc-images.yml) は全PR（draftとdigest更新を含む）、
+push、日次schedule、release公開、手動実行で同じ検証と実pullを行います。
+merge条件には `registry-smoke` と既存 `source` の成功を含めます。workflow追加だけでは
+branch保護設定は変わりません。registry成功、pull成功、CDCの機能受入は別です。
+
+適用時は既存のCLIまたは配置管理入口から更新し、connector/task RUNNINGとconsumerの
+進捗を確認します。Kafka/state volume・connector設定・offsetは保持します。
+戻す場合は直前に検証済みのimage参照へ戻し、同じvolumeと設定で再配置します。
+存在しない旧pinへの単純なGit revertではpullできません。Kafka履歴・SQLite stateや
+offsetを削除して復旧しようとせず、通常のbackup/復元手順に従います。
+
 - [Debezium3.7.1.Final固定source](https://github.com/debezium/debezium/tree/v3.7.1.Final): 採用するconnector実装。
 - [SQL Server connector](https://debezium.io/documentation/reference/3.7/connectors/sqlserver.html): CDC 設定、TLS、LSN、snapshot、権限、schema history。
 - [Kafka4.4設定](https://kafka.apache.org/44/configuration/kafka-connect-configs/): Connectの永続topic等。broker4.4.0とDebezium image内のConnect runtimeは区別する。

@@ -150,8 +150,13 @@ class SelectionTests(unittest.TestCase):
                     values(workspace, CONTROL_SETTINGS_DIR=str(alias))
                 )
             self.assertEqual(result["reason"], "UNSAFE_PRIVATE_SETTINGS_PATH")
+        # Use a synthetic checkout so a real home-directory parent does not
+        # hit the independent protected-home rule before the overlap rule.
+        checkout = Path("/srv/synthetic-checkout/repository")
         with mock.patch.object(MODULE, "walk", side_effect=AssertionError):
-            result = MODULE.inspect_workspace(values(ROOT.parent))
+            result = MODULE.inspect_workspace(
+                values(checkout.parent), root=checkout
+            )
         self.assertEqual(result["reason"], "WORKSPACE_INSIDE_CHECKOUT")
 
     def test_unsafe_parent_ownership_and_write_bits_are_not_repaired(self):
