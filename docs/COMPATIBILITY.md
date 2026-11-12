@@ -43,6 +43,7 @@ setopt INTERACTIVE_COMMENTS
 | core worker | Python 3.14 / PyIceberg 0.12 / PyArrow 26.0.1 | 実機確認した依存をlockへ固定 |
 | 自動化・監視 | n8n 2.46.7 / Grafana 13.3.0 / Prometheus 3.16.0 | 専用DB・永続volume、dashboardのGUI保存を実機確認 |
 | core | Trino 484 / Lakekeeper 0.14.3 / SeaweedFS 4.53 / PostgreSQL 18.6 | 採用digestは `infra/lakehouse/images.lock.json` を参照 |
+| CDC | Kafka 4.4.0 / Debezium 3.7.1.Final / Kafbat UI v1.5.0 | tag・固定digest・linux/amd64をregistryで照合し、CIで実pullとRepoDigestを確認。[更新手順](CDC.md#digest更新とregistry検証)。稼働環境の機能受入とは別 |
 | BI | Superset 6.1.0 / SQLAlchemy 1.4.54 / Trino Python 0.340.0 | `bi`。接続→SQL Lab→Dataset→Chart→Dashboardは [POC-TOOLS.md](POC-TOOLS.md) |
 | Notebook | JupyterLab 4.6.6 / ipykernel 7.3.0 | `notebooks`。Sparkと同じPython 3.10、Pandas 2.3.3 / Arrow 25.0.0 / NumPy 2.2.6 |
 | ベクトル・系統 | Qdrant 1.20.0 / Marquez 0.50.0 | `vector` / `lineage`。MarquezはLinux x86-64で検証 |

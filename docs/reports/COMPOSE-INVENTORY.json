@@ -62,7 +62,7 @@
     ]
   },
   "compose_sha256": {
-    "infra/cdc/compose.yaml": "567d8e3e19cb0b8c600123e4bd24436c49e16dd4ba368fc219e2377043918d0f",
+    "infra/cdc/compose.yaml": "70755d824e6657dce0875a07ed1e790714cc7779c08774c9a88fadf709604b2e",
     "infra/compute/compose.yaml": "6eed40242d839056f812b22e8e277d51c8cd074cf75afb05f3303c5443fda163",
     "infra/demo/compose.yaml": "773458b2f143ad0f4185a85c82dee7e728a498ad9f7593756e24b9f2ebf541cd",
     "infra/lakehouse/compose.yaml": "6402275c945d193057fc3f49b283ac4b34a0b97d5d29f3beee221b1df2e38e9d",
@@ -1213,7 +1213,7 @@
       "anonymous_volume_count": 0,
       "bind_mount_count": 1,
       "core": false,
-      "image": "quay.io/debezium/connect:3.7.1.Final@sha256:53c6d0424d09f7ccef813c895fb9b1056a726bc14ff2e6a592856cd627ebd491",
+      "image": "quay.io/debezium/connect:3.7.1.Final@sha256:d24bacbb16ce2e75ce42aabc6c14bf679201051eb93e4c60aa204ec5a28e1ab0",
       "lifecycle": "resident",
       "lifecycle_basis": "restart-policy",
       "local_image": false,

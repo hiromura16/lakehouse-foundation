@@ -1,0 +1,55 @@
+name: Validate CDC registry images
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '23 4 * * *'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  registry-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      UV_PYTHON_DOWNLOADS: never
+      UV_NO_CONFIG: '1'
+    steps:
+    - name: Check out public source
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - name: Set up Python
+      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      with:
+        python-version: '3.12'
+    - name: Set up pinned uv
+      uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      with:
+        version: '0.13.7'
+        checksum: c5221ff41b7892bfc223543883600125f6a47fe845093e0f5bdff4f359196d83
+        enable-cache: false
+    - name: Install hash-locked validation dependencies
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        uv venv --python 3.12 "$RUNNER_TEMP/cdc-validation"
+        uv pip sync --python "$RUNNER_TEMP/cdc-validation/bin/python" \
+          --require-hashes requirements-dev.lock
+        printf '%s\n' "$RUNNER_TEMP/cdc-validation/bin" >> "$GITHUB_PATH"
+    # Deliberately no path filter or draft/dependency-bot exemption: a digest
+    # update must prove the artifacts exist before it is eligible to merge.
+    - name: Validate lock equality and registry content; pull linux/amd64
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        docker buildx version
+        python scripts/cdc_images.py
+        python scripts/compose_inventory.py --check
+        python scripts/cdc_images.py --registry --pull-smoke
