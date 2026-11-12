@@ -59,12 +59,67 @@ export LAKEHOUSE_ENV_FILE=/absolute/private/site.env
 | --- | --- | --- |
 | profile未選択 | API起動時のprofileに含まれない | 必要性と資源を確認し、設定へ追加して再配置 |
 | 必要設定が未完了 | profileは選択済みだが必須設定が空 | カードに表示されたkeyをprivate設定で確認 |
-| 稼働を確認 | 固定した内部healthへの到達を確認 | 「開く」から各サービスのnative画面へ |
+| 稼働を確認 | 固定した内部healthへの到達を確認 | リンク設定と外部経路を確認してnative画面へ |
 | 停止・起動待ち・未到達 | 設定はあるがhealthを確認できない | コンテナ状態、起動待ち、認証、内部経路を確認 |
+| 外部URL未設定 | 公開モードでそのサービスの外部URLが空 | 設定の外部アクセスで、許可済みHTTPS originを保存・反映 |
 
 未到達だけで未導入と断定しません。ポータルはDocker socketを持たず、HTTPによる到達確認と設定上の有効化を区別します。healthが成功しても、業務数値やバックアップの受入は別の確認です。
 
-表示するURLにはパスワード、Jupyter token、Qdrant API keyを入れません。各製品のログインはその製品の認証で行います。localhostはブラウザーを開いた端末自身なので、遠隔利用では必要なportを会社標準の方法で転送します。PoC追加サービス・CDC・Sparkのhost portはloopbackへ限定しています。
+表示するURLにはパスワード、Jupyter token、Qdrant API keyを入れません。各製品のログインはその製品の認証で行います。ローカルモードのlocalhostはブラウザーを開いた端末自身なので、遠隔利用では必要なportを会社標準の方法で転送します。PoC追加サービス・CDC・Sparkのhost portはloopbackへ限定しています。
+
+### 外部のブラウザーから各サービスを開く
+
+ポータルだけをCloudflare Tunnel等で開けても、各サービスのリンク先は
+自動では外部向けになりません。既定の`PORTAL_LINK_MODE=local`は従来どおり
+localhost/SSH転送用のURLを表示します。遠隔PCでそのリンクを開くと、そのPC自身の
+localhostへ接続します。
+
+外部入口を利用する環境では、管理者が許可された公開経路を用意した後に、
+**設定 → 外部アクセス**で次を設定します。
+
+1. **サービスを開く場所**を**外部公開URL（HTTPS）**へ変更します。
+2. 利用するサービスごとに、**公開URL（HTTPSホスト名のみ）**を入力します。
+   例は`https://grafana.example.invalid`です。利用しないサービスは空欄のままで
+   構いません。ポータル自体のURL欄だけを設定しても、他サービスへは適用されません。
+3. URLはHTTPSのoriginだけを入力します。末尾の`/`は許可されますが、
+   `/grafana`や`/docs`等のパス、query、fragment、認証情報は含めません。
+4. **設定を保存**します。この操作ではTunnel、Access policy、DNS、native製品の
+   設定やコンテナを変更しません。
+5. 管理者が既存の配置方法でprivate設定・サービスのEnvironmentを揃えて反映し、
+   **入口**タブを再確認します。Dokploy管理とCLI管理の起動操作は重ねません。
+
+設定名は既存port keyの末尾`_PORT`を`_PUBLIC_URL`へ置き換えたものです。
+GUIは製品名を表示するため、利用者がkey名を覚える必要はありません。
+
+| GUIで設定するサービス | private設定key | 入力する例 | カードに自動付加するパス |
+| --- | --- | --- | --- |
+| PoCポータル | `DEMO_GUI_PUBLIC_URL` | `https://portal.example.invalid` | ポータル自体のorigin |
+| 操作API / Swagger | `DEMO_API_PUBLIC_URL` | `https://api.example.invalid` | `/docs` |
+| Trino | `TRINO_PUBLIC_URL` | `https://trino.example.invalid` | `/ui/` |
+| Lakekeeper | `CATALOG_PUBLIC_URL` | `https://catalog.example.invalid` | `/ui/` |
+| Grafana | `GRAFANA_PUBLIC_URL` | `https://grafana.example.invalid` | `/` |
+| JupyterLab | `JUPYTER_PUBLIC_URL` | `https://notebooks.example.invalid` | `/lab` |
+| MCP / AIクライアント | `MCP_PUBLIC_URL` | `https://mcp.example.invalid` | `/mcp` |
+
+ほかのサービスにもそれぞれ欄があります。Cloudflare側で別hostnameをサービスへ
+転送する方式を想定した設定であり、単一originの`/grafana`や`/trino`への
+subpath routingを設定する欄ではありません。SparkはMaster/Worker/Historyの
+URLをそれぞれ指定します。native製品の公開URL、redirect、cookie、WebSocket等が
+外部経路に対応するかも、サービスごとに別途確認します。
+
+公開モードでURLが空のカードは**外部URL未設定**となり、開くボタンを無効にします。
+localhostへのfallbackはしません。MCPも空のcode欄や仮の接続先を表示しません。
+内部状態が**稼働を確認**でも、外部URLが未設定・外部経路が未準備という組合せは
+あり得ます。反対に、URLを入力しただけで内部healthや製品認証の成功にはなりません。
+
+ポータルは外部URLをhealthの接続先に使わず、従来の固定された内部宛先で状態を
+確認します。`DEMO_API_PUBLIC_URL`もブラウザーのSwagger入口であり、Streamlitから
+操作APIへ接続する内部URLやBearer認証を置き換える設定ではありません。
+外部URLを保存しただけで各native画面が開くとは扱わず、許可されたTunnel/Access、
+製品のログイン、適切な公開範囲を配置担当が確認します。
+
+保存後の`pending_restart`が出ている間、カードは現在の起動時設定を使います。
+外部アクセスの変更も、保存した時点と適用した時点を区別します。
 
 | サービス | profile | host portの既定 | 開くもの |
 | --- | --- | --- | --- |

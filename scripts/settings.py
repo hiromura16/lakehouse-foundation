@@ -7,8 +7,102 @@ import ipaddress
 import os
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# Portalの公開リンクだけに使用する。内部health接続先やproxy設定とは分離する。
+# keyは既存port設定の末尾_PORTを_PUBLIC_URLへ置き換えたもの。
+PUBLIC_URL_KEYS = {
+    "portal": "DEMO_GUI_PUBLIC_URL",
+    "openobserve": "OPENOBSERVE_PUBLIC_URL",
+    "swagger": "DEMO_API_PUBLIC_URL",
+    "mcp": "MCP_PUBLIC_URL",
+    "trino": "TRINO_PUBLIC_URL",
+    "catalog": "CATALOG_PUBLIC_URL",
+    "spark-master": "SPARK_MASTER_UI_PUBLIC_URL",
+    "spark-worker": "SPARK_WORKER_UI_PUBLIC_URL",
+    "spark-history": "SPARK_HISTORY_UI_PUBLIC_URL",
+    "n8n": "N8N_PUBLIC_URL",
+    "grafana": "GRAFANA_PUBLIC_URL",
+    "prometheus": "PROMETHEUS_PUBLIC_URL",
+    "airflow": "AIRFLOW_PUBLIC_URL",
+    "kafbat": "CDC_UI_PUBLIC_URL",
+    "superset": "SUPERSET_PUBLIC_URL",
+    "jupyter": "JUPYTER_PUBLIC_URL",
+    "qdrant": "QDRANT_PUBLIC_URL",
+    "marquez": "MARQUEZ_UI_PUBLIC_URL",
+}
+
+
+def public_origin(value):
+    """公開HTTPS originを検査し、末尾/だけを正規化する。通信はしない。"""
+    if value == "":
+        return ""
+    failure = "公開URLには認証情報やpathのないHTTPS originを指定してください。"
+    if not isinstance(value, str) or any(
+        ord(character) <= 32 or ord(character) >= 127 for character in value
+    ):
+        raise ValueError(failure)
+    try:
+        parts = urlsplit(value)
+        host = parts.hostname or ""
+        port = parts.port
+        if (
+            parts.scheme != "https"
+            or not parts.netloc
+            or "@" in parts.netloc
+            or parts.path not in {"", "/"}
+            or "?" in value
+            or "#" in value
+            or "\\" in value
+            or port is not None
+            and not 1 <= port <= 65535
+            or "." not in host
+            or len(host) > 253
+            or not re.fullmatch(r"[a-z][a-z0-9-]*", host.rsplit(".", 1)[-1])
+            or any(
+                not re.fullmatch(
+                    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label
+                )
+                for label in host.split(".")
+            )
+            or host.endswith(
+                (
+                    ".localhost",
+                    ".local",
+                    ".internal",
+                    ".localdomain",
+                    ".lan",
+                    ".home",
+                    ".home.arpa",
+                )
+            )
+        ):
+            raise ValueError(failure)
+        # 数値IPを公開名に見せかけない。DNS解決や外部への検査は行わない。
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            pass
+        else:
+            raise ValueError(failure)
+        if parts.netloc.endswith(":"):
+            raise ValueError(failure)
+        return "https://" + host + (":" + str(port) if port else "")
+    except ValueError:
+        # urllib由来の例外にも入力値を反射させない。
+        raise ValueError(failure) from None
+
+
+def validate_portal_links(values):
+    """旧設定はlocalを維持し、未設定の公開リンクは空のまま保持する。"""
+    values.setdefault("PORTAL_LINK_MODE", "local")
+    if values["PORTAL_LINK_MODE"] not in {"local", "public"}:
+        raise ValueError("PORTAL_LINK_MODEはlocalまたはpublicを指定します。")
+    for key in PUBLIC_URL_KEYS.values():
+        values[key] = public_origin(values.setdefault(key, ""))
+
 
 # Keep this list aligned with actual Compose services and installer services.
 # Short internal names are explicit because client CIDR semantics differ.
@@ -315,6 +409,7 @@ def load(path, *, private_mount=None):
         if any(ord(c) < 32 or ord(c) > 126 for c in value):
             raise ValueError(f"Use ASCII settings at line {number}.")
         values[key] = value
+    validate_portal_links(values)
     if not re.fullmatch(
         r"[a-z][a-z0-9_-]{0,40}", values.get("COMPOSE_PROJECT_NAME", "")
     ):

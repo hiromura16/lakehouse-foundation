@@ -9,7 +9,13 @@ import secrets
 import tempfile
 from pathlib import Path
 
-from settings import BYPASS_KEYS, ROOT, load, synchronize_no_proxy
+from settings import (
+    BYPASS_KEYS,
+    PUBLIC_URL_KEYS,
+    ROOT,
+    load,
+    synchronize_no_proxy,
+)
 
 parser = argparse.ArgumentParser(
     description=__doc__,
@@ -274,6 +280,9 @@ values = {
     "HTTP_PROXY": "",
     "HTTPS_PROXY": "",
 }
+# 公開入口は利用者が個別指定する。既存環境やlocalhostから推測しない。
+values.update({key: "" for key in PUBLIC_URL_KEYS.values()})
+values["PORTAL_LINK_MODE"] = "local"
 if lab_overrides:
     # Only application endpoints move. Dokploy itself belongs to its existing
     # manager, and no new daemon/admin/RPC endpoint is introduced here.

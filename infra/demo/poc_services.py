@@ -4,6 +4,7 @@ import ipaddress
 from concurrent.futures import ThreadPoolExecutor
 
 import httpx
+from control_settings import VALIDATOR
 from poc_catalog import SERVICES
 
 
@@ -60,6 +61,7 @@ def service_cards(values, health):
     profiles = set(values.get("COMPOSE_PROFILES", "").split(","))
     address = ipaddress.ip_address(values.get("BIND_IP", "127.0.0.1"))
     host = "localhost" if address.is_loopback else str(address)
+    link_mode = values.get("PORTAL_LINK_MODE", "local")
     result = []
     for item in SERVICES:
         enabled = not item.profiles or bool(set(item.profiles) & profiles)
@@ -95,6 +97,20 @@ def service_cards(values, health):
             }
             else host
         )
+        # 公開URLはブラウザー用。未設定ならlocalhostへ戻さず空にする。
+        origin = (
+            VALIDATOR.public_origin(
+                values.get(VALIDATOR.PUBLIC_URL_KEYS[item.id], "")
+            )
+            if link_mode == "public"
+            else ""
+        )
+        link_configured = link_mode == "local" or bool(origin)
+        url = (
+            (origin + item.path if origin else "")
+            if link_mode == "public"
+            else f"http://{link_host}:{port}{item.path}"
+        )
         result.append(
             {
                 "id": item.id,
@@ -105,7 +121,9 @@ def service_cards(values, health):
                 "enabled": enabled,
                 "configured": not missing,
                 "state": state,
-                "url": f"http://{link_host}:{port}{item.path}",
+                "url": url,
+                "link_mode": link_mode,
+                "link_configured": link_configured,
                 "description": item.description
                 + (
                     " 変更toolは有効です。"

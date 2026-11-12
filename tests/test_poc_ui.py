@@ -29,6 +29,9 @@ class PortalUiTests(unittest.TestCase):
 
     def setUp(self):
         self.calls = []
+        self.service_override = None
+        self.settings_values = {}
+        self.settings_pending_restart = False
         client = types.ModuleType("client")
         client.request = self.request
         previous = sys.modules.get("client")
@@ -45,6 +48,11 @@ class PortalUiTests(unittest.TestCase):
     def request(self, path, *, method="GET", payload=None, timeout=15):
         self.calls.append((method, path, payload))
         if path == "/services":
+            if self.service_override is not None:
+                return {
+                    "services": self.service_override,
+                    "pending_restart": self.settings_pending_restart,
+                }
             return {
                 "services": [
                     {
@@ -239,7 +247,7 @@ class PortalUiTests(unittest.TestCase):
                 "presets": [],
                 "conflicts": [],
             }
-        if path == "/settings":
+        if path == "/settings" and method == "GET":
             return {
                 "values": {
                     "N8N_SSRF_PROTECTION_ENABLED": "true",
@@ -248,10 +256,15 @@ class PortalUiTests(unittest.TestCase):
                     "N8N_SSRF_ALLOWED_HOSTNAMES": "worker",
                     "N8N_SSRF_BLOCKED_HOSTNAMES": "",
                     "N8N_SSRF_DNS_CACHE_MAX_SIZE": "1048576",
+                    **self.settings_values,
                 },
                 "secret_keys": [],
                 "configured_secrets": [],
+                "pending_restart": self.settings_pending_restart,
             }
+        if path == "/settings" and method == "PATCH":
+            self.settings_pending_restart = True
+            return {"saved": True, "applied": False, "pending_restart": True}
         if path == "/status":
             return {"services": {"worker": {"healthy": True, "busy": False}}}
         raise AssertionError("Unexpected portal call: " + method + " " + path)
@@ -263,6 +276,184 @@ class PortalUiTests(unittest.TestCase):
         self.assertEqual(len(app.exception), 0)
         return app
 
+    def public_card(self, *, service="trino", url="", configured=False):
+        """Return an internally healthy card with a separate browser target."""
+        return {
+            "id": service,
+            "title": "MCP / AIクライアント" if service == "mcp" else "Trino",
+            "state": "available",
+            "description": "合成の内部health確認",
+            "profile": "mcp" if service == "mcp" else "",
+            "enabled": True,
+            "configured": True,
+            "missing_settings": [],
+            "url": url,
+            "link_mode": "public",
+            "link_configured": configured,
+        }
+
+    def test_public_link_uses_supplied_https_url_and_keeps_internal_health(
+        self,
+    ):
+        self.service_override = [
+            self.public_card(
+                url="https://trino.example.invalid/ui/", configured=True
+            )
+        ]
+        app = self.app()
+        links = app.get("link_button")
+        self.assertEqual(len(links), 1)
+        self.assertEqual(
+            links[0].proto.url, "https://trino.example.invalid/ui/"
+        )
+        self.assertFalse(links[0].proto.disabled)
+        self.assertTrue(
+            any("内部状態: 稼働を確認" in item.value for item in app.markdown)
+        )
+        self.assertTrue(
+            any("外部公開URL" in item.value for item in app.caption)
+        )
+        self.assertFalse(any("localhost" in item.proto.url for item in links))
+
+    def test_public_missing_url_is_inert_without_localhost_fallback(self):
+        self.service_override = [self.public_card()]
+        app = self.app()
+        self.assertEqual(len(app.get("link_button")), 0)
+        self.assertTrue(
+            app.button(key="portal-link-unconfigured-trino").disabled
+        )
+        self.assertTrue(
+            any("外部URL未設定" in item.value for item in app.caption)
+        )
+        self.assertTrue(
+            any("内部状態: 稼働を確認" in item.value for item in app.markdown)
+        )
+
+    def test_unconfigured_link_flag_wins_over_an_inconsistent_url(self):
+        self.service_override = [
+            self.public_card(url="http://localhost:8080/ui/")
+        ]
+        app = self.app()
+        self.assertEqual(len(app.get("link_button")), 0)
+        self.assertTrue(
+            app.button(key="portal-link-unconfigured-trino").disabled
+        )
+
+    def test_public_mcp_missing_url_has_no_empty_or_local_code_block(self):
+        self.service_override = [self.public_card(service="mcp")]
+        app = self.app()
+        self.assertFalse(any(not item.value.strip() for item in app.code))
+        self.assertEqual(
+            [
+                item.value
+                for item in app.code
+                if item.value.startswith(("http://", "https://"))
+            ],
+            [],
+        )
+        self.assertTrue(
+            any("外部URL未設定" in item.value for item in app.caption)
+        )
+
+    def test_public_mcp_configured_url_is_the_ai_client_target(self):
+        self.service_override = [
+            self.public_card(
+                service="mcp",
+                url="https://mcp.example.invalid/mcp",
+                configured=True,
+            )
+        ]
+        app = self.app()
+        self.assertEqual(
+            [
+                item.value
+                for item in app.code
+                if item.value.startswith(("http://", "https://"))
+            ],
+            ["https://mcp.example.invalid/mcp"],
+        )
+
+    def test_native_link_does_not_turn_unreachable_internal_health_green(
+        self,
+    ):
+        card = self.public_card(
+            url="https://trino.example.invalid/ui/", configured=True
+        )
+        card["state"] = "unreachable"
+        self.service_override = [card]
+        app = self.app()
+        self.assertTrue(
+            any(
+                "停止・起動待ち・未到達" in item.value for item in app.markdown
+            )
+        )
+        self.assertFalse(app.get("link_button")[0].proto.disabled)
+
+    def test_public_access_settings_save_choices_without_applying_links(self):
+        self.settings_values = {
+            "PORTAL_LINK_MODE": "local",
+            "TRINO_PUBLIC_URL": "",
+            "DEMO_GUI_PUBLIC_URL": "",
+            "MARQUEZ_UI_PUBLIC_URL": "",
+        }
+        # The service cards still describe the API's applied configuration.
+        self.service_override = [
+            {
+                **self.public_card(),
+                "link_mode": "local",
+                "link_configured": True,
+                "url": "http://localhost:8080/ui/",
+            }
+        ]
+        app = self.app()
+        self.assertTrue(
+            any(item.label == "外部アクセス" for item in app.expander)
+        )
+        mode = app.selectbox(key="settings-portal-link-mode")
+        self.assertEqual(mode.value, "local")
+        self.assertIn("外部公開URL（HTTPS）", mode.options)
+        captions = " ".join(item.value for item in app.caption)
+        self.assertIn("Tunnel・Accessのルート", captions)
+        self.assertIn("自動で付きます", captions)
+        self.assertTrue(
+            any(
+                "PoCポータルの公開URL" in item.label for item in app.text_input
+            )
+        )
+        self.assertTrue(
+            any("Marquezの公開URL" in item.label for item in app.text_input)
+        )
+        mode.select("public")
+        app.text_input(key="settings-public-url-TRINO_PUBLIC_URL").set_value(
+            "https://trino.example.invalid"
+        )
+        next(
+            item for item in app.button if item.label == "設定を保存"
+        ).click().run(timeout=10)
+        self.assertEqual(len(app.exception), 0)
+        self.assertIn(
+            (
+                "PATCH",
+                "/settings",
+                {
+                    "values": {
+                        "PORTAL_LINK_MODE": "public",
+                        "TRINO_PUBLIC_URL": "https://trino.example.invalid",
+                    }
+                },
+            ),
+            self.calls,
+        )
+        app.run(timeout=10)
+        self.assertEqual(
+            app.get("link_button")[0].proto.url,
+            "http://localhost:8080/ui/",
+        )
+        self.assertTrue(
+            any("再配置までは" in item.value for item in app.warning)
+        )
+        self.assertFalse(any(method == "POST" for method, _, _ in self.calls))
+
     def test_initial_portal_shows_states_and_only_reads_fixed_metadata(self):
         app = self.app()
         content = " ".join(item.value for item in app.markdown)
@@ -273,6 +464,11 @@ class PortalUiTests(unittest.TestCase):
         )
         self.assertIn(
             "http://localhost:8503/mcp", [item.value for item in app.code]
+        )
+        links = {item.proto.url: item for item in app.get("link_button")}
+        self.assertFalse(links["http://localhost:8080/ui/"].proto.disabled)
+        self.assertTrue(
+            links["http://localhost:6333/dashboard"].proto.disabled
         )
         self.assertEqual([call for call in self.calls if call[0] != "GET"], [])
 
