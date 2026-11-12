@@ -830,7 +830,9 @@ class PermissionTests(unittest.TestCase):
                     denied_object=(operation, "legacy.unrelated"),
                     role=role,
                 )
-                self.assertFalse(DEMO.permissions_safe(cursor, role=role))
+                self.assertFalse(
+                    DEMO.permissions_safe(cursor, role=role, full_audit=True)
+                )
 
     def test_unknown_object_or_missing_permission_metadata_is_refused(self):
         for options in (
@@ -914,6 +916,7 @@ class PermissionTests(unittest.TestCase):
                     DEMO.permissions_safe(
                         self.cursor(denied_object=("EXECUTE", target)),
                         role=role,
+                        full_audit=True,
                     ),
                     expected,
                 )
@@ -965,6 +968,7 @@ class PermissionTests(unittest.TestCase):
                             column_permission=(operation, target, "value", 1)
                         ),
                         role=role,
+                        full_audit=True,
                     ),
                     expected,
                 )
@@ -993,10 +997,15 @@ class PermissionTests(unittest.TestCase):
                             role=role,
                         ),
                         role=role,
+                        full_audit=True,
                     )
                 )
         self.assertTrue(DEMO.permissions_safe(self.cursor()))
-        self.assertTrue(DEMO.permissions_safe(self.cursor(), role="source"))
+        self.assertTrue(
+            DEMO.permissions_safe(
+                self.cursor(), role="source", full_audit=True
+            )
+        )
         self.assertTrue(DEMO.permissions_safe(self.cursor(), role="control"))
 
 

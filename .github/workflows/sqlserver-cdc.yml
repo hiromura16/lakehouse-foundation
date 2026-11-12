@@ -6,12 +6,18 @@ on:
     paths:
     - 'infra/sqlserver/**'
     - 'scripts/prepare-sqlserver.py'
+    - 'scripts/sqlserver_demo.py'
+    - 'infra/cdc/fixed_source.py'
+    - 'requirements-demo.txt'
     - 'tests/integration/sqlserver_collation/**'
     - '.github/workflows/sqlserver-cdc.yml'
   pull_request:
     paths:
     - 'infra/sqlserver/**'
     - 'scripts/prepare-sqlserver.py'
+    - 'scripts/sqlserver_demo.py'
+    - 'infra/cdc/fixed_source.py'
+    - 'requirements-demo.txt'
     - 'tests/integration/sqlserver_collation/**'
     - '.github/workflows/sqlserver-cdc.yml'
   workflow_dispatch:
@@ -32,6 +38,8 @@ jobs:
         python-version: '3.12'
     - name: Install existing hash-locked SQL AST test dependencies
       run: python -m pip install --require-hashes -r requirements-dev.lock
+    - name: Install existing pinned SQL runtime driver
+      run: python -m pip install -r requirements-demo.txt
     - name: Install verified official Go sqlcmd 1.10.0
       shell: bash
       run: |
@@ -70,6 +78,8 @@ jobs:
           sleep 2
         done
         exit 1
+    - name: Exercise scoped reader runtime on synthetic SQL objects
+      run: python tests/integration/sqlserver_collation/scoped_reader.py
     - name: Observe unwrapped transactions and scoped guard candidate
       run: python tests/integration/sqlserver_collation/transaction_probe.py
     - name: Approved conditional initialization acceptance (explicit pending risk)
