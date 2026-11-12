@@ -1290,13 +1290,13 @@
     {
       "path": "docs/PARALLEL-POC.md",
       "title": "mainのPoCと試作ブランチを並行して使う",
-      "purpose": "既存mainのPoCを維持し、別clone・uv・loopback portで試作GUIを比較する手順と、将来の二系統基盤の分離条件を示す。",
+      "purpose": "既存mainを維持し、単独GUIと専用projectの全OSS・Labを段階配置する並行PoCの設定・入口・停止条件を示す。",
       "audience": [
         "初めて使う人",
         "基盤構築担当",
         "開発・設計担当"
       ],
-      "when_to_use": "mainのPoCを止めずに試作GUIを触るときや、別PCからの接続・試作だけの停止と更新を確認するとき。",
+      "when_to_use": "mainのPoCを止めずにGUIを試すときや、監視・OpenObserve・Sailを別projectへ追加する前提と手順を確認するとき。",
       "category": "02 構築・通信",
       "prerequisites": [
         "docs/SOURCE-ONBOARDING.md",

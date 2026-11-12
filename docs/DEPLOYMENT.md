@@ -28,8 +28,9 @@ setopt INTERACTIVE_COMMENTS
 
 main側のPoCとメタデータ駆動GUIの試作を同時に使う場合は、
 [別clone・専用uv・別portの並行PoC手順](PARALLEL-POC.md)を使います。
-現在の試作は単独GUIだけを動かせるため、既存スタックを更新する必要はありません。
-Lakehouse一式を二重起動する場合の分離条件は同文書の将来設計として区別します。
+単独GUIの比較では既存スタックを更新する必要はありません。
+監視・Labを含むLakehouse一式を別projectへ配置する場合は、同文書の
+`parallel-lab`設定presetと段階導入を使います。設定検査と実際の起動・受入は別です。
 
 公開リポジトリ `lakehouse-foundation` を取得し、実際の環境設定だけをチェックアウトの外へ置いて導入します。clone URLはREADMEを参照してください。この文書の `/absolute/private/site.env`、共有利用者、許可範囲は説明用であり、導入先で選んだ値に置き換えます。
 

@@ -4,6 +4,7 @@
 import argparse
 import base64
 import os
+import re
 import secrets
 import tempfile
 from pathlib import Path
@@ -31,6 +32,23 @@ parser.add_argument(
         "変更前backupは上書きしない"
     ),
 )
+parser.add_argument(
+    "--preset",
+    choices=["parallel-lab"],
+    help=(
+        "新しい比較PoC専用の初期設定。既定port+20000、loopback限定、"
+        "demo/monitoring/bi/automationから段階起動。配置は行わない"
+    ),
+)
+parser.add_argument(
+    "--data-root",
+    type=Path,
+    help="parallel-lab専用の未使用なGit外絶対パス。作成・権限変更はしない",
+)
+parser.add_argument(
+    "--project-name",
+    help="parallel-lab専用の新しいCompose project。既存projectは指定しない",
+)
 args = parser.parse_args()
 target = args.output.expanduser().absolute()
 if target.resolve().is_relative_to(ROOT):
@@ -38,6 +56,78 @@ if target.resolve().is_relative_to(ROOT):
 for parent in (target, *target.parents):
     if parent.is_symlink():
         raise SystemExit("Configuration paths must not use symlinks.")
+
+
+def parallel_lab_overrides():
+    """Select fresh lab paths and ports without touching data or Docker.
+
+    This preset never reads another deployment's settings. It deliberately
+    leaves source DB connections and gated labs disabled. Checking that a
+    project/port is free still requires the owning manager before deployment.
+    The filesystem checks are preparation-time checks, not a race-safe host
+    workspace apply; existing no-follow host preflight remains mandatory.
+    """
+    if not args.preset:
+        if args.data_root is not None or args.project_name is not None:
+            parser.error("Use data-root/project-name only with --preset.")
+        return {}
+    if args.upgrade:
+        parser.error("A parallel-lab preset is new-only; never use --upgrade.")
+    if ".." in target.parts or target.anchor != "/":
+        parser.error("New lab settings paths must use a plain absolute path.")
+    if args.data_root is None or args.project_name is None:
+        parser.error("The preset requires --data-root and --project-name.")
+    if not re.fullmatch(r"[a-z][a-z0-9_-]{0,40}", args.project_name):
+        parser.error("Invalid new project name.")
+    if args.project_name == "lakehouse" or os.getuid() == 0:
+        parser.error("Use a new project name and a non-root operator.")
+    root = args.data_root.expanduser()
+    if (
+        root.anchor != "/"
+        or ".." in root.parts
+        or not re.fullmatch(r"[A-Za-z0-9_./-]+", str(root))
+    ):
+        parser.error("The new data root must be an external absolute path.")
+    # Reject broad roots, checkout/config overlap, reused data and symlinks.
+    # Do not repair or even create the selected data root in a generator.
+    protected = {Path("/"), Path("/srv"), Path("/tmp"), Path("/var")}
+    if root in protected or any(
+        boundary.is_relative_to(root) or root.is_relative_to(boundary)
+        for boundary in (ROOT, target.parent)
+    ):
+        parser.error("Keep new data, checkout and private settings separate.")
+    if Path.home().is_relative_to(root):
+        parser.error("Do not select an operator home or its ancestor.")
+    if {".config", ".ssh", ".aws", ".docker", ".codex"} & set(root.parts):
+        parser.error("Do not use a private configuration or credential root.")
+    if any(
+        root.is_relative_to(Path(path))
+        for path in ("/etc", "/proc", "/sys", "/dev", "/run", "/root")
+    ):
+        parser.error("Do not use a system directory for lab data.")
+    for component in (root, *root.parents):
+        if component.is_symlink():
+            parser.error("New data paths must not use symlinks.")
+        if component.exists() and not component.is_dir():
+            parser.error("A new data path has a non-directory component.")
+    if root.exists() or target.exists():
+        parser.error("Use unused data and settings paths; no replacement.")
+    return {
+        "COMPOSE_PROJECT_NAME": args.project_name,
+        "DATA_VOLUME_PREFIX": "",
+        "BIND_IP": "127.0.0.1",
+        "LANDING_DIR": str(root / "landing"),
+        "NOTEBOOKS_DIR": str(root / "notebooks"),
+        "MONITORING_LOG_DIR": str(root / "log-spool"),
+        "MONITORING_HOST_ALIAS": "onboarding-lab",
+        "COMPOSE_PROFILES": "demo,monitoring,bi,automation",
+        "CDC_CONNECTOR_NAME": args.project_name + "-source",
+        "CDC_TOPIC_PREFIX": args.project_name,
+        "CDC_GROUP_ID": args.project_name + "-cdc",
+    }
+
+
+lab_overrides = parallel_lab_overrides()
 # Keep real deployment settings outside the checkout and private.
 target.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
 if target.parent.stat().st_mode & 0o077:
@@ -184,6 +274,19 @@ values = {
     "HTTP_PROXY": "",
     "HTTPS_PROXY": "",
 }
+if lab_overrides:
+    # Only application endpoints move. Dokploy itself belongs to its existing
+    # manager, and no new daemon/admin/RPC endpoint is introduced here.
+    for key in values:
+        if key.endswith("_PORT") and key != "DOKPLOY_ADMIN_PORT":
+            if key in {
+                "SOURCE_SQLSERVER_PORT",
+                "DEMO_SQLSERVER_PORT",
+                "CDC_SQLSERVER_PORT",
+            }:
+                continue
+            values[key] = str(int(values[key]) + 20000)
+    values.update(lab_overrides)
 for key in ["HTTP_PROXY", "HTTPS_PROXY"]:
     values[key.lower()] = values[key]
 values = synchronize_no_proxy(values)
@@ -256,14 +359,27 @@ if args.upgrade:
         temporary.unlink(missing_ok=True)
     print("Added missing keys (0600); previous file saved beside settings.")
 else:
+    candidate = "# Private site settings. Keep outside Git.\n"
+    candidate += (
+        "\n".join(key + "=" + value for key, value in values.items()) + "\n"
+    )
+    if lab_overrides:
+        # Validate the complete fresh candidate before publishing it. Only
+        # this newly generated private file is read; no existing env is used.
+        check_fd, check_name = tempfile.mkstemp(dir=target.parent)
+        check_path = Path(check_name)
+        try:
+            with os.fdopen(check_fd, "w") as output:
+                output.write(candidate)
+            load(check_path)
+        except (ValueError, OSError):
+            raise SystemExit("New lab settings validation failed.") from None
+        finally:
+            check_path.unlink(missing_ok=True)
     # Exclusive creation never replaces an existing site's credentials.
     fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w") as output:
-        output.write("# Private site settings. Keep outside Git.\n")
-        output.write(
-            "\n".join(key + "=" + value for key, value in values.items())
-        )
-        output.write("\n")
+        output.write(candidate)
     print(
         "Created private configuration (0600). Edit site paths and profiles."
     )

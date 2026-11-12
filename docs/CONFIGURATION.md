@@ -43,6 +43,14 @@ export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 
 生成は通常利用者で行います。`WORKER_UID` / `WORKER_GID` にその利用者の数値IDが入るため、同じ利用者がランディングを扱う場合に権限を揃えやすくなります。既存の設定ファイルは上書きせず、秘密値は表示しません。導入後にもう一度生成してパスワードや暗号鍵を入れ替える操作には使いません。
 
+既存mainを保持したまま別の比較PoCを作る場合は、
+`--preset parallel-lab --project-name <new-project> --data-root <new-data-root>`
+を新しい`--output`と組み合わせます。新規専用なので`--upgrade`とは併用しません。
+loopback限定、UI/APIの既定port＋20000、初回`demo,monitoring,bi,automation`を選び、
+新しい秘密値を生成します。指定data rootは未使用のGit外絶対パスを要求し、
+その配下のdirectory作成・権限変更・配置は行いません。既存projectとの実port/volume競合は
+別途確認します。[全OSS・Labを分離して段階導入する手順](PARALLEL-POC.md#7-lakehouse一式を専用projectへ段階導入する)
+
 | 保存するもの | 場所と扱い |
 | --- | --- |
 | 公開コード・設定見本 | cloneしたリポジトリ |
