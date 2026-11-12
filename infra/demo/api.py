@@ -26,6 +26,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from job_manager import JobConflict, JobManager, OperationFailure
+from onboarding_api import onboarding_router
 from poc_api import portal_router
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from service import generate_batch, scenario_destination
@@ -777,6 +778,7 @@ def create_app(
     )
     application.include_router(sqlsource_router(store, jobs, authorize))
     application.include_router(observation_router(store, jobs, authorize))
+    application.include_router(onboarding_router(authorize))
     return application
 
 

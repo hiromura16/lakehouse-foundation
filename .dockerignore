@@ -15,3 +15,6 @@ landing
 backups
 runtime
 tests
+# Git excludes alone do not protect files copied by a local Docker build.
+# Keep this final so later negation rules cannot re-include private notes.
+/docs/private/

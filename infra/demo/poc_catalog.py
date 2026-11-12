@@ -230,6 +230,11 @@ SERVICES = (
 )
 
 HELP_DOCUMENTS = {
+    "onboarding": (
+        "ソース登録の下書きGUI",
+        "SOURCE-ONBOARDING.md",
+        "テーブルと列の選択・業務確認・未承認plan",
+    ),
     "start": ("はじめに", "START-HERE.md", "目的別の最初の操作"),
     "portal": ("PoCポータル", "POC-PORTAL.md", "入口・データ・ヘルプの使い方"),
     "mcp": ("MCPの接続", "MCP.md", "AIクライアントの認証とtool範囲"),
@@ -456,6 +461,41 @@ def dataset_catalog() -> dict:
 def capabilities(values=None) -> dict:
     """Tell AI clients what fixed operations exist and which can write."""
     definitions = [
+        (
+            "onboarding_example",
+            "GET",
+            "/onboarding/example",
+            "read",
+            "DBへ接続しない合成6表metadata",
+        ),
+        (
+            "onboarding_schema",
+            "GET",
+            "/onboarding/schema",
+            "read",
+            "ソース登録の下書き入力schema",
+        ),
+        (
+            "onboarding_metadata",
+            "POST",
+            "/onboarding/validate-discovery",
+            "read",
+            "private metadataの形式検証（DB検出なし）",
+        ),
+        (
+            "onboarding_proposal",
+            "POST",
+            "/onboarding/propose",
+            "read",
+            "テーブル・列・業務方針から未承認contract案を生成",
+        ),
+        (
+            "onboarding_plan",
+            "POST",
+            "/onboarding/plan",
+            "read",
+            "再検証した非適用plan（DDL・権限・CDC実行なし）",
+        ),
         (
             "capabilities",
             "GET",

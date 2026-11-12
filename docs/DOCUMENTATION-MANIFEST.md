@@ -73,6 +73,7 @@
 | [AIクライアントからMCPで操作する](<MCP.md>) | 認証付きMCPから固定の業務参照・運用APIを呼び、AIクライアントへ接続する。 | APIの範囲を理解した後に、Streamable HTTPのMCP連携を用意するとき。 | active |
 | [MES・ERPデータをBronzeからGoldへ整える](<MEDALLION.md>) | 6契約の取り込み、最新版採用、不正行隔離、Gold集計と再投入の規則を追う。 | 素材から業務値へ変換する意味を理解し、品質や更新結果を照合するとき。 | active |
 | [SailとSparkを同じ合成データで比較する](<SAIL-LAB.md>) | 任意のSail LabでSparkと合成データの型・結果・再実行を比較し、未検証事項と測定条件を記録する。 | Sparkの既存検証後、独立したnamespaceと有限fixtureで別エンジンの比較を準備するとき。 | active |
+| [テーブルと列をGUIで選ぶソース登録の下書き](<SOURCE-ONBOARDING.md>) | YAMLを書かずに表・列・業務方針から未承認contract案を作り、GUI/API試作と将来の実適用を区別する。 | メタデータ駆動の取込対象選択を合成データで試し、現場・DBAの確認事項と後続開発を整理するとき。 | active |
 | [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>) | 既存SQL Serverを読取専用SELECTで抽出し、6契約のlanding素材を作成する。 | 実ソースDBの列対応・権限・上限を決め、全件snapshotのbridgeを試すとき。 | active |
 
 ### 05 運用・保守
@@ -144,6 +145,7 @@
 | [MES・ERPデータをBronzeからGoldへ整える](<MEDALLION.md>) | 6契約の取り込み、最新版採用、不正行隔離、Gold集計と再投入の規則を追う。 |
 | [PoC操作ポータル](<POC-PORTAL.md>) | 操作ポータルの各ページから、サービス入口・データ・診断・履歴へ移動する。 |
 | [BI・Notebook・ベクトル検索・データ系統を追加する](<POC-TOOLS.md>) | Superset・Jupyter・Qdrant・MarquezのGUIと合成デモを追加して用途別に検証する。 |
+| [テーブルと列をGUIで選ぶソース登録の下書き](<SOURCE-ONBOARDING.md>) | YAMLを書かずに表・列・業務方針から未承認contract案を作り、GUI/API試作と将来の実適用を区別する。 |
 | [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>) | 既存SQL Serverを読取専用SELECTで抽出し、6契約のlanding素材を作成する。 |
 | [固定SQL sourceで疑似ERP・MESを検証する](<SQLSERVER-FIXED-DEMO.md>) | 所有権付き固定SQL表への合成データ投入と、読取専用バッチ・CDCの段階的な受入を行う。 |
 | [症状から確認する](<TROUBLESHOOTING.md>) | 観測した症状から設定・起動・通信・job・データの失敗箇所を絞り込む。 |
@@ -195,6 +197,7 @@
 | [採用版の公式リファレンスと文書監査](<REFERENCES.md>) | 採用版の公式仕様・tag・公開実装・検証記録の根拠を照合する。 |
 | [SailとSparkを同じ合成データで比較する](<SAIL-LAB.md>) | 任意のSail LabでSparkと合成データの型・結果・再実行を比較し、未検証事項と測定条件を記録する。 |
 | [BashとZshの両方で手順を実行する](<SHELLS.md>) | 会社VMのZshとBashでコマンドを使い分け、対話入力・コメント・shebang・引用の違いを確認する。 |
+| [テーブルと列をGUIで選ぶソース登録の下書き](<SOURCE-ONBOARDING.md>) | YAMLを書かずに表・列・業務方針から未承認contract案を作り、GUI/API試作と将来の実適用を区別する。 |
 | [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>) | 既存SQL Serverを読取専用SELECTで抽出し、6契約のlanding素材を作成する。 |
 | [SQL Server DDLの照合順序と途中失敗からの再開](<SQLSERVER-DDL-RECOVERY.md>) | error468・51019の残存診断、exact checkerの保護、CDC部分完了とWindows client別の安全な再開を整理する。 |
 | [固定SQL sourceで疑似ERP・MESを検証する](<SQLSERVER-FIXED-DEMO.md>) | 所有権付き固定SQL表への合成データ投入と、読取専用バッチ・CDCの段階的な受入を行う。 |
@@ -286,6 +289,7 @@
 | [レビュー指摘を改善へ取り込む](<REVIEW-WORKFLOW.md>) | issue・PR・依頼文書の指摘を対象commitで確認し、安全な回帰と差分へつなげる。 |
 | [SailとSparkを同じ合成データで比較する](<SAIL-LAB.md>) | 任意のSail LabでSparkと合成データの型・結果・再実行を比較し、未検証事項と測定条件を記録する。 |
 | [BashとZshの両方で手順を実行する](<SHELLS.md>) | 会社VMのZshとBashでコマンドを使い分け、対話入力・コメント・shebang・引用の違いを確認する。 |
+| [テーブルと列をGUIで選ぶソース登録の下書き](<SOURCE-ONBOARDING.md>) | YAMLを書かずに表・列・業務方針から未承認contract案を作り、GUI/API試作と将来の実適用を区別する。 |
 | [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>) | 既存SQL Serverを読取専用SELECTで抽出し、6契約のlanding素材を作成する。 |
 | [SQL Server DDLの照合順序と途中失敗からの再開](<SQLSERVER-DDL-RECOVERY.md>) | error468・51019の残存診断、exact checkerの保護、CDC部分完了とWindows client別の安全な再開を整理する。 |
 | [固定SQL sourceで疑似ERP・MESを検証する](<SQLSERVER-FIXED-DEMO.md>) | 所有権付き固定SQL表への合成データ投入と、読取専用バッチ・CDCの段階的な受入を行う。 |

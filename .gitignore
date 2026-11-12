@@ -30,3 +30,6 @@ __pycache__/
 
 # Public zero-byte placeholder only; real CA certificates remain private.
 !infra/proxy/empty-ca.pem
+
+# Local architecture notes and source metadata are never public source.
+/docs/private/

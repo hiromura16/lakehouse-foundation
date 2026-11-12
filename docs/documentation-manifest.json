@@ -1265,6 +1265,27 @@
         "docs/OPERATIONS.md"
       ],
       "status": "active"
+    },
+    {
+      "path": "docs/SOURCE-ONBOARDING.md",
+      "title": "テーブルと列をGUIで選ぶソース登録の下書き",
+      "purpose": "YAMLを書かずに表・列・業務方針から未承認contract案を作り、GUI/API試作と将来の実適用を区別する。",
+      "audience": [
+        "データ利用担当",
+        "開発・設計担当",
+        "基盤構築担当"
+      ],
+      "when_to_use": "メタデータ駆動の取込対象選択を合成データで試し、現場・DBAの確認事項と後続開発を整理するとき。",
+      "category": "04 設計・拡張",
+      "prerequisites": [
+        "docs/POC-PORTAL.md",
+        "docs/SQLSERVER-FIXED-DEMO.md"
+      ],
+      "next": [
+        "docs/API.md",
+        "docs/CUSTOMIZATION.md"
+      ],
+      "status": "active"
     }
   ]
 }

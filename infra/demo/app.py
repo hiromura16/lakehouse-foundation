@@ -4,6 +4,7 @@ import json
 
 import streamlit as st
 from client import request
+from onboarding_ui import render_onboarding
 from poc_ui import (
     render_data,
     render_help,
@@ -694,6 +695,7 @@ def render_ai_context():
     history_tab,
     help_tab,
     ai_tab,
+    onboarding_tab,
 ) = st.tabs(
     [
         "入口",
@@ -706,6 +708,7 @@ def render_ai_context():
         "履歴",
         "ヘルプ",
         "AIの準備",
+        "ソース登録の下書き",
     ]
 )
 with portal_tab:
@@ -736,6 +739,8 @@ with status_tab:
     render_sql_observations(call_api)
 with ai_tab:
     render_ai_context()
+with onboarding_tab:
+    render_onboarding(call_api)
 
 # One shared progress area prevents duplicate polling widgets across tabs.
 render_job()

@@ -14,6 +14,11 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+**ソース登録の下書き**タブでは、YAMLを書かずにテーブル・列・業務方針を選び、
+未承認contract案と確認事項を作れます。DBへ接続しない
+[単独プレビューと操作手順](SOURCE-ONBOARDING.md)も用意しています。
+
+
 <!-- shell-usage:start -->
 **コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
 
