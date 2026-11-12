@@ -483,7 +483,7 @@ ROLLBACK TRANSACTION;
 IF EXISTS (SELECT 1 FROM fixture_ctl.outer_transaction_sentinel
            WHERE sentinel_id={ordinal})
     THROW 51987, 'The fixture sentinel was not discarded by its owner.', 1;
-""" + record(stage)
+""" + record(stage, ',"expected_error":50000')
 
 
 def assert_fixed_captures(count):
@@ -863,8 +863,23 @@ def initialization_unchanged(source, *, retained_only=False):
 
 def stop_fixture_jobs():
     """Freeze only this fresh database's jobs for history/LSN comparisons."""
-    sql = """DECLARE @StopDeadline datetime2=
- DATEADD(second,30,SYSUTCDATETIME()),
+    sql = """
+-- This fixture owns the fresh jobs. Disable scheduling before the
+-- manual scan; the production scripts never change job enabled state.
+DECLARE @FixtureJob uniqueidentifier;
+DECLARE FixtureJobs CURSOR LOCAL FAST_FORWARD FOR
+ SELECT j.job_id FROM msdb.dbo.cdc_jobs j JOIN msdb.dbo.sysjobs sj
+ ON sj.job_id=j.job_id WHERE j.database_id=DB_ID() AND sj.enabled=1;
+OPEN FixtureJobs;
+FETCH NEXT FROM FixtureJobs INTO @FixtureJob;
+WHILE @@FETCH_STATUS=0
+BEGIN
+ EXEC msdb.dbo.sp_update_job @job_id=@FixtureJob,@enabled=0;
+ FETCH NEXT FROM FixtureJobs INTO @FixtureJob;
+END;
+CLOSE FixtureJobs;
+DEALLOCATE FixtureJobs;
+DECLARE @StopDeadline datetime2=DATEADD(second,30,SYSUTCDATETIME()),
  @QuietDeadline datetime2=DATEADD(second,2,SYSUTCDATETIME());
 WHILE SYSUTCDATETIME()<@QuietDeadline
 BEGIN
@@ -918,7 +933,9 @@ class Runner:
         self.databases_created = 0
         self.failure = None
 
-    def execute(self, database, source, *, guarded=True):
+    def execute(
+        self, database, source, *, guarded=True, allowed_sql_errors=()
+    ):
         if guarded:
             source = guard(database, self.nonce) + source
         # Synthetic fixture DBA credentials exist only in this client process.
@@ -946,6 +963,10 @@ class Runner:
                     "mandatory",
                     "-C",
                     "-b",
+                    # Let T-SQL TRY/CATCH finish expected severity-16 tests.
+                    # Receipt and unexpected-error checks below remain strict.
+                    "-V",
+                    "17",
                     "-l",
                     "10",
                     "-t",
@@ -1046,6 +1067,22 @@ class Runner:
                 "prefix_count": output_text.count(PREFIX),
             }
             raise FixtureError("SYNTHETIC_STAGE_EVIDENCE_MISSING")
+        expected_errors = set(allowed_sql_errors) | {
+            row["expected_error"] for row in found if "expected_error" in row
+        }
+        actual_errors = {
+            int(number)
+            for number, severity in re.findall(
+                r"Msg\s+(\d+),\s+Level\s+(\d+)", output_text
+            )
+            if int(severity) >= 11
+        }
+        if actual_errors - expected_errors:
+            self.failure = {
+                "case": self.case,
+                "error_numbers": sorted(actual_errors - expected_errors),
+            }
+            raise FixtureError("UNEXPECTED_SQL_ERROR_WITH_RECEIPT")
         self.records.extend(found)
         return found
 
@@ -1168,6 +1205,20 @@ class Runner:
         self.validation(database, selected, 0)
         self.corrupt_capture_preflight(database, selected)
 
+    def freeze_jobs(self, database):
+        """Freeze owned jobs and tolerate only the idle SQL Agent stop race.
+
+        The SQL loop must finish a quiet interval and emit its receipt. Job
+        definitions are snapshotted after this explicit fixture preparation.
+        Production 004/005 never call sp_update_job or stop shared jobs.
+        """
+        self.execute(
+            database,
+            stop_fixture_jobs() + record("init_prepared"),
+            allowed_sql_errors=(22022,),
+        )
+        self.failure = None
+
     def initialization(self, suffix, collation):
         """Run each initialization case in a fresh owned SQL2022 database."""
         for case in plan()["initialization_cases"]:
@@ -1275,9 +1326,7 @@ IF NOT EXISTS (SELECT 1 FROM cdc.change_tables
                     ),
                 )
                 self.execute(database, enabled + record("init_fixed_six"))
-            self.execute(
-                database, stop_fixture_jobs() + record("init_prepared")
-            )
+            self.freeze_jobs(database)
             self.execute(
                 database,
                 "DELETE FROM fixture_ctl.independent_saved;\n"
@@ -1375,10 +1424,7 @@ IF NOT EXISTS (SELECT 1 FROM cdc.change_tables
 """
                     + record("init_state_preserved"),
                 )
-                self.execute(
-                    database,
-                    stop_fixture_jobs() + record("init_prepared"),
-                )
+                self.freeze_jobs(database)
                 # Real change rows and a non-NULL start LSN must survive an
                 # exact rerun, using supported scanning while jobs are stopped.
                 self.execute(

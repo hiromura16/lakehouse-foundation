@@ -558,6 +558,30 @@ class SqlcmdBoundaryTests(unittest.TestCase):
                 result = self.runner().execute(DATABASE, "SELECT 1;")
                 self.assertEqual(result[0]["stage"], "fresh_database_created")
 
+    def test_expected_caught_errors_finish_but_unexpected_errors_still_fail(
+        self,
+    ):
+        for number, expected in ((51991, True), (208, False)):
+            receipt = {
+                "stage": "partial_enable",
+                "status": "passed",
+                "expected_error": 51991,
+            }
+            output = (
+                f"Msg {number}, Level 16, State 1\n"
+                + FIXTURE.PREFIX
+                + json.dumps(receipt)
+            )
+            completed = subprocess.CompletedProcess([], 0, output.encode())
+            with mock.patch.object(
+                FIXTURE.subprocess, "run", return_value=completed
+            ):
+                if expected:
+                    self.runner().execute(DATABASE, "SELECT 1;")
+                else:
+                    with self.assertRaises(FIXTURE.FixtureError):
+                        self.runner().execute(DATABASE, "SELECT 1;")
+
     def test_password_is_only_in_child_env_input_is_private_and_removed(self):
         runner = self.runner()
         seen = []
@@ -566,6 +590,7 @@ class SqlcmdBoundaryTests(unittest.TestCase):
             self.assertNotIn(runner.password, str(command))
             self.assertNotIn("-P", command)
             self.assertEqual(command[command.index("-N") + 1], "mandatory")
+            self.assertEqual(command[command.index("-V") + 1], "17")
             self.assertEqual(kwargs["env"]["SQLCMDPASSWORD"], runner.password)
             self.assertNotIn("HTTP_PROXY", kwargs["env"])
             self.assertNotIn("SQLCMDUSER", kwargs["env"])
@@ -573,6 +598,7 @@ class SqlcmdBoundaryTests(unittest.TestCase):
             seen.append(path)
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
             self.assertTrue(path.read_text().startswith("SET NOCOUNT ON"))
+            self.assertTrue(path.read_text().endswith("\nGO\n"))
             value = {"stage": "ddl_003_retry_passed", "status": "passed"}
             return subprocess.CompletedProcess(
                 command,

@@ -186,4 +186,6 @@ fixtureの強制列collation差はerror468の再現用で、選択serverの実ca
 
 DB全体のCDC、共有job、無関係capture、source表、role、offsetは削除しません。途中失敗時は`phase`・エラー番号・承認entryのordinal・事前/現在の有無を出し、後片付けせず停止します。固定側の部分完了は004の固定六件診断にも残ります。接続/compileエラーで診断自体が出ない場合も、private inventoryを取り直します。同じ承認四組と所有権を保持し、残った状態を確認してから同じ生成SQLで再開します。既に消えた承認entryはskipし、未知のcaptureを追加承認したことにはしません。
 
-実テストの`--initialization`はCI/CS DBの両方で空DB二状態、NULL独立capture、3/6、同名定義不一致、旧四件置換と途中失敗/再実行、未知capture拒否、正式DROP由来の孤児/pending=1、partitioned表拒否を検査します。比較用に合成DBのjobを停止し、実際のLSN/CT履歴・role/grant・job定義・合成offsetの保持を照合します。metadata値の捏造はしません。混在collationの強制error468は実catalog collationの測定とは区別します。
+実テストの`--initialization`はCI/CS DBの両方で空DB二状態、NULL独立capture、3/6、同名定義不一致、旧四件置換と途中失敗/再実行、未知capture拒否、正式DROP由来の孤児/pending=1、partitioned表拒否を検査します。比較用に合成DBのjobのscheduleを無効化して停止し、その準備後のjob定義と実際のLSN/CT履歴・role/grant・job定義・合成offsetの保持を照合します。metadata値の捏造はしません。混在collationの強制error468は実catalog collationの測定とは区別します。
+
+合成fixtureのclientは`-b -V 17`で期待したseverity 16のTRY/CATCHを最後まで実行させ、batch終端の構造化receiptを必須にします。receiptがあっても、SQL側で照合した期待エラー以外のseverity 11以上は失敗です。DBAの通常適用は従来どおり`sqlcmd -b`を使います。fixture専用のjob無効化/停止は、通常004/005やmaintenanceには含めません。
