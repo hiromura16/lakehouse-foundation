@@ -101,5 +101,6 @@ IF OBJECT_ID(N'cdc.change_tables',N'U') IS NOT NULL
         LEFT JOIN sys.tables changed ON changed.object_id=ct.object_id;';
 IF EXISTS (SELECT 1 FROM sys.databases
     WHERE database_id=DB_ID() AND is_cdc_enabled=1)
+    AND OBJECT_ID(N'msdb.dbo.cdc_jobs',N'U') IS NOT NULL
     EXEC sys.sp_cdc_help_jobs;
 COMMIT TRANSACTION;

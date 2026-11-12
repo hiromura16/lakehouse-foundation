@@ -544,7 +544,8 @@ DECLARE @CdcJobsAfter TABLE (
     maxtrans int, maxscans int, continuous bit, pollinginterval bigint,
     retention bigint, threshold bigint
 );
-INSERT INTO @CdcJobsBefore EXEC sys.sp_cdc_help_jobs;
+IF OBJECT_ID(N'msdb.dbo.cdc_jobs',N'U') IS NOT NULL
+    INSERT INTO @CdcJobsBefore EXEC sys.sp_cdc_help_jobs;
 IF (SELECT COUNT(*) FROM @CdcJobsBefore) NOT IN (0,2)
     OR (EXISTS (SELECT 1 FROM cdc.change_tables)
         AND (SELECT COUNT(*) FROM @CdcJobsBefore)<>2)
@@ -638,7 +639,8 @@ IF EXISTS (SELECT 1 FROM cdc.change_tables ct JOIN @Targets t
     THROW 51129, 'Fixed captures remain; retain partial state and review.', 1;
 -- The first table creates the normal pair. Existing IDs and settings must
 -- survive every rerun, including a database with zero captures but two jobs.
-INSERT INTO @CdcJobsAfter EXEC sys.sp_cdc_help_jobs;
+IF OBJECT_ID(N'msdb.dbo.cdc_jobs',N'U') IS NOT NULL
+    INSERT INTO @CdcJobsAfter EXEC sys.sp_cdc_help_jobs;
 -- A confirmed disable on an empty CDC database is a no-op, including zero
 -- jobs. If a pair existed, both IDs/settings must still match the snapshot.
 IF (SELECT COUNT(*) FROM @CdcJobsAfter)

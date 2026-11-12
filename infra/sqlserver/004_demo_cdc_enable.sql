@@ -540,7 +540,8 @@ DECLARE @CdcJobsAfter TABLE (
     maxtrans int, maxscans int, continuous bit, pollinginterval bigint,
     retention bigint, threshold bigint
 );
-INSERT INTO @CdcJobsBefore EXEC sys.sp_cdc_help_jobs;
+IF OBJECT_ID(N'msdb.dbo.cdc_jobs',N'U') IS NOT NULL
+    INSERT INTO @CdcJobsBefore EXEC sys.sp_cdc_help_jobs;
 IF (SELECT COUNT(*) FROM @CdcJobsBefore) NOT IN (0,2)
     OR (EXISTS (SELECT 1 FROM cdc.change_tables)
         AND (SELECT COUNT(*) FROM @CdcJobsBefore)<>2)
@@ -704,7 +705,8 @@ IF EXISTS (
 
 -- The first table creates the normal pair. Existing IDs and settings must
 -- survive every rerun, including a database with zero captures but two jobs.
-INSERT INTO @CdcJobsAfter EXEC sys.sp_cdc_help_jobs;
+IF OBJECT_ID(N'msdb.dbo.cdc_jobs',N'U') IS NOT NULL
+    INSERT INTO @CdcJobsAfter EXEC sys.sp_cdc_help_jobs;
 IF (SELECT COUNT(*) FROM @CdcJobsAfter)<>2
     OR (SELECT COUNT(*) FROM @CdcJobsAfter
         WHERE job_type COLLATE Latin1_General_100_BIN2=N'capture')<>1

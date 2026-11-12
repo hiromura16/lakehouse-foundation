@@ -111,6 +111,7 @@ ELSE
     SELECT N'fixed_demo_capture' AS check_name, CONVERT(bit,0) AS cdc_enabled;
 IF EXISTS (SELECT 1 FROM sys.databases
     WHERE database_id=DB_ID() AND is_cdc_enabled=1)
+    AND OBJECT_ID(N'msdb.dbo.cdc_jobs',N'U') IS NOT NULL
     EXEC sys.sp_cdc_help_jobs;
 -- Only IDs/status/counts are selected. Do not print credentials, raw business
 -- data or ownership hashes. DBA checks legacy assets independently in private.

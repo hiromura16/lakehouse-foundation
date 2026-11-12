@@ -474,6 +474,10 @@ class FixedSqlContractTests(unittest.TestCase):
                 self.assertIn("INSERT INTO @CdcJobsBefore", sql)
                 self.assertIn("INSERT INTO @CdcJobsAfter", sql)
                 self.assertEqual(sql.count("EXEC sys.sp_cdc_help_jobs"), 2)
+                self.assertLess(
+                    sql.index("OBJECT_ID(N'msdb.dbo.cdc_jobs',N'U')"),
+                    sql.index("INSERT INTO @CdcJobsBefore"),
+                )
                 self.assertIn("LEFT JOIN msdb.dbo.sysjobs", sql)
                 self.assertIn("THROW 51132", sql)
                 self.assertIn("THROW 51133", sql)

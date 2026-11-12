@@ -790,6 +790,11 @@ def initialization_snapshot(variable, *, retained_only=False):
             "SELECT * FROM sys.database_permissions "
             "ORDER BY class,major_id,minor_id,grantee_principal_id,"
             "grantor_principal_id,permission_name",
+            "SELECT * FROM fixture_ctl.offset_sentinel ORDER BY id",
+            "SELECT * FROM lh_demo_ctl.batch_watermarks ORDER BY source_table",
+        ]
+    job_queries = (
+        [
             "SELECT * FROM msdb.dbo.cdc_jobs WHERE database_id=DB_ID() "
             "ORDER BY job_type",
             "SELECT j.* FROM msdb.dbo.sysjobs j JOIN msdb.dbo.cdc_jobs c "
@@ -798,9 +803,10 @@ def initialization_snapshot(variable, *, retained_only=False):
             "SELECT s.* FROM msdb.dbo.sysjobsteps s JOIN msdb.dbo.cdc_jobs c "
             "ON s.job_id=c.job_id WHERE c.database_id=DB_ID() "
             "ORDER BY s.job_id,s.step_id",
-            "SELECT * FROM fixture_ctl.offset_sentinel ORDER BY id",
-            "SELECT * FROM lh_demo_ctl.batch_watermarks ORDER BY source_table",
         ]
+        if not retained_only
+        else []
+    )
     target = "@Init" + variable
     sql = (
         "DECLARE "
@@ -812,6 +818,17 @@ def initialization_snapshot(variable, *, retained_only=False):
         )
         + ";\n"
     )
+    for query in job_queries:
+        statement = "SELECT @h=@h+(" + query
+        statement += " FOR JSON PATH,INCLUDE_NULL_VALUES);"
+        sql += (
+            "IF OBJECT_ID(N'msdb.dbo.cdc_jobs',N'U') IS NOT NULL\n"
+            " EXEC sys.sp_executesql "
+            + literal(statement)
+            + ",N'@h nvarchar(max) OUTPUT',@h="
+            + target
+            + " OUTPUT;\n"
+        )
     for name in names:
         query = (
             "SELECT @h=@h+(SELECT * FROM cdc.[" + name + "_CT] "
@@ -861,7 +878,7 @@ def stop_fixture_jobs():
             + """';
 """
         )
-    return (
+    sql = (
         sql
         + """DECLARE @StopDeadline datetime2=
  DATEADD(second,30,SYSUTCDATETIME());
@@ -876,6 +893,10 @@ BEGIN
  WAITFOR DELAY '00:00:00.200';
 END;
 """
+    )
+    return (
+        "IF OBJECT_ID(N'msdb.dbo.cdc_jobs',N'U') IS NOT NULL\n"
+        " EXEC sys.sp_executesql " + literal(sql) + ";\n"
     )
 
 
@@ -1163,8 +1184,10 @@ class Runner:
             self.execute(database, (HERE / "mixed_collation.sql").read_text())
             if case == "zero_no_jobs":
                 setup = """IF EXISTS (SELECT 1 FROM cdc.change_tables)
- OR EXISTS (SELECT 1 FROM msdb.dbo.cdc_jobs WHERE database_id=DB_ID())
- THROW 51995, 'Expected zero captures and zero jobs.', 1;
+ THROW 51995, 'Expected zero captures.', 1;
+IF OBJECT_ID(N'msdb.dbo.cdc_jobs',N'U') IS NOT NULL
+ EXEC sys.sp_executesql N'IF EXISTS (SELECT 1 FROM msdb.dbo.cdc_jobs
+ WHERE database_id=DB_ID()) THROW 51995, ''Expected zero jobs.'', 1;';
 """
             elif case == "zero_with_jobs":
                 setup = """EXEC sys.sp_cdc_add_job @job_type=N'capture';
@@ -1229,9 +1252,15 @@ IF NOT EXISTS (SELECT 1 FROM cdc.change_tables
             self.execute(database, setup + record("init_prepared"))
             self.execute(
                 database,
-                "SELECT * INTO fixture_ctl.initial_jobs "
-                "FROM msdb.dbo.cdc_jobs "
-                "WHERE database_id=DB_ID();\n"
+                "CREATE TABLE fixture_ctl.initial_jobs ("
+                "job_id uniqueidentifier,job_type nvarchar(20),maxtrans int,"
+                "maxscans int,continuous bit,pollinginterval bigint,"
+                "retention bigint,threshold bigint);\n"
+                "IF OBJECT_ID(N'msdb.dbo.cdc_jobs',N'U') IS NOT NULL "
+                "EXEC sys.sp_executesql N'INSERT fixture_ctl.initial_jobs "
+                "SELECT job_id,job_type,maxtrans,maxscans,continuous,"
+                "pollinginterval,retention,threshold FROM msdb.dbo.cdc_jobs "
+                "WHERE database_id=DB_ID();';\n"
                 "SELECT * INTO fixture_ctl.independent_saved "
                 "FROM cdc.change_tables WHERE capture_instance="
                 "N'fixture_independent_v1';\n" + record("init_prepared"),
@@ -1368,10 +1397,14 @@ IF NOT EXISTS (SELECT 1 FROM cdc.lh_demo_erp_products_v1_CT
                 )
             self.execute(
                 database,
-                """IF EXISTS (
- SELECT * FROM fixture_ctl.initial_jobs
- EXCEPT SELECT * FROM msdb.dbo.cdc_jobs WHERE database_id=DB_ID())
- THROW 51995, 'Existing shared job identity or configuration changed.', 1;
+                """IF OBJECT_ID(N'msdb.dbo.cdc_jobs',N'U') IS NOT NULL
+ EXEC sys.sp_executesql N'IF EXISTS (
+ SELECT job_id,job_type COLLATE Latin1_General_100_BIN2,maxtrans,maxscans,
+ continuous,pollinginterval,retention,threshold FROM fixture_ctl.initial_jobs
+ EXCEPT SELECT job_id,job_type COLLATE Latin1_General_100_BIN2,maxtrans,
+ maxscans,continuous,pollinginterval,retention,threshold
+ FROM msdb.dbo.cdc_jobs WHERE database_id=DB_ID())
+ THROW 51995, ''Existing shared jobs changed.'', 1;';
 """
                 + record("init_" + case + "_passed"),
             )
