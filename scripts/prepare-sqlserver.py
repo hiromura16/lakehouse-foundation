@@ -98,16 +98,6 @@ def replacement_script(values, version, allowlist):
             for row in allowlist
         )
         or len({row["capture_instance"].casefold() for row in allowlist}) != 4
-        or len(
-            {
-                (
-                    row["source_schema"].casefold(),
-                    row["source_table"].casefold(),
-                )
-                for row in allowlist
-            }
-        )
-        != 4
     ):
         raise ValueError("Configure exactly four distinct approved triples.")
     selected = prepared_values(values, version)

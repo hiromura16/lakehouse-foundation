@@ -1433,7 +1433,7 @@ FROM cdc.fixture_independent_v1_CT;
                     database, initialization_unchanged(disabled_failure)
                 )
                 # Observe the real state before/after supported scanning.
-                # Some builds remove metadata without an observable pending=1.
+                # Some builds expose no retained pending=1 metadata row.
                 # Record a blocking coverage gap; never edit a system table.
                 observations = self.execute(
                     database,
@@ -1604,16 +1604,29 @@ CREATE TABLE fixture_ctl.outer_transaction_sentinel (
  sentinel_id int NOT NULL PRIMARY KEY);
 """
         self.execute(database, setup + record("outer_sentinel_prepared"))
+        failures = []
         for ordinal, number in enumerate(
             ("003", "004", "005", "preflight"), 1
         ):
             stage = "outer_transaction_" + number + "_preserved"
-            self.execute(
-                database,
-                outer_transaction_probe(
-                    render(number, selected), stage, ordinal
-                ),
-            )
+            try:
+                self.execute(
+                    database,
+                    outer_transaction_probe(
+                        render(number, selected), stage, ordinal
+                    ),
+                )
+            except FixtureError as error:
+                failures.append(
+                    {
+                        "script": number,
+                        "code": str(error),
+                        "failure": self.failure,
+                    }
+                )
+        if failures:
+            self.failure = {"outer_transaction_probes": failures}
+            raise FixtureError("OUTER_TRANSACTION_PROBES_FAILED")
 
     def corrupt_capture_preflight(self, database, selected):
         """Preserve a deliberately wrong owned-test capture on refusal."""
@@ -1900,6 +1913,7 @@ def main(argv=None):
         raise FixtureError("SYNTHETIC_DBA_CREDENTIAL_REQUIRED")
     runner = Runner(server, sqlcmd, password, nonce, version)
     candidates = runner.candidate_databases
+    lifecycle_failures = []
     try:
         if args.initialization:
             for suffix, collation in (
@@ -1907,8 +1921,23 @@ def main(argv=None):
                 ("cs", "Latin1_General_CS_AS"),
             ):
                 runner.initialization(suffix, collation)
-            runner.lifecycle("lifecycle_ci", "Latin1_General_CI_AS")
-            runner.lifecycle("lifecycle_cs", "Latin1_General_CS_AS")
+            # These databases are independent. Retain every failure and a
+            # nonzero final result while still checking the other collation.
+            for suffix, collation in (
+                ("lifecycle_ci", "Latin1_General_CI_AS"),
+                ("lifecycle_cs", "Latin1_General_CS_AS"),
+            ):
+                try:
+                    runner.lifecycle(suffix, collation)
+                except FixtureError as error:
+                    lifecycle_failures.append(
+                        {
+                            "case": suffix,
+                            "code": str(error),
+                            "failure": runner.failure,
+                        }
+                    )
+                    runner.failure = None
         else:
             runner.lifecycle("ci", "Latin1_General_CI_AS")
             runner.lifecycle("cs", "Latin1_General_CS_AS")
@@ -1971,8 +2000,11 @@ def main(argv=None):
                 if args.initialization
                 else "collation_full",
                 "pending_drop_one_coverage": pending_coverage,
+                "additional_lifecycle_failures": lifecycle_failures,
                 "status": (
-                    "passed"
+                    "failed_or_partial"
+                    if lifecycle_failures
+                    else "passed"
                     if coverage_complete
                     else "passed_with_coverage_gaps"
                 ),
@@ -1990,6 +2022,8 @@ def main(argv=None):
             }
         )
     )
+    if lifecycle_failures:
+        return 1
     return 0 if coverage_complete else 3
 
 

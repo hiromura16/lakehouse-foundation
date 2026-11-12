@@ -143,6 +143,11 @@ BEGIN TRY
         ON ct.capture_instance COLLATE Latin1_General_100_BIN2
             =a.capture_instance COLLATE Latin1_General_100_BIN2)
         THROW 51208, 'Approved legacy captures remain; inspect private state.', 1;
+    IF EXISTS (SELECT 1 FROM cdc.change_tables ct
+        WHERE NOT EXISTS (SELECT 1 FROM @LegacyFixed f
+            WHERE f.capture_instance COLLATE Latin1_General_100_BIN2
+                =ct.capture_instance COLLATE Latin1_General_100_BIN2))
+        THROW 51210, 'Unexpected capture appeared; preserve state and review.', 1;
     SELECT N'legacy_replacement_complete' AS check_name,
         6 AS fixed_capture_count,0 AS approved_legacy_remaining;
     EXEC sys.sp_releaseapplock @Resource=N'lakehouse.fixed-demo.cdc',

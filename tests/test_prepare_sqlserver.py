@@ -72,6 +72,14 @@ class PrepareSqlTests(unittest.TestCase):
         self.assertIn("THROW 51130", rendered)
         self.assertIn("THROW 51003", rendered)
         self.assertNotIn(values()["DEMO_SQLSERVER_OWNERSHIP_TOKEN"], rendered)
+        # SQL Server permits two capture versions on one source. Approval is
+        # per exact triple, so distinct captures may share an approved table.
+        shared_source = json.loads(json.dumps(approved))
+        shared_source[1]["source_table"] = shared_source[0]["source_table"]
+        self.assertIn(
+            "THROW 51210",
+            PREPARE.replacement_script(values(), "c" * 40, shared_source),
+        )
         for invalid in ([], approved[:3], approved * 2, {}, None):
             with self.assertRaises(ValueError):
                 PREPARE.replacement_script(values(), "c" * 40, invalid)

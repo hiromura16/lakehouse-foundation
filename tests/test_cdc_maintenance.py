@@ -263,6 +263,7 @@ class SqlReplacementScopeTests(unittest.TestCase):
         )
         self.assertIn("THROW 51208", body)
         self.assertIn("THROW 51209", body)
+        self.assertIn("THROW 51210", body)
         self.assertIn("preflight_presence", body)
         self.assertIn("current_presence", body)
         self.assertIn("preserve_state_review_then_rerun_same_allowlist", body)
