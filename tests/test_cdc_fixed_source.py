@@ -102,6 +102,12 @@ class MetadataCursor:
                 for name in {"updated_at", "created_at"}
                 | self.adapter.TIME_COLUMNS
             ]
+        elif "HAS_PERMS_BY_NAME" in statement:
+            self.pending = [(0 if self.fault == "read_permission" else 1,)]
+        elif statement.startswith("SELECT TOP (0)"):
+            if self.fault == "read_probe":
+                raise RuntimeError("synthetic-private-read-denied")
+            self.pending = []
         elif "IS_MEMBER" in statement:
             self.pending = [(0 if self.fault == "role" else 1,)]
         else:
@@ -382,6 +388,7 @@ class FixedPreflightTests(unittest.TestCase):
                 "checked": True,
                 "tables": 6,
                 "schema_version": 1,
+                "agent_jobs_checked": False,
             },
         )
         self.assertEqual(roles, ["source"])
@@ -403,6 +410,8 @@ class FixedPreflightTests(unittest.TestCase):
             "capture",
             "columns",
             "precision",
+            "read_permission",
+            "read_probe",
             "role",
             "permissions",
             "ownership",

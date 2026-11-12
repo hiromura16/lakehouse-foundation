@@ -410,12 +410,66 @@ def side_effects_safe(cursor, role="demo"):
     return cursor.fetchone() == (1,) and cursor.fetchone() is None
 
 
-def permissions_safe(cursor, role="demo"):
+def source_permissions_safe(cursor):
+    """Check only the fixed reader boundary, not unrelated DB objects.
+
+    The caller has already rejected broad DB/server roles and capabilities.
+    This is not proof of database-wide least privilege; DBA audit is separate.
+    """
+    cursor.execute("SELECT IS_MEMBER(N'lh_demo_reader')")
+    if cursor.fetchone() != (1,):
+        return False
+    for schema in SCHEMAS.values():
+        for operation in ("ALTER", "CONTROL", "TAKE OWNERSHIP"):
+            cursor.execute(
+                "SELECT HAS_PERMS_BY_NAME(%s,N'SCHEMA',%s)",
+                (schema, operation),
+            )
+            if cursor.fetchone() != (0,):
+                return False
+    objects = ["lh_demo_ctl.installation"] + [
+        item["schema"] + "." + item["table"] for item in TABLES.values()
+    ]
+    for name in objects:
+        cursor.execute(
+            "SELECT HAS_PERMS_BY_NAME(%s,N'OBJECT',N'SELECT')", (name,)
+        )
+        if cursor.fetchone() != (1,):
+            return False
+        # Effective rows include column-only grants and role inheritance.
+        cursor.execute(
+            "SELECT permission_name FROM sys.fn_my_permissions(%s,N'OBJECT')",
+            (name,),
+        )
+        permissions = cursor.fetchall()
+        if not permissions or any(
+            row[0] is None
+            or row[0]
+            in {
+                "INSERT",
+                "UPDATE",
+                "DELETE",
+                "ALTER",
+                "CONTROL",
+                "TAKE OWNERSHIP",
+            }
+            for row in permissions
+        ):
+            return False
+        # TOP (0) validates object/column SELECT without disclosing data.
+        qualified = ".".join("[" + part + "]" for part in name.split("."))
+        cursor.execute("SELECT TOP (0) * FROM " + qualified)
+        cursor.fetchall()
+    return True
+
+
+def permissions_safe(cursor, role="demo", *, full_audit=False):
     """Fail closed on broad roles, dangerous grants or unrelated object access.
 
     The writer's legacy grants are inspected, never revoked. A separate
     control principal is limited to watermark DML plus installation SELECT.
-    The reader may have broad SELECT, but no runtime DML/DDL capability.
+    Source readers use the fixed boundary unless full_audit is requested.
+    Full audit is a separate conservative DBA diagnostic, not startup policy.
     Metadata visibility is evaluated as the actual connected principal.
     """
     roles = [
@@ -486,6 +540,8 @@ def permissions_safe(cursor, role="demo"):
         )
         if cursor.fetchall():
             return False
+    if role == "source" and not full_audit:
+        return source_permissions_safe(cursor)
     business = [
         item["schema"] + "." + item["table"] for item in TABLES.values()
     ]

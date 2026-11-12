@@ -113,9 +113,49 @@ def preflight(values, mapping, *, adapter=None):
             )
             if cursor.fetchone() != (True,):
                 raise ValueError("Fixed source database CDC is not ready.")
+            cursor.execute("SELECT IS_MEMBER(N'lh_demo_cdc_reader')")
+            if cursor.fetchone() != (1,):
+                raise ValueError("Fixed CDC reader role is missing.")
+            cursor.execute(
+                "SELECT HAS_PERMS_BY_NAME(DB_NAME(),N'DATABASE',"
+                "N'VIEW DATABASE STATE')"
+            )
+            if cursor.fetchone() != (1,):
+                raise ValueError("Fixed CDC database state is unavailable.")
+            for metadata in (
+                "change_tables",
+                "captured_columns",
+                "lsn_time_mapping",
+            ):
+                cursor.execute(
+                    "SELECT TOP (0) * FROM [cdc].[" + metadata + "]"
+                )
+                cursor.fetchall()
             for name, item in adapter.TABLES.items():
                 capture = adapter.CAPTURE_INSTANCES[name]
                 qualified = item["schema"] + "." + item["table"]
+                for object_name in (
+                    capture + "_CT",
+                    "fn_cdc_get_all_changes_" + capture,
+                ):
+                    cursor.execute(
+                        "SELECT HAS_PERMS_BY_NAME(%s,N'OBJECT',N'SELECT')",
+                        ("cdc." + object_name,),
+                    )
+                    if cursor.fetchone() != (1,):
+                        raise ValueError(
+                            "Fixed CDC read permission is missing."
+                        )
+                cursor.execute(
+                    "SELECT TOP (0) * FROM [cdc].[" + capture + "_CT]"
+                )
+                cursor.fetchall()
+                cursor.execute(
+                    "SELECT TOP (0) * FROM [cdc].[fn_cdc_get_all_changes_"
+                    + capture
+                    + "](NULL,NULL,N'all')"
+                )
+                cursor.fetchall()
                 cursor.execute(
                     "SELECT ct.capture_instance,ct.role_name "
                     "FROM cdc.change_tables ct JOIN sys.tables t ON "
@@ -163,7 +203,12 @@ def preflight(values, mapping, *, adapter=None):
             "Fixed CDC preflight failed; review ownership, read-only "
             "permissions and the six captures privately."
         ) from None
-    return {"checked": True, "tables": 6, "schema_version": 1}
+    return {
+        "checked": True,
+        "tables": 6,
+        "schema_version": 1,
+        "agent_jobs_checked": False,
+    }
 
 
 def validate_state_volume(value):

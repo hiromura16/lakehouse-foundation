@@ -341,3 +341,31 @@ VS Code MSSQLからSQL loginでDBA作業も可能です。DBA passwordはruntime
 
 
 旧captureの明示置換が必要なDBAだけは、[旧四件置換の専用手順](SQLSERVER-DDL-RECOVERY.md#旧四件の明示置換)を使います。通常004へ旧名の削除を追加しません。既に固定六件へ移行した環境で旧captureを再作成する必要はありません。
+
+
+### 固定 reader の起動チェックと DBA 全体監査
+
+固定 reader の起動時は接続先と installation ownership、期待する
+`lh_demo_reader` / `lh_demo_cdc_reader`、固定6表・6 captureの定義、
+固定表・必要なCDC metadata/CT/functionの読取を確認します。
+`VIEW DATABASE STATE` も確認します。読取プローブは `TOP (0)` のため
+業務データを出力せず、設定・権限・CDC・checkpointを変更しません。
+
+高リスクなDB/server role・広域権限、固定3 schemaのALTER/CONTROL/
+TAKE OWNERSHIP、固定6表とinstallationのDML/DDL権限は拒否します。
+列単位の実効UPDATE権限も対象です。無関係なDB objectは列挙しません。
+無関係objectの `fn_my_permissions` が空でも登録拒否にはしません。
+これはDB全体の最小権限を証明するものではなく、DBAが管理する境界です。
+writer/controlは従来の厳格な全体監査を維持します。
+
+従来の保守的な全DB監査は、承認されたSOURCE環境変数を設定した
+非公開の作業セッションで `python scripts/audit_sqlserver_source_permissions.py`
+を実行できます。出力は判定だけで、exit 0は通過、1は追加監査要、2は
+確認不能です。空/不可視metadataも保守的に拒否する監査なので、exit 1は
+危険な権限が実在するという断定ではありません。アプリ起動とは別です。
+
+SQL Server Agentの起動・capture/cleanup jobの有効性は、runtime readerへ
+msdb管理権限を追加せず、既存 `infra/sqlserver/diagnostics/004_cdc_preflight.sql`
+とDBAのjob確認、Debezium Agent query及び実増分受入で確認します。
+登録preflight成功はAgent/jobの合格ではなく、全パイプラインの受入でも
+ありません。未確認の環境で会社DBの設定変更・再初期化は行いません。
