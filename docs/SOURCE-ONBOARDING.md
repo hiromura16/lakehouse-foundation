@@ -64,6 +64,9 @@ flowchart LR
 
 ### 基盤を起動せず単独プレビューで使う
 
+**mainのPoCを継続しながら比較する場合は、[並行PoC手順](PARALLEL-POC.md)から
+始めます。** 別clone・専用uv環境・別portを使い、mainを切り替えません。
+
 開発者は、DBもprivate設定も用意せず同じ画面を試せます。
 以下は**利用者が手元で明示的に起動する場合**のコマンドであり、初期配置の
 自動処理には含めません。ブラウザーはサーバー自身から使います。
@@ -72,13 +75,19 @@ flowchart LR
 **Bash / Zsh共通**
 
 ```bash
-ONBOARDING_VENV="$HOME/.local/share/lakehouse-foundation/onboarding-venv"
-uv venv --python 3.12 "$ONBOARDING_VENV"
+ONBOARDING_VENV="$HOME/.local/share/lakehouse-foundation/onboarding-preview/venv"
+if [ ! -e "$ONBOARDING_VENV" ]; then
+  uv venv --python 3.12 "$ONBOARDING_VENV"
+fi
 uv pip sync --python "$ONBOARDING_VENV/bin/python" \
   --require-hashes requirements-dev.lock
 "$ONBOARDING_VENV/bin/streamlit" run infra/demo/onboarding_preview.py \
   --server.address=127.0.0.1 --server.port=8510 \
-  --server.headless=true --browser.gatherUsageStats=false
+  --server.headless=true --browser.gatherUsageStats=false \
+  --server.enableCORS=true --server.enableXsrfProtection=true \
+  --server.enableAgentApi=false \
+  --server.fileWatcherType=none --server.runOnSave=false \
+  --secrets.files infra/demo/onboarding_preview_settings.toml
 ```
 
 `http://localhost:8510/`を開きます。8510が使用中なら空いているloopback用portを

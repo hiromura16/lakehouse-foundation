@@ -1,0 +1,3 @@
+# Empty input for Streamlit --secrets.files. This is not a private secret file.
+# Use it to avoid loading a user's global/project Streamlit credentials.
+# Keep this file free of values; the offline preview needs no credentials.

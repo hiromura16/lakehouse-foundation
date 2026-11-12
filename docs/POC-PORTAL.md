@@ -18,6 +18,9 @@
 未承認contract案と確認事項を作れます。DBへ接続しない
 [単独プレビューと操作手順](SOURCE-ONBOARDING.md)も用意しています。
 
+既存mainのPoCを稼働させたまま試す場合は、[並行PoCの手順](PARALLEL-POC.md)で
+別の実行フォルダ・uv環境・portを用意します。既存の管理アプリを更新せず比較できます。
+
 
 <!-- shell-usage:start -->
 **コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。

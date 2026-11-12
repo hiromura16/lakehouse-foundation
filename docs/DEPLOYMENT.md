@@ -26,6 +26,11 @@ setopt INTERACTIVE_COMMENTS
 ```
 <!-- shell-usage:end -->
 
+main側のPoCとメタデータ駆動GUIの試作を同時に使う場合は、
+[別clone・専用uv・別portの並行PoC手順](PARALLEL-POC.md)を使います。
+現在の試作は単独GUIだけを動かせるため、既存スタックを更新する必要はありません。
+Lakehouse一式を二重起動する場合の分離条件は同文書の将来設計として区別します。
+
 公開リポジトリ `lakehouse-foundation` を取得し、実際の環境設定だけをチェックアウトの外へ置いて導入します。clone URLはREADMEを参照してください。この文書の `/absolute/private/site.env`、共有利用者、許可範囲は説明用であり、導入先で選んだ値に置き換えます。
 
 監査日: 2026-11-10。先に配置の所有者を一つ決めます。CLI管理を選んだ場合は本書の `up/down` を使い、Dokploy管理を選んだ場合は既存の同じComposeアプリから起動・停止します。どちらでも `site.env` と配置commit・profile・実volume名を一致させます。Dokploy導入そのものと、そこへこのスタックを配置する作業は別です。

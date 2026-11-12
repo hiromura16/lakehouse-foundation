@@ -41,6 +41,7 @@
 | [導入・検証・停止](<DEPLOYMENT.md>) | private設定、host構成、CLIによる起動・検証・停止の操作を確認する。 | 管理方法を決めて配置するときや、CLI管理の構成を起動・停止するとき。 | active |
 | [Dokploy 0.31.0でGitから配置する](<DOKPLOY.md>) | Dokploy 0.31.0の画面で、生成appName・個別Environment・9つのComposeを揃えて配置する。 | Dokployへログインできた後、同じComposeアプリを初回配置・再配置するとき。 | active |
 | [Linuxサーバーを最初に準備する](<HOST-SETUP.md>) | 新規Ubuntuで操作端末・権限・Docker・Git・uvの前提を準備する。 | アプリ配置前にhostの状態と不足している前提を確認するとき。 | active |
+| [mainのPoCと試作ブランチを並行して使う](<PARALLEL-POC.md>) | 既存mainのPoCを維持し、別clone・uv・loopback portで試作GUIを比較する手順と、将来の二系統基盤の分離条件を示す。 | mainのPoCを止めずに試作GUIを触るときや、別PCからの接続・試作だけの停止と更新を確認するとき。 | active |
 | [プロキシ設定の場所と反映方法](<PROXY.md>) | 通信主体別のproxy設定ファイル、CA受渡しと反映方法を参照する。 | 会社向け手順を読んだ後に、個別の設定場所や再起動対象を調べるとき。 | reference |
 | [SSRF対策と内部接続の設定](<SSRF.md>) | n8nの宛先制御、内部worker通信、proxyと固定APIの境界を設定する。 | 内部APIへの接続許可を決めるときや、SSRF制御による拒否を確認するとき。 | active |
 
@@ -163,6 +164,7 @@
 | [用語を役割と実際の操作へ結び付ける](<GLOSSARY.md>) | 保存・処理・配置・操作の用語を、同梱実装の役割へ結び付ける。 |
 | [Linuxサーバーを最初に準備する](<HOST-SETUP.md>) | 新規Ubuntuで操作端末・権限・Docker・Git・uvの前提を準備する。 |
 | [初めての理解から運用・設計へ進む道順](<LEARNING-PATH.md>) | 理解・操作・運用・設計の段階ごとに、練習と到達条件を選ぶ。 |
+| [mainのPoCと試作ブランチを並行して使う](<PARALLEL-POC.md>) | 既存mainのPoCを維持し、別clone・uv・loopback portで試作GUIを比較する手順と、将来の二系統基盤の分離条件を示す。 |
 | [PoC操作ポータル](<POC-PORTAL.md>) | 操作ポータルの各ページから、サービス入口・データ・診断・履歴へ移動する。 |
 | [BashとZshの両方で手順を実行する](<SHELLS.md>) | 会社VMのZshとBashでコマンドを使い分け、対話入力・コメント・shebang・引用の違いを確認する。 |
 | [初めて構築する人の一本道ガイド](<START-HERE.md>) | 新規Linux環境の準備からcore配置と合成データ検証までを順に進める。 |
@@ -193,6 +195,7 @@
 | [段階的な監視基盤の配置と受入](<OBSERVABILITY.md>) | 監視のhost権限、create-only GUI、閾値、検証と実機受入を分けて段階導入する。 |
 | [OpenObserveを任意の比較Labとして追加する](<OPENOBSERVE.md>) | 通常のLoki経路を保ち、秘匿済みログを任意のOpenObserve Labへ分岐する設定と未検証範囲を整理する。 |
 | [平時・更新・復旧の運用手順](<OPERATIONS.md>) | 平時点検・更新・backup・復旧を、鍵・DB・object・volumeの状態を揃えて行う。 |
+| [mainのPoCと試作ブランチを並行して使う](<PARALLEL-POC.md>) | 既存mainのPoCを維持し、別clone・uv・loopback portで試作GUIを比較する手順と、将来の二系統基盤の分離条件を示す。 |
 | [プロキシ設定の場所と反映方法](<PROXY.md>) | 通信主体別のproxy設定ファイル、CA受渡しと反映方法を参照する。 |
 | [採用版の公式リファレンスと文書監査](<REFERENCES.md>) | 採用版の公式仕様・tag・公開実装・検証記録の根拠を照合する。 |
 | [SailとSparkを同じ合成データで比較する](<SAIL-LAB.md>) | 任意のSail LabでSparkと合成データの型・結果・再実行を比較し、未検証事項と測定条件を記録する。 |
@@ -282,6 +285,7 @@
 | [Lokiの保存・検索・保持期間](<LOKI.md>) | Lokiの専用保存・7日保持・Grafana検索・reject・復元の境界を確認する。 |
 | [AIクライアントからMCPで操作する](<MCP.md>) | 認証付きMCPから固定の業務参照・運用APIを呼び、AIクライアントへ接続する。 |
 | [MES・ERPデータをBronzeからGoldへ整える](<MEDALLION.md>) | 6契約の取り込み、最新版採用、不正行隔離、Gold集計と再投入の規則を追う。 |
+| [mainのPoCと試作ブランチを並行して使う](<PARALLEL-POC.md>) | 既存mainのPoCを維持し、別clone・uv・loopback portで試作GUIを比較する手順と、将来の二系統基盤の分離条件を示す。 |
 | [BI・Notebook・ベクトル検索・データ系統を追加する](<POC-TOOLS.md>) | Superset・Jupyter・Qdrant・MarquezのGUIと合成デモを追加して用途別に検証する。 |
 | [プロキシ設定の場所と反映方法](<PROXY.md>) | 通信主体別のproxy設定ファイル、CA受渡しと反映方法を参照する。 |
 | [採用版の公式リファレンスと文書監査](<REFERENCES.md>) | 採用版の公式仕様・tag・公開実装・検証記録の根拠を照合する。 |
