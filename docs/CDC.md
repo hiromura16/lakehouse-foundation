@@ -423,25 +423,35 @@ OCI index（Docker manifest listを含む）のdigestと、platform別manifest�
 attestation用のunknown/unknownを実行対象platformとして扱いません。
 
 2026-11-12のregistry照合では、Debeziumのindexは
-`sha256:d24bacbb16ce2e75ce42aabc6c14bf679201051eb93e4c60aa204ec5a28e1ab0`、
+`sha256:05fcb3ca2160820450b83d06bedca444102f393568495feb329a75252eccee5f`、
 amd64の子は
-`sha256:73d1c7c8edb0f9ddd2b9cbe02ef5aefcf7d57b63941a60622d9f2cf95140c2b3`
+`sha256:38c5676db1bae16ef72ec94ae738faee5b1fbc387f2ba641aeeebc86967614dd`
 でした。Kafkaの既存index
 `sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f`
 とamd64の子
 `sha256:76af3d0116abbb33b4cd964af410d4921c33d1f663e7a95d5453a9c35a84869b`
 は有効なので変更していません。タグの存在だけでは固定digestの存在を証明できません。
 
-旧Debezium pin `53c6d042…` はcommit `c5a79b6` で初めて入り、今回の照合では
-registryから明示的なnot foundが返りました。当時の検査にregistry照合がなく、
-形式上正しいpinがComposeとlockへ入り得たことが再発防止上の原因です。
-過去のregistry応答記録がないため、転記誤りか上流での削除かは断定できません。
+2026-11-12 01:31:34 UTCに同じ3.7.1.Finalタグが再公開され、直前の
+pin d24bacbb… は公式registryからnot foundとなりました。
+[Quay公式タグ履歴API](https://quay.io/api/v1/repository/debezium/connect/tag/?specificTag=3.7.1.Final)
+は新旧digestの開始・終了時刻を示します。同APIにはそれ以前の日次更新も記録されて
+います。版番号付きタグでも不変とは限らず、現在のpinが将来も取得可能とは保証しません。
+旧53c6d042…も同履歴に存在するため、単なる転記誤りとは扱いません。
 
-`MANIFEST_MISSING` と `PLATFORM_MISSING` は明示的な欠落です。timeout・429・5xxは
-`REGISTRY_TRANSIENT` として最大3回、2秒・4秒の間隔で再試行し、解消しなければ
-失敗にします。Interrupted/cancelled、認証拒否、Docker権限拒否、未知のエラーを
-「imageが存在しない」と読み替えません。タグとpinが異なる場合も自動更新せず、
-上流の再公開と互換性を調べてからlockを変更します。
+MANIFEST_MISSINGとPLATFORM_MISSINGは明示的な欠落です。失敗JSONの
+failed_imageは公開image参照とregistry / pull段階を示し、
+生のstderrや認証情報は出しません。タグ失効はエラー名だけでは断定せず、
+公式registryのタグ履歴、旧pin、新index、amd64子manifestとconfigを照合します。
+timeout・429・5xxはREGISTRY_TRANSIENTとして最大3回、2秒・4秒の間隔で
+再試行し、解消しなければ失敗にします。Interrupted/cancelled、認証拒否、
+Docker権限拒否、未知のエラーを「imageが存在しない」と読み替えません。
+タグ移動時に自動でpinを差し替えたり、検証をskipしたりしません。
+
+更新は同版の公式再公開と互換性を確認してから、lock・Compose・台帳を同期し、
+独立レビューとregistry/pull CIを通すPRで行います。既存の日次CIで再発を検出しますが、
+上流の保持期間は制御できません。長期再現性が必要なら、別途許可された管理先への
+検証済みimage保管と保持ポリシーが必要です。この手順ではmirror作成やdeployを行いません。
 
 共有Python入力はindexではなくamd64 manifestを固定しています。この場合は現在の
 タグのindexがその固定manifestをlinux/amd64として含み、configも一致することを
