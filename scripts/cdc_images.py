@@ -351,14 +351,21 @@ def main(argv=None):
     )
     arguments = parser.parse_args(argv)
     evidence = {"platform": "linux/amd64", "images": {}, "status": "failed"}
+    current_image = None
     try:
         images = load_images(ROOT)
         compose_images(ROOT, images, write=arguments.write_compose)
         for name, reference in images.items():
             if arguments.registry or arguments.pull_smoke:
                 print("Validating " + name, file=sys.stderr, flush=True)
+                current_image = {
+                    "name": name,
+                    "image": reference,
+                    "phase": "registry",
+                }
                 evidence["images"][name] = validate_registry(reference)
                 if arguments.pull_smoke:
+                    current_image["phase"] = "pull"
                     pull_smoke(evidence["images"][name])
         evidence["status"] = "passed"
     except (
@@ -369,6 +376,8 @@ def main(argv=None):
         OSError,
         yaml.YAMLError,
     ) as error:
+        if current_image is not None:
+            evidence["failed_image"] = current_image
         evidence["error"] = (
             str(error)
             if isinstance(error, ImageError)
