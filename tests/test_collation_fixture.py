@@ -480,6 +480,25 @@ class RoleAliasFixtureTests(unittest.TestCase):
                 result = FIXTURE.role_alias_coverage(records)
                 self.assertEqual(tuple(result.values()), expected)
 
+    def test_real_pending_drop_absence_remains_a_coverage_gap(self):
+        rows = [
+            {
+                "stage": "init_pending_drop_observation",
+                "case": case,
+                "drop_pending_one_observed": observed,
+            }
+            for case, observed in (
+                ("dropped_source_ci", True),
+                ("dropped_source_cs", False),
+            )
+        ]
+        coverage = FIXTURE.pending_drop_coverage(rows)
+        self.assertTrue(coverage["ci_observed"])
+        self.assertFalse(coverage["cs_observed"])
+        self.assertEqual(coverage["observation_count"], 2)
+        missing = FIXTURE.pending_drop_coverage([])
+        self.assertFalse(missing["ci_observed"] or missing["cs_observed"])
+
     def test_runner_isolated_role_case_runs_both_scripts_with_explicit_consent(
         self,
     ):

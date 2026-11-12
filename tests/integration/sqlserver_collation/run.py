@@ -49,6 +49,7 @@ FIXED_STAGES = (
     {
         "mixed_collation",
         "batch_completed",
+        "init_pending_drop_observation",
         "fresh_database_created",
         "ddl_001_passed",
         "ddl_002_passed",
@@ -1042,6 +1043,7 @@ class Runner:
                 "case_alias_detected",
                 "same_principal",
                 "saved_case_different",
+                "drop_pending_one_observed",
             }
             if set(value) - allowed or any(
                 type(v) not in {int, bool} or not -1 <= int(v) <= 1000000
@@ -1060,6 +1062,12 @@ class Runner:
                 or value["status"] != "observed"
                 or type(value["same_principal"]) is not bool
                 or type(value["saved_case_different"]) is not bool
+            ):
+                raise FixtureError("SYNTHETIC_RESULT_INVALID")
+            if value["stage"] == "init_pending_drop_observation" and (
+                set(value) != {"stage", "status", "drop_pending_one_observed"}
+                or value["status"] != "observed"
+                or type(value["drop_pending_one_observed"]) is not bool
             ):
                 raise FixtureError("SYNTHETIC_RESULT_INVALID")
             value["case"] = self.case
@@ -1391,23 +1399,31 @@ IF NOT EXISTS (SELECT 1 FROM cdc.change_tables
                 self.execute(
                     database, initialization_unchanged(disabled_failure)
                 )
-                # Scan the DROP notification with the supported CDC procedure.
-                # Retention keeps the old change table until normal cleanup.
-                self.execute(
+                # Observe the real state before/after supported scanning.
+                # Some builds remove metadata without an observable pending=1.
+                # Record a blocking coverage gap; never edit a system table.
+                observations = self.execute(
                     database,
                     "IF NOT EXISTS (SELECT 1 FROM cdc.change_tables "
                     "WHERE has_drop_pending=1)\n"
                     " EXEC sys.sp_cdc_scan @maxtrans=500,@maxscans=10,"
                     "@continuous=0;\n"
-                    "IF NOT EXISTS (SELECT 1 FROM cdc.change_tables "
+                    "DECLARE @PendingObserved bit=CASE WHEN EXISTS "
+                    "(SELECT 1 FROM cdc.change_tables "
                     "WHERE has_drop_pending=1) "
-                    "THROW 51995, 'Pending-drop state not observed.', 1;\n"
-                    + record("init_prepared"),
+                    "THEN 1 ELSE 0 END;\n"
+                    "DECLARE @PendingReceipt nvarchar(4000)=(SELECT "
+                    "N'init_pending_drop_observation' AS stage,"
+                    "N'observed' AS status,@PendingObserved "
+                    "AS drop_pending_one_observed "
+                    "FOR JSON PATH,WITHOUT_ARRAY_WRAPPER);\n"
+                    "PRINT N'" + PREFIX + "'+@PendingReceipt;\n",
                 )
-                self.execute(database, initialization_unchanged(failure))
-                self.execute(
-                    database, initialization_unchanged(disabled_failure)
-                )
+                if observations[0]["drop_pending_one_observed"]:
+                    self.execute(database, initialization_unchanged(failure))
+                    self.execute(
+                        database, initialization_unchanged(disabled_failure)
+                    )
             elif case == "replace_four":
                 maintenance = replacement(selected)
                 fault = maintenance.replace(
@@ -1681,6 +1697,23 @@ PRINT @Evidence;
             )
 
 
+def pending_drop_coverage(records):
+    """Keep unobserved real pending metadata as an explicit acceptance gap."""
+    observed = [
+        row
+        for row in records
+        if row["stage"] == "init_pending_drop_observation"
+    ]
+    cases = {
+        row["case"] for row in observed if row["drop_pending_one_observed"]
+    }
+    return {
+        "ci_observed": "dropped_source_ci" in cases,
+        "cs_observed": "dropped_source_cs" in cases,
+        "observation_count": len(observed),
+    }
+
+
 def plan():
     """Make limitations and exact opt-in prerequisites machine-readable."""
     return {
@@ -1836,13 +1869,24 @@ def main(argv=None):
             "distinct_principal_exercised",
         )
     )
+    pending_coverage = pending_drop_coverage(runner.records)
+    coverage_complete = role_coverage_complete and (
+        not args.initialization
+        or (
+            pending_coverage["ci_observed"] and pending_coverage["cs_observed"]
+        )
+    )
     print(
         json.dumps(
             {
                 "schema_version": 1,
+                "suite": "cdc_initialization"
+                if args.initialization
+                else "collation_full",
+                "pending_drop_one_coverage": pending_coverage,
                 "status": (
                     "passed"
-                    if role_coverage_complete
+                    if coverage_complete
                     else "passed_with_coverage_gaps"
                 ),
                 "role_alias_coverage": role_coverage,
@@ -1859,7 +1903,7 @@ def main(argv=None):
             }
         )
     )
-    return 0 if role_coverage_complete else 3
+    return 0 if coverage_complete else 3
 
 
 if __name__ == "__main__":

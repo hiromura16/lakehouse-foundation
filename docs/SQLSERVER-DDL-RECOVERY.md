@@ -189,3 +189,5 @@ DB全体のCDC、共有job、無関係capture、source表、role、offsetは削�
 実テストの`--initialization`はCI/CS DBの両方で空DB二状態、NULL独立capture、3/6、同名定義不一致、旧四件置換と途中失敗/再実行、未知capture拒否、正式DROP由来の孤児/pending=1、partitioned表拒否を検査します。比較用に合成DBのjobのscheduleを無効化して停止し、その準備後のjob定義と実際のLSN/CT履歴・role/grant・job定義・合成offsetの保持を照合します。metadata値の捏造はしません。混在collationの強制error468は実catalog collationの測定とは区別します。
 
 合成fixtureのclientは`-b -V 17`で期待したseverity 16のTRY/CATCHを最後まで実行させ、batch終端の構造化receiptを必須にします。receiptがあっても、SQL側で照合した期待エラー以外のseverity 11以上は失敗です。DBAの通常適用は従来どおり`sqlcmd -b`を使います。fixture専用のjob無効化/停止は、通常004/005やmaintenanceには含めません。
+
+実DROPと標準scanで`has_drop_pending=1`を保持したmetadataを観測できないbuildでは、`pending_drop_one_coverage`へCI/CS別の実測boolを記録します。孤児拒否の成功と区別し、他の独立caseを実行しても最終結果は`passed_with_coverage_gaps`・exit 3です。この状態は実pending=1の受入blockerとして残し、system metadataの直接UPDATEや合成値への置換で成功へ変えません。
