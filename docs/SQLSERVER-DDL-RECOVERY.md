@@ -192,9 +192,9 @@ DB全体のCDC、共有job、無関係capture、source表、role、offsetは削�
 
 合成fixtureのclientは`-b -V 17`で期待したseverity 16のTRY/CATCHを最後まで実行させ、batch終端の構造化receiptを必須にします。receiptがあっても、SQL側で照合した期待エラー以外のseverity 11以上は失敗です。DBAの通常適用は従来どおり`sqlcmd -b`を使います。fixture専用のjob無効化/停止は、通常004/005やmaintenanceには含めません。
 
-実DROPと標準scanで`has_drop_pending=1`を保持したmetadataを観測できないbuildでは、`pending_drop_one_coverage`へCI/CS別の実測boolを記録します。孤児拒否の成功と区別し、他の独立caseを実行しても最終結果は`passed_with_coverage_gaps`・exit 3です。この状態は実pending=1の受入blockerとして残し、system metadataの直接UPDATEや合成値への置換で成功へ変えません。
+実DROPと標準scanで`has_drop_pending=1`を保持したmetadataを観測できないbuildでは、`pending_drop_one_coverage`へCI/CS別の実測boolを記録します。孤児拒否の成功と区別し、他の独立caseを実行しても最終結果は`passed_with_coverage_gaps`・exit 3です。strict mode ではこの状態を実pending=1の受入blockerとして残し、system metadataの直接UPDATEや合成値への置換で成功へ変えません。
 
-`has_drop_pending` の実測は標準 scan の前後で分け、metadata 行数も記録します。[CDC の有効化・無効化仕様](https://learn.microsoft.com/en-us/sql/relational-databases/track-changes/enable-and-disable-change-data-capture-sql-server?view=sql-server-ver16)は source DROP 後の関連 metadata 自動削除を説明しており、pending=1 の永続的な観測窓は保証していません。[help procedure の資料](https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sys-sp-cdc-help-change-data-capture-transact-sql?view=sql-server-ver16)には SQL Server 2012 で未使用という注記もありますが、これだけで SQL Server 2022 の全 build が未使用とは断定しません。観測できなかった pending=1 の分岐は未試験の受入 blocker であり、孤児拒否が失敗した意味ではありません。
+`has_drop_pending` の実測は標準 scan の前後で分け、metadata 行数も記録します。[CDC の有効化・無効化仕様](https://learn.microsoft.com/en-us/sql/relational-databases/track-changes/enable-and-disable-change-data-capture-sql-server?view=sql-server-ver16)は source DROP 後の関連 metadata 自動削除を説明しており、pending=1 の永続的な観測窓は保証していません。[help procedure の資料](https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sys-sp-cdc-help-change-data-capture-transact-sql?view=sql-server-ver16)には SQL Server 2012 で未使用という注記もありますが、これだけで SQL Server 2022 の全 build が未使用とは断定しません。観測できなかった pending=1 の分岐は未試験の strict mode 受入 blocker であり、孤児拒否が失敗した意味ではありません。
 
 
 ### Synthetic metadata production contract（実 pending=1 coverage とは別）
@@ -203,4 +203,13 @@ DB全体のCDC、共有job、無関係capture、source表、role、offsetは削�
 
 各 script で pending NULL/0/1 × source 有無 × tracked 0/1 × CT 有無の 24 条件を SQL2022 に渡します。期待値は独立した肯定条件（NULL/0、実在 source、tracked=1、実在 CT）です。source 不在は行を挿入せず、実 LEFT JOIN の NULL を確認します。拒否時には抽出した guard 後の一時表 mutation sentinel が不変であることを検査します。sentinel 単独が証明するのは抽出 block 後への非到達であり、原本全体での mutation 順序は既存の実 SQL 孤児拒否・状態保存試験と組み合わせて確認します。pending 条件の削除/反転、source 存在/tracked/CT 存在条件の削除、AND/OR の変更という七つの mutant も同じ 24 条件で期待値からの乖離を必須にします。
 
-結果は `synthetic_metadata_production_contract` として実 engine metadata の観測と分離します。これは synthetic pending=1 に対する製品 guard の論理・拒否位置の追加証拠であり、実 CDC metadata の pending=1 分岐を観測した証拠ではありません。既存の実機 matrix、coverage bool、`passed_with_coverage_gaps`・exit 3、Draft/受入 blocker は変更しません。system metadata や会社 DB は変更しません。
+結果は `synthetic_metadata_production_contract` として実 engine metadata の観測と分離します。これは synthetic pending=1 に対する製品 guard の論理・拒否位置の追加証拠であり、実 CDC metadata の pending=1 分岐を観測した証拠ではありません。既存の実機 matrix、coverage bool、`passed_with_coverage_gaps`・exit 3、strict mode の受入 blocker は変更しません。system metadata や会社 DB は変更しません。
+
+
+### 明示承認済みの条件付き受入
+
+所有者は、実 engine pending=1 が未観測である残余リスクを明記したうえで、実 SQL 成功と synthetic production contract を組み合わせる条件付き受入を承認しました。CI は `conditional_acceptance.py` でこの限定条件だけを検証します。既存 `run.py --run --initialization` は strict のままで、未観測なら引き続き exit 3 です。
+
+条件付き verifier は同じ disposable SQL2022 CI container・checkout で contract と strict engine suite を順に新規実行し、commit、004/005 と fixture/harness の source hash が実行前後で一致することを要求します。保存済み artifact は入力しません。製品 block の 24 条件×2 と七 mutant×2、全 CI/CS 初期化ケース、六 caller guard×ON/OFF×CI/CS、lifecycle 完了の receipt を確認します。各 receipt の stage・case・field 集合・型を固定し、pending の scan 前後の bool/行数と集約値の整合も要求します。失敗・欠落・不正 report・未知 stage/case/field/gap・source 不一致・別 suite・exit 1/2・timeout は受け入れません。
+
+唯一許容する未観測は `pending_drop_one_coverage` です。strict engine が正確に exit 3 / `passed_with_coverage_gaps` を返し、その他の必要条件を全て満たす場合だけ `conditionally_accepted_pending_one_unobserved` を出します。exit 0 でも必要 receipt と contract 成功を要求します。一般的な exit 3 の無視や `continue-on-error` は使いません。engine coverage bool は false のまま、残余リスクを acceptance JSON にも残します。synthetic 値による論理検証は engine-generated pending=1 の実挙動を証明しません。full checker/role-alias matrix、Windows client、connector E2E、稼働環境の受入は別範囲で未実施です。これは会社 DB 実行・デプロイの承認ではありません。

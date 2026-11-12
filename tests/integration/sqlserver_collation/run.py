@@ -2117,6 +2117,22 @@ def main(argv=None):
                 "suite": "cdc_initialization"
                 if args.initialization
                 else "collation_full",
+                "coverage_gaps": (
+                    [
+                        "pending_drop_one_" + suffix
+                        for suffix in ("ci", "cs")
+                        if not pending_coverage[suffix + "_observed"]
+                    ]
+                    if args.initialization
+                    else [
+                        "role_alias_" + key
+                        for key in (
+                            "same_principal_saved_alias_exercised",
+                            "distinct_principal_exercised",
+                        )
+                        if not role_coverage[key]
+                    ]
+                ),
                 "pending_drop_one_coverage": pending_coverage,
                 "additional_lifecycle_failures": lifecycle_failures,
                 "status": (

@@ -9,6 +9,7 @@ import hashlib
 import itertools
 import json
 import os
+import subprocess
 from pathlib import Path
 
 import transaction_probe
@@ -229,6 +230,15 @@ PRINT N'{transaction_probe.PREFIX}'+@Result;
 def main():
     if os.environ.get("GITHUB_ACTIONS") != "true":
         raise RuntimeError("DISPOSABLE_CI_ONLY")
+    commit = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+    ).strip()
+    source_hashes = {
+        f: hashlib.sha256(
+            (ROOT / "infra/sqlserver" / f).read_bytes()
+        ).hexdigest()
+        for f in FILES
+    }
     prepared = {}
     for filename in FILES:
         original, mapped = extract(
@@ -266,6 +276,21 @@ PRINT N'{transaction_probe.PREFIX}'+@Result;""")
             else:
                 require(result["mismatches"] > 0)
             evidence.append({"file": filename, "variant": name, **result})
+    require(
+        source_hashes
+        == {
+            f: hashlib.sha256(
+                (ROOT / "infra/sqlserver" / f).read_bytes()
+            ).hexdigest()
+            for f in FILES
+        }
+    )
+    require(
+        commit
+        == subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+        ).strip()
+    )
     print(
         json.dumps(
             {
@@ -273,13 +298,9 @@ PRINT N'{transaction_probe.PREFIX}'+@Result;""")
                 "status": "passed",
                 "runtime": version,
                 "observations": evidence,
-                "engine_pending_one_coverage": "unobserved; blocker unchanged",
-                "source_sha256": {
-                    f: hashlib.sha256(
-                        (ROOT / "infra/sqlserver" / f).read_bytes()
-                    ).hexdigest()
-                    for f in FILES
-                },
+                "engine_pending_one_coverage": "not measured here",
+                "source_commit": commit,
+                "source_sha256": source_hashes,
             }
         )
     )
