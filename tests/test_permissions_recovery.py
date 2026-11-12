@@ -152,7 +152,13 @@ class PermissionCollationTests(unittest.TestCase):
                     for line in before.splitlines()
                     if not line.lstrip().startswith("--")
                 )
-                self.assertNotRegex(code, r"\bTHROW\b|SET XACT_ABORT")
+                self.assertIn(
+                    "EXEC sys.sp_executesql N'SET XACT_ABORT OFF;", code
+                )
+                outside_literals = re.sub(r"N?'(?:''|[^'])*'", "", code)
+                self.assertNotRegex(
+                    outside_literals, r"\bTHROW\b|SET XACT_ABORT"
+                )
                 parse(sql)
 
     def test_catch_observes_failure_without_automatic_checker_repair(self):

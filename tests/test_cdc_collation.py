@@ -155,7 +155,7 @@ class CdcCollationTests(unittest.TestCase):
         cls.trees = {name: parse_sql(sql) for name, sql in cls.sources.items()}
 
     def test_caller_transaction_is_refused_before_any_session_change(self):
-        """RAISERROR plus RETURN avoids THROW's XACT_ABORT participation."""
+        """Only the nested refusal may change XACT_ABORT."""
         for name, tree in self.trees.items():
             with self.subTest(name=name):
                 batch = next(tree.recursive_crawl("batch"))
@@ -168,7 +168,7 @@ class CdcCollationTests(unittest.TestCase):
                 expression = next(condition.recursive_crawl("expression"))
                 self.assertEqual(expression.raw, "@@TRANCOUNT <> 0")
                 self.assertEqual(
-                    len(list(first.recursive_crawl("raiserror_statement"))), 1
+                    len(list(first.recursive_crawl("raiserror_statement"))), 0
                 )
                 self.assertEqual(
                     len(list(first.recursive_crawl("return_segment"))), 1
@@ -177,10 +177,18 @@ class CdcCollationTests(unittest.TestCase):
                     first.raw.index("RAISERROR("), first.raw.index("RETURN;")
                 )
                 self.assertNotIn("THROW", first.raw)
+                self.assertIn(
+                    "EXEC sys.sp_executesql N'SET XACT_ABORT OFF;", first.raw
+                )
+                self.assertEqual(
+                    len(
+                        list(first.recursive_crawl("execute_script_statement"))
+                    ),
+                    1,
+                )
                 for forbidden in (
                     "set_statement",
                     "transaction_statement",
-                    "execute_script_statement",
                     "select_statement",
                     "insert_statement",
                     "update_statement",
@@ -257,6 +265,21 @@ class CdcCollationTests(unittest.TestCase):
                         count += 1
                 self.assertGreaterEqual(count, 8)
 
+    def test_null_drop_pending_requires_an_existing_tracked_source(self):
+        """Reject orphans/pending drops before any grant or CDC procedure."""
+        for name, sql in self.sources.items():
+            with self.subTest(name=name):
+                self.assertNotIn("COALESCE(ct.has_drop_pending,1)", sql)
+                start = sql.index("LEFT JOIN sys.tables src")
+                end = sql.index("THROW 51130", start)
+                guard = sql[start:end]
+                self.assertIn("src.object_id=ct.source_object_id", guard)
+                self.assertIn("src.object_id IS NULL", guard)
+                self.assertIn("src.is_tracked_by_cdc<>1", guard)
+                self.assertIn("ct.has_drop_pending IS NOT NULL", guard)
+                self.assertIn("ct.has_drop_pending<>0", guard)
+                self.assertLess(end, sql.index("EXEC @Result=sys.sp_cdc_"))
+
     def test_cdc_exec_named_arguments_are_plain_bindings_not_collated(self):
         """COLLATE belongs to comparisons, never EXEC parameter assignments."""
         expected = {
@@ -292,7 +315,7 @@ class CdcCollationTests(unittest.TestCase):
                             "@role_name": "N'lh_demo_cdc_reader'",
                             "@supports_net_changes": "0",
                             "@captured_column_list": "@CapturedColumns",
-                            "@allow_partition_switch": "0",
+                            "@index_name": "@PrimaryIndex",
                         }
                     )
                 self.assertEqual(bindings, exact)

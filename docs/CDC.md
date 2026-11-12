@@ -557,3 +557,6 @@ SELECT sys.fn_cdc_get_max_lsn() AS newest_captured_lsn;
 | [cdc-demo.py](../scripts/cdc-demo.py) | 所有確認済み専用DBの固定DML | source-only、誤接続拒否、同意とrollback |
 
 複合キー・schema evolution・並列consumer・増分MERGE等は、設定値を増やすだけでは実装できません。source contract、event identity、state migration、表更新の競合と受入試験を設計し、現在の小さい全表再構築方式と性能・保証の差を記録します。
+
+
+固定SQL Server demoの初期化は、[004の初期化契約](SQLSERVER-FIXED-DEMO.md)に従います。CDC有効DBの空capture/jobなしからの初回作成も可能で、独立captureは必須ではありません。NULLの`has_drop_pending`はsource実在・tracked flagを併せて判定し、jobは別に検証します。完全一致captureの再実行はLSN/historyを保持し、Kafka/consumer offsetをresetしません。旧四件の置換は[DBA専用maintenance](SQLSERVER-DDL-RECOVERY.md#旧四件の明示置換)の明示allowlistだけで行い、通常004へ混ぜません。

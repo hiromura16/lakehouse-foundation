@@ -336,7 +336,7 @@ Notebook workspaceのread-only計画と承認後のapply/probe、既存project�
 
 ## SQL Server error 468 / checker error 51019
 
-003のrole/permission、004/005のcapture/index/column比較でsystem/catalogと対象DBのcollation差が現れる場合、承認済み修正版の両辺BIN2比較を使います。server/database collation変更、`DATABASE_DEFAULT`での回避、安全gate解除はしません。006は読取り監査で同型の異種列競合を確認していません。
+003のrole/permission、004/005のcapture/index/column比較でsystem/catalogと対象DBのcollation差が現れる場合、承認済み修正版の両辺BIN2比較を使います。server/database collation変更、`DATABASE_DEFAULT`での回避、安全gate解除はしません。006は読取り専用のまま、capture healthもBIN2比較で表示します。
 
 失敗後はchecker・role・grant・CDC captureが残っていないと推測せず、新しい専用DBA sessionで読取り専用preflightを行います。51019は未知の同名checkerを保護する停止です。自動DROPや定義の強制更新を行いません。003成功とrole割当が既に確認できた場合は006へ進み、修正版004の承認後に004→006とします。003未確認ならpreflight→必要な003→006で止めて照合します。005は明示的なrollback専用です。[残存診断・Windows sqlcmd・部分完了の再開](SQLSERVER-DDL-RECOVERY.md)
 
@@ -358,3 +358,6 @@ Notebook workspaceのread-only計画と承認後のapply/probe、既存project�
 ## CLIがproject名の不一致で停止する（Issue #23）
 
 shellの`COMPOSE_PROJECT_NAME`はCLIの対象変更には使えません。private設定、またはspark-checkの`--project-name`と不一致なら、status/verify/grafana-init/spark-checkを含め操作前に停止します。`unset COMPOSE_PROJECT_NAME`で古い値を解除し、private設定を実appNameへ合わせます。明示project指定はspark-checkだけです。資格情報や他のenv値を公開ログへ出して切り分けません。
+
+
+004の51119で停止した場合は、旧版の独立capture必須判定と`has_drop_pending`のNULL拒否を確認します。修正版はNULL/0に加えて実在するtracked sourceを検査し、pending=1/孤児は51130、共有job欠損は51132で拒否します。既存固定六件は再作成せず、[CDC preflightと回復](SQLSERVER-DDL-RECOVERY.md#cdc初期化の診断)で現在定義を確認します。未知captureがある場合の51204は明示置換maintenanceだけの保護で、通常004の共存を禁止するものではありません。system metadata編集やDB CDC無効化で回避しません。

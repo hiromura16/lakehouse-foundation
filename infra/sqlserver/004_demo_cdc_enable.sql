@@ -10,10 +10,13 @@
 -- Values are supplied privately. No runtime app receives administrator auth.
 -- No existing dbo/legacy object, login, password, Swarm or deployment is changed.
 -- Refuse a caller-owned transaction before changing session options.
--- RAISERROR does not honor XACT_ABORT; THROW could abort the caller's work.
+-- Only the nested refusal disables XACT_ABORT; caller options are restored.
 IF @@TRANCOUNT <> 0
 BEGIN
-    RAISERROR('Use a dedicated DBA session without an outer transaction.',16,1);
+    -- SET is local to this nested batch; caller options restore on return.
+    EXEC sys.sp_executesql N'SET XACT_ABORT OFF;
+        RAISERROR(''Use a dedicated DBA session without an outer transaction.'',
+                  16,1);';
     RETURN;
 END;
 SET NOCOUNT ON;
@@ -384,6 +387,17 @@ IF EXISTS (
        <> t.capture_instance COLLATE Latin1_General_100_BIN2
 )
     THROW 51111, 'A conflicting fixed capture identity exists; preserve it.', 1;
+-- SQL2022 normally stores NULL here. Health requires a real, tracked source;
+-- NULL alone is not evidence that orphan or pending-drop metadata is healthy.
+IF EXISTS (
+    SELECT 1 FROM cdc.change_tables ct
+    LEFT JOIN sys.tables src ON src.object_id=ct.source_object_id
+    LEFT JOIN sys.tables changed ON changed.object_id=ct.object_id
+    WHERE src.object_id IS NULL OR src.is_tracked_by_cdc<>1
+       OR (ct.has_drop_pending IS NOT NULL AND ct.has_drop_pending<>0)
+       OR changed.object_id IS NULL
+)
+    THROW 51130, 'Pending or orphan CDC metadata requires DBA review.', 1;
 -- Validate every existing fixed capture before changing any of the six.
 IF EXISTS (
     SELECT 1 FROM cdc.change_tables ct JOIN @Targets t
@@ -396,10 +410,10 @@ IF EXISTS (
        OR ct.role_name COLLATE Latin1_General_100_BIN2
           <> N'lh_demo_cdc_reader' COLLATE Latin1_General_100_BIN2
        OR COALESCE(ct.supports_net_changes,1)<>0
-       OR COALESCE(ct.has_drop_pending,1)<>0
-       OR (ct.index_name IS NOT NULL
-           AND ct.index_name COLLATE Latin1_General_100_BIN2
-              <> t.primary_index COLLATE Latin1_General_100_BIN2)
+       OR (ct.has_drop_pending IS NOT NULL AND ct.has_drop_pending<>0)
+       OR ct.index_name IS NULL
+       OR ct.index_name COLLATE Latin1_General_100_BIN2
+          <> t.primary_index COLLATE Latin1_General_100_BIN2
        OR OBJECT_SCHEMA_NAME(ct.object_id) COLLATE Latin1_General_100_BIN2
           <> N'cdc' COLLATE Latin1_General_100_BIN2
        OR OBJECT_NAME(ct.object_id) COLLATE Latin1_General_100_BIN2
@@ -514,21 +528,35 @@ BEGIN
     )
         THROW 51118, 'The existing CDC role exceeds fixed read-only permissions.', 1;
 END
--- An independent existing capture keeps this from being the first CDC table,
--- which would implicitly create shared SQL Agent capture/cleanup jobs.
-IF EXISTS (SELECT 1 FROM @Targets t WHERE NOT EXISTS (
-    SELECT 1 FROM cdc.change_tables ct
-    WHERE ct.capture_instance COLLATE Latin1_General_100_BIN2
-       = t.capture_instance COLLATE Latin1_General_100_BIN2
-)) AND NOT EXISTS (SELECT 1 FROM cdc.change_tables ct JOIN sys.tables independent
-    ON independent.object_id=ct.source_object_id
-    WHERE independent.is_tracked_by_cdc=1 AND COALESCE(ct.has_drop_pending,1)=0
-    AND NOT EXISTS (
-        SELECT 1 FROM @Targets t
-        WHERE t.capture_instance COLLATE Latin1_General_100_BIN2
-           = ct.capture_instance COLLATE Latin1_General_100_BIN2
-))
-    THROW 51119, 'Prepare an independent CDC capture and shared jobs separately.', 1;
+-- Job health is independent of capture health. Empty databases may have
+-- zero jobs or the existing pair. Existing captures require both shared jobs.
+-- Transactional replication uses another log-reader topology; review it first.
+IF EXISTS (SELECT 1 FROM sys.databases WHERE database_id=DB_ID() AND is_published=1)
+    THROW 51131, 'Review the replication job topology separately.', 1;
+DECLARE @CdcJobsBefore TABLE (
+    job_id uniqueidentifier, job_type nvarchar(20), job_name sysname,
+    maxtrans int, maxscans int, continuous bit, pollinginterval bigint,
+    retention bigint, threshold bigint
+);
+DECLARE @CdcJobsAfter TABLE (
+    job_id uniqueidentifier, job_type nvarchar(20), job_name sysname,
+    maxtrans int, maxscans int, continuous bit, pollinginterval bigint,
+    retention bigint, threshold bigint
+);
+IF OBJECT_ID(N'msdb.dbo.cdc_jobs',N'U') IS NOT NULL
+    INSERT INTO @CdcJobsBefore EXEC sys.sp_cdc_help_jobs;
+IF (SELECT COUNT(*) FROM @CdcJobsBefore) NOT IN (0,2)
+    OR (EXISTS (SELECT 1 FROM cdc.change_tables)
+        AND (SELECT COUNT(*) FROM @CdcJobsBefore)<>2)
+    OR EXISTS (SELECT 1 FROM @CdcJobsBefore j
+        LEFT JOIN msdb.dbo.sysjobs sj ON sj.job_id=j.job_id
+        WHERE sj.job_id IS NULL)
+    OR ((SELECT COUNT(*) FROM @CdcJobsBefore)=2 AND (
+        (SELECT COUNT(*) FROM @CdcJobsBefore
+         WHERE job_type COLLATE Latin1_General_100_BIN2=N'capture')<>1
+        OR (SELECT COUNT(*) FROM @CdcJobsBefore
+            WHERE job_type COLLATE Latin1_General_100_BIN2=N'cleanup')<>1))
+    THROW 51132, 'Shared CDC jobs are incomplete; preserve state and review.', 1;
 SELECT N'fixed_demo_cdc_preflight' AS check_name,
     COUNT_BIG(*) AS fixed_capture_count
 FROM cdc.change_tables ct JOIN @Targets t
@@ -565,37 +593,29 @@ COMMIT TRANSACTION;
 -- rollback under an enclosing user transaction. Partial completion can remain.
 -- Stop on errors, inspect privately, then rerun: exact existing captures are
 -- preserved and only missing/remaining fixed instances are processed.
--- SQL Server 2022 compilation and actual CDC execution remain unverified.
+-- Runtime evidence is recorded separately from source/AST validation.
 DECLARE @Schema sysname,@Table sysname,@Capture sysname,
-    @CapturedColumns nvarchar(max),@GrantSql nvarchar(max),@Result int;
+    @PrimaryIndex sysname,@CapturedColumns nvarchar(max),@GrantSql nvarchar(max),@Result int;
 DECLARE FixedCdcTargets CURSOR LOCAL FAST_FORWARD FOR
-    SELECT source_schema,source_table,capture_instance,captured_column_list
+    SELECT source_schema,source_table,capture_instance,primary_index,captured_column_list
     FROM @Targets ORDER BY ordinal;
 OPEN FixedCdcTargets;
-FETCH NEXT FROM FixedCdcTargets INTO @Schema,@Table,@Capture,@CapturedColumns;
+FETCH NEXT FROM FixedCdcTargets INTO @Schema,@Table,@Capture,@PrimaryIndex,@CapturedColumns;
 WHILE @@FETCH_STATUS=0
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM cdc.change_tables
         WHERE capture_instance COLLATE Latin1_General_100_BIN2
            = @Capture COLLATE Latin1_General_100_BIN2)
     BEGIN
-        IF NOT EXISTS (SELECT 1 FROM cdc.change_tables ct JOIN sys.tables independent
-            ON independent.object_id=ct.source_object_id
-            WHERE independent.is_tracked_by_cdc=1
-              AND COALESCE(ct.has_drop_pending,1)=0 AND NOT EXISTS (
-                SELECT 1 FROM @Targets t
-                WHERE t.capture_instance COLLATE Latin1_General_100_BIN2
-                   = ct.capture_instance COLLATE Latin1_General_100_BIN2
-            ))
-            THROW 51120, 'Independent CDC capture disappeared; stop and review.', 1;
         SET @CdcMutationAttempted=1;
         EXEC @Result=sys.sp_cdc_enable_table
             @source_schema=@Schema,@source_name=@Table,
             @capture_instance=@Capture,@role_name=N'lh_demo_cdc_reader',
-            @supports_net_changes=0,@captured_column_list=@CapturedColumns,
-            @allow_partition_switch=0;
-        -- SQL Server ignores switch=0 on unpartitioned tables (warning 22857).
-        -- Preflight rejects partitioned sources; do not demand stored zero.
+            @supports_net_changes=0,@index_name=@PrimaryIndex,
+            @captured_column_list=@CapturedColumns;
+        -- Nonpartitioned tables always store partition_switch=1. Omit the
+        -- ignored switch=0 to avoid warning 22857. Preflight rejects PS sources.
+        -- https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sys-sp-cdc-enable-table-transact-sql?view=sql-server-ver16
         IF @Result<>0 OR NOT EXISTS (SELECT 1 FROM cdc.change_tables
             WHERE capture_instance COLLATE Latin1_General_100_BIN2
                = @Capture COLLATE Latin1_General_100_BIN2
@@ -608,7 +628,7 @@ BEGIN
         +QUOTENAME(N'fn_cdc_get_all_changes_'+@Capture)
         +N' TO [lh_demo_cdc_reader];';
     EXEC sys.sp_executesql @GrantSql;
-    FETCH NEXT FROM FixedCdcTargets INTO @Schema,@Table,@Capture,@CapturedColumns;
+    FETCH NEXT FROM FixedCdcTargets INTO @Schema,@Table,@Capture,@PrimaryIndex,@CapturedColumns;
 END;
 IF (SELECT COUNT_BIG(*) FROM cdc.change_tables ct JOIN @Targets t
     ON ct.capture_instance COLLATE Latin1_General_100_BIN2
@@ -627,10 +647,10 @@ IF EXISTS (
        OR ct.role_name COLLATE Latin1_General_100_BIN2
           <> N'lh_demo_cdc_reader' COLLATE Latin1_General_100_BIN2
        OR COALESCE(ct.supports_net_changes,1)<>0
-       OR COALESCE(ct.has_drop_pending,1)<>0
-       OR (ct.index_name IS NOT NULL
-           AND ct.index_name COLLATE Latin1_General_100_BIN2
-              <> t.primary_index COLLATE Latin1_General_100_BIN2)
+       OR (ct.has_drop_pending IS NOT NULL AND ct.has_drop_pending<>0)
+       OR ct.index_name IS NULL
+       OR ct.index_name COLLATE Latin1_General_100_BIN2
+          <> t.primary_index COLLATE Latin1_General_100_BIN2
        OR OBJECT_SCHEMA_NAME(ct.object_id) COLLATE Latin1_General_100_BIN2
           <> N'cdc' COLLATE Latin1_General_100_BIN2
        OR OBJECT_NAME(ct.object_id) COLLATE Latin1_General_100_BIN2
@@ -686,6 +706,27 @@ IF EXISTS (
 )
     THROW 51114, 'Existing capture scalar types differ from the fixed source.', 1;
 
+-- The first table creates the normal pair. Existing IDs and settings must
+-- survive every rerun, including a database with zero captures but two jobs.
+IF OBJECT_ID(N'msdb.dbo.cdc_jobs',N'U') IS NOT NULL
+    INSERT INTO @CdcJobsAfter EXEC sys.sp_cdc_help_jobs;
+IF (SELECT COUNT(*) FROM @CdcJobsAfter)<>2
+    OR (SELECT COUNT(*) FROM @CdcJobsAfter
+        WHERE job_type COLLATE Latin1_General_100_BIN2=N'capture')<>1
+    OR (SELECT COUNT(*) FROM @CdcJobsAfter
+        WHERE job_type COLLATE Latin1_General_100_BIN2=N'cleanup')<>1
+    OR EXISTS (SELECT 1 FROM @CdcJobsAfter j
+        LEFT JOIN msdb.dbo.sysjobs sj ON sj.job_id=j.job_id
+        WHERE sj.job_id IS NULL)
+    OR EXISTS (
+        SELECT job_id,job_type COLLATE Latin1_General_100_BIN2,
+        job_name COLLATE Latin1_General_100_BIN2,maxtrans,maxscans,continuous,
+        pollinginterval,retention,threshold FROM @CdcJobsBefore
+        EXCEPT SELECT job_id,job_type COLLATE Latin1_General_100_BIN2,
+        job_name COLLATE Latin1_General_100_BIN2,maxtrans,maxscans,continuous,
+        pollinginterval,retention,threshold FROM @CdcJobsAfter
+    )
+    THROW 51133, 'Shared CDC jobs changed or are missing; inspect private state.', 1;
 SELECT N'fixed_demo_cdc_enabled' AS check_name,COUNT_BIG(*) AS fixed_capture_count
 FROM cdc.change_tables ct JOIN @Targets t
   ON ct.capture_instance COLLATE Latin1_General_100_BIN2

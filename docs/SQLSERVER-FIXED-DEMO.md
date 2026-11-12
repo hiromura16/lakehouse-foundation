@@ -240,7 +240,11 @@ private設定の `SOURCE_SQLSERVER_CONTROL_USER/PASSWORD` に、DBAが用意し�
 
 004は固定6表だけを対象とし、capture名を `<schema>_<table>_v1`、gating roleを `lh_demo_cdc_reader`、net changesを無効に固定します。既存の同名captureは列・型・PK・role・optionを比較し、一致すれば保持、違えば停止します。readerの既存roleやパスワードを変更しません。既存DB principalへ、この6 captureと必要metadataの読取だけを追加します。
 
-Microsoftの手続きは、最初の表の有効化や最後の表の無効化でDB共通jobのライフサイクルへ影響する場合があります。このDDLは独立した既存capture/jobが残ることを要求します。新しい空のCDC DBにはそのまま適用せず、DBAがjobライフサイクルを別に準備します。role/grantの検査後、CDC手続きは表単位のautocommitです。途中失敗を全6表rollback済みとは扱わず、metadataを確認して同じ004を再実行します。
+004は独立captureを前提にしません。CDC有効DBでcaptureが0件なら、jobなし・capture/cleanup job既存の両方に対応します。最初の表の有効化による標準job作成はSQL Serverに任せ、既存jobのID・設定は保持します。既存captureがある場合のjob欠損や不完全なjobペアは変更前に拒否し、transactional replicationの別topologyはDBAの別確認を要求します。role/grantの検査後、CDC手続きは表単位のautocommitです。途中失敗を全6表rollback済みとは扱わず、metadataを確認して同じ004を再実行します。
+
+SQL Server 2022の通常captureでは`has_drop_pending`がNULLです。NULLまたは0を受け入れるのは、sourceが`sys.tables`に存在し`is_tracked_by_cdc=1`の場合だけです。1・孤児metadata・欠損CTは51130で停止します。固定captureが3/6等の場合も全既存定義を検証してから不足分だけを作成し、完全一致の再実行ではcapture、LSN、履歴を作り直しません。通常004/006は健全な無関係captureとの共存を許します。
+
+固定6表は非partitionedに限定します。[MicrosoftのSQL Server 2022仕様](https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sys-sp-cdc-enable-table-transact-sql?view=sql-server-ver16)では非partitioned表の`allow_partition_switch=0`は無視され、警告22857が出ます。004はpartition scheme上のheap/clustered indexを変更前に拒否し、この無効な引数を省略します。保存される`partition_switch=1`を安全性判定に使いません。導入後のSWITCHやpartition化を許可するものではなく、source DDLは別設計・別承認が必要です。
 
 無効化は通常更新に含めません。[005_demo_cdc_disable.sql](../infra/sqlserver/005_demo_cdc_disable.sql) は同じ所有権・capture定義を再確認し、別途 `ConfirmDisableCdc=1` の明示を要求します。生成するSQLCMD入力の既定は `0` です。005は固定6captureだけを無効化し、DB全体、旧capture、schema、業務表、ユーザー、roleを削除しません。無効化で失われるcapture履歴を先に保全し、保持中の独立capture/jobをDBAが確認します。
 
@@ -329,8 +333,11 @@ consumerの単一実行threadがKafka読取りを止め、RawのIceberg snapshot
 
 ## 9. 混在collation・003の残存checker・Windowsからの再開
 
-catalogと対象DB/table variableでcollationが異なる場合、003/004/005の異種文字列比較を両辺`Latin1_General_100_BIN2`へ揃えます。DB/server collation変更や安全gateの解除はしません。006とcanonical checkerは同型の競合候補がないことを監査し、本体を変更していません。
+catalogと対象DB/table variableでcollationが異なる場合、003/004/005の異種文字列比較を両辺`Latin1_General_100_BIN2`へ揃えます。DB/server collation変更や安全gateの解除はしません。006は読取り専用のままcapture healthと共有jobを表示し、固定名の照合も明示BIN2にします。canonical checkerは維持します。
 
 003の失敗を全変更rollback済みとは扱いません。新しい専用DBA sessionで[読取り専用preflight](../infra/sqlserver/diagnostics/003_permissions_preflight.sql)を実行し、installation・checkerの完全定義/owner/EXECUTE AS/ANSI flagsと限定role/permissionを確認します。51019でも自動DROP/ALTERや空白削除による照合緩和はしません。既に003と3用途のrole割当を確認できた場合は006から進み、不要な003再実行を避けます。004は承認済み修正版だけを使い、その後006で確認します。005は通常導入では実行しません。
 
 VS Code MSSQLからSQL loginでDBA作業も可能です。DBA passwordはruntime/site.env/Dokployへ保存しません。Windows Go/ODBC sqlcmdの版、空白入りpath、`:r`とPowerShellの引用の違い、残存objectの保全条件は[DDL診断・回復手順](SQLSERVER-DDL-RECOVERY.md)を参照してください。実SQL Server/Windowsでの受入はsourceテストと別です。
+
+
+旧captureの明示置換が必要なDBAだけは、[旧四件置換の専用手順](SQLSERVER-DDL-RECOVERY.md#旧四件の明示置換)を使います。通常004へ旧名の削除を追加しません。既に固定六件へ移行した環境で旧captureを再作成する必要はありません。

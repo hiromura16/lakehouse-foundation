@@ -364,7 +364,7 @@ SQL Server 2022向けDDLは型・PK・所有権・固定captureを静的検査�
 
 ## SQL Server catalog/databaseの混在collation
 
-固定sourceの003/004/005は、catalog/table variable等の異なる由来の文字列を両辺`Latin1_General_100_BIN2`で比較します。混在例`Latin1_General_CI_AS_KS_WS`/`Latin1_General_CI_AS`やcase-sensitive DBを対象にした合成fixtureを用意しています。実SQL Server 2022での互換性試験は未実行で、AST/SQLFluff成功から動作保証しません。006・canonical checker・runtime完全一致は維持しています。
+固定sourceの003/004/005は、catalog/table variable等の異なる由来の文字列を両辺`Latin1_General_100_BIN2`で比較します。混在例`Latin1_General_CI_AS_KS_WS`/`Latin1_General_CI_AS`やcase-sensitive DBを対象にした合成fixtureを用意しています。実SQL Server 2022 DeveloperのCDC初期化matrixは[専用CI](../.github/workflows/sqlserver-cdc.yml)で実行し、対象commitの結果を確認します。AST/SQLFluffだけから動作保証しません。006は読取り専用のhealth表示を追加し、canonical checker・runtime完全一致は維持しています。
 
 Go sqlcmd v1.10.0の`:r`は引用符をfile名から除去しない公式実装のため、ODBC版/一般資料と扱いを区別します。会社で使用中の版は未確認です。実行file/版を記録し、合成includeで空白入りpathを確認してから使います。wrapperはprivate directoryを作業場所にし、相対basenameを`:r`へ渡す例とします。[失敗後の診断・client互換性](SQLSERVER-DDL-RECOVERY.md)
 
@@ -373,3 +373,6 @@ Go sqlcmd v1.10.0の`:r`は引用符をfile名から除去しない公式実装�
 [OpenObserve](OPENOBSERVE.md) はOSS v1.1.2と固定BusyBox probeを使い、Vectorの秘匿化後ログを第二sinkへ送るsource定義です。metrics remote_write・第三者Grafana pluginは未追加です。`openobserve-data` とbootstrap管理者/tokenを分離し、Lab無効時に資格情報を要求しません。runtimeのbinary/VRL/配送、保持削除、24時間耐久は未受入です。
 
 [Sail](SAIL-LAB.md) はPySail 0.7.3 wheelと既存Spark 4.1.4から派生するclientを固定します。Sailを入れただけでSparkの互換性・高速化が成立したとは扱いません。共通Spark imageの事前build、cold build順序、Connect、Lakekeeper/S3、UTC7・NULL・decimal・日本語・再実行・性能を別々に受入します。通常clientはreplicas 0です。
+
+
+SQL Server CDC初期化は、通常の`has_drop_pending=NULL`と0を実在tracked sourceに限り受け入れ、pending=1/孤児を拒否します。空DBで共有jobがない場合は最初のcaptureが標準作成し、既存jobは保持します。固定六表は非partitionedのみです。[公式仕様](https://learn.microsoft.com/en-us/sql/relational-databases/system-tables/cdc-change-tables-transact-sql?view=sql-server-ver16)で非partitioned表の`partition_switch`は常に1なので、004は無効なswitch=0指定を省いて警告22857を避けます。partitioned表や後続SWITCHを許可する設計ではありません。transactional replicationのjob topology、Windows client、企業での受入は別検証です。

@@ -31,6 +31,11 @@ SPEC = importlib.util.spec_from_file_location(
 )
 FIXTURE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(FIXTURE)
+PROBE_SPEC = importlib.util.spec_from_file_location(
+    "transaction_probe", FIXTURE.HERE / "transaction_probe.py"
+)
+PROBE = importlib.util.module_from_spec(PROBE_SPEC)
+PROBE_SPEC.loader.exec_module(PROBE)
 NONCE = "a" * 32
 DATABASE = "lh_collation_" + NONCE[:16] + "_ci"
 VERSION = "b" * 40
@@ -41,8 +46,41 @@ def selected():
     return FIXTURE.variables(DATABASE, NONCE, VERSION)
 
 
+def output_with_terminal(text):
+    """Simulate complete client output, including the final batch receipt."""
+    terminal = FIXTURE.PREFIX + json.dumps(
+        {"stage": "batch_completed", "status": "passed"}
+    )
+    return (text + "\n" + terminal + "\n").encode()
+
+
 class FixtureConsentTests(unittest.TestCase):
     """A repository test can never contact a DB without explicit opt-in."""
+
+    def test_minimal_probe_has_no_fixture_wrapper_or_permanent_writes(self):
+        for variant in ("inline", "dynamic", "scoped"):
+            for option in ("ON", "OFF"):
+                for insert in (False, True):
+                    body = PROBE.source(variant, option, insert)
+                    self.assertNotIn("fixture_ctl", body)
+                    self.assertNotIn("LakehouseCollationFixtureOwner", body)
+                    self.assertEqual("INSERT #sentinel" in body, insert)
+                    self.assertEqual("CREATE TABLE #sentinel" in body, insert)
+                    self.assertEqual(
+                        Linter(dialect="tsql").parse_string(body).violations,
+                        [],
+                    )
+                    self.assertLess(
+                        body.index("@Xact=XACT_STATE()"),
+                        body.index("ROLLBACK TRANSACTION"),
+                    )
+
+    def test_minimal_probe_requires_ci_before_opening_a_connection(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with mock.patch.object(PROBE, "execute") as execute:
+                with self.assertRaisesRegex(RuntimeError, "DISPOSABLE_CI"):
+                    PROBE.main()
+                execute.assert_not_called()
 
     def test_default_plan_has_no_subprocess_or_password_prompt(self):
         output = io.StringIO()
@@ -214,7 +252,10 @@ class FaultInjectionContractTests(unittest.TestCase):
         )
 
     def test_unknown_or_ambiguous_fault_anchor_fails_closed(self):
-        for body in ("SELECT 1;", "@allow_partition_switch=0;\n" * 2):
+        for body in (
+            "SELECT 1;",
+            "@captured_column_list=@CapturedColumns;\n" * 2,
+        ):
             with self.assertRaises(FIXTURE.FixtureError):
                 FIXTURE.inject(body, "enable")
         with self.assertRaises(FIXTURE.FixtureError):
@@ -295,6 +336,9 @@ class FaultInjectionContractTests(unittest.TestCase):
             FIXTURE.successful_permissions(),
             (FIXTURE.HERE / "role_alias.sql").read_text(),
             FIXTURE.role_alias_identity(),
+            FIXTURE.initialization_snapshot("Before"),
+            FIXTURE.initialization_snapshot("After", retained_only=True),
+            FIXTURE.stop_fixture_jobs(),
             FIXTURE.role_alias_probe("SELECT 1;", "004"),
             FIXTURE.role_alias_probe("SELECT 1;", "005"),
             FIXTURE.expect_failure(
@@ -307,6 +351,31 @@ class FaultInjectionContractTests(unittest.TestCase):
         for index, body in enumerate(samples):
             with self.subTest(index=index):
                 self.assertEqual(linter.parse_string(body).violations, [])
+
+    def test_initialization_matrix_is_explicit_and_never_edits_system_rows(
+        self,
+    ):
+        expected = {
+            "zero_no_jobs",
+            "zero_with_jobs",
+            "independent_null",
+            "partial_three",
+            "wrong_definition",
+            "replace_four",
+            "unknown_capture",
+            "dropped_source",
+            "partitioned",
+        }
+        self.assertEqual(set(FIXTURE.plan()["initialization_cases"]), expected)
+        body = FIXTURE.replacement(selected())
+        self.assertNotIn("$(", body)
+        self.assertIn("fixture_old_4_v1", body)
+        self.assertIn("THROW 51204", body)
+        self.assertNotRegex(body, r"(?i)UPDATE\s+(?:cdc|msdb)\.")
+        source = (FIXTURE.HERE / "run.py").read_text()
+        self.assertIn("WHERE has_drop_pending=1", source)
+        self.assertIn("DROP TABLE dbo.fixture_legacy_data", source)
+        self.assertNotRegex(source, r"(?i)UPDATE\s+cdc\.")
 
     def test_outer_transaction_probe_asserts_before_owner_rollback(self):
         body = FIXTURE.outer_transaction_probe(
@@ -338,7 +407,7 @@ class FaultInjectionContractTests(unittest.TestCase):
             Linter(dialect="tsql").parse_string(body).violations, []
         )
 
-    def test_all_four_outer_transaction_guards_have_explicit_fixture_cases(
+    def test_all_six_outer_transaction_guards_have_explicit_fixture_cases(
         self,
     ):
         runner = FIXTURE.Runner(
@@ -349,16 +418,59 @@ class FaultInjectionContractTests(unittest.TestCase):
             runner, "execute", side_effect=lambda *a, **k: calls.append(a[1])
         ):
             runner.outer_transaction_guards(DATABASE, selected())
-        self.assertEqual(len(calls), 5)
+        self.assertEqual(len(calls), 19)
         self.assertIn(
             "CREATE TABLE fixture_ctl.outer_transaction_sentinel", calls[0]
         )
-        for index, number in enumerate(("003", "004", "005", "preflight"), 1):
-            self.assertIn(
-                "outer_transaction_" + number + "_preserved", calls[index]
-            )
-            self.assertIn("WHERE sentinel_id=" + str(index), calls[index])
-            self.assertIn("IF ERROR_NUMBER()<>50000 THROW", calls[index])
+        for ordinal, number in enumerate(
+            ("003", "004", "005", "preflight", "cdc_preflight", "maintenance"),
+            1,
+        ):
+            for offset, option in enumerate(("ON", "OFF")):
+                body = calls[7 + (ordinal - 1) * 2 + offset]
+                self.assertIn(
+                    "outer_transaction_" + number + "_preserved", body
+                )
+                self.assertIn("WHERE sentinel_id=" + str(ordinal), body)
+                self.assertIn("IF ERROR_NUMBER()<>50000 THROW", body)
+                self.assertTrue(body.startswith("SET XACT_ABORT " + option))
+
+    def test_transaction_experiment_observes_catch_before_owner_rollback(self):
+        for variant in ("inline", "dynamic_raise", "full_003"):
+            for option in ("ON", "OFF"):
+                with self.subTest(variant=variant, option=option):
+                    body = FIXTURE.transaction_doom_experiment(
+                        "RAISERROR('Synthetic full source.',16,1); RETURN;",
+                        variant,
+                        option,
+                    )
+                    self.assertIn("SET XACT_ABORT " + option, body)
+                    for expression in (
+                        "ERROR_NUMBER()",
+                        "ERROR_STATE()",
+                        "ERROR_LINE()",
+                        "@CaughtState=XACT_STATE()",
+                    ):
+                        self.assertLess(
+                            body.index(expression),
+                            body.index("ROLLBACK TRANSACTION"),
+                        )
+                    self.assertNotIn("COMMIT TRANSACTION", body)
+                    self.assertEqual(
+                        Linter(dialect="tsql").parse_string(body).violations,
+                        [],
+                    )
+
+    def test_cdc_diagnostic_rejects_outer_transaction_before_options(self):
+        body = FIXTURE.SCRIPTS["cdc_preflight"].read_text()
+        guard = body.index("IF @@TRANCOUNT<>0")
+        refusal = body.index("RAISERROR(")
+        returned = body.index("RETURN;")
+        first_option = body.index("SET IMPLICIT_TRANSACTIONS OFF")
+        self.assertLess(guard, refusal)
+        self.assertLess(refusal, returned)
+        self.assertLess(returned, first_option)
+        self.assertLess(first_option, body.index("BEGIN TRANSACTION"))
 
 
 class RoleAliasFixtureTests(unittest.TestCase):
@@ -441,6 +553,25 @@ class RoleAliasFixtureTests(unittest.TestCase):
                 result = FIXTURE.role_alias_coverage(records)
                 self.assertEqual(tuple(result.values()), expected)
 
+    def test_real_pending_drop_absence_remains_a_coverage_gap(self):
+        rows = [
+            {
+                "stage": "init_pending_drop_observation",
+                "case": case,
+                "drop_pending_one_observed": observed,
+            }
+            for case, observed in (
+                ("dropped_source_ci", True),
+                ("dropped_source_cs", False),
+            )
+        ]
+        coverage = FIXTURE.pending_drop_coverage(rows)
+        self.assertTrue(coverage["ci_observed"])
+        self.assertFalse(coverage["cs_observed"])
+        self.assertEqual(coverage["observation_count"], 2)
+        missing = FIXTURE.pending_drop_coverage([])
+        self.assertFalse(missing["ci_observed"] or missing["cs_observed"])
+
     def test_runner_isolated_role_case_runs_both_scripts_with_explicit_consent(
         self,
     ):
@@ -482,7 +613,9 @@ class RoleAliasFixtureTests(unittest.TestCase):
         ):
             receipt = dict(baseline, **changes)
             completed = subprocess.CompletedProcess(
-                [], 0, (FIXTURE.PREFIX + json.dumps(receipt)).encode()
+                [],
+                0,
+                output_with_terminal(FIXTURE.PREFIX + json.dumps(receipt)),
             )
             with mock.patch.object(
                 FIXTURE.subprocess, "run", return_value=completed
@@ -511,6 +644,50 @@ class SqlcmdBoundaryTests(unittest.TestCase):
             VERSION,
         )
 
+    def test_client_decorations_do_not_hide_bounded_receipts(self):
+        receipt = FIXTURE.PREFIX + json.dumps(
+            {"stage": "fresh_database_created", "status": "passed"}
+        )
+        for output in (
+            receipt,
+            "mssql: " + receipt,
+            "\x1b[33m" + receipt + "\x1b[0m",
+        ):
+            completed = subprocess.CompletedProcess(
+                [], 0, output_with_terminal(output)
+            )
+            with mock.patch.object(
+                FIXTURE.subprocess, "run", return_value=completed
+            ):
+                result = self.runner().execute(DATABASE, "SELECT 1;")
+                self.assertEqual(result[0]["stage"], "fresh_database_created")
+
+    def test_expected_caught_errors_finish_but_unexpected_errors_still_fail(
+        self,
+    ):
+        for number, expected in ((51991, True), (208, False)):
+            receipt = {
+                "stage": "partial_enable",
+                "status": "passed",
+                "expected_error": 51991,
+            }
+            output = (
+                f"Msg {number}, Level 16, State 1\n"
+                + FIXTURE.PREFIX
+                + json.dumps(receipt)
+            )
+            completed = subprocess.CompletedProcess(
+                [], 0, output_with_terminal(output)
+            )
+            with mock.patch.object(
+                FIXTURE.subprocess, "run", return_value=completed
+            ):
+                if expected:
+                    self.runner().execute(DATABASE, "SELECT 1;")
+                else:
+                    with self.assertRaises(FIXTURE.FixtureError):
+                        self.runner().execute(DATABASE, "SELECT 1;")
+
     def test_password_is_only_in_child_env_input_is_private_and_removed(self):
         runner = self.runner()
         seen = []
@@ -519,6 +696,7 @@ class SqlcmdBoundaryTests(unittest.TestCase):
             self.assertNotIn(runner.password, str(command))
             self.assertNotIn("-P", command)
             self.assertEqual(command[command.index("-N") + 1], "mandatory")
+            self.assertEqual(command[command.index("-V") + 1], "17")
             self.assertEqual(kwargs["env"]["SQLCMDPASSWORD"], runner.password)
             self.assertNotIn("HTTP_PROXY", kwargs["env"])
             self.assertNotIn("SQLCMDUSER", kwargs["env"])
@@ -526,16 +704,17 @@ class SqlcmdBoundaryTests(unittest.TestCase):
             seen.append(path)
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
             self.assertTrue(path.read_text().startswith("SET NOCOUNT ON"))
+            self.assertTrue(path.read_text().endswith("\nGO\n"))
             value = {"stage": "ddl_003_retry_passed", "status": "passed"}
             return subprocess.CompletedProcess(
                 command,
                 0,
-                (
+                output_with_terminal(
                     "noisy progress\n"
                     + FIXTURE.PREFIX
                     + json.dumps(value)
                     + "\n"
-                ).encode(),
+                ),
             )
 
         with (
@@ -554,6 +733,15 @@ class SqlcmdBoundaryTests(unittest.TestCase):
         for output, code in (
             (b"raw SQL private diagnostic", 1),
             (b"no fixture records", 0),
+            (
+                (
+                    FIXTURE.PREFIX
+                    + json.dumps(
+                        {"stage": "ddl_003_retry_passed", "status": "passed"}
+                    )
+                ).encode(),
+                0,
+            ),
             (
                 (
                     FIXTURE.PREFIX

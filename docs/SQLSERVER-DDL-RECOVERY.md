@@ -24,7 +24,7 @@ catalog側の文字列列と、table variable側の文字列列が異なるcolla
 | --- | --- |
 | 003 | `@AllowedGrants.role_name`とprincipal名、permission名同士を両辺`Latin1_General_100_BIN2`。private principalのcase aliasとfixed roleのcase aliasも拒否 |
 | 004/005 | capture名のJOIN/EXISTS/scalar比較、schema/table/index/column/role名、双方向EXCEPTの文字列投影を両辺BIN2。CDC手続きの名前付き引数は比較式ではなく元の変数代入を維持 |
-| 006 | numeric ID JOIN、catalog列＋固定Unicode literal、既存の両辺BIN2のinstallation比較を監査。同型の異種列比較はなく、SQL本体は変更しない |
+| 006 | 読取り専用のまま、固定captureのNULL/0・source tracked flagと共有jobの診断を追加。固定名は明示BIN2で照合 |
 | checker v1 | catalog＋固定literalのみ。canonical SQL、003内の埋込定義、runtimeの完全一致契約を変更しない |
 
 binary比較だけへ置き換えてcase aliasを検索対象から消さないよう、CDCの衝突発見ではcatalog解決のobject IDも使用します。同名captureが別sourceに存在する場合も作成前に停止します。ASCII固定名の`UPPER`/BIN2比較はcase aliasを拒否する事前検出にだけ使い、再利用・adoptionや変更対象の一致はBIN2完全一致だけです。許可表やEXCEPTではcaseを含む固定の比較意味を維持し、`DATABASE_DEFAULT`へ環境依存で寄せません。Unicodeの`N'...'`は維持します。
@@ -35,7 +35,9 @@ Microsoftの[collation precedence](https://learn.microsoft.com/en-us/sql/t-sql/s
 
 ## 2. 途中失敗後はrollbackを推測しない
 
-003と独立診断、004/005は最初に外側transactionを検出し、`XACT_ABORT`を変更せず`RAISERROR`＋`RETURN`で拒否します。`THROW`は継承された`XACT_ABORT ON`を尊重するため、この入口では使いません。[RAISERRORの仕様](https://learn.microsoft.com/en-us/sql/t-sql/language-elements/raiserror-transact-sql?view=sql-server-ver16)に基づく措置です。clientが接続を閉じる場合のrollbackまで阻止する保証ではありません。003は専用sessionを要求し、捕捉できた失敗では自分のtransactionをrollbackしてから、checkerの事前有無・今回作成したか・失敗後の有無とfixed role/permission数を出します。定義やprivate principal名・所有権hashは出しません。診断が失敗しても元のエラーを返します。
+003、004/005、明示置換 maintenance と permissions/CDC の独立診断は、最初に外側 transaction を検出して拒否します。拒否だけを `sp_executesql` の入れ子 batch に置き、その内部で `SET XACT_ABORT OFF` と `RAISERROR` を実行します。外側の設定や通常の変更処理の `XACT_ABORT ON` は変えません。[SET option の公式仕様](https://learn.microsoft.com/en-us/sql/t-sql/statements/set-statements-transact-sql?view=sql-server-ver16)では、動的 SQL 内の変更は制御が戻る際に復元されます。呼出元が終了した際の client 側 rollback まで阻止する保証ではありません。
+
+旧入口の直接 RAISERROR は合成 SQL Server 2022 で継承 ON の呼出元を `XACT_STATE()=-1` にしました。[RAISERROR の公式説明](https://learn.microsoft.com/en-us/sql/t-sql/language-elements/raiserror-transact-sql?view=sql-server-ver16)だけで安全と推定せず、独立した接続・wrapper なし・INSERT 有無を比較します。入れ子の候補は継承 ON/OFF の双方で transaction count、`@@OPTIONS`、sentinel と `XACT_STATE()=1` を確認してから採用します。fixture は 003/004/005、maintenance と両診断の全体にも同じ厳密な期待値を適用し、失敗を -1 の成功へ変更しません。003 の内部失敗では、自分の transaction の rollback 後に checker の事前有無・今回作成有無・残存状態と固定 role/permission 数を出します。private principal 名や所有権 hash は出しません。
 
 これは全エラーのrollback保証ではありません。同じscopeのcompile/recompile error、client取消、接続断などは`TRY/CATCH`の対象外になり得ます。`XACT_ABORT ON`だけでもcompile errorは保証されません。別batch/sessionで作られたobjectまで、後続の失敗が消すとは限りません。**残存原因は、実際のbatch/session・transaction記録がなければ不明**です。特定clientや空白・改行が原因だったと推測で断定しません。[TRY/CATCH](https://learn.microsoft.com/en-us/sql/t-sql/language-elements/try-catch-transact-sql?view=sql-server-ver16)・[XACT_ABORT](https://learn.microsoft.com/en-us/sql/t-sql/statements/set-xact-abort-transact-sql?view=sql-server-ver16)
 
@@ -137,7 +139,7 @@ passwordを`-P`やwrapperへ書かず、対話入力します。`-N mandatory`�
 
 [合成統合fixture](../tests/integration/sqlserver_collation/)は専用SQL Server 2022で実行するopt-inです。既定はplanのみ、実行には明示consent・loopback・新規の合成owned DBが必要です。003のchecker作成後に失敗を挿入した**テスト用コピー**、残存proc/role/permissionの観測、明示rollback前後、再実行、無関係checkerの51019、CDCの部分完了とlegacy/job保持を確認します。既存DB・volumeを削除するcleanupは行いません。
 
-現作業環境には`sqlcmd`がなく、Docker APIは前の許可範囲で接続拒否されており、再試行・別host・権限変更による回避はしていません。したがって実SQL Serverでのerror468、003の残存/再実行、004/005/006、Windows clientは**未実行**です。SQLFluff parse、AST/contract、mock、fixtureのplanが通っても、実SQL成功へ読み替えません。各fixtureの出力と実行条件を後日の許可された受入として保存します。
+ローカルDocker APIが権限拒否された場合は、sudo・別socket・別host・権限変更で回避しません。[専用CI](../.github/workflows/sqlserver-cdc.yml)はGitHubの使い捨てrunner内にSQL Server 2022 DeveloperとSQL Agentを起動し、loopback限定の合成DBへ接続します。企業のsecret・SQL Server・volumeを使いません。Go sqlcmd 1.10.0は公式releaseのSHA-256で検証します。CIの実行結果と対象commitを確認し、未実行・失敗・成功を区別します。SQLFluff/AST/mock/planの成功は実機成功の証明ではありません。Windows clientと企業での受入はこのCIの対象外です。
 
 
 fixtureの計画だけを確認するコマンド（DB接続・password入力なし）:
@@ -167,3 +169,47 @@ fixtureの強制列collation差はerror468の再現用で、選択serverの実ca
 追加のrole-alias fixtureは別の新規owned CI/CS DBで、固定6captureと無関係なcaptureを準備します。後者にはCDCの正式手続きで大文字表記のgating roleを指定し、実際の保存名と解決されたprincipalを読み戻します。同じprincipalなら004/005とも51115を期待し、capture/role/member/permission・legacy共有jobが変わらないことを検査します。別principalなら固定6件だけの通常lifecycleと無関係captureの保持を検査します。system metadataをUPDATEして別表記を捏造しません。
 
 出力の`role_alias_coverage`は保存名が実際に異なる同一principalケースと、別principalケースの実行有無を分けます。SQL Serverが保存名を正規化した場合、または選択serverのcatalogで別principalを再現できなかった場合、結果は`passed_with_coverage_gaps`・exit code 3となり、該当ケースの実機受入は未完了です。拒否前後のcapture比較には固定identity/定義列を使い、Agentが非同期更新するLSNやdrop-pending進捗を変更と誤認しません。この追加fixtureも現環境では未実行です。
+
+
+## CDC初期化の診断
+
+51119は旧004が「独立captureが必要」と誤判定した停止です。修正版004は`has_drop_pending`のNULLを健全候補として扱い、実在するtracked sourceとCTを併せて確認します。51130はpending=1または孤児metadata、51132/51133は独立した共有job検証の失敗です。[読取り専用CDC preflight](../infra/sqlserver/diagnostics/004_cdc_preflight.sql)へprivate SQLCMD変数を読み込み、inventory・LSN・role・index・jobを非公開で確認します。system metadataの直接UPDATEで回避しません。
+
+004はcapture=0/job=0から標準作成、capture=0/job=2から既存job保持、独立したNULL captureとの共存、部分固定captureの不足分作成に対応します。同名captureのschema/table/index/列順/role/net changesが違えば、全体の変更前に停止します。005は履歴削除の別操作なので、最後のcaptureを消して共有jobへ影響しないよう独立した健全captureを引き続き要求します。
+
+## 旧四件の明示置換
+
+この手順はDBA専用です。必要なCDC履歴を先に保全し、connector/consumerを別途停止し、他のDBAによるCDC/source DDL/job操作のないwindowを確保します。旧captureの履歴はdisableにより失われます。既に固定六件へ移行したDBで旧captureを再作成しません。
+
+1. Git外のprivate JSONへ承認した四組を列挙します。各要素は`source_schema`・`source_table`・`capture_instance`だけを持つobjectです。例えば合成fixtureの一組は`{"source_schema":"dbo","source_table":"fixture_old_1","capture_instance":"fixture_old_1_v1"}`です。正確な四組が必須で、wildcard・prefix展開・自動探索はありません。実名を公開文書やPRへ転記しません。
+2. `scripts/prepare-sqlserver.py`の`--env-file`と`--output`にGit外のprivate pathを指定し、さらに`--legacy-allowlist`と`--confirm-replace-legacy REPLACE_EXACT_APPROVED_FOUR`を指定します。0600の新規SQLを生成するだけで接続しません。出力は[専用maintenance template](../infra/sqlserver/maintenance/replace_legacy_captures.sql)とそのcommitの004を組み込みます。private JSON/SQLをレビューし、承認済みDBへ専用session・`sqlcmd -b`で実行します。
+3. maintenanceは接続DB/CDC、四組の実source identity、全capture inventoryを確認し、固定六件とallowlist以外のcaptureが一件でもあれば51204で変更前に停止します。004のinstallation ownership/version・reader principal・固定全定義・capture health・共有job検証を通してから、不足する固定captureだけを作成します。
+4. 固定六件の完全定義とjobを確認した後でだけ、allowlistの残存旧captureを一件ずつautocommitでdisableします。最後に固定六件・指定旧四件の不在・共有jobのID/設定を再検証します。通常004/006には旧capture不在の要件を加えません。
+
+DB全体のCDC、共有job、無関係capture、source表、role、offsetは削除しません。途中失敗時は`phase`・エラー番号・承認entryのordinal・事前/現在の有無を出し、後片付けせず停止します。固定側の部分完了は004の固定六件診断にも残ります。接続/compileエラーで診断自体が出ない場合も、private inventoryを取り直します。同じ承認四組と所有権を保持し、残った状態を確認してから同じ生成SQLで再開します。既に消えた承認entryはskipし、未知のcaptureを追加承認したことにはしません。
+
+実テストの`--initialization`はCI/CS DBの両方で空DB二状態、NULL独立capture、3/6、同名定義不一致、旧四件置換と途中失敗/再実行、未知capture拒否、正式DROP由来の孤児/pending=1、partitioned表拒否を検査します。比較用に合成DBのjobのscheduleを無効化して停止し、その準備後のjob定義と実際のLSN/CT履歴・role/grant・job定義・合成offsetの保持を照合します。metadata値の捏造はしません。混在collationの強制error468は実catalog collationの測定とは区別します。
+
+合成fixtureのclientは`-b -V 17`で期待したseverity 16のTRY/CATCHを最後まで実行させ、batch終端の構造化receiptを必須にします。receiptがあっても、SQL側で照合した期待エラー以外のseverity 11以上は失敗です。DBAの通常適用は従来どおり`sqlcmd -b`を使います。fixture専用のjob無効化/停止は、通常004/005やmaintenanceには含めません。
+
+実DROPと標準scanで`has_drop_pending=1`を保持したmetadataを観測できないbuildでは、`pending_drop_one_coverage`へCI/CS別の実測boolを記録します。孤児拒否の成功と区別し、他の独立caseを実行しても最終結果は`passed_with_coverage_gaps`・exit 3です。strict mode ではこの状態を実pending=1の受入blockerとして残し、system metadataの直接UPDATEや合成値への置換で成功へ変えません。
+
+`has_drop_pending` の実測は標準 scan の前後で分け、metadata 行数も記録します。[CDC の有効化・無効化仕様](https://learn.microsoft.com/en-us/sql/relational-databases/track-changes/enable-and-disable-change-data-capture-sql-server?view=sql-server-ver16)は source DROP 後の関連 metadata 自動削除を説明しており、pending=1 の永続的な観測窓は保証していません。[help procedure の資料](https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sys-sp-cdc-help-change-data-capture-transact-sql?view=sql-server-ver16)には SQL Server 2012 で未使用という注記もありますが、これだけで SQL Server 2022 の全 build が未使用とは断定しません。観測できなかった pending=1 の分岐は未試験の strict mode 受入 blocker であり、孤児拒否が失敗した意味ではありません。
+
+
+### Synthetic metadata production contract（実 pending=1 coverage とは別）
+
+`tests/integration/sqlserver_collation/health_contract.py` は disposable SQL Server 2022 Developer CI の一時表だけを使います。hash 固定の既存 SQLFluff で 004/005 の完全な health `IF EXISTS / LEFT JOIN / WHERE / THROW 51130` を AST 抽出し、三つの relation 参照だけを一時表名へ写します。predicate のコピーや Python 評価への置換はしません。構文不正・欠落・重複・想定外の block/join/statement は接続前に拒否します。
+
+各 script で pending NULL/0/1 × source 有無 × tracked 0/1 × CT 有無の 24 条件を SQL2022 に渡します。期待値は独立した肯定条件（NULL/0、実在 source、tracked=1、実在 CT）です。source 不在は行を挿入せず、実 LEFT JOIN の NULL を確認します。拒否時には抽出した guard 後の一時表 mutation sentinel が不変であることを検査します。sentinel 単独が証明するのは抽出 block 後への非到達であり、原本全体での mutation 順序は既存の実 SQL 孤児拒否・状態保存試験と組み合わせて確認します。pending 条件の削除/反転、source 存在/tracked/CT 存在条件の削除、AND/OR の変更という七つの mutant も同じ 24 条件で期待値からの乖離を必須にします。
+
+結果は `synthetic_metadata_production_contract` として実 engine metadata の観測と分離します。これは synthetic pending=1 に対する製品 guard の論理・拒否位置の追加証拠であり、実 CDC metadata の pending=1 分岐を観測した証拠ではありません。既存の実機 matrix、coverage bool、`passed_with_coverage_gaps`・exit 3、strict mode の受入 blocker は変更しません。system metadata や会社 DB は変更しません。
+
+
+### 明示承認済みの条件付き受入
+
+所有者は、実 engine pending=1 が未観測である残余リスクを明記したうえで、実 SQL 成功と synthetic production contract を組み合わせる条件付き受入を承認しました。CI は `conditional_acceptance.py` でこの限定条件だけを検証します。既存 `run.py --run --initialization` は strict のままで、未観測なら引き続き exit 3 です。
+
+条件付き verifier は同じ disposable SQL2022 CI container・checkout で contract と strict engine suite を順に新規実行し、commit、004/005 と fixture/harness の source hash が実行前後で一致することを要求します。保存済み artifact は入力しません。製品 block の 24 条件×2 と七 mutant×2、全 CI/CS 初期化ケース、六 caller guard×ON/OFF×CI/CS、lifecycle 完了の receipt を確認します。各 receipt の stage・case・field 集合・型を固定し、pending の scan 前後の bool/行数と集約値の整合も要求します。失敗・欠落・不正 report・未知 stage/case/field/gap・source 不一致・別 suite・exit 1/2・timeout は受け入れません。
+
+唯一許容する未観測は `pending_drop_one_coverage` です。strict engine が正確に exit 3 / `passed_with_coverage_gaps` を返し、その他の必要条件を全て満たす場合だけ `conditionally_accepted_pending_one_unobserved` を出します。exit 0 でも必要 receipt と contract 成功を要求します。一般的な exit 3 の無視や `continue-on-error` は使いません。engine coverage bool は false のまま、残余リスクを acceptance JSON にも残します。synthetic 値による論理検証は engine-generated pending=1 の実挙動を証明しません。full checker/role-alias matrix、Windows client、connector E2E、稼働環境の受入は別範囲で未実施です。これは会社 DB 実行・デプロイの承認ではありません。

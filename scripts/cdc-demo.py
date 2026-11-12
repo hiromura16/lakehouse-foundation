@@ -270,6 +270,23 @@ def create_demo(values, output, trust_local_test=False):
                     for row in data[contract["table"]]
                 ],
             )
+        # Fresh database CDC needs no independent capture. The first enable
+        # creates shared jobs normally; NULL drop-pending is healthy only when
+        # its source still exists and is tracked. Never repair metadata/jobs.
+        cursor.execute(
+            "IF EXISTS (SELECT 1 FROM cdc.change_tables ct "
+            "LEFT JOIN sys.tables src ON src.object_id=ct.source_object_id "
+            "LEFT JOIN sys.tables changed ON changed.object_id=ct.object_id "
+            "WHERE src.object_id IS NULL OR src.is_tracked_by_cdc<>1 "
+            "OR changed.object_id IS NULL "
+            "OR (ct.has_drop_pending IS NOT NULL "
+            "AND ct.has_drop_pending<>0)) "
+            "THROW 51130, 'Review synthetic CDC source health.', 1; "
+            "IF (SELECT COUNT(*) FROM msdb.dbo.cdc_jobs "
+            "WHERE database_id=DB_ID() AND job_type IN "
+            "(N'capture',N'cleanup'))<>2 "
+            "THROW 51132, 'Review shared synthetic CDC jobs.', 1;"
+        )
     mapping = {
         "tables": [
             {
