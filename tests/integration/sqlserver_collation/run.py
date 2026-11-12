@@ -48,6 +48,7 @@ CHECKER_CASES = (
 FIXED_STAGES = (
     {
         "mixed_collation",
+        "batch_completed",
         "fresh_database_created",
         "ddl_001_passed",
         "ddl_002_passed",
@@ -125,6 +126,7 @@ SCRIPTS = {
         ("005", "005_demo_cdc_disable.sql"),
         ("006", "006_demo_validation.sql"),
         ("preflight", "diagnostics/003_permissions_preflight.sql"),
+        ("cdc_preflight", "diagnostics/004_cdc_preflight.sql"),
     )
 }
 
@@ -949,7 +951,9 @@ class Runner:
                 path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600
             )
             with os.fdopen(descriptor, "w", encoding="utf-8") as target:
-                target.write(source + "\nGO\n")
+                target.write(
+                    source + "\n" + record("batch_completed") + "GO\n"
+                )
             completed = subprocess.run(
                 [
                     self.sqlcmd,
@@ -1016,7 +1020,8 @@ class Runner:
             position = line.find(PREFIX)
             if position < 0:
                 continue
-            value = json.loads(line[position + len(PREFIX) :])
+            prefix_end = position + len(PREFIX)
+            value = json.loads(line[prefix_end:])
             if (
                 not isinstance(value, dict)
                 or value.get("stage") not in FIXED_STAGES
@@ -1065,8 +1070,26 @@ class Runner:
                 "batch_sha256": hashlib.sha256(source.encode()).hexdigest(),
                 "output_bytes": len(completed.stdout),
                 "prefix_count": output_text.count(PREFIX),
+                "error_numbers": sorted(
+                    {
+                        int(number)
+                        for number in re.findall(r"Msg\s+(\d+),", output_text)
+                    }
+                ),
             }
             raise FixtureError("SYNTHETIC_STAGE_EVIDENCE_MISSING")
+        if found[-1]["stage"] != "batch_completed":
+            self.failure = {
+                "case": self.case,
+                "error_numbers": sorted(
+                    {
+                        int(number)
+                        for number in re.findall(r"Msg\s+(\d+),", output_text)
+                    }
+                ),
+            }
+            raise FixtureError("FINAL_BATCH_EVIDENCE_MISSING")
+        found = found[:-1]
         expected_errors = set(allowed_sql_errors) | {
             row["expected_error"] for row in found if "expected_error" in row
         }
@@ -1372,7 +1395,9 @@ IF NOT EXISTS (SELECT 1 FROM cdc.change_tables
                 # Retention keeps the old change table until normal cleanup.
                 self.execute(
                     database,
-                    "EXEC sys.sp_cdc_scan @maxtrans=500,@maxscans=10,"
+                    "IF NOT EXISTS (SELECT 1 FROM cdc.change_tables "
+                    "WHERE has_drop_pending=1)\n"
+                    " EXEC sys.sp_cdc_scan @maxtrans=500,@maxscans=10,"
                     "@continuous=0;\n"
                     "IF NOT EXISTS (SELECT 1 FROM cdc.change_tables "
                     "WHERE has_drop_pending=1) "
@@ -1446,6 +1471,12 @@ IF NOT EXISTS (SELECT 1 FROM cdc.lh_demo_erp_products_v1_CT
                     database,
                     initialization_unchanged(render("006", selected))
                     + assert_fixed_captures(6),
+                )
+                self.execute(
+                    database,
+                    initialization_unchanged(
+                        render("cdc_preflight", selected)
+                    ),
                 )
             self.execute(
                 database,

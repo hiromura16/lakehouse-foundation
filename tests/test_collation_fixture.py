@@ -41,6 +41,14 @@ def selected():
     return FIXTURE.variables(DATABASE, NONCE, VERSION)
 
 
+def output_with_terminal(text):
+    """Simulate complete client output, including the final batch receipt."""
+    terminal = FIXTURE.PREFIX + json.dumps(
+        {"stage": "batch_completed", "status": "passed"}
+    )
+    return (text + "\n" + terminal + "\n").encode()
+
+
 class FixtureConsentTests(unittest.TestCase):
     """A repository test can never contact a DB without explicit opt-in."""
 
@@ -513,7 +521,9 @@ class RoleAliasFixtureTests(unittest.TestCase):
         ):
             receipt = dict(baseline, **changes)
             completed = subprocess.CompletedProcess(
-                [], 0, (FIXTURE.PREFIX + json.dumps(receipt)).encode()
+                [],
+                0,
+                output_with_terminal(FIXTURE.PREFIX + json.dumps(receipt)),
             )
             with mock.patch.object(
                 FIXTURE.subprocess, "run", return_value=completed
@@ -551,7 +561,9 @@ class SqlcmdBoundaryTests(unittest.TestCase):
             "mssql: " + receipt,
             "\x1b[33m" + receipt + "\x1b[0m",
         ):
-            completed = subprocess.CompletedProcess([], 0, output.encode())
+            completed = subprocess.CompletedProcess(
+                [], 0, output_with_terminal(output)
+            )
             with mock.patch.object(
                 FIXTURE.subprocess, "run", return_value=completed
             ):
@@ -572,7 +584,9 @@ class SqlcmdBoundaryTests(unittest.TestCase):
                 + FIXTURE.PREFIX
                 + json.dumps(receipt)
             )
-            completed = subprocess.CompletedProcess([], 0, output.encode())
+            completed = subprocess.CompletedProcess(
+                [], 0, output_with_terminal(output)
+            )
             with mock.patch.object(
                 FIXTURE.subprocess, "run", return_value=completed
             ):
@@ -603,12 +617,12 @@ class SqlcmdBoundaryTests(unittest.TestCase):
             return subprocess.CompletedProcess(
                 command,
                 0,
-                (
+                output_with_terminal(
                     "noisy progress\n"
                     + FIXTURE.PREFIX
                     + json.dumps(value)
                     + "\n"
-                ).encode(),
+                ),
             )
 
         with (
@@ -627,6 +641,15 @@ class SqlcmdBoundaryTests(unittest.TestCase):
         for output, code in (
             (b"raw SQL private diagnostic", 1),
             (b"no fixture records", 0),
+            (
+                (
+                    FIXTURE.PREFIX
+                    + json.dumps(
+                        {"stage": "ddl_003_retry_passed", "status": "passed"}
+                    )
+                ).encode(),
+                0,
+            ),
             (
                 (
                     FIXTURE.PREFIX
