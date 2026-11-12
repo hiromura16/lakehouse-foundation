@@ -1,6 +1,7 @@
 """Validate DBA input generation without SQL clients or private site files."""
 
 import importlib.util
+import json
 import subprocess
 import sys
 import tempfile
@@ -53,6 +54,43 @@ class PrepareSqlTests(unittest.TestCase):
             with self.subTest(changes=list(changes)):
                 with self.assertRaises(ValueError):
                     PREPARE.prepare({**values(), **changes}, "c" * 40)
+
+    def test_legacy_replacement_requires_four_exact_distinct_triples(self):
+        """Reject wildcard, alias, fixed namespace and substitution attacks."""
+        approved = [
+            {
+                "source_schema": "dbo",
+                "source_table": "fixture_old_" + str(n),
+                "capture_instance": "fixture_old_" + str(n) + "_v1",
+            }
+            for n in range(4)
+        ]
+        rendered = PREPARE.replacement_script(values(), "c" * 40, approved)
+        self.assertNotIn("$(", rendered)
+        self.assertIn("fixture_old_0_v1", rendered)
+        self.assertIn("THROW 51204", rendered)
+        self.assertIn("THROW 51130", rendered)
+        self.assertIn("THROW 51003", rendered)
+        self.assertNotIn(values()["DEMO_SQLSERVER_OWNERSHIP_TOKEN"], rendered)
+        for invalid in ([], approved[:3], approved * 2, {}, None):
+            with self.assertRaises(ValueError):
+                PREPARE.replacement_script(values(), "c" * 40, invalid)
+        for key, invalid in (
+            ("capture_instance", "fixture_%"),
+            ("capture_instance", "all"),
+            ("capture_instance", "ALL"),
+            ("source_table", "fixture*"),
+            ("source_schema", "lh_demo_erp"),
+            ("capture_instance", "$(TargetDatabase)"),
+            ("capture_instance", "fixture';--"),
+            ("capture_instance", "lh_demo_erp_products_v1"),
+            ("capture_instance", "FIXTURE_OLD_1_V1"),
+        ):
+            changed = json.loads(json.dumps(approved))
+            changed[0][key] = invalid
+            with self.subTest(key=key, invalid=invalid):
+                with self.assertRaises(ValueError):
+                    PREPARE.replacement_script(values(), "c" * 40, changed)
 
     def test_cli_writes_private_input_without_connecting_or_disclosing(self):
         with tempfile.TemporaryDirectory() as directory:

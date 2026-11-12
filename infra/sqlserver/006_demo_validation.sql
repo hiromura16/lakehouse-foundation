@@ -95,14 +95,23 @@ LEFT JOIN sys.partitions p ON p.object_id=t.object_id AND p.index_id IN (0,1)
 WHERE s.name IN (N'lh_demo_erp',N'lh_demo_mes',N'lh_demo_ctl')
 ORDER BY s.name,t.name;
 IF OBJECT_ID(N'cdc.change_tables',N'U') IS NOT NULL
-    EXEC(N'SELECT N''fixed_demo_capture'' AS check_name, capture_instance
-    FROM cdc.change_tables WHERE capture_instance IN (
+    EXEC(N'SELECT N''fixed_demo_capture'' AS check_name, ct.capture_instance,
+        ct.has_drop_pending,src.is_tracked_by_cdc,
+        CASE WHEN src.object_id IS NOT NULL AND src.is_tracked_by_cdc=1
+            AND (ct.has_drop_pending IS NULL OR ct.has_drop_pending=0)
+            THEN N''healthy'' ELSE N''review_required'' END AS capture_health
+    FROM cdc.change_tables ct
+    LEFT JOIN sys.tables src ON src.object_id=ct.source_object_id
+    WHERE ct.capture_instance COLLATE Latin1_General_100_BIN2 IN (
         N''lh_demo_erp_products_v1'',N''lh_demo_erp_work_orders_v1'',
         N''lh_demo_erp_sales_orders_v1'',N''lh_demo_erp_shipments_v1'',
         N''lh_demo_mes_events_v1'',N''lh_demo_mes_downtime_v1''
     )');
 ELSE
     SELECT N'fixed_demo_capture' AS check_name, CONVERT(bit,0) AS cdc_enabled;
+IF EXISTS (SELECT 1 FROM sys.databases
+    WHERE database_id=DB_ID() AND is_cdc_enabled=1)
+    EXEC sys.sp_cdc_help_jobs;
 -- Only IDs/status/counts are selected. Do not print credentials, raw business
 -- data or ownership hashes. DBA checks legacy assets independently in private.
 SELECT N'fixed_demo_runs' AS check_name, run_id,status,record_count,completed_at

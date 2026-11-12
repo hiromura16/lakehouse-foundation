@@ -1,0 +1,84 @@
+name: SQL Server 2022 CDC initialization
+
+on:
+  push:
+    branches: [main, fix/sqlserver-cdc-initialization]
+    paths:
+    - 'infra/sqlserver/**'
+    - 'scripts/prepare-sqlserver.py'
+    - 'tests/integration/sqlserver_collation/**'
+    - '.github/workflows/sqlserver-cdc.yml'
+  pull_request:
+    paths:
+    - 'infra/sqlserver/**'
+    - 'scripts/prepare-sqlserver.py'
+    - 'tests/integration/sqlserver_collation/**'
+    - '.github/workflows/sqlserver-cdc.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  disposable-sql2022:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      with:
+        python-version: '3.12'
+    - name: Install verified official Go sqlcmd 1.10.0
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        cd "$RUNNER_TEMP"
+        curl --fail --location --retry 3 --output sqlcmd.tar.bz2 \
+          https://github.com/microsoft/go-sqlcmd/releases/download/v1.10.0/sqlcmd-linux-amd64.tar.bz2
+        # Digest from the official v1.10.0 release asset API.
+        printf '%s  %s\n' \
+          92516d98c63d99b0994de5b61350c91f6915f9b76f139a59039fbcb225c2e987 \
+          sqlcmd.tar.bz2 | sha256sum --check
+        mkdir sqlcmd-bin
+        tar -xjf sqlcmd.tar.bz2 -C sqlcmd-bin
+        printf '%s\n' "$RUNNER_TEMP/sqlcmd-bin" >> "$GITHUB_PATH"
+    - name: Start a new disposable SQL Server 2022 Developer container
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        fixture_password="$(python -c 'import secrets; print(secrets.token_hex(24)+"Aa1!")')"
+        echo "::add-mask::$fixture_password"
+        printf 'LAKEHOUSE_FIXTURE_PASSWORD=%s\n' "$fixture_password" >> "$GITHUB_ENV"
+        export MSSQL_SA_PASSWORD="$fixture_password"
+        # No company secrets, mounts, remote endpoint or persistent volume.
+        docker run --detach --name sql-cdc-fixture \
+          --publish 127.0.0.1:14333:1433 \
+          --env ACCEPT_EULA=Y --env MSSQL_PID=Developer \
+          --env MSSQL_AGENT_ENABLED=true --env MSSQL_SA_PASSWORD \
+          mcr.microsoft.com/mssql/server:2022-latest
+        docker inspect --format '{{.Image}}' sql-cdc-fixture
+        for attempt in {1..60}; do
+          if SQLCMDPASSWORD="$fixture_password" sqlcmd \
+            -S tcp:127.0.0.1,14333 -U sa -N mandatory -C -b -l 2 \
+            -Q 'SET NOCOUNT ON; SELECT 1;' > /dev/null 2>&1; then
+            exit 0
+          fi
+          sleep 2
+        done
+        exit 1
+    - name: Execute real CDC initialization and mixed collation matrix
+      shell: bash
+      env:
+        PYTHONDONTWRITEBYTECODE: '1'
+      run: |
+        set -Eeuo pipefail
+        python tests/integration/sqlserver_collation/run.py \
+          --run --initialization \
+          --consent CREATE_SYNTHETIC_DATABASES_ON_DISPOSABLE_SQL2022 \
+          --server tcp:127.0.0.1,14333 \
+          --password-env LAKEHOUSE_FIXTURE_PASSWORD
+    - name: Dispose only this job's synthetic container
+      if: ${{ always() }}
+      run: docker rm --force sql-cdc-fixture

@@ -244,5 +244,36 @@ class MaintenanceTests(unittest.TestCase):
         self.assertEqual(broker.polls, [0.2, 0.2])
 
 
+class SqlReplacementScopeTests(unittest.TestCase):
+    """Keep destructive SQL maintenance explicit and ordered before removal."""
+
+    def test_unknown_inventory_blocks_before_enable_or_disable(self):
+        sql = ROOT / "infra/sqlserver/maintenance/replace_legacy_captures.sql"
+        body = sql.read_text()
+        self.assertLess(
+            body.index("THROW 51204"),
+            body.index("EXEC sys.sp_executesql @LegacyEnableSql"),
+        )
+        self.assertLess(
+            body.index("THROW 51206"),
+            body.index("EXEC @LegacyResult=sys.sp_cdc_disable_table"),
+        )
+        self.assertEqual(
+            body.count("EXEC sys.sp_executesql @LegacyEnableSql"), 2
+        )
+        self.assertIn("THROW 51208", body)
+        self.assertIn("THROW 51209", body)
+        self.assertIn("preflight_presence", body)
+        self.assertIn("current_presence", body)
+        self.assertIn("preserve_state_review_then_rerun_same_allowlist", body)
+        self.assertNotIn("sp_cdc_disable_db", body)
+        self.assertNotIn("sp_delete_job", body)
+        self.assertNotIn("sp_cdc_drop_job", body)
+        for name in ("004_demo_cdc_enable.sql", "006_demo_validation.sql"):
+            normal = (ROOT / "infra/sqlserver" / name).read_text()
+            self.assertNotIn("@LegacyApproved", normal)
+            self.assertNotIn("replace_legacy", normal)
+
+
 if __name__ == "__main__":
     unittest.main()

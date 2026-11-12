@@ -386,8 +386,9 @@ class FixedSqlContractTests(unittest.TestCase):
                     "ct.source_object_id<>t.source_object_id",
                     "ct.role_name IS NULL",
                     "COALESCE(ct.supports_net_changes,1)<>0",
-                    "COALESCE(ct.has_drop_pending,1)<>0",
-                    "ct.index_name IS NOT NULL",
+                    "ct.has_drop_pending IS NOT NULL "
+                    "AND ct.has_drop_pending<>0",
+                    "ct.index_name IS NULL",
                     "FROM @ExpectedColumns e JOIN cdc.change_tables ct",
                     "FROM @ActualColumns",
                     "src.column_id IS NULL",
@@ -468,19 +469,20 @@ class FixedSqlContractTests(unittest.TestCase):
                 self.assertIn("@LockOwner=N'Session'", sql)
                 self.assertIn("sys.sp_releaseapplock", sql)
                 self.assertIn("is_cdc_enabled=1", sql)
-                self.assertGreaterEqual(
-                    sql.count("independent.is_tracked_by_cdc=1"), 2
-                )
-                self.assertGreaterEqual(
-                    sql.count("independent.object_id=ct.source_object_id"), 2
-                )
+                self.assertIn("LEFT JOIN sys.tables src", sql)
+                self.assertIn("src.is_tracked_by_cdc<>1", sql)
+                self.assertIn("INSERT INTO @CdcJobsBefore", sql)
+                self.assertIn("INSERT INTO @CdcJobsAfter", sql)
+                self.assertEqual(sql.count("EXEC sys.sp_cdc_help_jobs"), 2)
+                self.assertIn("LEFT JOIN msdb.dbo.sysjobs", sql)
+                self.assertIn("THROW 51132", sql)
+                self.assertIn("THROW 51133", sql)
                 self.assertLess(
                     sql.index("COMMIT TRANSACTION"),
                     sql.index("EXEC @Result=sys.sp_cdc_"),
                 )
                 self.assertIn("Partial completion can remain", raw)
-                self.assertIn("SQL Server 2022 compilation", raw)
-                self.assertIn("actual CDC execution remain unverified", raw)
+                self.assertIn("Runtime evidence is recorded separately", raw)
                 self.assertNotRegex(
                     sql,
                     r"(?i)\bALTER\s+DATABASE\b|sp_cdc_(?:enable_db|disable_db|"
@@ -497,7 +499,13 @@ class FixedSqlContractTests(unittest.TestCase):
         self.assertEqual(enabled.count("THROW 51114"), 2)
         self.assertIn("@supports_net_changes=0", enabled)
         self.assertIn("@captured_column_list=@CapturedColumns", enabled)
-        self.assertIn("@allow_partition_switch=0", enabled)
+        self.assertNotIn("@allow_partition_switch=", enabled)
+        self.assertIn("@index_name=@PrimaryIndex", enabled)
+        self.assertNotIn("THROW 51119", enabled)
+        self.assertNotIn("JOIN sys.tables independent", enabled)
+        disabled = source(CDC_FILES[1])
+        self.assertIn("independent.is_tracked_by_cdc=1", disabled)
+        self.assertIn("ct.has_drop_pending IS NULL", disabled)
 
     def test_cdc_disable_requires_separate_exact_confirmation(self):
         """The destructive CDC-history operation has no broad/all option."""

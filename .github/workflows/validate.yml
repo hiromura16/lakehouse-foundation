@@ -94,6 +94,7 @@ jobs:
         sql_files=(
           infra/sqlserver/*.sql
           infra/sqlserver/diagnostics/*.sql
+          infra/sqlserver/maintenance/*.sql
           tests/integration/sqlserver_collation/*.sql
         )
         for sql_file in "${sql_files[@]}"; do

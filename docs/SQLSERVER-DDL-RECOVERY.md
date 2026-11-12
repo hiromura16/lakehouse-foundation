@@ -137,7 +137,7 @@ passwordを`-P`やwrapperへ書かず、対話入力します。`-N mandatory`�
 
 [合成統合fixture](../tests/integration/sqlserver_collation/)は専用SQL Server 2022で実行するopt-inです。既定はplanのみ、実行には明示consent・loopback・新規の合成owned DBが必要です。003のchecker作成後に失敗を挿入した**テスト用コピー**、残存proc/role/permissionの観測、明示rollback前後、再実行、無関係checkerの51019、CDCの部分完了とlegacy/job保持を確認します。既存DB・volumeを削除するcleanupは行いません。
 
-現作業環境には`sqlcmd`がなく、Docker APIは前の許可範囲で接続拒否されており、再試行・別host・権限変更による回避はしていません。したがって実SQL Serverでのerror468、003の残存/再実行、004/005/006、Windows clientは**未実行**です。SQLFluff parse、AST/contract、mock、fixtureのplanが通っても、実SQL成功へ読み替えません。各fixtureの出力と実行条件を後日の許可された受入として保存します。
+ローカルDocker APIが権限拒否された場合は、sudo・別socket・別host・権限変更で回避しません。[専用CI](../.github/workflows/sqlserver-cdc.yml)はGitHubの使い捨てrunner内にSQL Server 2022 DeveloperとSQL Agentを起動し、loopback限定の合成DBへ接続します。企業のsecret・SQL Server・volumeを使いません。Go sqlcmd 1.10.0は公式releaseのSHA-256で検証します。CIの実行結果と対象commitを確認し、未実行・失敗・成功を区別します。SQLFluff/AST/mock/planの成功は実機成功の証明ではありません。Windows clientと企業での受入はこのCIの対象外です。
 
 
 fixtureの計画だけを確認するコマンド（DB接続・password入力なし）:
@@ -167,3 +167,23 @@ fixtureの強制列collation差はerror468の再現用で、選択serverの実ca
 追加のrole-alias fixtureは別の新規owned CI/CS DBで、固定6captureと無関係なcaptureを準備します。後者にはCDCの正式手続きで大文字表記のgating roleを指定し、実際の保存名と解決されたprincipalを読み戻します。同じprincipalなら004/005とも51115を期待し、capture/role/member/permission・legacy共有jobが変わらないことを検査します。別principalなら固定6件だけの通常lifecycleと無関係captureの保持を検査します。system metadataをUPDATEして別表記を捏造しません。
 
 出力の`role_alias_coverage`は保存名が実際に異なる同一principalケースと、別principalケースの実行有無を分けます。SQL Serverが保存名を正規化した場合、または選択serverのcatalogで別principalを再現できなかった場合、結果は`passed_with_coverage_gaps`・exit code 3となり、該当ケースの実機受入は未完了です。拒否前後のcapture比較には固定identity/定義列を使い、Agentが非同期更新するLSNやdrop-pending進捗を変更と誤認しません。この追加fixtureも現環境では未実行です。
+
+
+## CDC初期化の診断
+
+51119は旧004が「独立captureが必要」と誤判定した停止です。修正版004は`has_drop_pending`のNULLを健全候補として扱い、実在するtracked sourceとCTを併せて確認します。51130はpending=1または孤児metadata、51132/51133は独立した共有job検証の失敗です。[読取り専用CDC preflight](../infra/sqlserver/diagnostics/004_cdc_preflight.sql)へprivate SQLCMD変数を読み込み、inventory・LSN・role・index・jobを非公開で確認します。system metadataの直接UPDATEで回避しません。
+
+004はcapture=0/job=0から標準作成、capture=0/job=2から既存job保持、独立したNULL captureとの共存、部分固定captureの不足分作成に対応します。同名captureのschema/table/index/列順/role/net changesが違えば、全体の変更前に停止します。005は履歴削除の別操作なので、最後のcaptureを消して共有jobへ影響しないよう独立した健全captureを引き続き要求します。
+
+## 旧四件の明示置換
+
+この手順はDBA専用です。必要なCDC履歴を先に保全し、connector/consumerを別途停止し、他のDBAによるCDC/source DDL/job操作のないwindowを確保します。旧captureの履歴はdisableにより失われます。既に固定六件へ移行したDBで旧captureを再作成しません。
+
+1. Git外のprivate JSONへ承認した四組を列挙します。各要素は`source_schema`・`source_table`・`capture_instance`だけを持つobjectです。例えば合成fixtureの一組は`{"source_schema":"dbo","source_table":"fixture_old_1","capture_instance":"fixture_old_1_v1"}`です。正確な四組が必須で、wildcard・prefix展開・自動探索はありません。実名を公開文書やPRへ転記しません。
+2. `scripts/prepare-sqlserver.py`の`--env-file`と`--output`にGit外のprivate pathを指定し、さらに`--legacy-allowlist`と`--confirm-replace-legacy REPLACE_EXACT_APPROVED_FOUR`を指定します。0600の新規SQLを生成するだけで接続しません。出力は[専用maintenance template](../infra/sqlserver/maintenance/replace_legacy_captures.sql)とそのcommitの004を組み込みます。private JSON/SQLをレビューし、承認済みDBへ専用session・`sqlcmd -b`で実行します。
+3. maintenanceは接続DB/CDC、四組の実source identity、全capture inventoryを確認し、固定六件とallowlist以外のcaptureが一件でもあれば51204で変更前に停止します。004のinstallation ownership/version・reader principal・固定全定義・capture health・共有job検証を通してから、不足する固定captureだけを作成します。
+4. 固定六件の完全定義とjobを確認した後でだけ、allowlistの残存旧captureを一件ずつautocommitでdisableします。最後に固定六件・指定旧四件の不在・共有jobのID/設定を再検証します。通常004/006には旧capture不在の要件を加えません。
+
+DB全体のCDC、共有job、無関係capture、source表、role、offsetは削除しません。途中失敗時は`phase`・エラー番号・承認entryのordinal・事前/現在の有無を出し、後片付けせず停止します。固定側の部分完了は004の固定六件診断にも残ります。接続/compileエラーで診断自体が出ない場合も、private inventoryを取り直します。同じ承認四組と所有権を保持し、残った状態を確認してから同じ生成SQLで再開します。既に消えた承認entryはskipし、未知のcaptureを追加承認したことにはしません。
+
+実テストの`--initialization`はCI/CS DBの両方で空DB二状態、NULL独立capture、3/6、同名定義不一致、旧四件置換と途中失敗/再実行、未知capture拒否、正式DROP由来の孤児/pending=1、partitioned表拒否を検査します。比較用に合成DBのjobを停止し、実際のLSN/CT履歴・role/grant・job定義・合成offsetの保持を照合します。metadata値の捏造はしません。混在collationの強制error468は実catalog collationの測定とは区別します。

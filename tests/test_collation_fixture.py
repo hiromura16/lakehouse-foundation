@@ -214,7 +214,10 @@ class FaultInjectionContractTests(unittest.TestCase):
         )
 
     def test_unknown_or_ambiguous_fault_anchor_fails_closed(self):
-        for body in ("SELECT 1;", "@allow_partition_switch=0;\n" * 2):
+        for body in (
+            "SELECT 1;",
+            "@captured_column_list=@CapturedColumns;\n" * 2,
+        ):
             with self.assertRaises(FIXTURE.FixtureError):
                 FIXTURE.inject(body, "enable")
         with self.assertRaises(FIXTURE.FixtureError):
@@ -295,6 +298,9 @@ class FaultInjectionContractTests(unittest.TestCase):
             FIXTURE.successful_permissions(),
             (FIXTURE.HERE / "role_alias.sql").read_text(),
             FIXTURE.role_alias_identity(),
+            FIXTURE.initialization_snapshot("Before"),
+            FIXTURE.initialization_snapshot("After", retained_only=True),
+            FIXTURE.stop_fixture_jobs(),
             FIXTURE.role_alias_probe("SELECT 1;", "004"),
             FIXTURE.role_alias_probe("SELECT 1;", "005"),
             FIXTURE.expect_failure(
@@ -307,6 +313,31 @@ class FaultInjectionContractTests(unittest.TestCase):
         for index, body in enumerate(samples):
             with self.subTest(index=index):
                 self.assertEqual(linter.parse_string(body).violations, [])
+
+    def test_initialization_matrix_is_explicit_and_never_edits_system_rows(
+        self,
+    ):
+        expected = {
+            "zero_no_jobs",
+            "zero_with_jobs",
+            "independent_null",
+            "partial_three",
+            "wrong_definition",
+            "replace_four",
+            "unknown_capture",
+            "dropped_source",
+            "partitioned",
+        }
+        self.assertEqual(set(FIXTURE.plan()["initialization_cases"]), expected)
+        body = FIXTURE.replacement(selected())
+        self.assertNotIn("$(", body)
+        self.assertIn("fixture_old_4_v1", body)
+        self.assertIn("THROW 51204", body)
+        self.assertNotRegex(body, r"(?i)UPDATE\s+(?:cdc|msdb)\.")
+        source = (FIXTURE.HERE / "run.py").read_text()
+        self.assertIn("WHERE has_drop_pending=1", source)
+        self.assertIn("DROP TABLE dbo.fixture_legacy_data", source)
+        self.assertNotRegex(source, r"(?i)UPDATE\s+cdc\.")
 
     def test_outer_transaction_probe_asserts_before_owner_rollback(self):
         body = FIXTURE.outer_transaction_probe(

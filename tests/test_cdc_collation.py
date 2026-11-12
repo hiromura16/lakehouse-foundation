@@ -257,6 +257,21 @@ class CdcCollationTests(unittest.TestCase):
                         count += 1
                 self.assertGreaterEqual(count, 8)
 
+    def test_null_drop_pending_requires_an_existing_tracked_source(self):
+        """Reject orphans/pending drops before any grant or CDC procedure."""
+        for name, sql in self.sources.items():
+            with self.subTest(name=name):
+                self.assertNotIn("COALESCE(ct.has_drop_pending,1)", sql)
+                start = sql.index("LEFT JOIN sys.tables src")
+                end = sql.index("THROW 51130", start)
+                guard = sql[start:end]
+                self.assertIn("src.object_id=ct.source_object_id", guard)
+                self.assertIn("src.object_id IS NULL", guard)
+                self.assertIn("src.is_tracked_by_cdc<>1", guard)
+                self.assertIn("ct.has_drop_pending IS NOT NULL", guard)
+                self.assertIn("ct.has_drop_pending<>0", guard)
+                self.assertLess(end, sql.index("EXEC @Result=sys.sp_cdc_"))
+
     def test_cdc_exec_named_arguments_are_plain_bindings_not_collated(self):
         """COLLATE belongs to comparisons, never EXEC parameter assignments."""
         expected = {
@@ -292,7 +307,7 @@ class CdcCollationTests(unittest.TestCase):
                             "@role_name": "N'lh_demo_cdc_reader'",
                             "@supports_net_changes": "0",
                             "@captured_column_list": "@CapturedColumns",
-                            "@allow_partition_switch": "0",
+                            "@index_name": "@PrimaryIndex",
                         }
                     )
                 self.assertEqual(bindings, exact)
