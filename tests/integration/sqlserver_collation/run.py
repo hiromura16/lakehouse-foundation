@@ -50,6 +50,8 @@ FIXED_STAGES = (
         "mixed_collation",
         "batch_completed",
         "init_pending_drop_observation",
+        "outer_transaction_observation",
+        "init_disable_retry_passed",
         "fresh_database_created",
         "ddl_001_passed",
         "ddl_002_passed",
@@ -460,6 +462,17 @@ BEGIN CATCH
     IF ERROR_NUMBER()<>50000 THROW;
     SET @CaughtOuterGuard=1;
 END CATCH;
+DECLARE @OuterObservation nvarchar(4000)=(SELECT
+ N'outer_transaction_observation' AS stage,N'observed' AS status,
+ {ordinal} AS script_ordinal,@CaughtOuterGuard AS outer_guard_caught,
+ XACT_STATE() AS transaction_state,@@TRANCOUNT AS transaction_count,
+ @CallerCount AS caller_transaction_count,
+ (@@OPTIONS ^ @CallerOptions) AS option_difference,
+ CONVERT(bit,CASE WHEN EXISTS (SELECT 1 FROM
+ fixture_ctl.outer_transaction_sentinel WHERE sentinel_id={ordinal})
+ THEN 1 ELSE 0 END) AS sentinel_present
+ FOR JSON PATH,WITHOUT_ARRAY_WRAPPER);
+PRINT N'{PREFIX}'+@OuterObservation;
 IF @CaughtOuterGuard<>1 OR XACT_STATE()<>1 OR @@TRANCOUNT<>@CallerCount
     OR @CallerCount<>1 OR @@OPTIONS<>@CallerOptions
     OR NOT EXISTS (SELECT 1 FROM fixture_ctl.outer_transaction_sentinel
@@ -770,7 +783,7 @@ def initialization_snapshot(variable, *, retained_only=False):
     if variable not in {"Before", "After"}:
         raise FixtureError("FIXED_SNAPSHOT_VARIABLE_REQUIRED")
     where = ""
-    names = EXPECTED_CAPTURES
+    names = (*EXPECTED_CAPTURES, "fixture_independent_v1")
     if retained_only:
         names = EXPECTED_CAPTURES[:3]
         where = " WHERE capture_instance COLLATE Latin1_General_100_BIN2 IN ("
@@ -1044,6 +1057,11 @@ class Runner:
                 "same_principal",
                 "saved_case_different",
                 "drop_pending_one_observed",
+                "script_ordinal",
+                "outer_guard_caught",
+                "caller_transaction_count",
+                "option_difference",
+                "sentinel_present",
             }
             if set(value) - allowed or any(
                 type(v) not in {int, bool} or not -1 <= int(v) <= 1000000
@@ -1087,6 +1105,9 @@ class Runner:
             }
             raise FixtureError("SYNTHETIC_STAGE_EVIDENCE_MISSING")
         if found[-1]["stage"] != "batch_completed":
+            self.records.extend(
+                row for row in found if row["status"] == "observed"
+            )
             self.failure = {
                 "case": self.case,
                 "error_numbers": sorted(
@@ -1358,6 +1379,18 @@ IF NOT EXISTS (SELECT 1 FROM cdc.change_tables
                 )
                 self.execute(database, enabled + record("init_fixed_six"))
             self.freeze_jobs(database)
+            if case in {"independent_null", "dropped_source"}:
+                self.execute(
+                    database,
+                    """INSERT dbo.fixture_legacy_data VALUES (1);
+EXEC sys.sp_cdc_scan @maxtrans=500,@maxscans=10,@continuous=0;
+IF NOT EXISTS (SELECT 1 FROM cdc.fixture_independent_v1_CT WHERE id=1)
+ THROW 51995, 'Expected real independent capture history.', 1;
+SELECT * INTO fixture_ctl.independent_history_saved
+FROM cdc.fixture_independent_v1_CT;
+"""
+                    + record("init_prepared"),
+                )
             self.execute(
                 database,
                 "DELETE FROM fixture_ctl.independent_saved;\n"
@@ -1465,6 +1498,18 @@ IF NOT EXISTS (SELECT 1 FROM cdc.change_tables
 """
                     + record("init_state_preserved"),
                 )
+                if case == "independent_null":
+                    self.execute(
+                        database,
+                        """IF EXISTS (
+ SELECT * FROM fixture_ctl.independent_history_saved
+ EXCEPT SELECT * FROM cdc.fixture_independent_v1_CT)
+ OR EXISTS (SELECT * FROM cdc.fixture_independent_v1_CT
+ EXCEPT SELECT * FROM fixture_ctl.independent_history_saved)
+ THROW 51995, 'Independent history changed during enable.', 1;
+"""
+                        + record("init_state_preserved"),
+                    )
                 self.freeze_jobs(database)
                 # Real change rows and a non-NULL start LSN must survive an
                 # exact rerun, using supported scanning while jobs are stopped.
@@ -1494,6 +1539,8 @@ IF NOT EXISTS (SELECT 1 FROM cdc.lh_demo_erp_products_v1_CT
                         render("cdc_preflight", selected)
                     ),
                 )
+            if case == "independent_null":
+                self.fixed_disable_retry(database, selected)
             self.execute(
                 database,
                 """IF OBJECT_ID(N'msdb.dbo.cdc_jobs',N'U') IS NOT NULL
@@ -1507,6 +1554,46 @@ IF NOT EXISTS (SELECT 1 FROM cdc.lh_demo_erp_products_v1_CT
 """
                 + record("init_" + case + "_passed"),
             )
+
+    def fixed_disable_retry(self, database, selected):
+        """Exercise confirmed 005 with a real NULL independent capture."""
+        refused = expect_failure(
+            render("005", selected), 51123, "disable_without_consent_refused"
+        )
+        self.execute(database, initialization_unchanged(refused))
+        disabled = render("005", selected, confirm=True)
+        self.execute(
+            database,
+            expect_failure(
+                inject(disabled, "disable"), 51993, "partial_disable"
+            )
+            + assert_fixed_captures(5)
+            + record("init_prepared"),
+        )
+        self.execute(
+            database,
+            disabled + assert_fixed_captures(0) + record("init_prepared"),
+        )
+        self.execute(database, initialization_unchanged(disabled))
+        self.execute(
+            database,
+            """IF NOT EXISTS (
+ SELECT 1 FROM cdc.change_tables ct JOIN sys.tables src
+ ON ct.source_object_id=src.object_id
+ WHERE ct.capture_instance COLLATE Latin1_General_100_BIN2
+ =N'fixture_independent_v1' COLLATE Latin1_General_100_BIN2
+ AND ct.has_drop_pending IS NULL AND src.is_tracked_by_cdc=1)
+ THROW 51995, 'Independent NULL capture was not preserved by disable.', 1;
+IF EXISTS (SELECT * FROM fixture_ctl.independent_saved
+ EXCEPT SELECT * FROM cdc.change_tables)
+ OR EXISTS (SELECT * FROM fixture_ctl.independent_history_saved
+ EXCEPT SELECT * FROM cdc.fixture_independent_v1_CT)
+ OR EXISTS (SELECT * FROM cdc.fixture_independent_v1_CT
+ EXCEPT SELECT * FROM fixture_ctl.independent_history_saved)
+ THROW 51995, 'Independent LSN or history changed during disable.', 1;
+"""
+            + record("init_disable_retry_passed"),
+        )
 
     def outer_transaction_guards(self, database, selected):
         """Reject four child scripts without harming the caller transaction."""
