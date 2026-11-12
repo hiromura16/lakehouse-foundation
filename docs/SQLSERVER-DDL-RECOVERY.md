@@ -195,3 +195,12 @@ DB全体のCDC、共有job、無関係capture、source表、role、offsetは削�
 実DROPと標準scanで`has_drop_pending=1`を保持したmetadataを観測できないbuildでは、`pending_drop_one_coverage`へCI/CS別の実測boolを記録します。孤児拒否の成功と区別し、他の独立caseを実行しても最終結果は`passed_with_coverage_gaps`・exit 3です。この状態は実pending=1の受入blockerとして残し、system metadataの直接UPDATEや合成値への置換で成功へ変えません。
 
 `has_drop_pending` の実測は標準 scan の前後で分け、metadata 行数も記録します。[CDC の有効化・無効化仕様](https://learn.microsoft.com/en-us/sql/relational-databases/track-changes/enable-and-disable-change-data-capture-sql-server?view=sql-server-ver16)は source DROP 後の関連 metadata 自動削除を説明しており、pending=1 の永続的な観測窓は保証していません。[help procedure の資料](https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sys-sp-cdc-help-change-data-capture-transact-sql?view=sql-server-ver16)には SQL Server 2012 で未使用という注記もありますが、これだけで SQL Server 2022 の全 build が未使用とは断定しません。観測できなかった pending=1 の分岐は未試験の受入 blocker であり、孤児拒否が失敗した意味ではありません。
+
+
+### Synthetic metadata production contract（実 pending=1 coverage とは別）
+
+`tests/integration/sqlserver_collation/health_contract.py` は disposable SQL Server 2022 Developer CI の一時表だけを使います。hash 固定の既存 SQLFluff で 004/005 の完全な health `IF EXISTS / LEFT JOIN / WHERE / THROW 51130` を AST 抽出し、三つの relation 参照だけを一時表名へ写します。predicate のコピーや Python 評価への置換はしません。構文不正・欠落・重複・想定外の block/join/statement は接続前に拒否します。
+
+各 script で pending NULL/0/1 × source 有無 × tracked 0/1 × CT 有無の 24 条件を SQL2022 に渡します。期待値は独立した肯定条件（NULL/0、実在 source、tracked=1、実在 CT）です。source 不在は行を挿入せず、実 LEFT JOIN の NULL を確認します。拒否時には抽出した guard 後の一時表 mutation sentinel が不変であることを検査します。sentinel 単独が証明するのは抽出 block 後への非到達であり、原本全体での mutation 順序は既存の実 SQL 孤児拒否・状態保存試験と組み合わせて確認します。pending 条件の削除/反転、source 存在/tracked/CT 存在条件の削除、AND/OR の変更という七つの mutant も同じ 24 条件で期待値からの乖離を必須にします。
+
+結果は `synthetic_metadata_production_contract` として実 engine metadata の観測と分離します。これは synthetic pending=1 に対する製品 guard の論理・拒否位置の追加証拠であり、実 CDC metadata の pending=1 分岐を観測した証拠ではありません。既存の実機 matrix、coverage bool、`passed_with_coverage_gaps`・exit 3、Draft/受入 blocker は変更しません。system metadata や会社 DB は変更しません。

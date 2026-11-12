@@ -30,6 +30,8 @@ jobs:
     - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
       with:
         python-version: '3.12'
+    - name: Install existing hash-locked SQL AST test dependencies
+      run: python -m pip install --require-hashes -r requirements-dev.lock
     - name: Install verified official Go sqlcmd 1.10.0
       shell: bash
       run: |
@@ -70,6 +72,9 @@ jobs:
         exit 1
     - name: Observe unwrapped transactions and scoped guard candidate
       run: python tests/integration/sqlserver_collation/transaction_probe.py
+    - name: Synthetic metadata production guard contract (not engine coverage)
+      if: ${{ !cancelled() }}
+      run: python tests/integration/sqlserver_collation/health_contract.py
     - name: Execute real CDC initialization and mixed collation matrix
       if: ${{ !cancelled() }}
       shell: bash
