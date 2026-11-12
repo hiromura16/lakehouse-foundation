@@ -411,6 +411,60 @@ class RegistryTests(unittest.TestCase):
             json.loads(output.getvalue())["error"], "REGISTRY_TRANSIENT"
         )
 
+    def test_missing_pin_identifies_public_image_without_stderr(self):
+        output = io.StringIO()
+        with (
+            mock.patch.object(
+                images,
+                "load_images",
+                return_value={"debezium": REFERENCE},
+            ),
+            mock.patch.object(images, "compose_images"),
+            mock.patch.object(
+                images,
+                "validate_registry",
+                side_effect=images.ImageError("MANIFEST_MISSING"),
+            ),
+            contextlib.redirect_stdout(output),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            self.assertEqual(images.main(["--registry"]), 1)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["error"], "MANIFEST_MISSING")
+        self.assertEqual(
+            result["failed_image"],
+            {"name": "debezium", "image": REFERENCE, "phase": "registry"},
+        )
+        self.assertEqual(result["status"], "failed")
+
+    def test_pull_failure_is_labeled_without_weakening_registry_checks(self):
+        output = io.StringIO()
+        with (
+            mock.patch.object(
+                images,
+                "load_images",
+                return_value={"debezium": REFERENCE},
+            ),
+            mock.patch.object(images, "compose_images"),
+            mock.patch.object(
+                images,
+                "validate_registry",
+                return_value={"image": REFERENCE, "registry": "passed"},
+            ),
+            mock.patch.object(
+                images,
+                "pull_smoke",
+                side_effect=images.ImageError("DOCKER_ACCESS_DENIED"),
+            ),
+            contextlib.redirect_stdout(output),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            self.assertEqual(images.main(["--pull-smoke"]), 1)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["failed_image"]["phase"], "pull")
+        self.assertEqual(result["error"], "DOCKER_ACCESS_DENIED")
+        self.assertEqual(result["images"]["debezium"]["registry"], "passed")
+
 
 if __name__ == "__main__":
     unittest.main()
