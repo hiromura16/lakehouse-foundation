@@ -3,11 +3,14 @@
 -- No CREATE/ALTER/DROP/GRANT/REVOKE or business-table write is performed.
 -- Output is fixed object names, booleans and counts, never a module body,
 -- installation identity/hash, actual principal names, or connection details.
--- Refuse a caller-owned transaction before any setting or THROW. RAISERROR
--- deliberately does not honor XACT_ABORT, including an inherited ON setting.
+-- Refuse a caller transaction before changing caller options or mutating.
+-- Isolate the refusal from inherited XACT_ABORT in a nested read-only batch.
 IF @@TRANCOUNT<>0
 BEGIN
-    RAISERROR('Use a dedicated DBA session without an outer transaction.',16,1);
+    -- SET is local to this nested batch; caller options restore on return.
+    EXEC sys.sp_executesql N'SET XACT_ABORT OFF;
+        RAISERROR(''Use a dedicated DBA session without an outer transaction.'',
+                  16,1);';
     RETURN;
 END;
 SET IMPLICIT_TRANSACTIONS OFF;

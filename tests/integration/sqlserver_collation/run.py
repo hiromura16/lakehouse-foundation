@@ -65,6 +65,7 @@ FIXED_STAGES = (
         "outer_transaction_005_preserved",
         "outer_transaction_preflight_preserved",
         "outer_transaction_cdc_preflight_preserved",
+        "outer_transaction_maintenance_preserved",
         "before_explicit_rollback",
         "after_explicit_rollback",
         "ddl_003_retry_passed",
@@ -423,7 +424,7 @@ END CATCH;
 """ + record(stage, ',"expected_error":' + str(number))
 
 
-def outer_transaction_probe(source, stage, ordinal):
+def outer_transaction_probe(source, stage, ordinal, xact_abort="ON"):
     """Assert rejection leaves the caller's own synthetic transaction intact.
 
     This deliberately does not use expect_failure: that helper rolls back
@@ -436,9 +437,12 @@ def outer_transaction_probe(source, stage, ordinal):
         "outer_transaction_005_preserved",
         "outer_transaction_preflight_preserved",
         "outer_transaction_cdc_preflight_preserved",
-    } or ordinal not in range(1, 6):
+        "outer_transaction_maintenance_preserved",
+    } or ordinal not in range(1, 7):
         raise FixtureError("FIXED_OUTER_TRANSACTION_STAGE_REQUIRED")
-    return f"""SET XACT_ABORT ON;
+    if xact_abort not in {"ON", "OFF"}:
+        raise FixtureError("FIXED_TRANSACTION_OPTION_REQUIRED")
+    return f"""SET XACT_ABORT {xact_abort};
 BEGIN TRANSACTION;
 INSERT fixture_ctl.outer_transaction_sentinel (sentinel_id) VALUES ({ordinal});
 DECLARE @CallerCount int=@@TRANCOUNT,@CallerOptions int=@@OPTIONS;
@@ -468,6 +472,7 @@ END CATCH;
 DECLARE @OuterObservation nvarchar(4000)=(SELECT
  N'outer_transaction_observation' AS stage,N'observed' AS status,
  {ordinal} AS script_ordinal,@CaughtOuterGuard AS outer_guard_caught,
+ {int(xact_abort == "ON")} AS inherited_xact_abort_enabled,
  XACT_STATE() AS transaction_state,@@TRANCOUNT AS transaction_count,
  @CallerCount AS caller_transaction_count,
  (@@OPTIONS ^ @CallerOptions) AS option_difference,
@@ -1111,6 +1116,7 @@ class Runner:
                 "before_scan_rows",
                 "after_scan_rows",
                 "script_ordinal",
+                "inherited_xact_abort_enabled",
                 "outer_guard_caught",
                 "caller_transaction_count",
                 "option_difference",
@@ -1675,7 +1681,7 @@ IF EXISTS (SELECT * FROM fixture_ctl.independent_saved
         )
 
     def outer_transaction_guards(self, database, selected):
-        """Observe doom separately, then require five safe guard rejections."""
+        """Observe doom separately, then require six safe guard rejections."""
         setup = """IF OBJECT_ID(
  N'fixture_ctl.outer_transaction_sentinel',N'U') IS NOT NULL
  THROW 51987, 'Refuse to adopt an existing fixture sentinel.', 1;
@@ -1703,24 +1709,32 @@ CREATE TABLE fixture_ctl.outer_transaction_sentinel (
                         }
                     )
         for ordinal, number in enumerate(
-            ("003", "004", "005", "preflight", "cdc_preflight"), 1
+            ("003", "004", "005", "preflight", "cdc_preflight", "maintenance"),
+            1,
         ):
             stage = "outer_transaction_" + number + "_preserved"
-            try:
-                self.execute(
-                    database,
-                    outer_transaction_probe(
-                        render(number, selected), stage, ordinal
-                    ),
-                )
-            except FixtureError as error:
-                failures.append(
-                    {
-                        "script": number,
-                        "code": str(error),
-                        "failure": self.failure,
-                    }
-                )
+            for xact_abort in ("ON", "OFF"):
+                try:
+                    self.execute(
+                        database,
+                        outer_transaction_probe(
+                            replacement(selected)
+                            if number == "maintenance"
+                            else render(number, selected),
+                            stage,
+                            ordinal,
+                            xact_abort,
+                        ),
+                    )
+                except FixtureError as error:
+                    failures.append(
+                        {
+                            "script": number,
+                            "xact_abort": xact_abort,
+                            "code": str(error),
+                            "failure": self.failure,
+                        }
+                    )
         if failures:
             self.failure = {"outer_transaction_probes": failures}
             raise FixtureError("OUTER_TRANSACTION_PROBES_FAILED")
@@ -1941,6 +1955,7 @@ def plan():
             "005",
             "preflight",
             "cdc_preflight",
+            "maintenance",
         ],
         "role_alias_cases": (
             "supported CDC creation in fresh CI/CS databases; read back saved "

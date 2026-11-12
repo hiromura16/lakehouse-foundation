@@ -7,7 +7,10 @@
 -- Reject an inherited transaction before changing options or starting our own.
 IF @@TRANCOUNT<>0
 BEGIN
-    RAISERROR('Use a dedicated DBA session without an outer transaction.',16,1);
+    -- SET is local to this nested batch; caller options restore on return.
+    EXEC sys.sp_executesql N'SET XACT_ABORT OFF;
+        RAISERROR(''Use a dedicated DBA session without an outer transaction.'',
+                  16,1);';
     RETURN;
 END;
 SET IMPLICIT_TRANSACTIONS OFF;

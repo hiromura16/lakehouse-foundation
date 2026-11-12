@@ -4,7 +4,10 @@
 -- Reserve a window without other CDC/DDL/job administrators. Use sqlcmd -b.
 IF @@TRANCOUNT <> 0
 BEGIN
-    RAISERROR('Use a dedicated DBA session without an outer transaction.',16,1);
+    -- Restore caller options when this nested refusal returns.
+    EXEC sys.sp_executesql N'SET XACT_ABORT OFF;
+        RAISERROR(''Use a dedicated DBA session without an outer transaction.'',
+                  16,1);';
     RETURN;
 END;
 SET NOCOUNT ON;

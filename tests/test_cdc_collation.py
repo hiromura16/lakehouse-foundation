@@ -155,7 +155,7 @@ class CdcCollationTests(unittest.TestCase):
         cls.trees = {name: parse_sql(sql) for name, sql in cls.sources.items()}
 
     def test_caller_transaction_is_refused_before_any_session_change(self):
-        """RAISERROR plus RETURN avoids THROW's XACT_ABORT participation."""
+        """Only the nested refusal may change XACT_ABORT."""
         for name, tree in self.trees.items():
             with self.subTest(name=name):
                 batch = next(tree.recursive_crawl("batch"))
@@ -168,7 +168,7 @@ class CdcCollationTests(unittest.TestCase):
                 expression = next(condition.recursive_crawl("expression"))
                 self.assertEqual(expression.raw, "@@TRANCOUNT <> 0")
                 self.assertEqual(
-                    len(list(first.recursive_crawl("raiserror_statement"))), 1
+                    len(list(first.recursive_crawl("raiserror_statement"))), 0
                 )
                 self.assertEqual(
                     len(list(first.recursive_crawl("return_segment"))), 1
@@ -177,10 +177,18 @@ class CdcCollationTests(unittest.TestCase):
                     first.raw.index("RAISERROR("), first.raw.index("RETURN;")
                 )
                 self.assertNotIn("THROW", first.raw)
+                self.assertIn(
+                    "EXEC sys.sp_executesql N'SET XACT_ABORT OFF;", first.raw
+                )
+                self.assertEqual(
+                    len(
+                        list(first.recursive_crawl("execute_script_statement"))
+                    ),
+                    1,
+                )
                 for forbidden in (
                     "set_statement",
                     "transaction_statement",
-                    "execute_script_statement",
                     "select_statement",
                     "insert_statement",
                     "update_statement",

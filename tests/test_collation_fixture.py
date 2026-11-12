@@ -407,7 +407,7 @@ class FaultInjectionContractTests(unittest.TestCase):
             Linter(dialect="tsql").parse_string(body).violations, []
         )
 
-    def test_all_five_outer_transaction_guards_have_explicit_fixture_cases(
+    def test_all_six_outer_transaction_guards_have_explicit_fixture_cases(
         self,
     ):
         runner = FIXTURE.Runner(
@@ -418,18 +418,22 @@ class FaultInjectionContractTests(unittest.TestCase):
             runner, "execute", side_effect=lambda *a, **k: calls.append(a[1])
         ):
             runner.outer_transaction_guards(DATABASE, selected())
-        self.assertEqual(len(calls), 12)
+        self.assertEqual(len(calls), 19)
         self.assertIn(
             "CREATE TABLE fixture_ctl.outer_transaction_sentinel", calls[0]
         )
-        for index, number in enumerate(
-            ("003", "004", "005", "preflight", "cdc_preflight"), 7
+        for ordinal, number in enumerate(
+            ("003", "004", "005", "preflight", "cdc_preflight", "maintenance"),
+            1,
         ):
-            self.assertIn(
-                "outer_transaction_" + number + "_preserved", calls[index]
-            )
-            self.assertIn("WHERE sentinel_id=" + str(index - 6), calls[index])
-            self.assertIn("IF ERROR_NUMBER()<>50000 THROW", calls[index])
+            for offset, option in enumerate(("ON", "OFF")):
+                body = calls[7 + (ordinal - 1) * 2 + offset]
+                self.assertIn(
+                    "outer_transaction_" + number + "_preserved", body
+                )
+                self.assertIn("WHERE sentinel_id=" + str(ordinal), body)
+                self.assertIn("IF ERROR_NUMBER()<>50000 THROW", body)
+                self.assertTrue(body.startswith("SET XACT_ABORT " + option))
 
     def test_transaction_experiment_observes_catch_before_owner_rollback(self):
         for variant in ("inline", "dynamic_raise", "full_003"):

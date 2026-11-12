@@ -3,11 +3,14 @@
 -- TargetDatabase, InstallationId (32 lower hex), OwnershipHash (SHA-256 hex).
 -- Values are supplied privately. No runtime app receives administrator auth.
 -- No existing dbo/legacy object, login, password, Swarm or deployment is changed.
--- Refuse a caller-owned transaction before any setting or THROW. RAISERROR
--- deliberately does not honor XACT_ABORT, including an inherited ON setting.
+-- Refuse a caller transaction before changing caller options or mutating.
+-- Isolate the refusal from inherited XACT_ABORT in a nested read-only batch.
 IF @@TRANCOUNT<>0
 BEGIN
-    RAISERROR('Use a dedicated DBA session without an outer transaction.',16,1);
+    -- SET is local to this nested batch; caller options restore on return.
+    EXEC sys.sp_executesql N'SET XACT_ABORT OFF;
+        RAISERROR(''Use a dedicated DBA session without an outer transaction.'',
+                  16,1);';
     RETURN;
 END;
 SET IMPLICIT_TRANSACTIONS OFF;

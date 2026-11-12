@@ -10,10 +10,13 @@
 -- Values are supplied privately. No runtime app receives administrator auth.
 -- No existing dbo/legacy object, login, password, Swarm or deployment is changed.
 -- Refuse a caller-owned transaction before changing session options.
--- RAISERROR does not honor XACT_ABORT; THROW could abort the caller's work.
+-- Only the nested refusal disables XACT_ABORT; caller options are restored.
 IF @@TRANCOUNT <> 0
 BEGIN
-    RAISERROR('Use a dedicated DBA session without an outer transaction.',16,1);
+    -- SET is local to this nested batch; caller options restore on return.
+    EXEC sys.sp_executesql N'SET XACT_ABORT OFF;
+        RAISERROR(''Use a dedicated DBA session without an outer transaction.'',
+                  16,1);';
     RETURN;
 END;
 SET NOCOUNT ON;
