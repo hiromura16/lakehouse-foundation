@@ -936,6 +936,11 @@ class Runner:
                 timeout=150,
                 check=False,
             )
+        output_text = re.sub(
+            r"\x1b\[[0-?]*[ -/]*[@-~]",
+            "",
+            completed.stdout.decode("utf-8", errors="strict"),
+        )
         if completed.returncode or len(completed.stdout) > 2 * 1024**2:
             self.failure = {
                 "case": self.case,
@@ -944,19 +949,22 @@ class Runner:
                     {
                         int(number)
                         for number in re.findall(
-                            rb"(?m)^Msg ([0-9]{1,6}),",
-                            completed.stdout[:65536],
+                            r"Msg\s+([0-9]{1,6}),",
+                            output_text[:65536],
+                        )
+                    }
+                ),
+                "known_error_numbers": sorted(
+                    {
+                        int(number)
+                        for number in re.findall(
+                            r"\b(5[12][0-9]{3})\b", output_text[:65536]
                         )
                     }
                 ),
             }
             raise FixtureError("SYNTHETIC_SQLCMD_STAGE_FAILED")
         found = []
-        output_text = re.sub(
-            r"\x1b\[[0-?]*[ -/]*[@-~]",
-            "",
-            completed.stdout.decode("utf-8", errors="strict"),
-        )
         for line in output_text.splitlines():
             line = line.lstrip("\ufeff").strip()
             # Go sqlcmd may decorate information messages. Parse only a
@@ -1658,13 +1666,13 @@ def main(argv=None):
     candidates = runner.candidate_databases
     try:
         if args.initialization:
-            runner.lifecycle("lifecycle_ci", "Latin1_General_CI_AS")
-            runner.lifecycle("lifecycle_cs", "Latin1_General_CS_AS")
             for suffix, collation in (
                 ("ci", "Latin1_General_CI_AS"),
                 ("cs", "Latin1_General_CS_AS"),
             ):
                 runner.initialization(suffix, collation)
+            runner.lifecycle("lifecycle_ci", "Latin1_General_CI_AS")
+            runner.lifecycle("lifecycle_cs", "Latin1_General_CS_AS")
         else:
             runner.lifecycle("ci", "Latin1_General_CI_AS")
             runner.lifecycle("cs", "Latin1_General_CS_AS")
