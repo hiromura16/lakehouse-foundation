@@ -68,7 +68,10 @@ jobs:
           sleep 2
         done
         exit 1
+    - name: Observe unwrapped transactions and scoped guard candidate
+      run: python tests/integration/sqlserver_collation/transaction_probe.py
     - name: Execute real CDC initialization and mixed collation matrix
+      if: ${{ !cancelled() }}
       shell: bash
       env:
         PYTHONDONTWRITEBYTECODE: '1'

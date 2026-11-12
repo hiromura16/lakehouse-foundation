@@ -1106,6 +1106,10 @@ class Runner:
                 "same_principal",
                 "saved_case_different",
                 "drop_pending_one_observed",
+                "before_scan_one_observed",
+                "after_scan_one_observed",
+                "before_scan_rows",
+                "after_scan_rows",
                 "script_ordinal",
                 "outer_guard_caught",
                 "caller_transaction_count",
@@ -1139,7 +1143,16 @@ class Runner:
             ):
                 raise FixtureError("SYNTHETIC_RESULT_INVALID")
             if value["stage"] == "init_pending_drop_observation" and (
-                set(value) != {"stage", "status", "drop_pending_one_observed"}
+                set(value)
+                != {
+                    "stage",
+                    "status",
+                    "drop_pending_one_observed",
+                    "before_scan_one_observed",
+                    "after_scan_one_observed",
+                    "before_scan_rows",
+                    "after_scan_rows",
+                }
                 or value["status"] != "observed"
                 or type(value["drop_pending_one_observed"]) is not bool
             ):
@@ -1493,9 +1506,11 @@ FROM cdc.fixture_independent_v1_CT;
                 # Record a blocking coverage gap; never edit a system table.
                 observations = self.execute(
                     database,
-                    "IF NOT EXISTS (SELECT 1 FROM cdc.change_tables "
-                    "WHERE has_drop_pending=1)\n"
-                    " EXEC sys.sp_cdc_scan @maxtrans=500,@maxscans=10,"
+                    "DECLARE @BeforeRows int=(SELECT COUNT(*) FROM "
+                    "cdc.change_tables),@BeforePending bit=CASE WHEN EXISTS "
+                    "(SELECT 1 FROM cdc.change_tables WHERE "
+                    "has_drop_pending=1) THEN 1 ELSE 0 END;\n"
+                    "EXEC sys.sp_cdc_scan @maxtrans=500,@maxscans=10,"
                     "@continuous=0;\n"
                     "DECLARE @PendingObserved bit=CASE WHEN EXISTS "
                     "(SELECT 1 FROM cdc.change_tables "
@@ -1503,12 +1518,20 @@ FROM cdc.fixture_independent_v1_CT;
                     "THEN 1 ELSE 0 END;\n"
                     "DECLARE @PendingReceipt nvarchar(4000)=(SELECT "
                     "N'init_pending_drop_observation' AS stage,"
-                    "N'observed' AS status,@PendingObserved "
+                    "N'observed' AS status,@BeforePending "
+                    "AS before_scan_one_observed,@PendingObserved "
+                    "AS after_scan_one_observed,@BeforeRows "
+                    "AS before_scan_rows,(SELECT COUNT(*) FROM "
+                    "cdc.change_tables) AS after_scan_rows,"
+                    "CONVERT(bit,CASE WHEN @BeforePending=1 OR "
+                    "@PendingObserved=1 THEN 1 ELSE 0 END) "
                     "AS drop_pending_one_observed "
                     "FOR JSON PATH,WITHOUT_ARRAY_WRAPPER);\n"
                     "PRINT N'" + PREFIX + "'+@PendingReceipt;\n",
                 )
-                if observations[0]["drop_pending_one_observed"]:
+                # The pre-scan guards above already exercised a pending row
+                # observed before scanning. Recheck only if it survives scan.
+                if observations[0]["after_scan_one_observed"]:
                     self.execute(database, initialization_unchanged(failure))
                     self.execute(
                         database, initialization_unchanged(disabled_failure)

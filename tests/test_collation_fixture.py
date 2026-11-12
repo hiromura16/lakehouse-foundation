@@ -31,6 +31,11 @@ SPEC = importlib.util.spec_from_file_location(
 )
 FIXTURE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(FIXTURE)
+PROBE_SPEC = importlib.util.spec_from_file_location(
+    "transaction_probe", FIXTURE.HERE / "transaction_probe.py"
+)
+PROBE = importlib.util.module_from_spec(PROBE_SPEC)
+PROBE_SPEC.loader.exec_module(PROBE)
 NONCE = "a" * 32
 DATABASE = "lh_collation_" + NONCE[:16] + "_ci"
 VERSION = "b" * 40
@@ -51,6 +56,31 @@ def output_with_terminal(text):
 
 class FixtureConsentTests(unittest.TestCase):
     """A repository test can never contact a DB without explicit opt-in."""
+
+    def test_minimal_probe_has_no_fixture_wrapper_or_permanent_writes(self):
+        for variant in ("inline", "dynamic", "scoped"):
+            for option in ("ON", "OFF"):
+                for insert in (False, True):
+                    body = PROBE.source(variant, option, insert)
+                    self.assertNotIn("fixture_ctl", body)
+                    self.assertNotIn("LakehouseCollationFixtureOwner", body)
+                    self.assertEqual("INSERT #sentinel" in body, insert)
+                    self.assertEqual("CREATE TABLE #sentinel" in body, insert)
+                    self.assertEqual(
+                        Linter(dialect="tsql").parse_string(body).violations,
+                        [],
+                    )
+                    self.assertLess(
+                        body.index("@Xact=XACT_STATE()"),
+                        body.index("ROLLBACK TRANSACTION"),
+                    )
+
+    def test_minimal_probe_requires_ci_before_opening_a_connection(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with mock.patch.object(PROBE, "execute") as execute:
+                with self.assertRaisesRegex(RuntimeError, "DISPOSABLE_CI"):
+                    PROBE.main()
+                execute.assert_not_called()
 
     def test_default_plan_has_no_subprocess_or_password_prompt(self):
         output = io.StringIO()
