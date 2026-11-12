@@ -79,6 +79,9 @@ class ServiceCard(BaseModel):
     configured: bool
     state: Literal["not_enabled", "unconfigured", "available", "unreachable"]
     url: str
+    # 古いAPI payloadもlocalリンクとして読み取れる互換default。
+    link_mode: Literal["local", "public"] = "local"
+    link_configured: bool = True
     description: str
     missing_settings: list[str]
 

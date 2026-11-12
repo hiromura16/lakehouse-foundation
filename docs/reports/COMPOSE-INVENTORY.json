@@ -64,7 +64,7 @@
   "compose_sha256": {
     "infra/cdc/compose.yaml": "932ac1db779f55e575d2127699e76389a9b14ebfd1c9de3d67dbe771c4b357c5",
     "infra/compute/compose.yaml": "6eed40242d839056f812b22e8e277d51c8cd074cf75afb05f3303c5443fda163",
-    "infra/demo/compose.yaml": "773458b2f143ad0f4185a85c82dee7e728a498ad9f7593756e24b9f2ebf541cd",
+    "infra/demo/compose.yaml": "6996e5615f983bcff7240f5b303ecade41bee58149e4ff8cf4ac6189e0b4d2cc",
     "infra/lakehouse/compose.yaml": "6402275c945d193057fc3f49b283ac4b34a0b97d5d29f3beee221b1df2e38e9d",
     "infra/mcp/compose.yaml": "5cf687b6a1ccc474460ea0d79a8bb622ad102e0cf2457443002279b85d4bc15e",
     "infra/openobserve/compose.yaml": "2519b278586fee6c341585536a226c79aadf290035c4ccfd3ef56a640e556124",

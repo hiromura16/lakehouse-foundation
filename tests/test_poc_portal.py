@@ -120,6 +120,31 @@ class PortalApiTests(unittest.TestCase):
         self.probe.assert_not_called()
         self.reader.assert_not_called()
 
+    def test_onboarding_routes_share_auth_without_runtime_clients(self):
+        """Exercise the complete application integration, not just a router."""
+        self.assertEqual(
+            self.client.get("/onboarding/example").status_code, 401
+        )
+        example = self.get("/onboarding/example")
+        self.assertEqual(example.status_code, 200)
+        self.assertEqual(len(example.json()["discovery"]["tables"]), 6)
+        self.assertFalse(example.json()["database_checked"])
+        capabilities = self.get("/capabilities").json()["capabilities"]
+        onboarding = [
+            item
+            for item in capabilities
+            if item["id"].startswith("onboarding_")
+        ]
+        self.assertEqual(len(onboarding), 5)
+        self.assertTrue(all(item["access"] == "read" for item in onboarding))
+        self.assertIn(
+            "/onboarding/plan",
+            self.client.get("/openapi.json").json()["paths"],
+        )
+        self.probe.assert_not_called()
+        self.reader.assert_not_called()
+        self.network.assert_not_called()
+
     def test_mcp_settings_use_exact_public_names_and_mask_the_api_token(self):
         response = self.get("/settings")
         original = self.app.state.store.read()["MCP_API_TOKEN"]

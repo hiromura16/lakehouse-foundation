@@ -4,6 +4,7 @@ import json
 
 import streamlit as st
 from client import request
+from onboarding_ui import render_onboarding
 from poc_ui import (
     render_data,
     render_help,
@@ -528,8 +529,33 @@ def render_settings():
         "N8N_SSRF_BLOCKED_HOSTNAMES": "拒否するホスト名",
         "N8N_SSRF_DNS_CACHE_MAX_SIZE": "SSRF検査のDNSキャッシュ上限",
     }
+    public_services = {
+        "DEMO_GUI_PUBLIC_URL": "PoCポータル",
+        "OPENOBSERVE_PUBLIC_URL": "OpenObserve Logs Lab",
+        "DEMO_API_PUBLIC_URL": "操作API / Swagger",
+        "MCP_PUBLIC_URL": "MCP / AIクライアント",
+        "TRINO_PUBLIC_URL": "Trino",
+        "CATALOG_PUBLIC_URL": "Lakekeeper",
+        "SPARK_MASTER_UI_PUBLIC_URL": "Spark Master",
+        "SPARK_WORKER_UI_PUBLIC_URL": "Spark Worker",
+        "SPARK_HISTORY_UI_PUBLIC_URL": "Spark History",
+        "N8N_PUBLIC_URL": "n8n",
+        "GRAFANA_PUBLIC_URL": "Grafana",
+        "PROMETHEUS_PUBLIC_URL": "Prometheus",
+        "AIRFLOW_PUBLIC_URL": "Airflow",
+        "CDC_UI_PUBLIC_URL": "Kafka / Kafbat",
+        "SUPERSET_PUBLIC_URL": "Superset",
+        "JUPYTER_PUBLIC_URL": "JupyterLab",
+        "QDRANT_PUBLIC_URL": "Qdrant",
+        "MARQUEZ_UI_PUBLIC_URL": "Marquez",
+    }
+    link_modes = {
+        "local": "このPC・SSH転送（localhost）",
+        "public": "外部公開URL（HTTPS）",
+    }
     groups = {
         "基本": [],
+        "外部アクセス": [],
         "SQL接続": [],
         "プロキシ": [],
         "接続制限（SSRF）": [],
@@ -545,6 +571,10 @@ def render_settings():
     for key in values:
         if key in basic:
             group = "基本"
+        elif key in {"PORTAL_LINK_MODE", "PORTAL_UI_MODE"} or key.endswith(
+            "_PUBLIC_URL"
+        ):
+            group = "外部アクセス"
         elif key.startswith(("SOURCE_SQLSERVER_", "DEMO_SQLSERVER_")):
             group = "SQL接続"
         elif key.upper().endswith("PROXY"):
@@ -557,6 +587,21 @@ def render_settings():
     with st.form("private-settings"):
         for group, keys in groups.items():
             with st.expander(group, expanded=group == "基本"):
+                if group == "外部アクセス":
+                    st.caption(
+                        "外部から利用する場合は外部公開URLを選び、使うサービスの"
+                        "HTTPSホスト名だけを設定します。例: "
+                        "https://service.example.invalid"
+                    )
+                    st.caption(
+                        "/docs・/ui/等はサービスに応じて自動で付きます。"
+                        "末尾の/以外のパス、認証情報、queryは入れません。"
+                    )
+                    st.caption(
+                        "リンク先を保存する設定です。Tunnel・Accessのルートや"
+                        "製品の外部URL・ログイン設定を自動作成しません。"
+                        "保存後は配置側へ反映し、各画面も別途確認します。"
+                    )
                 if group == "接続制限（SSRF）":
                     st.caption(
                         "NO_PROXYはproxyを迂回する宛先、SSRFは接続の許可制御です。"
@@ -564,9 +609,42 @@ def render_settings():
                     )
                 for key in keys:
                     value = str(values[key])
-                    entered = st.text_input(
-                        labels.get(key, key), value=value, help=key
-                    )
+                    if key == "PORTAL_UI_MODE":
+                        ui_modes = {
+                            "streamlit": "従来の検証画面（Streamlit）",
+                            "react": "新しいワークスペース（React）",
+                        }
+                        entered = st.selectbox(
+                            "ポータルの画面",
+                            list(ui_modes),
+                            index=list(ui_modes).index(value),
+                            format_func=ui_modes.get,
+                            help="保存後に配置側から反映します。",
+                        )
+                    elif key == "PORTAL_LINK_MODE":
+                        entered = st.selectbox(
+                            "サービスを開く場所",
+                            list(link_modes),
+                            index=list(link_modes).index(value),
+                            format_func=link_modes.get,
+                            key="settings-portal-link-mode",
+                            help="PORTAL_LINK_MODE。未設定の外部URLは開けません。",
+                        )
+                    elif key.endswith("_PUBLIC_URL"):
+                        service_name = public_services.get(key, key)
+                        entered = st.text_input(
+                            service_name + "の公開URL（HTTPSホスト名のみ）",
+                            value=value,
+                            key="settings-public-url-" + key,
+                            help=(
+                                key + "。例: https://service.example.invalid。"
+                                "各製品の画面パスは自動で付加します。"
+                            ),
+                        )
+                    else:
+                        entered = st.text_input(
+                            labels.get(key, key), value=value, help=key
+                        )
                     if entered != value:
                         changes[key] = entered
         with st.expander("資格情報を更新する（空欄は保持）"):
@@ -694,6 +772,7 @@ def render_ai_context():
     history_tab,
     help_tab,
     ai_tab,
+    onboarding_tab,
 ) = st.tabs(
     [
         "入口",
@@ -706,6 +785,7 @@ def render_ai_context():
         "履歴",
         "ヘルプ",
         "AIの準備",
+        "ソース登録の下書き",
     ]
 )
 with portal_tab:
@@ -736,6 +816,8 @@ with status_tab:
     render_sql_observations(call_api)
 with ai_tab:
     render_ai_context()
+with onboarding_tab:
+    render_onboarding(call_api)
 
 # One shared progress area prevents duplicate polling widgets across tabs.
 render_job()

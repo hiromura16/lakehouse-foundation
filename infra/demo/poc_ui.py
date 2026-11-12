@@ -14,11 +14,11 @@ STATE_LABELS = {
 
 
 def render_portal(call_api):
-    """Separate service configuration from observed reachability."""
+    """Separate internal health from configured browser entry points."""
     st.subheader("PoCで使うサービス")
     st.caption(
-        "入口は適用済み設定から表示します。別端末のlocalhostはその端末自身です。"
-        "会社標準のSSHポート転送や限定入口を使ってください。"
+        "状態はサービス間の内部health、開くリンクは適用済み設定で決まります。"
+        "外部URLを設定しても、Tunnel・Access・各製品の認証は別に必要です。"
     )
     result = call_api("/services")
     if result is None:
@@ -32,20 +32,45 @@ def render_portal(call_api):
         with columns[index % 3]:
             with st.container(border=True):
                 st.markdown("**" + service["title"] + "**")
-                st.write(STATE_LABELS[service["state"]])
+                st.write("内部状態: " + STATE_LABELS[service["state"]])
                 st.caption(service["description"])
                 profiles = service.get("profiles") or [service["profile"]]
                 st.caption("profile: " + (" または ".join(profiles) or "core"))
                 missing = service.get("missing_settings", [])
                 if missing:
                     st.caption("確認する設定: " + ", ".join(missing))
+                # Older APIs and test fixtures have no link fields. Their
+                # existing local URL remains compatible; a public response
+                # with a missing origin must never fall back to localhost.
+                link_mode = service.get("link_mode", "local")
+                link_configured = service.get("link_configured", True)
+                url = service.get("url", "")
+                if link_mode == "public":
+                    st.caption("開く場所: 外部公開URL（HTTPS）")
+                    if not link_configured or not url:
+                        st.caption("外部URL未設定")
+                else:
+                    st.caption("開く場所: このPC・SSH転送")
                 if service["id"] == "mcp":
-                    st.code(service["url"], language="text")
-                    st.caption("このURLをAIクライアントの接続先に設定します。")
+                    if link_configured and url:
+                        st.code(url, language="text")
+                        st.caption(
+                            "このURLをAIクライアントの接続先に設定します。"
+                        )
+                    else:
+                        st.caption("接続先URLを設定してからコピーします。")
+                elif not link_configured or not url:
+                    # An inert button has no href at all. It avoids creating
+                    # an empty/relative URL or a misleading localhost link.
+                    st.button(
+                        service["title"] + "を開く",
+                        disabled=True,
+                        key="portal-link-unconfigured-" + service["id"],
+                    )
                 else:
                     st.link_button(
                         service["title"] + "を開く",
-                        service["url"],
+                        url,
                         disabled=not service["enabled"]
                         or not service["configured"],
                     )
