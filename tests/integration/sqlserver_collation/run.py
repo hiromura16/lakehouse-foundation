@@ -932,7 +932,7 @@ class Runner:
                 ],
                 env=environment,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
+                stderr=subprocess.STDOUT,
                 timeout=150,
                 check=False,
             )
@@ -955,7 +955,7 @@ class Runner:
         for line in completed.stdout.decode(
             "utf-8", errors="strict"
         ).splitlines():
-            line = line.strip()
+            line = line.lstrip("\ufeff").strip()
             if not line.startswith(PREFIX):
                 continue
             prefix_length = len(PREFIX)
@@ -1663,12 +1663,20 @@ def main(argv=None):
                 runner.checker_identity(case)
         if source_hashes() != initial_hashes:
             raise FixtureError("PUBLIC_FIXTURE_INPUTS_CHANGED")
-    except (FixtureError, OSError, ValueError, subprocess.SubprocessError):
+    except (
+        FixtureError,
+        OSError,
+        ValueError,
+        subprocess.SubprocessError,
+    ) as error:
         print(
             json.dumps(
                 {
                     "schema_version": 1,
                     "status": "failed_or_partial",
+                    "code": str(error)
+                    if isinstance(error, FixtureError)
+                    else "FIXTURE_STAGE_UNAVAILABLE",
                     "confirmed_databases_created": runner.databases_created,
                     "candidate_synthetic_databases": candidates,
                     "fixture_owner_sha256": hashlib.sha256(

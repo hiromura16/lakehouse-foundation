@@ -57,7 +57,7 @@ jobs:
           --publish 127.0.0.1:14333:1433 \
           --env ACCEPT_EULA=Y --env MSSQL_PID=Developer \
           --env MSSQL_AGENT_ENABLED=true --env MSSQL_SA_PASSWORD \
-          mcr.microsoft.com/mssql/server:2022-latest
+          mcr.microsoft.com/mssql/server:2022-latest@sha256:11927f5edc5122658e90b3a80ee36e8aef779310bf771415c1d89271859c73fd
         docker inspect --format '{{.Image}}' sql-cdc-fixture
         for attempt in {1..60}; do
           if SQLCMDPASSWORD="$fixture_password" sqlcmd \
