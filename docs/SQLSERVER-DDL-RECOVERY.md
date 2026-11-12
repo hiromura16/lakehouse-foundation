@@ -24,7 +24,7 @@ catalog側の文字列列と、table variable側の文字列列が異なるcolla
 | --- | --- |
 | 003 | `@AllowedGrants.role_name`とprincipal名、permission名同士を両辺`Latin1_General_100_BIN2`。private principalのcase aliasとfixed roleのcase aliasも拒否 |
 | 004/005 | capture名のJOIN/EXISTS/scalar比較、schema/table/index/column/role名、双方向EXCEPTの文字列投影を両辺BIN2。CDC手続きの名前付き引数は比較式ではなく元の変数代入を維持 |
-| 006 | numeric ID JOIN、catalog列＋固定Unicode literal、既存の両辺BIN2のinstallation比較を監査。同型の異種列比較はなく、SQL本体は変更しない |
+| 006 | 読取り専用のまま、固定captureのNULL/0・source tracked flagと共有jobの診断を追加。固定名は明示BIN2で照合 |
 | checker v1 | catalog＋固定literalのみ。canonical SQL、003内の埋込定義、runtimeの完全一致契約を変更しない |
 
 binary比較だけへ置き換えてcase aliasを検索対象から消さないよう、CDCの衝突発見ではcatalog解決のobject IDも使用します。同名captureが別sourceに存在する場合も作成前に停止します。ASCII固定名の`UPPER`/BIN2比較はcase aliasを拒否する事前検出にだけ使い、再利用・adoptionや変更対象の一致はBIN2完全一致だけです。許可表やEXCEPTではcaseを含む固定の比較意味を維持し、`DATABASE_DEFAULT`へ環境依存で寄せません。Unicodeの`N'...'`は維持します。

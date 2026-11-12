@@ -909,7 +909,7 @@ class Runner:
                 path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600
             )
             with os.fdopen(descriptor, "w", encoding="utf-8") as target:
-                target.write(source)
+                target.write(source + "\nGO\n")
             completed = subprocess.run(
                 [
                     self.sqlcmd,
@@ -952,14 +952,19 @@ class Runner:
             }
             raise FixtureError("SYNTHETIC_SQLCMD_STAGE_FAILED")
         found = []
-        for line in completed.stdout.decode(
-            "utf-8", errors="strict"
-        ).splitlines():
+        output_text = re.sub(
+            r"\x1b\[[0-?]*[ -/]*[@-~]",
+            "",
+            completed.stdout.decode("utf-8", errors="strict"),
+        )
+        for line in output_text.splitlines():
             line = line.lstrip("\ufeff").strip()
-            if not line.startswith(PREFIX):
+            # Go sqlcmd may decorate information messages. Parse only a
+            # complete bounded receipt; never forward its surrounding output.
+            position = line.find(PREFIX)
+            if position < 0:
                 continue
-            prefix_length = len(PREFIX)
-            value = json.loads(line[prefix_length:])
+            value = json.loads(line[position + len(PREFIX) :])
             if (
                 not isinstance(value, dict)
                 or value.get("stage") not in FIXED_STAGES
@@ -1003,6 +1008,12 @@ class Runner:
             value["case"] = self.case
             found.append(value)
         if not found:
+            self.failure = {
+                "case": self.case,
+                "batch_sha256": hashlib.sha256(source.encode()).hexdigest(),
+                "output_bytes": len(completed.stdout),
+                "prefix_count": output_text.count(PREFIX),
+            }
             raise FixtureError("SYNTHETIC_STAGE_EVIDENCE_MISSING")
         self.records.extend(found)
         return found

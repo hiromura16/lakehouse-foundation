@@ -542,6 +542,22 @@ class SqlcmdBoundaryTests(unittest.TestCase):
             VERSION,
         )
 
+    def test_client_decorations_do_not_hide_bounded_receipts(self):
+        receipt = FIXTURE.PREFIX + json.dumps(
+            {"stage": "fresh_database_created", "status": "passed"}
+        )
+        for output in (
+            receipt,
+            "mssql: " + receipt,
+            "\x1b[33m" + receipt + "\x1b[0m",
+        ):
+            completed = subprocess.CompletedProcess([], 0, output.encode())
+            with mock.patch.object(
+                FIXTURE.subprocess, "run", return_value=completed
+            ):
+                result = self.runner().execute(DATABASE, "SELECT 1;")
+                self.assertEqual(result[0]["stage"], "fresh_database_created")
+
     def test_password_is_only_in_child_env_input_is_private_and_removed(self):
         runner = self.runner()
         seen = []
