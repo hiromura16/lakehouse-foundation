@@ -863,37 +863,39 @@ def initialization_unchanged(source, *, retained_only=False):
 
 def stop_fixture_jobs():
     """Freeze only this fresh database's jobs for history/LSN comparisons."""
-    sql = ""
+    sql = """DECLARE @StopDeadline datetime2=
+ DATEADD(second,30,SYSUTCDATETIME()),
+ @QuietDeadline datetime2=DATEADD(second,2,SYSUTCDATETIME());
+WHILE SYSUTCDATETIME()<@QuietDeadline
+BEGIN
+ IF SYSUTCDATETIME()>@StopDeadline
+  THROW 51995, 'Synthetic CDC jobs did not stop.', 1;
+"""
     for job_type in ("capture", "cleanup"):
         sql += (
-            """IF EXISTS (SELECT 1 FROM msdb.dbo.sysjobactivity a
+            """ IF EXISTS (SELECT 1 FROM msdb.dbo.sysjobactivity a
  JOIN msdb.dbo.cdc_jobs j ON a.job_id=j.job_id
  WHERE j.database_id=DB_ID() AND j.job_type=N'"""
             + job_type
             + """'
- AND a.start_execution_date IS NOT NULL AND a.stop_execution_date IS NULL
+ AND a.run_requested_date IS NOT NULL AND a.stop_execution_date IS NULL
  AND a.session_id=(SELECT MAX(session_id) FROM msdb.dbo.syssessions))
- EXEC sys.sp_cdc_stop_job @job_type=N'"""
+ BEGIN
+  SET @QuietDeadline=DATEADD(second,2,SYSUTCDATETIME());
+  BEGIN TRY
+   EXEC sys.sp_cdc_stop_job @job_type=N'"""
             + job_type
             + """';
+  END TRY
+  BEGIN CATCH
+   -- A queued job can finish or start between observation and stop. Retry
+   -- only SQL Agent's not-running race; every other error still fails.
+   IF ERROR_NUMBER()<>22022 THROW;
+  END CATCH;
+ END;
 """
         )
-    sql = (
-        sql
-        + """DECLARE @StopDeadline datetime2=
- DATEADD(second,30,SYSUTCDATETIME());
-WHILE EXISTS (SELECT 1 FROM msdb.dbo.sysjobactivity a
- JOIN msdb.dbo.cdc_jobs j ON a.job_id=j.job_id
- WHERE j.database_id=DB_ID() AND a.start_execution_date IS NOT NULL
- AND a.stop_execution_date IS NULL
- AND a.session_id=(SELECT MAX(session_id) FROM msdb.dbo.syssessions))
-BEGIN
- IF SYSUTCDATETIME()>@StopDeadline
-  THROW 51995, 'Synthetic CDC jobs did not stop.', 1;
- WAITFOR DELAY '00:00:00.200';
-END;
-"""
-    )
+    sql += " WAITFOR DELAY '00:00:00.200';\nEND;\n"
     return (
         "IF OBJECT_ID(N'msdb.dbo.cdc_jobs',N'U') IS NOT NULL\n"
         " EXEC sys.sp_executesql " + literal(sql) + ";\n"
@@ -1372,6 +1374,10 @@ IF NOT EXISTS (SELECT 1 FROM cdc.change_tables
  THROW 51995, 'Independent capture metadata changed.', 1;
 """
                     + record("init_state_preserved"),
+                )
+                self.execute(
+                    database,
+                    stop_fixture_jobs() + record("init_prepared"),
                 )
                 # Real change rows and a non-NULL start LSN must survive an
                 # exact rerun, using supported scanning while jobs are stopped.
