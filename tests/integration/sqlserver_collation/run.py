@@ -51,6 +51,7 @@ FIXED_STAGES = (
         "batch_completed",
         "init_pending_drop_observation",
         "outer_transaction_observation",
+        "transaction_doom_experiment",
         "init_disable_retry_passed",
         "fresh_database_created",
         "ddl_001_passed",
@@ -63,6 +64,7 @@ FIXED_STAGES = (
         "outer_transaction_004_preserved",
         "outer_transaction_005_preserved",
         "outer_transaction_preflight_preserved",
+        "outer_transaction_cdc_preflight_preserved",
         "before_explicit_rollback",
         "after_explicit_rollback",
         "ddl_003_retry_passed",
@@ -433,7 +435,8 @@ def outer_transaction_probe(source, stage, ordinal):
         "outer_transaction_004_preserved",
         "outer_transaction_005_preserved",
         "outer_transaction_preflight_preserved",
-    } or ordinal not in range(1, 5):
+        "outer_transaction_cdc_preflight_preserved",
+    } or ordinal not in range(1, 6):
         raise FixtureError("FIXED_OUTER_TRANSACTION_STAGE_REQUIRED")
     return f"""SET XACT_ABORT ON;
 BEGIN TRANSACTION;
@@ -500,6 +503,52 @@ IF EXISTS (SELECT 1 FROM fixture_ctl.outer_transaction_sentinel
            WHERE sentinel_id={ordinal})
     THROW 51987, 'The fixture sentinel was not discarded by its owner.', 1;
 """ + record(stage, ',"expected_error":50000')
+
+
+def transaction_doom_experiment(source, variant, xact_abort):
+    """Observe six isolated synthetic transactions without relaxing assertions.
+
+    Capture error context and transaction health as the first CATCH statement.
+    This is diagnostic evidence only; the caller-health probes still require 1.
+    """
+    if variant not in {"inline", "dynamic_raise", "full_003"}:
+        raise FixtureError("FIXED_TRANSACTION_EXPERIMENT_REQUIRED")
+    if xact_abort not in {"ON", "OFF"}:
+        raise FixtureError("FIXED_TRANSACTION_OPTION_REQUIRED")
+    statement = "RAISERROR('Synthetic transaction probe.',16,1);"
+    if variant == "dynamic_raise":
+        statement = "EXEC sys.sp_executesql " + literal(statement) + ";"
+    elif variant == "full_003":
+        statement = "EXEC sys.sp_executesql " + literal(source) + ";"
+    variants = ("inline", "dynamic_raise", "full_003")
+    variant_ordinal = variants.index(variant) + 1
+    return f"""SET XACT_ABORT {xact_abort};
+BEGIN TRANSACTION;
+INSERT fixture_ctl.outer_transaction_sentinel (sentinel_id) VALUES (100);
+DECLARE @ErrorNumber int,@ErrorState int,@ErrorLine int,@CaughtState int,
+ @CaughtCount int;
+BEGIN TRY
+    {statement}
+END TRY
+BEGIN CATCH
+    SELECT @ErrorNumber=ERROR_NUMBER(),@ErrorState=ERROR_STATE(),
+        @ErrorLine=ERROR_LINE(),@CaughtState=XACT_STATE(),
+        @CaughtCount=@@TRANCOUNT;
+END CATCH;
+-- Only discard the synthetic transaction started above, after observation.
+IF XACT_STATE()<>0 ROLLBACK TRANSACTION;
+DECLARE @Observation nvarchar(4000)=(SELECT
+ N'transaction_doom_experiment' AS stage,N'observed' AS status,
+ {variant_ordinal} AS variant_ordinal,
+ {int(xact_abort == "ON")} AS xact_abort_enabled,
+ @ErrorNumber AS error_number,@ErrorState AS error_state,
+ @ErrorLine AS error_line,@CaughtState AS catch_transaction_state,
+ @CaughtCount AS catch_transaction_count,50000 AS expected_error
+ FOR JSON PATH,INCLUDE_NULL_VALUES,WITHOUT_ARRAY_WRAPPER);
+PRINT N'{PREFIX}'+@Observation;
+IF @ErrorNumber IS NULL OR @ErrorNumber<>50000
+ THROW 51986, 'Transaction experiment did not catch its expected guard.', 1;
+"""
 
 
 def assert_fixed_captures(count):
@@ -1062,6 +1111,13 @@ class Runner:
                 "caller_transaction_count",
                 "option_difference",
                 "sentinel_present",
+                "variant_ordinal",
+                "xact_abort_enabled",
+                "error_number",
+                "error_state",
+                "error_line",
+                "catch_transaction_state",
+                "catch_transaction_count",
             }
             if set(value) - allowed or any(
                 type(v) not in {int, bool} or not -1 <= int(v) <= 1000000
@@ -1596,7 +1652,7 @@ IF EXISTS (SELECT * FROM fixture_ctl.independent_saved
         )
 
     def outer_transaction_guards(self, database, selected):
-        """Reject four child scripts without harming the caller transaction."""
+        """Observe doom separately, then require five safe guard rejections."""
         setup = """IF OBJECT_ID(
  N'fixture_ctl.outer_transaction_sentinel',N'U') IS NOT NULL
  THROW 51987, 'Refuse to adopt an existing fixture sentinel.', 1;
@@ -1605,8 +1661,26 @@ CREATE TABLE fixture_ctl.outer_transaction_sentinel (
 """
         self.execute(database, setup + record("outer_sentinel_prepared"))
         failures = []
+        for variant in ("inline", "dynamic_raise", "full_003"):
+            for xact_abort in ("ON", "OFF"):
+                try:
+                    self.execute(
+                        database,
+                        transaction_doom_experiment(
+                            render("003", selected), variant, xact_abort
+                        ),
+                    )
+                except FixtureError as error:
+                    failures.append(
+                        {
+                            "experiment": variant,
+                            "xact_abort": xact_abort,
+                            "code": str(error),
+                            "failure": self.failure,
+                        }
+                    )
         for ordinal, number in enumerate(
-            ("003", "004", "005", "preflight"), 1
+            ("003", "004", "005", "preflight", "cdc_preflight"), 1
         ):
             stage = "outer_transaction_" + number + "_preserved"
             try:
@@ -1838,7 +1912,13 @@ def plan():
             "forced column mismatch, not measured catalog"
         ),
         "checker_cases": list(CHECKER_CASES),
-        "outer_transaction_cases": ["003", "004", "005", "preflight"],
+        "outer_transaction_cases": [
+            "003",
+            "004",
+            "005",
+            "preflight",
+            "cdc_preflight",
+        ],
         "role_alias_cases": (
             "supported CDC creation in fresh CI/CS databases; read back saved "
             "spelling/principal IDs; canonicalization is a coverage gap"

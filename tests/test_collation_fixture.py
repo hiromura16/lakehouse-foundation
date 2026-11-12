@@ -377,7 +377,7 @@ class FaultInjectionContractTests(unittest.TestCase):
             Linter(dialect="tsql").parse_string(body).violations, []
         )
 
-    def test_all_four_outer_transaction_guards_have_explicit_fixture_cases(
+    def test_all_five_outer_transaction_guards_have_explicit_fixture_cases(
         self,
     ):
         runner = FIXTURE.Runner(
@@ -388,16 +388,55 @@ class FaultInjectionContractTests(unittest.TestCase):
             runner, "execute", side_effect=lambda *a, **k: calls.append(a[1])
         ):
             runner.outer_transaction_guards(DATABASE, selected())
-        self.assertEqual(len(calls), 5)
+        self.assertEqual(len(calls), 12)
         self.assertIn(
             "CREATE TABLE fixture_ctl.outer_transaction_sentinel", calls[0]
         )
-        for index, number in enumerate(("003", "004", "005", "preflight"), 1):
+        for index, number in enumerate(
+            ("003", "004", "005", "preflight", "cdc_preflight"), 7
+        ):
             self.assertIn(
                 "outer_transaction_" + number + "_preserved", calls[index]
             )
-            self.assertIn("WHERE sentinel_id=" + str(index), calls[index])
+            self.assertIn("WHERE sentinel_id=" + str(index - 6), calls[index])
             self.assertIn("IF ERROR_NUMBER()<>50000 THROW", calls[index])
+
+    def test_transaction_experiment_observes_catch_before_owner_rollback(self):
+        for variant in ("inline", "dynamic_raise", "full_003"):
+            for option in ("ON", "OFF"):
+                with self.subTest(variant=variant, option=option):
+                    body = FIXTURE.transaction_doom_experiment(
+                        "RAISERROR('Synthetic full source.',16,1); RETURN;",
+                        variant,
+                        option,
+                    )
+                    self.assertIn("SET XACT_ABORT " + option, body)
+                    for expression in (
+                        "ERROR_NUMBER()",
+                        "ERROR_STATE()",
+                        "ERROR_LINE()",
+                        "@CaughtState=XACT_STATE()",
+                    ):
+                        self.assertLess(
+                            body.index(expression),
+                            body.index("ROLLBACK TRANSACTION"),
+                        )
+                    self.assertNotIn("COMMIT TRANSACTION", body)
+                    self.assertEqual(
+                        Linter(dialect="tsql").parse_string(body).violations,
+                        [],
+                    )
+
+    def test_cdc_diagnostic_rejects_outer_transaction_before_options(self):
+        body = FIXTURE.SCRIPTS["cdc_preflight"].read_text()
+        guard = body.index("IF @@TRANCOUNT<>0")
+        refusal = body.index("RAISERROR(")
+        returned = body.index("RETURN;")
+        first_option = body.index("SET IMPLICIT_TRANSACTIONS OFF")
+        self.assertLess(guard, refusal)
+        self.assertLess(refusal, returned)
+        self.assertLess(returned, first_option)
+        self.assertLess(first_option, body.index("BEGIN TRANSACTION"))
 
 
 class RoleAliasFixtureTests(unittest.TestCase):

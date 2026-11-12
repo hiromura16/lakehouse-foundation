@@ -276,7 +276,9 @@ def create_demo(values, output, trust_local_test=False):
         cursor.execute(
             "IF EXISTS (SELECT 1 FROM cdc.change_tables ct "
             "LEFT JOIN sys.tables src ON src.object_id=ct.source_object_id "
+            "LEFT JOIN sys.tables changed ON changed.object_id=ct.object_id "
             "WHERE src.object_id IS NULL OR src.is_tracked_by_cdc<>1 "
+            "OR changed.object_id IS NULL "
             "OR (ct.has_drop_pending IS NOT NULL "
             "AND ct.has_drop_pending<>0)) "
             "THROW 51130, 'Review synthetic CDC source health.', 1; "

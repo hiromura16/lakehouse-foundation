@@ -4,6 +4,13 @@
 -- TargetDatabase, InstallationId (32 lower hex), OwnershipHash (SHA-256 hex).
 -- Values are supplied privately. No runtime app receives administrator auth.
 -- No existing dbo/legacy object, login, password, Swarm or deployment is changed.
+-- Reject an inherited transaction before changing options or starting our own.
+IF @@TRANCOUNT<>0
+BEGIN
+    RAISERROR('Use a dedicated DBA session without an outer transaction.',16,1);
+    RETURN;
+END;
+SET IMPLICIT_TRANSACTIONS OFF;
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 DECLARE @ExpectedDatabase nvarchar(4000) = N'$(TargetDatabase)';

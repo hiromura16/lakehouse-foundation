@@ -99,9 +99,11 @@ IF OBJECT_ID(N'cdc.change_tables',N'U') IS NOT NULL
         ct.has_drop_pending,src.is_tracked_by_cdc,
         CASE WHEN src.object_id IS NOT NULL AND src.is_tracked_by_cdc=1
             AND (ct.has_drop_pending IS NULL OR ct.has_drop_pending=0)
+            AND changed.object_id IS NOT NULL
             THEN N''healthy'' ELSE N''review_required'' END AS capture_health
     FROM cdc.change_tables ct
     LEFT JOIN sys.tables src ON src.object_id=ct.source_object_id
+    LEFT JOIN sys.tables changed ON changed.object_id=ct.object_id
     WHERE ct.capture_instance COLLATE Latin1_General_100_BIN2 IN (
         N''lh_demo_erp_products_v1'',N''lh_demo_erp_work_orders_v1'',
         N''lh_demo_erp_sales_orders_v1'',N''lh_demo_erp_shipments_v1'',
@@ -113,8 +115,8 @@ IF EXISTS (SELECT 1 FROM sys.databases
     WHERE database_id=DB_ID() AND is_cdc_enabled=1)
     AND OBJECT_ID(N'msdb.dbo.cdc_jobs',N'U') IS NOT NULL
     EXEC sys.sp_cdc_help_jobs;
--- Only IDs/status/counts are selected. Do not print credentials, raw business
--- data or ownership hashes. DBA checks legacy assets independently in private.
+-- Only metadata/status/counts and shared job settings are selected. Keep
+-- output private; never publish database/job names, business data or hashes.
 SELECT N'fixed_demo_runs' AS check_name, run_id,status,record_count,completed_at
 FROM [lh_demo_ctl].[demo_runs] ORDER BY started_at DESC;
 SELECT N'fixed_demo_watermarks' AS check_name, source_table,last_watermark,

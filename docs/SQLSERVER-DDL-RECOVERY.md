@@ -37,6 +37,8 @@ Microsoftの[collation precedence](https://learn.microsoft.com/en-us/sql/t-sql/s
 
 003と独立診断、004/005は最初に外側transactionを検出し、`XACT_ABORT`を変更せず`RAISERROR`＋`RETURN`で拒否します。`THROW`は継承された`XACT_ABORT ON`を尊重するため、この入口では使いません。[RAISERRORの仕様](https://learn.microsoft.com/en-us/sql/t-sql/language-elements/raiserror-transact-sql?view=sql-server-ver16)に基づく措置です。clientが接続を閉じる場合のrollbackまで阻止する保証ではありません。003は専用sessionを要求し、捕捉できた失敗では自分のtransactionをrollbackしてから、checkerの事前有無・今回作成したか・失敗後の有無とfixed role/permission数を出します。定義やprivate principal名・所有権hashは出しません。診断が失敗しても元のエラーを返します。
 
+ただし、SQL Server 2022 Developer の合成実機試験では、`sp_executesql` 経由の拒否後に呼出元の `XACT_STATE()=-1` を観測しており、呼出元 transaction の健全性は未解決の受入 blocker です。fixture は 003/004/005 と permissions/CDC の両診断を検査し、期待値 `XACT_STATE()=1` を維持します。比較用の inline RAISERROR、RAISERROR だけの `sp_executesql`、003 全体を `XACT_ABORT ON/OFF` ごとの独立した合成 transaction で実行し、CATCH の最初の文で `ERROR_NUMBER/STATE/LINE` と `XACT_STATE` を記録します。比較結果だけで caller 保護の成功とは判定しません。
+
 これは全エラーのrollback保証ではありません。同じscopeのcompile/recompile error、client取消、接続断などは`TRY/CATCH`の対象外になり得ます。`XACT_ABORT ON`だけでもcompile errorは保証されません。別batch/sessionで作られたobjectまで、後続の失敗が消すとは限りません。**残存原因は、実際のbatch/session・transaction記録がなければ不明**です。特定clientや空白・改行が原因だったと推測で断定しません。[TRY/CATCH](https://learn.microsoft.com/en-us/sql/t-sql/language-elements/try-catch-transact-sql?view=sql-server-ver16)・[XACT_ABORT](https://learn.microsoft.com/en-us/sql/t-sql/statements/set-xact-abort-transact-sql?view=sql-server-ver16)
 
 004/005は共通jobを変更しない事前検査の後、CDC手続きを表単位で実行します。6表を一括rollbackしたとは扱いません。捕捉できた失敗では固定6名について次を示します。
