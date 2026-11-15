@@ -190,7 +190,7 @@ LangChainからも接続候補はありますが、今回の同梱例はロー�
 | [Tunnelとfirewall](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-with-firewall/) | QUICはUDP7844、HTTP/2はTCP7844。通常のHTTP proxy設定だけの保証ではない |
 | [AI Search](https://developers.cloudflare.com/ai-search/) | managed検索・入力・索引・回答の候補。今回のGold context取得とは別機能 |
 
-リポジトリ内にCloudflareのtoken、Tunnel設定、R2資格情報、Basin writer、Workers deployment、Vectorize索引同期はありません。リンクは導入判断用の一次資料で、会社側の疎通・公開・課金・データ移行を検証した記録ではありません。
+リポジトリ内にCloudflareのtoken、Tunnel設定、R2資格情報、稼働済みBasin writer、Workers deployment、Vectorize索引同期はありません。新構想のBasin転送用初期コードは末尾の節で説明します。リンクは導入判断用の一次資料で、会社側の疎通・公開・課金・データ移行を検証した記録ではありません。
 
 ## 初心者の確認: 公開入口とアプリ本体は別
 
@@ -227,3 +227,69 @@ Tunnel/Accessの評価に成功したから、原本をR2へ移す必要が生�
 5. 接続解除時のDNS/route/policy、アプリの内部利用、社内へ保持するデータへの影響を確認します。data移行の切戻しは別計画です。
 
 現コードへ統合する前にcloudflared等の版・配布元・lock、proxy/CA・origin到達、tokenの非公開保管、監視、利用範囲を決めます。Cloudflareに関する図は [用途別素材](reports/README.md) と [AIの入口](AI-READINESS.md) を使い、未導入の選択案として示します。実単価や上限は採用時の公式資料で確認し、測っていない費用削減や通信成功を報告しません。[意思決定記録](reports/DECISION-RECORD-TEMPLATE.md)
+
+
+## 新構想のKafkaからBasinへの初期転送
+
+基盤PoCのReact移植・メタデータ下書きと、Cloudflare中心の新構想は別の到達点です。本節の送信部分は新構想用checkoutだけに追加する最初の実装で、既存TrueNASの生成ツール・DB・CDCや、基盤PoCのconsumerを置換しません。
+
+### 実装した範囲と、まだ未確認の範囲
+
+実装は [basin_relay.py](../infra/cloudflare/basin_relay.py) です。Debeziumの作成・更新・削除・snapshot・tombstoneを、選択列だけのJSONイベントへ変換します。実topic名・source内のDB名やホスト情報はイベントへ入れず、private設定で対応付けた論理名を使います。
+
+HTTP受付成功後だけ、専用Kafka consumer groupの次のoffsetを同期commitします。自動commitと自動offset保存、topicの自動作成は無効です。HTTP成功はBasin Streamの受付確認として扱い、R2への永続化、Icebergへの反映、Silver/Goldの計算完了を保証しません。HTTP成功とKafka確定を一つのtransactionにする実装でもありません。
+
+送信の応答が不明な場合は位置を進めず停止します。HTTP成功後・Kafka確定前に停止した場合は再送され得ます。source_id・capture_epoch・論理topic・partition・offsetから同じevent_idを計算しますが、これは重複を識別する仕組みで、重複排除済みという意味ではありません。後続のSilverではevent_idと業務上の更新順序を使う設計・受入が必要です。元Kafkaを作り直してoffsetを再利用する場合、capture_epochを切り替えます。
+
+合成テストは列の射影、主キー欠落の拒否、更新・削除・tombstoneの区別、再送ID、送信前の全件検査、応答不明時の未commit、SDKの手動commit設定、件数・サイズ、privateファイルと送信先、redirect拒否を検査します。実Kafkaとの再接続・rebalance・部分commit障害、Cloudflareの実受付、Basin Catalog/SQL、D1との契約同期、実負荷は未受入です。合成senderとconsumerの成功を、これらの実績へ読み替えません。
+
+### private設定の契約
+
+設定JSONはGit外・実行者所有の0600ファイルにします。接続値をD1へ登録したり、公開Gitへ保存したりしません。
+
+| 項目 | 意味・拒否条件 |
+| --- | --- |
+| source_id | オンプレの接続値を含まない論理ソース名 |
+| capture_epoch | 元Kafkaの履歴・offsetが継続する単位。新規作成時は別の値を選ぶ |
+| group_id | lakehouse-basin-で始まる専用group。既存CDCのgroupは再利用しない |
+| endpoint | 公式のHTTPS Stream ingest URLだけを許可。query・userinfo・別path・別hostは拒否 |
+| kafka | オンプレに保持する接続設定。許可したSDK項目だけを受け付け、auto commitの上書きは拒否 |
+| topics | 実topicごとのalias・table・columns・key_columns。実topic名は外へ送らない |
+| initial_offset_policy | 既定error。専用groupに確定位置がなければ暗黙にスキップしない。earliestは担当者が開始範囲を確認して明示する |
+
+次は形式確認専用の合成例です。このendpointは実Streamではなく、Kafkaへも接続しません。実運用値はオンプレのprivateファイルで別途用意します。
+
+```json
+{
+  "source_id": "synthetic-mes",
+  "capture_epoch": "demo-v1",
+  "group_id": "lakehouse-basin-synthetic",
+  "endpoint": "https://synthetic.ingest.cloudflare.com",
+  "initial_offset_policy": "error",
+  "kafka": {
+    "bootstrap.servers": "localhost:9092"
+  },
+  "topics": {
+    "synthetic.orders": {
+      "alias": "orders",
+      "table": "orders",
+      "columns": ["id", "quantity"],
+      "key_columns": ["id"]
+    }
+  }
+}
+```
+
+各topicではkey_columnsをcolumnsにも含めます。主キー欠落、不正なJSON、未対応operation、更新後rowの欠落は送信前に拒否し、そのbatchを確定しません。選択列の名前に明らかな資格情報名を指定することも拒否します。ただし列名の検査は任意の機密値を識別するDLPではありません。JSON文字列や業務列に個人情報・秘密値が入る可能性を含め、送信列とデータを事前に確認してください。メタデータGUIのチェック欄を正式な輸出承認と扱う実装はありません。
+
+tokenはBasin Pipelines Send権限の専用値を別のGit外0600ファイルに置き、URLや設定JSONへ埋め込みません。公式endpoint、JSON配列、Bearer認証は [公式のStream書き込み手順](https://developers.cloudflare.com/basin-pipelines/streams/writing-to-streams/) に基づきます。認証を無効化するサンプル設定は採用しません。
+
+### 実行と制限
+
+初期配置を自動起動サービスやDokployへ追加する段階ではありません。まずオンプレの専用groupと、送信可能なデータ・認証済みStreamを担当者が用意します。R2・Basinのリソースや課金を、このコードの実行で新規作成することもありません。
+
+専用venvへ infra/cloudflare/requirements.lock をhash付きで同期し、Kafka SDKを既存CDCと同じ版に揃えます。--helpは標準ライブラリだけで動きます。設定を指定した通常実行はplanで、Kafka参加もHTTP送信も行いません。実送信には--applyと--token-fileが必要です。
+
+1回の既定上限は100件、1batchは50件、入力が10秒間なければ終了します。最大は1回10000件、1batch100件・256KiB、入力の単一JSONは1MiBです。大きすぎるbatchは勝手に分割・切捨てせず、未送信のまま停止します。担当者がbatch-sizeを下げて再実行します。未知の接続障害やcommit応答不明も停止し、原文・接続先・tokenをエラーへ反射しません。
+
+次は、専用Kafka groupによる有限の合成送信、Stream受付とR2/Iceberg到達の別々の確認、再接続・再送・障害復旧、Silver/Goldの整合、D1管理情報・AI Gatewayの順で受け入れます。既存のAccess許可範囲、TrueNAS Apps、DB、CDCの保存位置は維持します。
