@@ -1372,6 +1372,24 @@
         "docs/REVIEW-WORKFLOW.md"
       ],
       "status": "active"
+    },
+    {
+      "path": "cloudflare/control-plane/README.md",
+      "title": "Cloudflare管理プレーンの無料枠PoC",
+      "purpose": "Workers・D1の論理メタデータ管理を、認証・版管理・試験・配備と復旧の境界まで説明する。",
+      "audience": [
+        "開発・設計担当",
+        "基盤構築担当"
+      ],
+      "when_to_use": "Cloudflare上の無料管理機能を開発・検証・配備するとき。",
+      "category": "04 設計・拡張",
+      "prerequisites": [
+        "docs/CLOUDFLARE.md"
+      ],
+      "next": [
+        "docs/CUSTOMIZATION.md"
+      ],
+      "status": "active"
     }
   ]
 }

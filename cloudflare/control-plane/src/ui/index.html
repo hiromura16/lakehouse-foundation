@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Lakehouse | クラウド管理</title>
+    <link rel="stylesheet" href="/app.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <div class="brand">◈ <span>Lakehouse</span></div>
+      <span class="badge">Cloudflare PoC</span>
+    </header>
+    <main>
+      <div class="intro">
+        <p class="eyebrow">クラウド管理</p>
+        <h1>データの入口と約束を、ひとつに。</h1>
+        <p>
+          論理ソースとデータ契約を管理します。保存した定義は下書きで、データ収集や接続設定にはまだ適用されません。
+        </p>
+      </div>
+      <div id="notice" role="status" aria-live="polite" hidden></div>
+      <nav aria-label="管理メニュー">
+        <button data-tab="sources" aria-current="page">ソース</button
+        ><button data-tab="contracts">データ契約</button
+        ><button data-tab="operations">稼働状況・履歴</button>
+      </nav>
+      <section id="sources">
+        <div class="section-heading">
+          <h2>論理ソース</h2>
+          <button id="new-source" class="secondary">新しく登録</button>
+        </div>
+        <p>
+          業務上の識別名だけを登録します。ホスト名・IP・パス・パスワードは入力しないでください。
+        </p>
+        <div class="workspace">
+          <div id="source-list" class="items" aria-label="登録済みソース"></div>
+          <form id="source-form">
+            <h3 id="source-heading">ソースを登録</h3>
+            <label
+              >論理識別子<input
+                name="id"
+                required
+                pattern="[a-z][a-z0-9_-]{0,63}"
+                maxlength="64"
+                placeholder="production-events"
+              /><small
+                >英小文字で始め、英小文字・数字・ハイフン・下線で指定</small
+              ></label
+            >
+            <label
+              >表示名<input
+                name="displayName"
+                required
+                maxlength="80"
+                placeholder="製造イベント"
+              /><small>文字・数字・空白・ハイフン・下線が使えます</small></label
+            >
+            <label
+              >種類<select name="kind">
+                <option value="sqlserver">SQL Server</option>
+                <option value="postgresql">PostgreSQL</option>
+                <option value="file">ファイル</option>
+                <option value="stream">ストリーム</option>
+              </select></label
+            >
+            <label
+              >担当チームの識別子<input
+                name="ownerTeam"
+                required
+                pattern="[a-z][a-z0-9_-]{0,63}"
+                maxlength="64"
+                placeholder="data-team"
+            /></label>
+            <label
+              >定義の状態<select name="status">
+                <option value="draft">下書き</option>
+                <option value="paused">保留</option>
+              </select></label
+            ><button type="submit">下書きを保存</button>
+          </form>
+        </div>
+      </section>
+      <section id="contracts" hidden>
+        <div class="section-heading">
+          <h2>データ契約</h2>
+          <button id="new-contract" class="secondary">新しく作成</button>
+        </div>
+        <p>
+          列・主キー・鮮度・削除方針を版ごとに保存します。ここでの保存は収集やSilverへの適用を実行しません。
+        </p>
+        <div class="workspace">
+          <div id="contract-list" class="items" aria-label="保存済み契約"></div>
+          <form id="contract-form">
+            <h3 id="contract-heading">契約の下書きを作成</h3>
+            <label
+              >契約の識別子<input
+                name="id"
+                required
+                pattern="[a-z][a-z0-9_-]{0,63}"
+                maxlength="64"
+                placeholder="production-contract"
+            /></label>
+            <label>論理ソース<select name="sourceId" required></select></label>
+            <label
+              >データセットの識別子<input
+                name="datasetId"
+                required
+                pattern="[a-z][a-z0-9_-]{0,63}"
+                maxlength="64"
+                placeholder="production-events"
+            /></label>
+            <label
+              >鮮度の目標（分）<input
+                name="freshnessMinutes"
+                type="number"
+                min="1"
+                max="43200"
+                value="60"
+                required
+            /></label>
+            <label
+              >削除イベントの方針<select name="deletePolicy">
+                <option value="retain-tombstone">削除マーカーを保持する</option>
+                <option value="delete-in-silver">Silverで削除を反映する</option>
+              </select></label
+            >
+            <fieldset>
+              <legend>列定義（最大50列・主キー1列以上）</legend>
+              <div id="columns"></div>
+              <button id="add-column" type="button" class="secondary">
+                列を追加
+              </button>
+            </fieldset>
+            <button type="submit">新しい版の下書きを保存</button>
+          </form>
+        </div>
+      </section>
+      <section id="operations" hidden>
+        <h2>稼働状況</h2>
+        <div id="service-status" class="status-grid"></div>
+        <p class="note">
+          このPoCが作成するのはWorkers・D1の管理機能です。有料プラン変更、R2有効化、Basinの実データ転送は行っていません。接続検証・契約承認・実環境への適用は今後の実装です。
+        </p>
+        <h2>最近の操作</h2>
+        <p>最新50件を表示します。操作履歴は最大1000件保持します。</p>
+        <div id="audit-list" class="items"></div>
+      </section>
+    </main>
+    <footer>
+      Accessで保護された管理領域 · 接続情報と業務データを保存しない構成
+    </footer>
+  </body>
+</html>

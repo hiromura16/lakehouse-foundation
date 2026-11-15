@@ -1,0 +1,9 @@
+node_modules/
+.cf/
+.cloudflare/
+dist/
+coverage/
+.dev.vars*
+.local*
+test-results/
+playwright-report/

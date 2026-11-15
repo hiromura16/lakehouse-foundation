@@ -71,6 +71,7 @@
 
 | 文書 | 何のために読むか | 読むタイミング | 区分 |
 | --- | --- | --- | --- |
+| [Cloudflare管理プレーンの無料枠PoC](<../cloudflare/control-plane/README.md>) | Workers・D1の論理メタデータ管理を、認証・版管理・試験・配備と復旧の境界まで説明する。 | Cloudflare上の無料管理機能を開発・検証・配備するとき。 | active |
 | [AIへ渡せるデータとLangChain連携](<AI-READINESS.md>) | Goldとsnapshotの根拠をJSON・LangChain Documentへ渡し、推論やRAGとの境界を確認する。 | AIへ渡す業務contextを取得するときや、モデル連携の追加要件を決めるとき。 | active |
 | [Lakehouse Foundation アーキテクチャ](<ARCHITECTURE.md>) | 保存・変換・操作の構成とprofileの責務を、データと制御の経路から把握する。 | 構築前の全体理解や、構成変更時の影響範囲を調べるとき。 | reference |
 | [SQL Server の変更を Iceberg へ反映する](<CDC.md>) | SQL ServerのsnapshotとI/U/DをDebezium・Kafka・consumer経由でIcebergへ反映する。 | DBAの準備後にcdc profileを配置し、現在値・削除・再開位置を照合するとき。 | active |
@@ -186,6 +187,7 @@
 | 文書 | 目的 |
 | --- | --- |
 | [Lakehouse Foundation](<../README.md>) | MES・ERP向けPoC基盤の機能、構築入口、任意機能と報告素材を見渡す。 |
+| [Cloudflare管理プレーンの無料枠PoC](<../cloudflare/control-plane/README.md>) | Workers・D1の論理メタデータ管理を、認証・版管理・試験・配備と復旧の境界まで説明する。 |
 | [Lakehouse Foundation アーキテクチャ](<ARCHITECTURE.md>) | 保存・変換・操作の構成とprofileの責務を、データと制御の経路から把握する。 |
 | [BuildKit auth session timeout: 公開前の診断draft](<BUILD-KIT-AUTH-DIAGNOSTIC.md>) | PR11後も報告されたBuildKit timeoutの事実・仮説・次の診断を分離し、未解決として引き継ぐ。 |
 | [SQL Server の変更を Iceberg へ反映する](<CDC.md>) | SQL ServerのsnapshotとI/U/DをDebezium・Kafka・consumer経由でIcebergへ反映する。 |
@@ -281,6 +283,7 @@
 | 文書 | 目的 |
 | --- | --- |
 | [変更する人のための読みやすさと検証規約](<../CONTRIBUTING.md>) | 読みやすいコード・コメント・CLI説明と、専用uv環境での品質検査規約を揃える。 |
+| [Cloudflare管理プレーンの無料枠PoC](<../cloudflare/control-plane/README.md>) | Workers・D1の論理メタデータ管理を、認証・版管理・試験・配備と復旧の境界まで説明する。 |
 | [AIへ渡せるデータとLangChain連携](<AI-READINESS.md>) | Goldとsnapshotの根拠をJSON・LangChain Documentへ渡し、推論やRAGとの境界を確認する。 |
 | [異常シナリオを選んで素材を作る](<ANOMALY-SCENARIOS.md>) | 行・業務値とファイル転送の異常を選び、生成診断と下流の期待挙動を比較する。 |
 | [GUI操作APIとSwagger](<API.md>) | Swaggerの認証と固定APIを使い、設定保存・素材生成・非同期job・参照を行う。 |

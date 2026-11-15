@@ -91,6 +91,23 @@ jobs:
       uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version: '24.22.3'
+    # 無料部分の検査だけを実行し、Cloudflareへの認証・配備・課金変更は行わない。
+    - name: Cloudflare管理機能の固定依存を導入
+      working-directory: cloudflare/control-plane
+      run: npm ci --ignore-scripts --no-audit --no-fund
+    - name: Cloudflare管理機能の型・整形・Workers実行環境を検査
+      working-directory: cloudflare/control-plane
+      run: |
+        npm run typecheck
+        npm run format:check
+        npm test
+        npm run build
+        npm audit --omit=dev --audit-level=high
+    - name: 日本語の管理操作を合成APIとChromiumで検査
+      working-directory: cloudflare/control-plane
+      run: |
+        npx playwright install --with-deps chromium
+        npm run test:browser
     - name: Install locked frontend tools without lifecycle scripts
       working-directory: frontend
       run: npm ci --ignore-scripts --no-audit --no-fund
