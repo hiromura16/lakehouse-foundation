@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Globe2, KeyRound, LockKeyhole, RefreshCw, Save, Search, Settings2 } from 'lucide-react';
 import { api } from '../api';
+import type { SessionInfo } from '../api';
 import { Badge, Button, ErrorNotice, Loading, Notice, PageHeader, Panel } from '../components';
 import { useResource } from '../hooks';
 import type { SettingsSaved, SettingsView } from '../types';
+import { WorkspaceAuthentication } from './Authentication';
 
 const LABELS: Record<string, string> = {
   COMPOSE_PROJECT_NAME: '環境の名前',
@@ -54,6 +56,16 @@ const CATEGORIES = [
   'サービス・配置',
   '資格情報',
 ];
+// Trust anchors and bootstrap credentials require an operator deployment.
+// Workspace key changes use their own authenticated, immediately revoking flow.
+const OPERATOR_ONLY = new Set([
+  'CONTROL_API_TOKEN',
+  'PORTAL_LOGIN_TOKEN',
+  'PORTAL_LOGIN_TOKEN_HASH',
+  'PORTAL_AUTH_MODE',
+  'PORTAL_ACCESS_TEAM_DOMAIN',
+  'PORTAL_ACCESS_AUD',
+]);
 function category(key: string): string {
   if (key === 'PORTAL_LINK_MODE' || key.endsWith('_PUBLIC_URL')) return '外部アクセス';
   if (key.startsWith('SOURCE_SQLSERVER_') || key.startsWith('DEMO_SQLSERVER_')) return 'SQL Server';
@@ -73,7 +85,7 @@ function category(key: string): string {
   return 'サービス・配置';
 }
 
-export function Settings() {
+export function Settings({ session }: { session?: SessionInfo }) {
   const resource = useResource<SettingsView>('/settings');
   const [active, setActive] = useState('外部アクセス');
   const [query, setQuery] = useState('');
@@ -91,12 +103,13 @@ export function Settings() {
     [edits, view],
   );
   const secretChanges = Object.fromEntries(
-    Object.entries(secrets).filter(([key, value]) => key !== 'CONTROL_API_TOKEN' && value !== ''),
+    Object.entries(secrets).filter(([key, value]) => !OPERATOR_ONLY.has(key) && value !== ''),
   );
   const count = Object.keys(changed).length + Object.keys(secretChanges).length;
   const fields = Object.keys(view?.values ?? {}).filter(
     (key) =>
       category(key) === active &&
+      !OPERATOR_ONLY.has(key) &&
       `${LABELS[key] ?? key} ${key}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
   );
   const update = (key: string, value: string) => {
@@ -143,6 +156,7 @@ export function Settings() {
       />
       <ErrorNotice message={resource.error} retry={() => void resource.refresh()} />
       <ErrorNotice message={error} />
+      {session && <WorkspaceAuthentication session={session} />}
       {saved && (
         <Notice tone="success">
           private設定へ保存しました。サービスの再配置やTunnel設定は行っていません。
@@ -183,8 +197,10 @@ export function Settings() {
                   {item}
                   <span>
                     {item === '資格情報'
-                      ? view.secret_keys.filter((key) => key !== 'CONTROL_API_TOKEN').length
-                      : Object.keys(view.values).filter((key) => category(key) === item).length}
+                      ? view.secret_keys.filter((key) => !OPERATOR_ONLY.has(key)).length
+                      : Object.keys(view.values).filter(
+                          (key) => !OPERATOR_ONLY.has(key) && category(key) === item,
+                        ).length}
                   </span>
                 </button>
               ))}
@@ -226,13 +242,12 @@ export function Settings() {
                 {active === '資格情報' ? (
                   <>
                     <Notice>
-                      空欄のまま保存すると、既存の秘密値を保持します。現在の値を表示する機能はありません。接続用のcontrol
-                      tokenは管理者のprivate設定側で管理します。
+                      空欄のまま保存すると、既存の秘密値を保持します。現在の値を表示する機能はありません。ワークスペース接続キーは上の専用欄で変更し、サーバー間APIのトークンは管理者が管理します。
                     </Notice>
                     {view.secret_keys
                       .filter(
                         (key) =>
-                          key !== 'CONTROL_API_TOKEN' &&
+                          !OPERATOR_ONLY.has(key) &&
                           key.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
                       )
                       .map((key) => (

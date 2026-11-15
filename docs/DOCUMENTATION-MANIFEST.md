@@ -45,6 +45,12 @@
 | [プロキシ設定の場所と反映方法](<PROXY.md>) | 通信主体別のproxy設定ファイル、CA受渡しと反映方法を参照する。 | 会社向け手順を読んだ後に、個別の設定場所や再起動対象を調べるとき。 | reference |
 | [SSRF対策と内部接続の設定](<SSRF.md>) | n8nの宛先制御、内部worker通信、proxyと固定APIの境界を設定する。 | 内部APIへの接続許可を決めるときや、SSRF制御による拒否を確認するとき。 | active |
 
+### 02 構築・運用
+
+| 文書 | 何のために読むか | 読むタイミング | 区分 |
+| --- | --- | --- | --- |
+| [2つのPoCを独立して起動・停止する](<POC-ENVIRONMENT-CONTROL.md>) | 独立した管理画面・API・CLIの配置、全体停止と再開、明示同意、排他と未確定からの回復を説明する。 | 基盤PoCと将来構想PoCを切り替えて負荷検証・運用するとき。 | active |
+
 ### 03 データ・操作
 
 | 文書 | 何のために読むか | 読むタイミング | 区分 |
@@ -95,6 +101,7 @@
 | [段階的な監視基盤の配置と受入](<OBSERVABILITY.md>) | 監視のhost権限、create-only GUI、閾値、検証と実機受入を分けて段階導入する。 | monitoringを追加・更新し、host mountと未検証項目を確認するとき。 | active |
 | [平時・更新・復旧の運用手順](<OPERATIONS.md>) | 平時点検・更新・backup・復旧を、鍵・DB・object・volumeの状態を揃えて行う。 | 運用を引き継ぐとき、更新前、障害復旧前に実施順序を確認するとき。 | active |
 | [採用版の公式リファレンスと文書監査](<REFERENCES.md>) | 採用版の公式仕様・tag・公開実装・検証記録の根拠を照合する。 | 画面名や設定の仕様を確認するときや、依存更新の調査を始めるとき。 | reference |
+| [Studioからサービスを起動・再起動・停止する](<SERVICE-CONTROL.md>) | profile設定と実稼働を区別し、管理者承認済みの固定サービスをGUIから安全に操作する。 | Studioのサービス操作を利用するときと、host runnerの承認・接続・結果未確認からの復旧を行うとき。 | active |
 | [SQL Server DDLの照合順序と途中失敗からの再開](<SQLSERVER-DDL-RECOVERY.md>) | error468・51019の残存診断、exact checkerの保護、CDC部分完了とWindows client別の安全な再開を整理する。 | DBA用003が失敗した後や、混在collationでCDCの適用/無効化を再開するとき。 | active |
 | [症状から確認する](<TROUBLESHOOTING.md>) | 観測した症状から設定・起動・通信・job・データの失敗箇所を絞り込む。 | 成功条件を満たさないときや、削除や再生成を行う前に原因を調べるとき。 | reference |
 | [検証記録](<VALIDATION.md>) | 既存の合成環境・公開clone・CI・互換性修正で確認した条件と限界を読む。 | 報告に結果を引用するときや、変更後の回帰と会社受入を分けるとき。 | reference |
@@ -169,6 +176,7 @@
 | [mainのPoCと試作ブランチを並行して使う](<PARALLEL-POC.md>) | 既存mainを維持し、単独GUIと専用projectの全OSS・Labを段階配置する並行PoCの設定・入口・停止条件を示す。 |
 | [PoC操作ポータル](<POC-PORTAL.md>) | 操作ポータルの各ページから、サービス入口・データ・診断・履歴へ移動する。 |
 | [React版 Lakehouse Studioを利用する](<REACT-PORTAL.md>) | React画面の起動・接続・操作範囲と、private設定・外部公開・従来画面への戻し方を確認する。 |
+| [Studioからサービスを起動・再起動・停止する](<SERVICE-CONTROL.md>) | profile設定と実稼働を区別し、管理者承認済みの固定サービスをGUIから安全に操作する。 |
 | [BashとZshの両方で手順を実行する](<SHELLS.md>) | 会社VMのZshとBashでコマンドを使い分け、対話入力・コメント・shebang・引用の違いを確認する。 |
 | [初めて構築する人の一本道ガイド](<START-HERE.md>) | 新規Linux環境の準備からcore配置と合成データ検証までを順に進める。 |
 | [合成入力を最初に作る](<../samples/README.md>) | 実データを使わずに最初の6契約素材を生成し、出力と後続処理の境界を確認する。 |
@@ -199,6 +207,7 @@
 | [OpenObserveを任意の比較Labとして追加する](<OPENOBSERVE.md>) | 通常のLoki経路を保ち、秘匿済みログを任意のOpenObserve Labへ分岐する設定と未検証範囲を整理する。 |
 | [平時・更新・復旧の運用手順](<OPERATIONS.md>) | 平時点検・更新・backup・復旧を、鍵・DB・object・volumeの状態を揃えて行う。 |
 | [mainのPoCと試作ブランチを並行して使う](<PARALLEL-POC.md>) | 既存mainを維持し、単独GUIと専用projectの全OSS・Labを段階配置する並行PoCの設定・入口・停止条件を示す。 |
+| [2つのPoCを独立して起動・停止する](<POC-ENVIRONMENT-CONTROL.md>) | 独立した管理画面・API・CLIの配置、全体停止と再開、明示同意、排他と未確定からの回復を説明する。 |
 | [プロキシ設定の場所と反映方法](<PROXY.md>) | 通信主体別のproxy設定ファイル、CA受渡しと反映方法を参照する。 |
 | [React版 Lakehouse Studioを利用する](<REACT-PORTAL.md>) | React画面の起動・接続・操作範囲と、private設定・外部公開・従来画面への戻し方を確認する。 |
 | [採用版の公式リファレンスと文書監査](<REFERENCES.md>) | 採用版の公式仕様・tag・公開実装・検証記録の根拠を照合する。 |
@@ -259,6 +268,7 @@
 | [OpenObserveを任意の比較Labとして追加する](<OPENOBSERVE.md>) | 通常のLoki経路を保ち、秘匿済みログを任意のOpenObserve Labへ分岐する設定と未検証範囲を整理する。 |
 | [平時・更新・復旧の運用手順](<OPERATIONS.md>) | 平時点検・更新・backup・復旧を、鍵・DB・object・volumeの状態を揃えて行う。 |
 | [PoC操作ポータル](<POC-PORTAL.md>) | 操作ポータルの各ページから、サービス入口・データ・診断・履歴へ移動する。 |
+| [Studioからサービスを起動・再起動・停止する](<SERVICE-CONTROL.md>) | profile設定と実稼働を区別し、管理者承認済みの固定サービスをGUIから安全に操作する。 |
 | [SQL Server DDLの照合順序と途中失敗からの再開](<SQLSERVER-DDL-RECOVERY.md>) | error468・51019の残存診断、exact checkerの保護、CDC部分完了とWindows client別の安全な再開を整理する。 |
 | [症状から確認する](<TROUBLESHOOTING.md>) | 観測した症状から設定・起動・通信・job・データの失敗箇所を絞り込む。 |
 | [検証記録](<VALIDATION.md>) | 既存の合成環境・公開clone・CI・互換性修正で確認した条件と限界を読む。 |
@@ -290,6 +300,7 @@
 | [AIクライアントからMCPで操作する](<MCP.md>) | 認証付きMCPから固定の業務参照・運用APIを呼び、AIクライアントへ接続する。 |
 | [MES・ERPデータをBronzeからGoldへ整える](<MEDALLION.md>) | 6契約の取り込み、最新版採用、不正行隔離、Gold集計と再投入の規則を追う。 |
 | [mainのPoCと試作ブランチを並行して使う](<PARALLEL-POC.md>) | 既存mainを維持し、単独GUIと専用projectの全OSS・Labを段階配置する並行PoCの設定・入口・停止条件を示す。 |
+| [2つのPoCを独立して起動・停止する](<POC-ENVIRONMENT-CONTROL.md>) | 独立した管理画面・API・CLIの配置、全体停止と再開、明示同意、排他と未確定からの回復を説明する。 |
 | [BI・Notebook・ベクトル検索・データ系統を追加する](<POC-TOOLS.md>) | Superset・Jupyter・Qdrant・MarquezのGUIと合成デモを追加して用途別に検証する。 |
 | [プロキシ設定の場所と反映方法](<PROXY.md>) | 通信主体別のproxy設定ファイル、CA受渡しと反映方法を参照する。 |
 | [React版 Lakehouse Studioを利用する](<REACT-PORTAL.md>) | React画面の起動・接続・操作範囲と、private設定・外部公開・従来画面への戻し方を確認する。 |
@@ -297,6 +308,7 @@
 | [外部レビュー指摘の対応と確認](<REVIEW-FOLLOWUP.md>) | PR #3の外部レビュー指摘と、再現・修正・回帰確認の対応を追跡する。 |
 | [レビュー指摘を改善へ取り込む](<REVIEW-WORKFLOW.md>) | issue・PR・依頼文書の指摘を対象commitで確認し、安全な回帰と差分へつなげる。 |
 | [SailとSparkを同じ合成データで比較する](<SAIL-LAB.md>) | 任意のSail LabでSparkと合成データの型・結果・再実行を比較し、未検証事項と測定条件を記録する。 |
+| [Studioからサービスを起動・再起動・停止する](<SERVICE-CONTROL.md>) | profile設定と実稼働を区別し、管理者承認済みの固定サービスをGUIから安全に操作する。 |
 | [BashとZshの両方で手順を実行する](<SHELLS.md>) | 会社VMのZshとBashでコマンドを使い分け、対話入力・コメント・shebang・引用の違いを確認する。 |
 | [テーブルと列をGUIで選ぶソース登録の下書き](<SOURCE-ONBOARDING.md>) | YAMLを書かずに表・列・業務方針から未承認contract案を作り、GUI/API試作と将来の実適用を区別する。 |
 | [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>) | 既存SQL Serverを読取専用SELECTで抽出し、6契約のlanding素材を作成する。 |

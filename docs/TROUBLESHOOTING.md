@@ -361,3 +361,19 @@ shellの`COMPOSE_PROJECT_NAME`はCLIの対象変更には使えません。priva
 
 
 004の51119で停止した場合は、旧版の独立capture必須判定と`has_drop_pending`のNULL拒否を確認します。修正版はNULL/0に加えて実在するtracked sourceを検査し、pending=1/孤児は51130、共有job欠損は51132で拒否します。既存固定六件は再作成せず、[CDC preflightと回復](SQLSERVER-DDL-RECOVERY.md#cdc初期化の診断)で現在定義を確認します。未知captureがある場合の51204は明示置換maintenanceだけの保護で、通常004の共存を禁止するものではありません。system metadata編集やDB CDC無効化で回避しません。
+## Lakekeeper UIの「Unreachable」
+
+Portalのカードが内部稼働中でも、Lakekeeper自身のUIの接続先は別に確認します。
+`/health`の200はブラウザーが管理APIへ接続できる証明ではありません。
+
+1. 承認したhostnameの`/ui/`を開き、ブラウザーのNetworkで失敗した要求先を確認します。
+2. `http://catalog:8181/`ならDocker内部名がUIへ渡っています。
+   公開する導入では`CATALOG_PUBLIC_URL`を承認したHTTPS originへ設定します。
+3. Composeが渡す`LAKEKEEPER__UI__LAKEKEEPER_URL`を、同じmanagerから`catalog`へ反映します。
+   Spark・Trinoが使う内部の`LAKEKEEPER__BASE_URI`は変更しません。
+4. 再読み込みし、同じ公開originへのAPI要求と既存Access保護を確認します。
+   ローカル用URLを使う場合は、host portとSSH転送の対応を確認します。
+
+この確認でDB migration・bootstrap・warehouse初期化を再実行しません。
+UIと管理APIの同port公開は別途承認が必要です。
+[公開範囲とUI設定](CLOUDFLARE.md#lakekeeperのuiがunreachableと表示される場合)を参照してください。

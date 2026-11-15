@@ -50,6 +50,23 @@ class ProxySettingsTests(unittest.TestCase):
         self.writer_patch = mock.patch.object(PROXY, "atomic_write")
         self.writer = self.writer_patch.start()
         self.addCleanup(self.writer_patch.stop)
+        # Simulated apply must also avoid inspecting the machine's /etc.
+        # Individual tests can override these defaults with synthetic values.
+        for operation in ("exists", "is_symlink", "read_text"):
+            original = getattr(Path, operation)
+
+            def inspect(
+                path, *args, operation=operation, original=original, **kwargs
+            ):
+                if path == Path("/etc") or path.is_relative_to("/etc"):
+                    if operation == "read_text":
+                        raise AssertionError("Unexpected host config read")
+                    return False
+                return original(path, *args, **kwargs)
+
+            patcher = mock.patch.object(Path, operation, inspect)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def assert_refused(self, text=None):
         """Expect validation failure with no destination writes."""
@@ -222,6 +239,22 @@ class ProxySettingsTests(unittest.TestCase):
             )
         )
         self.assertIn("Docker has NOT been restarted", output)
+
+    def test_simulated_destination_symlink_is_refused(self):
+        """Keep destination safety checks active with synthetic metadata."""
+        original = Path.is_symlink
+
+        def is_symlink(path):
+            return path == TARGET_ENV or original(path)
+
+        with (
+            mock.patch.object(PROXY.os, "geteuid", return_value=0),
+            mock.patch.dict(os.environ, {"SUDO_UID": str(os.getuid())}),
+            mock.patch.object(Path, "is_symlink", is_symlink),
+        ):
+            code, _ = invoke("apply", self.source)
+        self.assertIn("Symlinks are not accepted", code)
+        self.writer.assert_not_called()
 
 
 if __name__ == "__main__":

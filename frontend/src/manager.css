@@ -1,0 +1,315 @@
+/* Independent control plane shares the Studio palette, never its lifecycle. */
+@layer components {
+  .manager-shell {
+    min-height: 100vh;
+    background: radial-gradient(ellipse at 18% 0, #19383a70, transparent 52%), var(--bg, #0b1018);
+  }
+  .manager-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    border-bottom: 1px solid var(--line);
+    padding: 20px 5vw;
+    background: #0b1018a0;
+  }
+  .manager-topbar > div {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .manager-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    color: var(--text, #e9eef7);
+    font-size: 18px;
+  }
+  .manager-brand > span {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid #58d5b455;
+    background: #58d5b416;
+    border-radius: 11px;
+    color: #80e7ca;
+  }
+  .manager-brand strong {
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    color: var(--muted);
+  }
+  .manager-main {
+    max-width: 1260px;
+    margin: auto;
+    padding: 56px 32px 70px;
+  }
+  .manager-main .page-header h1 {
+    font-size: clamp(28px, 3vw, 42px);
+    letter-spacing: -0.04em;
+  }
+  .manager-safety {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 26px 0;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .manager-safety svg {
+    color: #80e7ca;
+  }
+  .manager-safety i {
+    width: 3px;
+    height: 3px;
+    background: var(--muted);
+    border-radius: 50%;
+  }
+  .environment-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px;
+    margin: 24px 0 32px;
+  }
+  .environment-card {
+    padding: 30px;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    background: linear-gradient(140deg, #182630b0, #111a24);
+    box-shadow: 0 10px 45px #00000010;
+  }
+  .environment-card > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 30px;
+  }
+  .environment-symbol {
+    display: grid;
+    place-items: center;
+    width: 60px;
+    height: 60px;
+    background: #80e7ca14;
+    color: #80e7ca;
+    border: 1px solid #80e7ca33;
+    border-radius: 17px;
+  }
+  .environment-vision .environment-symbol {
+    background: #97aaff14;
+    border-color: #97aaff33;
+    color: #a9baff;
+  }
+  .environment-card h2 {
+    font-size: 26px;
+    margin: 10px 0;
+    letter-spacing: -0.03em;
+  }
+  .environment-card > p {
+    font-size: 12px;
+    line-height: 1.9;
+    color: var(--muted);
+  }
+  .environment-count {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 20px;
+    margin: 26px 0 12px;
+  }
+  .environment-count strong {
+    font-size: 36px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .environment-count small {
+    font-size: 19px;
+    color: var(--muted);
+  }
+  .environment-count > span {
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .environment-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 26px 0 20px;
+  }
+  .environment-reasons {
+    font-size: 12px;
+    line-height: 1.9;
+    padding-left: 18px;
+    color: #edc17c;
+  }
+  .environment-services {
+    font-size: 12px;
+    border-top: 1px solid var(--line);
+    padding-top: 15px;
+  }
+  .environment-services summary {
+    cursor: pointer;
+    color: var(--muted);
+  }
+  .environment-services ul {
+    list-style: none;
+    padding: 0;
+    max-height: 220px;
+    overflow: auto;
+  }
+  .environment-services li {
+    display: flex;
+    justify-content: space-between;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .environment-services li > span {
+    color: var(--muted);
+  }
+  .environment-card footer {
+    margin-top: 20px;
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .manager-notes {
+    display: flex;
+    align-items: start;
+    gap: 12px;
+    margin-top: 28px;
+    color: var(--muted);
+  }
+  .manager-notes svg {
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+  .manager-notes p {
+    font-size: 12px;
+    line-height: 1.9;
+    margin: 0;
+  }
+  .manager-history {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .manager-operation {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px 20px;
+    padding: 17px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .manager-operation:last-child {
+    border: 0;
+  }
+  .manager-operation > div {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-size: 13px;
+  }
+  .manager-operation > div > span,
+  .manager-operation > p {
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .manager-operation > p {
+    grid-column: 1 / -1;
+    margin: 0;
+    line-height: 1.8;
+  }
+  .manager-empty {
+    padding: 20px 0;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .manager-login {
+    display: grid;
+    justify-items: start;
+    gap: 16px;
+    max-width: 560px;
+    margin: 60px auto;
+    padding: 36px;
+    border-radius: 18px;
+  }
+  .manager-login > p {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .manager-login form {
+    display: grid;
+    gap: 13px;
+    width: 100%;
+  }
+  .manager-login label,
+  .manager-login small {
+    font-size: 12px;
+  }
+  .manager-login small {
+    color: var(--muted);
+  }
+  .manager-login input {
+    width: 100%;
+  }
+  .manager-confirm {
+    display: flex;
+    align-items: start;
+    gap: 12px;
+    margin: 22px 0;
+    font-size: 12px;
+    line-height: 1.9;
+    cursor: pointer;
+  }
+  .manager-confirm input {
+    width: 17px;
+    height: 17px;
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+  .manager-warning {
+    border: 1px solid #e9bc6255;
+    background: #e9bc6210;
+    padding: 14px;
+    border-radius: 10px;
+  }
+  .manager-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 24px;
+  }
+  .manager-dialog .lifecycle-impact ol {
+    max-height: 230px;
+    overflow-y: auto;
+    font-size: 12px;
+    line-height: 2;
+    padding-left: 26px;
+  }
+  .manager-dialog .lifecycle-impact li > span {
+    color: var(--muted);
+    margin-right: 10px;
+  }
+}
+@layer responsive {
+  @media (max-width: 760px) {
+    .environment-grid {
+      grid-template-columns: 1fr;
+    }
+    .manager-main {
+      padding: 32px 18px;
+    }
+    .manager-topbar {
+      padding: 16px;
+      flex-wrap: wrap;
+    }
+    .manager-brand strong {
+      display: none;
+    }
+    .environment-card {
+      padding: 24px;
+    }
+  }
+}

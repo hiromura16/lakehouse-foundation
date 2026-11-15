@@ -11,7 +11,7 @@
     "build": "tsc --noEmit && vite build",
     "check": "tsc --noEmit && tsc --project tsconfig.browser.json",
     "test:e2e": "playwright test",
-    "test": "tsc --project tsconfig.tests.json && node .test-dist/tests/client.test.js && node .test-dist/tests/render.test.js",
+    "test": "tsc --project tsconfig.tests.json && node .test-dist/tests/client.test.js && node .test-dist/tests/render.test.js && node .test-dist/tests/lifecycle.test.js && node .test-dist/tests/manager.test.js",
     "format:check": "prettier --check src tests index.html vite.config.ts tsconfig.json tsconfig.tests.json package.json playwright.config.ts tsconfig.browser.json",
     "format": "prettier --write src tests index.html vite.config.ts tsconfig.json tsconfig.tests.json package.json playwright.config.ts tsconfig.browser.json"
   },

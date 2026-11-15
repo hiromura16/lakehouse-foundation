@@ -127,6 +127,25 @@ export function api<T>(
   );
 }
 
+/** Independent manager routes never pass through a PoC's control gateway. */
+export function managerRequest<T>(
+  path: string,
+  method: 'GET' | 'POST' | 'DELETE' = 'GET',
+  payload?: unknown,
+): Promise<T> {
+  const routes = [
+    /^\/api\/session$/,
+    /^\/api\/pocs$/,
+    /^\/api\/pocs\/(foundation|vision)\/plans$/,
+    /^\/api\/operations(?:\?limit=(?:[1-9]|[12][0-9]|30))?$/,
+    /^\/api\/operations\/[a-f0-9]{24}$/,
+    /^\/api\/operations\/by-key\/[A-Za-z0-9_-]{8,80}$/,
+  ];
+  if (!routes.some((route) => route.test(path)))
+    return Promise.reject(new ApiError(0, '許可されていない管理APIパスです。'));
+  return request<T>(path, method, payload);
+}
+
 /** Preserve uploaded JSON keys verbatim so server duplicate-key guards work. */
 export function importMetadata<T>(rawJson: string): Promise<T> {
   return request<T>(
@@ -138,15 +157,77 @@ export function importMetadata<T>(rawJson: string): Promise<T> {
   );
 }
 
+export interface SessionInfo {
+  authenticated: boolean;
+  mode: 'token' | 'cloudflare-access';
+  credential_change_supported: boolean;
+  logout_url: '/cdn-cgi/access/logout' | null;
+}
+
+/** Only a fixed same-origin Access logout path can become a navigation target. */
+export function parseSessionInfo(value: unknown): SessionInfo {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new ApiError(0, '認証方式を確認できませんでした。');
+  const result = value as Record<string, unknown>;
+  if (typeof result.authenticated !== 'boolean')
+    throw new ApiError(0, '認証方式を確認できませんでした。');
+  // An older gateway has only this boolean; it never gains rotation capability.
+  if (
+    !('mode' in result) &&
+    !('logout_url' in result) &&
+    !('credential_change_supported' in result)
+  )
+    return {
+      authenticated: result.authenticated,
+      mode: 'token',
+      credential_change_supported: false,
+      logout_url: null,
+    };
+  if (
+    (result.mode !== 'token' && result.mode !== 'cloudflare-access') ||
+    typeof result.credential_change_supported !== 'boolean' ||
+    (result.logout_url !== null && result.logout_url !== '/cdn-cgi/access/logout') ||
+    (result.mode === 'token' && result.logout_url !== null) ||
+    (result.mode === 'cloudflare-access' && result.credential_change_supported !== false)
+  )
+    throw new ApiError(0, '認証方式を確認できませんでした。');
+  return {
+    authenticated: result.authenticated,
+    mode: result.mode,
+    credential_change_supported: result.credential_change_supported,
+    logout_url: result.logout_url,
+  };
+}
+
+export async function getSessionInfo(): Promise<SessionInfo> {
+  return parseSessionInfo(await request<unknown>('/api/session', 'GET'));
+}
+
 export async function getSession(): Promise<boolean> {
-  const result = await request<{ authenticated: boolean }>('/api/session', 'GET');
-  if (typeof result?.authenticated !== 'boolean')
-    throw new ApiError(0, 'session応答の形式を確認できませんでした。');
-  return result.authenticated;
+  return (await getSessionInfo()).authenticated;
 }
 export async function login(token: string): Promise<boolean> {
   await request<unknown>('/api/session', 'POST', { token });
   return getSession();
+}
+export async function loginWithCloudflare(): Promise<boolean> {
+  await request<unknown>('/api/session', 'POST', { method: 'cloudflare-access' });
+  return getSession();
+}
+
+/** A successful rotation invalidates local sessions, including this one. */
+export async function changeWorkspaceCredential(
+  currentToken: string,
+  newToken: string,
+): Promise<void> {
+  const result = await request<{ changed?: unknown; authenticated?: unknown }>(
+    '/api/auth/credential',
+    'POST',
+    { current_token: currentToken, new_token: newToken },
+  );
+  if (result?.changed !== true || result.authenticated !== false)
+    throw new ApiError(0, '接続キーの変更結果を確認できません。再送せず管理者へ確認してください。');
+  window.dispatchEvent(new Event('studio:credential-changed'));
 }
 export async function logout(): Promise<void> {
   await request<void>('/api/session', 'DELETE');

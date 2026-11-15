@@ -1,6 +1,7 @@
 """React BFFの同origin・session・固定proxy・dist境界を合成ASGIで検証する。"""
 
 import asyncio
+import json
 import sys
 import tempfile
 import unittest
@@ -52,6 +53,9 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
         (self.dist / "assets/app.js").write_text("console.log('synthetic');")
         self.now = [0]
         self.calls = []
+        self.auth_calls = []
+        self.login_token = TOKEN
+        self.revision = "b" * 64
         self.upstream = None
         self.values = {
             "CONTROL_API_TOKEN": TOKEN,
@@ -76,6 +80,36 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
         return client
 
     async def backend(self, request):
+        if request.url.path.startswith("/portal-auth/"):
+            self.auth_calls.append(request)
+            if request.url.path == "/portal-auth/status":
+                return httpx.Response(
+                    200,
+                    json={
+                        "configured": self.login_token != TOKEN,
+                        "revision": self.revision,
+                    },
+                )
+            data = json.loads(request.content)
+            if request.url.path == "/portal-auth/verify":
+                return httpx.Response(
+                    200,
+                    json={
+                        "valid": data["token"] == self.login_token,
+                        "revision": self.revision,
+                    },
+                )
+            if data["current_token"] != self.login_token:
+                return httpx.Response(401)
+            self.login_token = data["new_token"]
+            self.revision = "c" * 64
+            return httpx.Response(
+                200,
+                json={
+                    "changed": True,
+                    "revision": self.revision,
+                },
+            )
         self.calls.append(request)
         if isinstance(self.upstream, Exception):
             raise self.upstream
@@ -95,7 +129,15 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_session_cookie_is_opaque_scoped_and_revocable(self):
         response = await self.client.get("/api/session")
-        self.assertEqual(response.json(), {"authenticated": False})
+        self.assertEqual(
+            response.json(),
+            {
+                "authenticated": False,
+                "mode": "token",
+                "credential_change_supported": True,
+                "logout_url": None,
+            },
+        )
         response = await self.login()
         cookie = response.headers["set-cookie"]
         self.assertIn("poc_session_unit-project=", cookie)
@@ -274,6 +316,101 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status_code, 403)
         self.assertEqual(len(self.calls), calls)
+
+    async def test_login_key_changes_do_not_change_backend_credentials(self):
+        await self.login()
+        identifier = self.client.cookies.get("poc_session_unit-project")
+        response = await self.client.post(
+            "/api/auth/credential",
+            headers=UNSAFE,
+            json={"current_token": TOKEN, "new_token": "new-key-" * 6},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["changed"])
+        self.assertFalse(response.json()["authenticated"])
+        self.assertNotIn(TOKEN, response.text)
+        self.assertNotIn("new-key-", response.text)
+        self.assertFalse(self.app.state.sessions.authenticated(identifier))
+        rejected = await self.client.post(
+            "/api/session", headers=UNSAFE, json={"token": TOKEN}
+        )
+        self.assertEqual(rejected.status_code, 401)
+        await self.client.post(
+            "/api/session",
+            headers=UNSAFE,
+            json={"token": "new-key-" * 6},
+        )
+        response = await self.client.get("/api/control/poc/services")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            self.calls[-1].headers["authorization"], "Bearer " + TOKEN
+        )
+
+    async def test_changed_revision_revokes_other_gateway_sessions(self):
+        await self.login()
+        self.revision = "c" * 64
+        response = await self.client.get("/api/control/poc/services")
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(self.calls, [])
+
+    async def test_old_backend_never_falls_back_to_the_api_token(self):
+        async def old_backend(_):
+            return httpx.Response(404, text="synthetic-private-error")
+
+        app = gateway.create_app(
+            self.values, transport=httpx.MockTransport(old_backend)
+        )
+        client = self.make_client(app)
+        response = await client.post(
+            "/api/session", headers=UNSAFE, json={"token": TOKEN}
+        )
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(app.state.sessions.sessions, {})
+        self.assertNotIn("synthetic-private-error", response.text)
+
+    async def test_duplicate_credential_fields_do_not_select_a_secret(self):
+        response = await self.client.post(
+            "/api/session",
+            headers=UNSAFE,
+            content=b'{"token":"first","token":"second"}',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.auth_calls, [])
+
+    async def test_auth_routes_cannot_be_reached_via_generic_browser_proxy(
+        self,
+    ):
+        await self.login()
+        for path in (
+            "portal-auth",
+            "portal-auth/change",
+            "portal-auth/status",
+            "whole-maintenance",
+            "whole-maintenance/reserve",
+            "whole-maintenance/release",
+        ):
+            response = await self.client.get("/api/control/" + path)
+            self.assertEqual(response.status_code, 403)
+        self.assertEqual(self.calls, [])
+
+    async def test_key_change_requires_current_proof_and_strict_input(self):
+        await self.login()
+        response = await self.client.post(
+            "/api/auth/credential",
+            headers=UNSAFE,
+            json={"current_token": "wrong", "new_token": "new-key-" * 6},
+        )
+        self.assertEqual(response.status_code, 401)
+        for data in (
+            {"current_token": TOKEN, "new_token": "short"},
+            {"current_token": TOKEN, "new_token": " " * 30},
+            {"current_token": TOKEN, "new_token": "new-key-" * 6, "x": 1},
+        ):
+            response = await self.client.post(
+                "/api/auth/credential", headers=UNSAFE, json=data
+            )
+            self.assertEqual(response.status_code, 422)
+        self.assertEqual(self.login_token, TOKEN)
 
     async def test_proxy_body_size_stream_limit_is_checked_before_backend(
         self,

@@ -113,6 +113,19 @@ services:
       PORTAL_LINK_MODE: ${PORTAL_LINK_MODE:-local}
       PORTAL_PUBLIC_ORIGIN: ${DEMO_GUI_PUBLIC_URL:-}
       PORTAL_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-lakehouse}
+      # Access authenticates a human; CONTROL_API_TOKEN stays server-side.
+      # Trust configuration is explicit and never inferred from request headers.
+      PORTAL_AUTH_MODE: ${PORTAL_AUTH_MODE:-token}
+      PORTAL_ACCESS_TEAM_DOMAIN: ${PORTAL_ACCESS_TEAM_DOMAIN:-}
+      PORTAL_ACCESS_AUD: ${PORTAL_ACCESS_AUD:-}
+      # Only fixed Access signing-key retrieval uses the explicit HTTPS proxy.
+      # The internal API client bypasses proxies independently of these values.
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: *effective_no_proxy
+      http_proxy: ${http_proxy:-}
+      https_proxy: ${https_proxy:-}
+      no_proxy: *effective_no_proxy
     ports:
       - ${BIND_IP:-127.0.0.1}:${DEMO_GUI_PORT:-8501}:8501
     depends_on:

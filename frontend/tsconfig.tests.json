@@ -8,5 +8,12 @@
     "outDir": ".test-dist",
     "types": ["node"]
   },
-  "include": ["src/api.ts", "src/components.tsx", "tests/client.test.ts", "tests/render.test.tsx"]
+  "include": [
+    "src/api.ts",
+    "src/components.tsx",
+    "tests/client.test.ts",
+    "tests/render.test.tsx",
+    "tests/lifecycle.test.tsx",
+    "tests/manager.test.tsx"
+  ]
 }

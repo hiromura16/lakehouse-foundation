@@ -778,6 +778,28 @@
       "status": "active"
     },
     {
+      "path": "docs/SERVICE-CONTROL.md",
+      "title": "Studioからサービスを起動・再起動・停止する",
+      "purpose": "profile設定と実稼働を区別し、管理者承認済みの固定サービスをGUIから安全に操作する。",
+      "audience": [
+        "初めて使う人",
+        "運用担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "Studioのサービス操作を利用するときと、host runnerの承認・接続・結果未確認からの復旧を行うとき。",
+      "category": "05 運用・根拠",
+      "prerequisites": [
+        "docs/REACT-PORTAL.md",
+        "docs/CONFIGURATION.md"
+      ],
+      "next": [
+        "docs/API.md",
+        "docs/OPERATIONS.md",
+        "docs/TROUBLESHOOTING.md"
+      ],
+      "status": "active"
+    },
+    {
       "path": "docs/SQLSERVER-FIXED-DEMO.md",
       "title": "固定SQL sourceで疑似ERP・MESを検証する",
       "purpose": "所有権付き固定SQL表への合成データ投入と、読取専用バッチ・CDCの段階的な受入を行う。",
@@ -1328,6 +1350,26 @@
       "next": [
         "docs/DEPLOYMENT.md",
         "docs/SQLSERVER-FIXED-DEMO.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/POC-ENVIRONMENT-CONTROL.md",
+      "title": "2つのPoCを独立して起動・停止する",
+      "purpose": "独立した管理画面・API・CLIの配置、全体停止と再開、明示同意、排他と未確定からの回復を説明する。",
+      "audience": [
+        "基盤構築担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "基盤PoCと将来構想PoCを切り替えて負荷検証・運用するとき。",
+      "category": "02 構築・運用",
+      "prerequisites": [
+        "docs/OPERATIONS.md",
+        "docs/DOKPLOY.md"
+      ],
+      "next": [
+        "docs/API.md",
+        "docs/REVIEW-WORKFLOW.md"
       ],
       "status": "active"
     }

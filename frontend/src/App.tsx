@@ -17,11 +17,13 @@ import {
   Menu,
   Search,
   Settings2,
+  Sparkles,
   ShieldCheck,
   Workflow,
   X,
 } from 'lucide-react';
-import { getSession, login, logout } from './api';
+import { getSessionInfo, login, loginWithCloudflare, logout } from './api';
+import type { SessionInfo } from './api';
 import { Badge, Button, ErrorNotice } from './components';
 import { useResource } from './hooks';
 import type { Catalog, JobList, Page, ServiceList } from './types';
@@ -31,6 +33,8 @@ import { Operations } from './pages/Operations';
 import { Overview } from './pages/Overview';
 import { Services } from './pages/Services';
 import { Settings } from './pages/Settings';
+import { Setup } from './pages/Setup';
+import { WorkspaceLoginMethod } from './pages/Authentication';
 
 const NAV = [
   { id: 'overview' as Page, label: 'ワークスペース', icon: LayoutDashboard, group: 'workspace' },
@@ -38,6 +42,7 @@ const NAV = [
   { id: 'data' as Page, label: 'データカタログ', icon: Database, group: 'workspace' },
   { id: 'onboarding' as Page, label: 'データ連携を組む', icon: GitBranch, group: 'workspace' },
   { id: 'operations' as Page, label: '運用・ジョブ', icon: Workflow, group: 'manage' },
+  { id: 'setup' as Page, label: 'セットアップ', icon: Sparkles, group: 'manage' },
   { id: 'settings' as Page, label: '設定', icon: Settings2, group: 'manage' },
 ];
 
@@ -52,16 +57,21 @@ function Logo({ large = false }: { large?: boolean }) {
 function Login({
   onAuthenticated,
   initialError,
+  session,
+  refreshSession,
 }: {
   onAuthenticated: () => void;
   initialError: string | null;
+  session: SessionInfo | null;
+  refreshSession: () => void;
 }) {
   const [token, setToken] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(initialError);
+  const cloudflare = session?.mode === 'cloudflare-access';
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!token || busy) return;
+    if ((!token && !cloudflare) || busy || !session) return;
     const submitted = token;
     // Keep the initial input ephemeral. It never enters localStorage,
     // sessionStorage, URLs, console output, or a global state container.
@@ -69,8 +79,8 @@ function Login({
     setBusy(true);
     setError(null);
     try {
-      if (!(await login(submitted)))
-        throw new Error('認証を確認できませんでした。接続tokenを確認してください。');
+      if (!(cloudflare ? await loginWithCloudflare() : await login(submitted)))
+        throw new Error('認証を確認できませんでした。ログイン状態を確認してください。');
       onAuthenticated();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : '接続を確認できません。');
@@ -130,38 +140,34 @@ function Login({
         <div className="login-lock">
           <LockKeyhole size={22} />
         </div>
-        <span className="eyebrow">OWNER CONNECTION</span>
+        <span className="eyebrow">{cloudflare ? 'CLOUDFLARE ACCESS' : 'WORKSPACE CONNECTION'}</span>
         <h2>ワークスペースへ接続</h2>
-        <p>管理者から受け取った操作APIの接続tokenを入力してください。</p>
+        <p>
+          {!session
+            ? '認証方式を取得できませんでした。再取得してから接続してください。'
+            : cloudflare
+              ? 'Cloudflareで認証したアカウントで接続します。APIトークンの入力は不要です。'
+              : 'ワークスペース専用の接続キーを入力してください。'}
+        </p>
         <ErrorNotice message={error} />
-        <form onSubmit={(event) => void submit(event)}>
-          <label className="field">
-            接続token
-            <input
-              type="password"
-              autoComplete="off"
-              value={token}
-              disabled={busy}
-              onChange={(event) => setToken(event.target.value)}
-              placeholder="操作APIの接続token"
-              required
+        {!session ? (
+          <Button onClick={refreshSession}>認証方式を再取得</Button>
+        ) : (
+          <form onSubmit={(event) => void submit(event)}>
+            <WorkspaceLoginMethod
+              mode={session.mode}
+              token={token}
+              busy={busy}
+              onToken={setToken}
             />
-          </label>
-          <Button
-            type="submit"
-            variant="primary"
-            busy={busy}
-            disabled={!token}
-            className="login-submit"
-          >
-            接続する
-            <ArrowRight size={16} />
-          </Button>
-        </form>
+          </form>
+        )}
         <div className="login-security">
           <ShieldCheck size={16} />
           <span>
-            入力値は送信直後にクリアします。以後はHttpOnlyのsessionで接続し、ブラウザーのstorageにtokenを保存しません。
+            {cloudflare
+              ? 'Accessの署名・有効期限・接続先をサーバーで検証します。ログインできるアカウントはAccessポリシーに従います。'
+              : '入力値は送信直後にクリアします。以後はHttpOnlyのsessionで接続し、ブラウザーのstorageにキーを保存しません。'}
           </span>
         </div>
         <details>
@@ -171,7 +177,7 @@ function Login({
           </summary>
           <p>
             個人のSQL Server
-            passwordやDBA資格情報は入力しません。接続tokenは管理者のprivate設定で管理します。sessionはgatewayの再起動や期限切れで終了します。
+            passwordやDBA資格情報は入力しません。接続キーは設定画面で変更できます。サーバー間APIのトークンはブラウザーに渡しません。sessionはgatewayの再起動や期限切れで終了します。
           </p>
         </details>
       </section>
@@ -182,7 +188,7 @@ function Login({
   );
 }
 
-function Workspace({ onLogout }: { onLogout: () => void }) {
+function Workspace({ onLogout, session }: { onLogout: () => void; session: SessionInfo }) {
   const initial = window.location.hash.slice(1);
   const [page, setPage] = useState<Page>(
     NAV.some((item) => item.id === initial) ? (initial as Page) : 'overview',
@@ -229,6 +235,9 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     try {
       await logout();
       onLogout();
+      // The exact same-origin path is validated before reaching this component.
+      if (session.logout_url === '/cdn-cgi/access/logout')
+        window.location.assign(session.logout_url);
     } catch (failure) {
       setLogoutError(failure instanceof Error ? failure.message : 'session終了を確認できません。');
     } finally {
@@ -344,8 +353,12 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
               <ShieldCheck size={17} />
             </span>
             <div>
-              <strong>認証済みsession</strong>
-              <small>owner connection</small>
+              <strong>
+                {session.mode === 'cloudflare-access' ? 'Cloudflare認証済み' : '接続キーで認証済み'}
+              </strong>
+              <small>
+                {session.mode === 'cloudflare-access' ? 'Access SSO' : 'workspace session'}
+              </small>
             </div>
             <button aria-label="sessionを終了" disabled={logoutBusy} onClick={() => void signOut()}>
               <LogOut size={16} />
@@ -473,7 +486,8 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
           )}
           {page === 'data' && <Data catalog={catalog} initialLayer={dataLayer} search={search} />}
           {page === 'operations' && <Operations jobs={jobs} />}
-          {page === 'settings' && <Settings />}
+          {page === 'setup' && <Setup navigate={navigate} />}
+          {page === 'settings' && <Settings session={session} />}
           {/* Keep a draft across navigation, but unmount everything on logout. */}
           <div hidden={page !== 'onboarding'}>
             <Onboarding />
@@ -497,12 +511,17 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const [session, setSession] = useState<SessionInfo | null>(null);
+  const [sessionGeneration, setSessionGeneration] = useState(0);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
-    void getSession()
+    void getSessionInfo()
       .then((value) => {
-        if (active) setAuthenticated(value);
+        if (active) {
+          setSession(value);
+          setAuthenticated(value.authenticated);
+        }
       })
       .catch((failure) => {
         if (active) {
@@ -514,12 +533,18 @@ export default function App() {
       setAuthenticated(false);
       setError('sessionの期限が切れました。もう一度接続してください。');
     };
+    const credentialChanged = () => {
+      setAuthenticated(false);
+      setError('接続キーを変更しました。新しいキーで接続してください。');
+    };
     window.addEventListener('studio:unauthorized', expired);
+    window.addEventListener('studio:credential-changed', credentialChanged);
     return () => {
       active = false;
       window.removeEventListener('studio:unauthorized', expired);
+      window.removeEventListener('studio:credential-changed', credentialChanged);
     };
-  }, []);
+  }, [sessionGeneration]);
   if (authenticated === null)
     return (
       <div className="boot-screen" role="status">
@@ -532,14 +557,23 @@ export default function App() {
     return (
       <Login
         initialError={error}
+        session={session}
+        refreshSession={() => {
+          setAuthenticated(null);
+          setSession(null);
+          setError(null);
+          setSessionGeneration((value) => value + 1);
+        }}
         onAuthenticated={() => {
           setAuthenticated(true);
           setError(null);
+          setSessionGeneration((value) => value + 1);
         }}
       />
     );
   return (
     <Workspace
+      session={session!}
       onLogout={() => {
         setAuthenticated(false);
         setError(null);

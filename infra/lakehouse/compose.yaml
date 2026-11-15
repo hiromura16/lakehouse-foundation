@@ -111,7 +111,11 @@ services:
     logging: *service_logging
     image: quay.io/lakekeeper/catalog:v0.14.3@sha256:0009e7ccb26db811b8fc485974b624a999fd096f4da549a8704d3121dc20e98a
     mem_limit: 384m
-    environment: *catalog_environment
+    environment:
+      <<: *catalog_environment
+      # UIは利用者のブラウザーから接続する。内部RESTのBASE_URIとは分ける。
+      # 公開時は既存のHTTPS origin、ローカル時はhost側の公開portを使う。
+      LAKEKEEPER__UI__LAKEKEEPER_URL: ${CATALOG_PUBLIC_URL:-http://localhost:${CATALOG_PORT:-8181}}
     command:
       - serve
     ports:

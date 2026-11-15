@@ -148,6 +148,13 @@ host portは1024〜65535から選びます。coreと**有効profileで公開す�
 
 ## S3・カタログ・worker
 
+`CATALOG_PUBLIC_URL`はLakekeeperのブラウザー向けHTTPS originにも使います。
+Composeは`LAKEKEEPER__UI__LAKEKEEPER_URL`へ渡し、未設定時は
+`http://localhost:<CATALOG_PORT>`になります。内部のSpark・Trino向けの
+`LAKEKEEPER__BASE_URI`は`http://catalog:8181`のままです。
+GUIと管理APIは同portなので、外部公開は管理APIも含めた承認と入口保護が必要です。
+[UIの接続先と公開範囲](CLOUDFLARE.md#lakekeeperのuiがunreachableと表示される場合)
+
 | 項目 | 生成時の既定 | 意味と変更時の影響 | 秘密 |
 | --- | --- | --- | --- |
 | `WAREHOUSE_NAME` | `lakehouse` | LakekeeperのWarehouse識別名。既存Warehouseと保存先の対応を保持する。名前変更だけで既存表は移らない | 社内 |
@@ -236,6 +243,10 @@ SOURCEは**読み取り**、DEMOは明示的に許可した**書き込み**で�
 | 項目 | 生成時の既定 | 意味と変更時の影響 | 秘密 |
 | --- | --- | --- | --- |
 | `CONTROL_API_TOKEN` | 64文字のhexを自動生成 | StreamlitからFastAPI、およびSwagger等の操作クライアントへのBearer鍵。変更後はAPIと画面を整合させて再配置する | はい |
+| `PORTAL_LOGIN_TOKEN` | 新規は64文字hex。旧設定upgrade時の追加は空 | Reactの初回接続キー。空の場合だけ旧CONTROLキーをbootstrapに使う。GUI変更後は専用hashを使う | はい |
+| `PORTAL_AUTH_MODE` | `token` | `cloudflare-access`は公開Reactでのみ利用。方式変更はoperatorが反映 | いいえ |
+| `PORTAL_ACCESS_TEAM_DOMAIN` | 空 | 固定の`<team>.cloudflareaccess.com` hostname。URL/pathを含めない | 運用情報 |
+| `PORTAL_ACCESS_AUD` | 空 | Portal用Accessアプリの64桁hex AUD。別アプリと共有しない | 運用情報 |
 | `CONTROL_SETTINGS_DIR` | 生成先ファイルの親ディレクトリ | APIへ `/private` としてRW mountする専用0700ディレクトリ。設定ファイルのatomic replaceに必要。無関係な秘密ファイルを同居させない | 社内 |
 | `CONTROL_SETTINGS_NAME` | 生成先のファイル名 | 上記dir内の0600設定ファイル名。pathを含まない名前。GUIから保存先の移動は拒否する | 社内 |
 
@@ -244,6 +255,10 @@ SOURCEは**読み取り**、DEMOは明示的に許可した**書き込み**で�
 GUIの保存は **saved**、コンテナへの反映は **applied** と区別します。設定APIは保存後も起動時のDEMO接続設定を使い、変更がある間は `pending_restart` を返します。`LANDING_DIR` を保存しても `/landing` mountは移りません。profile/port/UID/volume/秘密鍵の変更は影響を確認し、同じ設定でCLIまたはDokployから再配置します。DokployのEnvironmentとprivateファイルは自動同期しません。[API.md](API.md)
 
 GUIからSQLへ素材を投入する場合は、`DEMO_SQLSERVER_CA_FILE` のCAをこの専用dir配下へ置くと、host側絶対pathをAPIの `/private` 側へ安全に対応付けます。dir外、symlink、regular file以外は拒否します。CLIは元のhost pathを使えます。`SOURCE_SQLSERVER_CA_FILE` やJava用truststoreを同じ仕組みで自動配布する設定ではありません。
+
+認証方式・team/AUD・bootstrap・CONTROL鍵は汎用設定PATCHからの変更を拒否します。
+接続キーの変更はReactの専用画面を使い、設定とは別の`.portal-auth` hashへ保存します。
+SSO設定はoperatorがprivate設定と配置値を揃えます。[認証と復旧](REACT-PORTAL.md)
 
 ## SQL Serverの変更を読むCDC設定
 

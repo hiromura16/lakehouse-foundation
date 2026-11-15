@@ -11,7 +11,14 @@ import {
   PageHeader,
   SERVICE_STATES,
   serviceUrl,
-} from '../components';
+} from '../components.js';
+import { observedState } from '../lifecycle.js';
+import {
+  LifecycleConnectionNotice,
+  LifecycleOperationNotice,
+  LifecycleServiceControls,
+  useLifecycle,
+} from './ServiceLifecycle.js';
 import type { Resource } from '../hooks';
 import type { Page, Service, ServiceList } from '../types';
 
@@ -45,6 +52,26 @@ export function Services({
   const [enabledOnly, setEnabledOnly] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [copyError, setCopyError] = useState(false);
+  const lifecycle = useLifecycle(resource.refresh);
+  const additionalServices = (lifecycle.capabilities?.services ?? [])
+    .filter(
+      (item) =>
+        item.group_id && !resource.data?.services.some((service) => service.id === item.service_id),
+    )
+    .map((item): Service => ({
+      id: item.service_id,
+      title: item.title,
+      description:
+        'ブラウザー画面を持たない管理対象です。共有する機能を含む影響対象を確認して操作できます。',
+      profile: item.group_id ?? '',
+      enabled: item.profile_selected,
+      configured: true,
+      state: 'not_enabled',
+      url: '',
+      link_mode: 'public',
+      link_configured: false,
+      missing_settings: [],
+    }));
   const cards = useMemo(
     () =>
       (resource.data?.services ?? []).filter(
@@ -81,13 +108,33 @@ export function Services({
         title="必要なツールへ、迷わず。"
         description="内部の稼働確認と、ブラウザーから開く入口を分けて表示します。"
         action={
-          <Button busy={resource.loading} onClick={() => void resource.refresh()}>
+          <Button
+            busy={resource.loading}
+            onClick={() => {
+              void resource.refresh();
+              void lifecycle.resource.refresh();
+            }}
+          >
             <RefreshCw size={15} />
             状態を更新
           </Button>
         }
       />
       <ErrorNotice message={resource.error} retry={() => void resource.refresh()} />
+      <LifecycleConnectionNotice
+        connected={lifecycle.connected}
+        loading={lifecycle.resource.loading}
+        failed={!!lifecycle.resource.error}
+        capabilities={lifecycle.capabilities}
+        onRefresh={() => void lifecycle.resource.refresh()}
+      />
+      {lifecycle.planError && <Notice tone="warning">{lifecycle.planError}</Notice>}
+      <LifecycleOperationNotice
+        operation={lifecycle.operation}
+        error={lifecycle.operationError}
+        recovering={lifecycle.recovering}
+        onRefresh={() => void lifecycle.refreshOperation()}
+      />
       {resource.data?.pending_restart && (
         <Notice tone="warning">
           保存した設定は反映待ちです。カードは現在の起動時設定を表示しています。
@@ -142,6 +189,16 @@ export function Services({
       ) : (
         <div className="service-grid">
           {cards.map((service) => {
+            const capability = lifecycle.capabilities?.services.find(
+              (item) => item.service_id === service.id,
+            );
+            // Only fresh runner evidence may enable a link for a deselected profile.
+            // Configured/public-origin checks still belong to ExternalLink.
+            const launchService =
+              !lifecycle.resource.error &&
+              observedState(lifecycle.capabilities, capability) === 'running'
+                ? { ...service, enabled: true }
+                : service;
             const state = SERVICE_STATES[service.state] ?? {
               label: '状態未取得',
               tone: 'muted' as const,
@@ -181,8 +238,23 @@ export function Services({
                     {copied === service.id && <span role="status">コピー済み</span>}
                   </div>
                 )}
+                <LifecycleServiceControls
+                  service={service}
+                  capabilities={lifecycle.capabilities}
+                  capability={capability}
+                  busy={lifecycle.busy}
+                  connectionError={!!lifecycle.resource.error}
+                  onAction={(target, action) => void lifecycle.prepare(target, action)}
+                />
+                {(!service.enabled ||
+                  capability?.blocked_reasons.includes('INITIAL_SETUP_REQUIRED')) && (
+                  <button className="text-link" onClick={() => navigate('setup')}>
+                    <Settings2 size={14} />
+                    初回セットアップの手順を見る
+                  </button>
+                )}
                 <footer>
-                  <ExternalLink service={service} />
+                  <ExternalLink service={launchService} />
                   {!url && service.link_mode === 'public' ? (
                     <button className="text-link" onClick={() => navigate('settings')}>
                       <Settings2 size={14} />
@@ -197,6 +269,38 @@ export function Services({
           })}
         </div>
       )}
+      {!!additionalServices.length && (
+        <section className="lifecycle-additional" aria-labelledby="lifecycle-additional-title">
+          <h2 id="lifecycle-additional-title">画面のないサービス</h2>
+          <p>RPCなどで利用する機能です。Web画面へのリンクはありません。</p>
+          <div className="service-grid">
+            {additionalServices.map((service) => (
+              <article className="service-card" key={service.id}>
+                <h3>{service.title}</h3>
+                <p>{service.description}</p>
+                <LifecycleServiceControls
+                  service={service}
+                  capabilities={lifecycle.capabilities}
+                  capability={lifecycle.capabilities?.services.find(
+                    (item) => item.service_id === service.id,
+                  )}
+                  busy={lifecycle.busy}
+                  connectionError={!!lifecycle.resource.error}
+                  onAction={(target, action) => void lifecycle.prepare(target, action)}
+                />
+                <code className="service-id">{service.id}</code>
+                {!service.enabled && (
+                  <button className="text-link" onClick={() => navigate('setup')}>
+                    <Settings2 size={14} />
+                    初回セットアップの手順を見る
+                  </button>
+                )}
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+      {lifecycle.dialog}
       <div className="page-footnote">
         <ArrowUpRight size={14} />
         外部URLの設定は、Tunnel・Access・native製品の認証や公開設定を自動作成しません。

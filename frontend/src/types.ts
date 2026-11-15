@@ -1,5 +1,6 @@
 /** Public response contracts. These types never contain the control token. */
-export type Page = 'overview' | 'services' | 'onboarding' | 'data' | 'operations' | 'settings';
+export type Page =
+  'overview' | 'services' | 'setup' | 'onboarding' | 'data' | 'operations' | 'settings';
 export type Tone = 'cyan' | 'green' | 'amber' | 'red' | 'muted';
 export interface Service {
   id: string;

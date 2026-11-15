@@ -15,10 +15,12 @@ import sys
 import tempfile
 from html.parser import HTMLParser
 from pathlib import Path
+from unittest.mock import patch
 
 import httpx
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "infra/demo"))
 import portal_gateway  # noqa: E402
 
@@ -79,6 +81,16 @@ async def verify(dist):
     calls = []
 
     async def backend(request):
+        # The real BFF checks the API-owned login proof/revision. These
+        # synthetic auth responses are separate from the forwarded call.
+        if request.url.path == "/portal-auth/verify":
+            return httpx.Response(
+                200, json={"valid": True, "revision": "b" * 64}
+            )
+        if request.url.path == "/portal-auth/status":
+            return httpx.Response(
+                200, json={"configured": False, "revision": "b" * 64}
+            )
         calls.append(request)
         return httpx.Response(200, json={"synthetic": True})
 
@@ -129,6 +141,62 @@ async def verify(dist):
         assert "cookie" not in calls[0].headers
 
 
+async def verify_manager(dist):
+    """Serve the same compiled build with the independent manager entry mode.
+
+    Injected credentials are synthetic values only. This checks built public
+    assets and real ASGI auth boundaries, not browser JavaScript execution or
+    a connected root runner. No private token file is read.
+    """
+    from infra.management.api import Settings, create_app
+
+    origin = "https://manager.example.invalid"
+    app = create_app(
+        Settings(
+            dist.parent / "unused-state",
+            Path("/unused/api.token"),
+            Path("/unused/runner.token"),
+            origin,
+        ),
+        tokens=("1" * 64, "2" * 64),
+    )
+    with patch("infra.management.web.DIST", dist):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url=origin
+        ) as client:
+            response = await client.get("/")
+            assert response.status_code == 200
+            assert 'name="lakehouse-mode" content="manager"' in response.text
+            assert "Lakehouse Control" in response.text
+            parser = Assets()
+            parser.feed(response.text)
+            assert len(parser.paths) >= 2
+            for path in parser.paths:
+                asset = await client.get(path)
+                assert asset.status_code == 200 and asset.content
+            for path in ("/docs", "/openapi.json", "/api/pocs"):
+                assert (await client.get(path)).status_code == 401
+            response = await client.post(
+                "/api/session",
+                json={"token": "1" * 64},
+                headers={"Origin": origin},
+            )
+            assert response.status_code == 200
+            assert "Secure" in response.headers["set-cookie"]
+            assert "1" * 64 not in response.text
+            response = await client.get("/docs")
+            assert response.status_code == 200
+            assert "/swagger/swagger-ui-bundle.js" in response.text
+            assert "cdn.jsdelivr.net" not in response.text
+            response = await client.get("/openapi.json")
+            assert response.status_code == 200
+            assert "/api/operations" in response.json()["paths"]
+            assert all(
+                not name.startswith("/internal/")
+                for name in response.json()["paths"]
+            )
+
+
 def main():
     """一時領域だけを使い、失敗時も元例外・資格情報を出力しない。"""
     try:
@@ -137,11 +205,12 @@ def main():
             dist.mkdir(mode=0o700)
             count = copy_dist(dist)
             asyncio.run(verify(dist))
+            asyncio.run(verify_manager(dist))
     except Exception:
         print("FAIL: React build/ASGI contract; no live service contacted.")
         return 1
     print(
-        f"PASS: {count} compiled React assets, BFF and synthetic backend; "
+        f"PASS: {count} React assets, BFF, manager and synthetic backend; "
         "browser/render acceptance remains separate."
     )
     return 0

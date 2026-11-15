@@ -524,6 +524,8 @@ class MonitoringSpoolTests(ControlFixture, unittest.TestCase):
         cases["ancestor-link"] = link / "spool"
         unsafe = base / "unsafe"
         unsafe.mkdir(mode=0o755)
+        # Fixture permissions must remain deliberately unsafe under umask 077.
+        unsafe.chmod(0o755)
         cases["unsafe-mode"] = unsafe
         for name, spool in cases.items():
             self.configure_monitoring(spool)

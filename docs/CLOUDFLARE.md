@@ -139,6 +139,29 @@ CSRF/Host/Originの扱いを別に設計します。
 [dashboardからのTunnel作成](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/)
 を参照してください。
 
+### LakekeeperのUIが「Unreachable」と表示される場合
+
+LakekeeperはUIとカタログ管理APIが同じportにあります。この項目は、管理APIも含めた
+公開を別途承認し、hostname全体をAccessで保護した導入だけに適用します。
+
+内部の`/health`が200でも、UIのJavaScriptが`http://catalog:8181/`へ接続すると、
+外部のPCはDocker内の名前を解決できません。HTTPS画面からのHTTP要求も失敗します。
+Lakekeeper 0.14.xの`LAKEKEEPER__UI__LAKEKEEPER_URL`は、ブラウザー向けの接続先です。
+本構成では既存の`CATALOG_PUBLIC_URL`をこの設定へ渡し、内部用の
+`LAKEKEEPER__BASE_URI=http://catalog:8181`は保持します。
+[採用版の公式UI設定](https://docs.lakekeeper.io/docs/0.14.x/configuration/#ui)
+
+```dotenv
+CATALOG_PUBLIC_URL=https://catalog.example.invalid
+```
+
+公開URLが空の場合、UIは`http://localhost:<CATALOG_PORT>`を使用します。
+これは導入先本人のブラウザーまたは同portのSSH転送用で、他のPCのlocalhostではありません。
+設定を同じmanagerで`catalog`へ反映した後、ブラウザーを再読み込みし、開発者ツールの
+Networkで管理APIの要求先が承認したHTTPS originになっていることを確認します。
+初期化・migration・warehouse作成をやり直す必要はありません。
+CORSを`*`にしたりAccess・認証・TLS検証を解除する方法で解決しません。
+
 ## AIの補助に使う案
 
 文書はR2、検索索引はVectorize、検索・回答はAI Search、独自処理はWorkers AIという役割分担が考えられます。これらは、本リポジトリのGold数値の集計規則を置き換えるものではありません。数値は確定したGoldから取得し、文書は根拠ページや原本ハッシュを持たせます。[Workers AI](https://developers.cloudflare.com/workers-ai/)、[Vectorize](https://developers.cloudflare.com/vectorize/)、[AI Search](https://developers.cloudflare.com/ai-search/)

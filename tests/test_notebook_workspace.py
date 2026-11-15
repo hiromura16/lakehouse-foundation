@@ -402,6 +402,8 @@ class DisposableLinuxWorkspaceTests(unittest.TestCase):
 
     def test_workspace_replacement_after_open_prevents_metadata_mutation(self):
         self.target.mkdir(mode=0o755)
+        # Exercise replacement of the intended 0755 inode under any umask.
+        self.target.chmod(0o755)
         original_open = MODULE.os.open
         moved = self.directory / "previous"
         replaced = False

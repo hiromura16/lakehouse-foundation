@@ -1,0 +1,83 @@
+# Standalone project: never merge this file into either managed PoC project.
+# Host-side enrollment/runner is installed separately after operator review.
+name: ${MANAGER_PROJECT_NAME:-lakehouse-manager}
+
+services:
+  poc-manager:
+    image: ${MANAGER_PROJECT_NAME:-lakehouse-manager}-api:local
+    pull_policy: build
+    build:
+      context: ../..
+      dockerfile: infra/management/Dockerfile
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,poc-manager}
+      secrets:
+        - corporate_ca
+    user: '10001:10001'
+    restart: unless-stopped
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 384m
+    cpus: 0.50
+    pids_limit: 128
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001,mode=0700
+    ports:
+      - '127.0.0.1:${MANAGER_PORT:-8010}:8000'
+    environment:
+      MANAGER_STATE_DIR: /state
+      MANAGER_TOKEN_FILE: /run/manager-secrets/api.token
+      MANAGER_RUNNER_TOKEN_FILE: /run/manager-secrets/runner.token
+      MANAGER_PUBLIC_ORIGIN: ${MANAGER_PUBLIC_ORIGIN:-http://127.0.0.1:8010}
+      MANAGER_AUTH_MODE: ${MANAGER_AUTH_MODE:-token}
+      MANAGER_ACCESS_TEAM_DOMAIN: ${MANAGER_ACCESS_TEAM_DOMAIN:-}
+      MANAGER_ACCESS_AUD: ${MANAGER_ACCESS_AUD:-}
+      # The runtime does not inherit outbound proxy credentials.
+      NO_PROXY: localhost,127.0.0.1,::1,poc-manager
+      no_proxy: localhost,127.0.0.1,::1,poc-manager
+    volumes:
+      - type: bind
+        source: ${MANAGER_STATE_DIR:?Select a private manager state directory}
+        target: /state
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${MANAGER_SECRETS_DIR:?Select a private manager secrets directory}
+        target: /run/manager-secrets
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      # Boundary verifies the selected public Host even for a loopback probe.
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import os, urllib.request, urllib.parse;
+          host=urllib.parse.urlsplit(os.environ['MANAGER_PUBLIC_ORIGIN']).netloc;
+          opener=urllib.request.build_opener(urllib.request.ProxyHandler({}));
+          request=urllib.request.Request('http://127.0.0.1:8000/health',headers={'Host':host});
+          response=opener.open(request,timeout=3);
+          assert response.status==200
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    labels:
+      app.owner: lakehouse-foundation
+      traefik.enable: 'false'
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+secrets:
+  # Empty public CA is safe by default; never embed a private key or password.
+  corporate_ca:
+    file: ${LAKEHOUSE_CA_FILE:-../proxy/empty-ca.pem}

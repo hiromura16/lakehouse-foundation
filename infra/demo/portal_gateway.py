@@ -1,4 +1,4 @@
-"""React用の同一origin BFF。PoC所有者向けで、SSO・role分離は未実装。
+"""React用の同一origin BFF。所有者のtokenまたはAccess認証を検証する。
 
 root tokenはサーバーだけで保持し、ブラウザーには不透明な短期sessionを渡す。
 sessionは1 processのメモリだけに保存し、再起動時にすべて失効する。
@@ -7,7 +7,6 @@ sessionは1 processのメモリだけに保存し、再起動時にすべて失�
 
 import asyncio
 import hashlib
-import json
 import os
 import re
 import secrets
@@ -21,6 +20,12 @@ import httpx
 from control_settings import VALIDATOR
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+from portal_auth import (
+    AccessVerifier,
+    AuthProblem,
+    CredentialBackend,
+    strict_json,
+)
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.requests import ClientDisconnect
 
@@ -90,13 +95,17 @@ class Sessions:
     def purge(self):
         """期限は延長せず、最大128件だけを走査する。"""
         now = self.clock()
-        for key, expires in list(self.sessions.items()):
-            if expires <= now:
+        for key, record in list(self.sessions.items()):
+            if record["expires"] <= now:
                 del self.sessions[key]
 
-    def authenticated(self, value):
+    def authenticated(self, value, binding=None):
         self.purge()
-        return self.key(value) in self.sessions
+        record = self.sessions.get(self.key(value))
+        return bool(record) and (
+            binding is None
+            or secrets.compare_digest(record["binding"], binding)
+        )
 
     def login_allowed(self):
         now = self.clock()
@@ -107,14 +116,17 @@ class Sessions:
         self.attempts.append(now)
         return True
 
-    def issue(self, previous=None):
+    def issue(self, previous=None, *, binding=""):
         """再login時も新しい256bit値を生成する。容量不足では他人を追放しない。"""
         self.purge()
         self.sessions.pop(self.key(previous), None)
         if len(self.sessions) >= SESSION_LIMIT:
             raise GatewayProblem(503, "session_capacity_reached")
         value = secrets.token_urlsafe(32)
-        self.sessions[self.key(value)] = self.clock() + SESSION_SECONDS
+        self.sessions[self.key(value)] = {
+            "expires": self.clock() + SESSION_SECONDS,
+            "binding": binding,
+        }
         return value
 
     def revoke(self, value):
@@ -282,7 +294,13 @@ def static_bytes(root, relative):
             os.close(descriptor)
 
 
-def create_app(values=None, *, transport=None, clock=time.monotonic):
+def create_app(
+    values=None,
+    *,
+    transport=None,
+    access_transport=None,
+    clock=time.monotonic,
+):
     """環境だけから構成し、private設定fileや外部URLを探索しないfactory。"""
     values = dict(os.environ if values is None else values)
     policy = OriginPolicy(values)
@@ -294,6 +312,17 @@ def create_app(values=None, *, transport=None, clock=time.monotonic):
         raise ValueError("Configure a valid portal project name.")
     if values.get("DEMO_API_URL", BACKEND_ORIGIN) != BACKEND_ORIGIN:
         raise ValueError("Portal backend must remain its fixed internal API.")
+    mode = values.get("PORTAL_AUTH_MODE", "token")
+    if mode not in {"token", "cloudflare-access"}:
+        raise ValueError("Configure token or cloudflare-access auth mode.")
+    if mode == "cloudflare-access" and not policy.secure:
+        raise ValueError("Access authentication requires the public origin.")
+    access = (
+        AccessVerifier(values, transport=access_transport, clock=clock)
+        if mode == "cloudflare-access"
+        else None
+    )
+    credentials = CredentialBackend(token, transport)
     dist = Path(values.get("PORTAL_DIST_DIR", "/opt/lakehouse/frontend/dist"))
     if (
         not dist.is_absolute()
@@ -325,6 +354,42 @@ def create_app(values=None, *, transport=None, clock=time.monotonic):
     app.add_middleware(PortalSecurity, policy=policy)
     app.state.sessions = sessions
 
+    def session_payload(authenticated):
+        """Expose capabilities, never the backend token or Access claims."""
+        return {
+            "authenticated": authenticated,
+            "mode": mode,
+            "credential_change_supported": mode == "token",
+            "logout_url": (
+                "/cdn-cgi/access/logout" if access is not None else None
+            ),
+        }
+
+    async def authenticated(request):
+        """A cookie cannot outlive a changed login key or Access identity."""
+        identifier = request.cookies.get(cookie)
+        if not sessions.authenticated(identifier):
+            return False
+        if access is not None:
+            binding = await access.verify(request.headers)
+        else:
+            result = await credentials.call("status")
+            binding = result["revision"]
+        if not sessions.authenticated(identifier, binding):
+            sessions.revoke(identifier)
+            return False
+        return True
+
+    def clear_cookie(response):
+        response.delete_cookie(
+            cookie,
+            path="/api",
+            secure=policy.secure,
+            httponly=True,
+            samesite="strict",
+        )
+        return response
+
     @app.get("/health")
     async def health():
         """livenessだけを示す。backendやSQLの成功を表さない。"""
@@ -342,34 +407,46 @@ def create_app(values=None, *, transport=None, clock=time.monotonic):
 
     @app.get("/api/session")
     async def session_state(request: Request):
-        return {
-            "authenticated": sessions.authenticated(
-                request.cookies.get(cookie)
-            )
-        }
+        try:
+            return session_payload(await authenticated(request))
+        except AuthProblem as error:
+            return failure(error.status, error.code)
 
     @app.post("/api/session")
     async def login(request: Request):
         if not sessions.login_allowed():
             return failure(429, "login_rate_limited")
         try:
-            data = json.loads(await request_body(request, limit=4096))
-            supplied = data.get("token") if isinstance(data, dict) else None
-            if (
-                not isinstance(data, dict)
-                or set(data) != {"token"}
-                or not isinstance(supplied, str)
-                or len(supplied) > 256
-            ):
-                return failure(400, "invalid_login_body")
-            if not secrets.compare_digest(supplied.encode(), token.encode()):
-                return failure(401, "authentication_failed")
-            identifier = sessions.issue(request.cookies.get(cookie))
-        except (json.JSONDecodeError, UnicodeError):
-            return failure(400, "invalid_login_body")
+            data = strict_json(await request_body(request, limit=4096))
+            if access is not None:
+                if data != {"method": "cloudflare-access"}:
+                    return failure(400, "invalid_login_body")
+                binding = await access.verify(request.headers)
+            else:
+                supplied = (
+                    data.get("token") if isinstance(data, dict) else None
+                )
+                if (
+                    not isinstance(data, dict)
+                    or set(data) != {"token"}
+                    or not isinstance(supplied, str)
+                    or not 1 <= len(supplied) <= 256
+                ):
+                    return failure(400, "invalid_login_body")
+                result = await credentials.call("verify", {"token": supplied})
+                if not result["valid"]:
+                    return failure(401, "authentication_failed")
+                binding = result["revision"]
+            identifier = sessions.issue(
+                request.cookies.get(cookie), binding=binding
+            )
+        except AuthProblem as error:
+            return failure(error.status, error.code)
         except GatewayProblem as error:
             return failure(error.status, error.code)
-        response = JSONResponse({"authenticated": True})
+        except (ValueError, UnicodeError):
+            return failure(400, "invalid_login_body")
+        response = JSONResponse(session_payload(True))
         response.set_cookie(
             cookie,
             identifier,
@@ -384,20 +461,47 @@ def create_app(values=None, *, transport=None, clock=time.monotonic):
     @app.delete("/api/session")
     async def logout(request: Request):
         sessions.revoke(request.cookies.get(cookie))
-        response = JSONResponse({"authenticated": False})
-        response.delete_cookie(
-            cookie,
-            path="/api",
-            secure=policy.secure,
-            httponly=True,
-            samesite="strict",
-        )
-        return response
+        return clear_cookie(JSONResponse(session_payload(False)))
+
+    @app.post("/api/auth/credential")
+    async def change_credential(request: Request):
+        """Change only the browser login proof; API credentials stay fixed."""
+        if access is not None:
+            return failure(403, "credential_change_not_available")
+        try:
+            if not await authenticated(request):
+                return failure(401, "authentication_required")
+            if not sessions.login_allowed():
+                return failure(429, "login_rate_limited")
+            data = strict_json(await request_body(request, limit=4096))
+            if (
+                not isinstance(data, dict)
+                or set(data) != {"current_token", "new_token"}
+                or not isinstance(data["current_token"], str)
+                or not 1 <= len(data["current_token"]) <= 256
+                or not isinstance(data["new_token"], str)
+                or not re.fullmatch(r"[!-~]{24,128}", data["new_token"])
+            ):
+                return failure(422, "invalid_credential_body")
+            await credentials.call("change", data)
+            sessions.sessions.clear()
+            return clear_cookie(
+                JSONResponse(
+                    {
+                        **session_payload(False),
+                        "changed": True,
+                    }
+                )
+            )
+        except AuthProblem as error:
+            return failure(error.status, error.code)
+        except GatewayProblem as error:
+            return failure(error.status, error.code)
+        except (ValueError, UnicodeError):
+            return failure(422, "invalid_credential_body")
 
     @app.api_route("/api/control/{path:path}", methods=list(PROXY_METHODS))
     async def control(path: str, request: Request):
-        if not sessions.authenticated(request.cookies.get(cookie)):
-            return failure(401, "authentication_required")
         if (
             not re.fullmatch(r"[A-Za-z0-9_./-]{1,512}", path)
             or any(part in {"", ".", ".."} for part in path.split("/"))
@@ -405,7 +509,19 @@ def create_app(values=None, *, transport=None, clock=time.monotonic):
             or len(request.scope.get("query_string", b"")) > 8192
         ):
             return failure(400, "invalid_api_path")
+        # Operator credentials/leases are not browser capabilities. Even an
+        # authenticated owner session cannot forward runner-control routes.
+        if path == "lifecycle/runner" or path.startswith("lifecycle/runner/"):
+            return failure(403, "operator_route_not_forwarded")
+        if path == "portal-auth" or path.startswith("portal-auth/"):
+            return failure(403, "authentication_route_not_forwarded")
+        if path == "whole-maintenance" or path.startswith(
+            "whole-maintenance/"
+        ):
+            return failure(403, "operator_route_not_forwarded")
         try:
+            if not await authenticated(request):
+                return failure(401, "authentication_required")
             body = await request_body(request)
             headers = {
                 "Authorization": "Bearer " + token,
@@ -464,6 +580,8 @@ def create_app(values=None, *, transport=None, clock=time.monotonic):
                             headers={"Content-Type": content_type},
                         )
         except GatewayProblem as error:
+            return failure(error.status, error.code)
+        except AuthProblem as error:
             return failure(error.status, error.code)
         except (TimeoutError, httpx.TimeoutException):
             return failure(504, "backend_timeout")

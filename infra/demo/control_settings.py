@@ -64,7 +64,9 @@ SETTING_KEYS = frozenset(
     "SPARK_HISTORY_UI_PORT CADVISOR_DOCKER_DATA_ROOT "
     "MONITORING_LOG_DIR MONITORING_HOST_ALIAS OPENOBSERVE_PORT "
     "OPENOBSERVE_ROOT_USER_EMAIL OPENOBSERVE_ROOT_USER_PASSWORD "
-    "OPENOBSERVE_INGEST_TOKEN_FILE PORTAL_LINK_MODE PORTAL_UI_MODE".split()
+    "OPENOBSERVE_INGEST_TOKEN_FILE PORTAL_LINK_MODE PORTAL_UI_MODE "
+    "PORTAL_AUTH_MODE PORTAL_ACCESS_TEAM_DOMAIN PORTAL_ACCESS_AUD "
+    "PORTAL_LOGIN_TOKEN".split()
 ) | frozenset(VALIDATOR.PUBLIC_URL_KEYS.values())
 # A token file path is editable metadata; its contents remain private.
 NON_SECRET_KEYS = {
@@ -240,6 +242,19 @@ class SettingsStore:
             raise SettingsError("Settings must be single-line ASCII.")
         with self.lock:
             current = self.read()
+            # Login trust and bootstrap secrets require a reviewed deployment.
+            # The dedicated credential endpoint rotates only the human key.
+            for key in (
+                "PORTAL_AUTH_MODE",
+                "PORTAL_ACCESS_TEAM_DOMAIN",
+                "PORTAL_ACCESS_AUD",
+                "PORTAL_LOGIN_TOKEN",
+                "CONTROL_API_TOKEN",
+            ):
+                if key in updates and updates[key] != current.get(key, ""):
+                    raise SettingsError(
+                        "Use the dedicated authentication procedure."
+                    )
             # Moving the directory that stores this file needs host-side work.
             for key in ("CONTROL_SETTINGS_DIR", "CONTROL_SETTINGS_NAME"):
                 if key in updates and updates[key] != current.get(key):

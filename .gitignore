@@ -16,6 +16,7 @@ __pycache__/
 *.py[cod]
 *.pem
 *.key
+*.token
 *.pfx
 *.p12
 *.crt
@@ -27,6 +28,7 @@ __pycache__/
 .ruff_cache/
 .pytest_cache/
 /infra/demo/static/
+/infra/management/static/
 
 # Frontend build/cache/test output is reproducible, never private source.
 /frontend/node_modules/

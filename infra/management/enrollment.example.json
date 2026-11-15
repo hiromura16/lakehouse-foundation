@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "independent_storage_verified": false,
+  "runner_id": "00000000000000000000000000000001",
+  "pocs": {
+    "foundation": {
+      "project": "foundation-example",
+      "services": {
+        "catalog-db": [],
+        "storage": [],
+        "catalog": ["catalog-db"],
+        "trino": ["catalog"],
+        "worker": ["catalog", "storage"],
+        "demo-api": ["worker"],
+        "demo": ["demo-api"]
+      },
+      "completed_bootstraps": ["catalog-migrate"],
+      "allow_interruption": false,
+      "maintenance": {
+        "token_file": "/etc/lakehouse-poc-manager/private/foundation-maintenance.token",
+        "reservation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "network": "foundation-example_default"
+      }
+    },
+    "vision": {
+      "project": "vision-example",
+      "services": {
+        "catalog-db": [],
+        "storage": [],
+        "catalog": ["catalog-db"],
+        "trino": ["catalog"],
+        "worker": ["catalog", "storage"],
+        "demo-api": ["worker"],
+        "demo": ["demo-api"]
+      },
+      "completed_bootstraps": ["catalog-migrate"],
+      "allow_interruption": false,
+      "maintenance": {
+        "token_file": "/etc/lakehouse-poc-manager/private/vision-maintenance.token",
+        "reservation_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "network": "vision-example_default"
+      }
+    }
+  }
+}

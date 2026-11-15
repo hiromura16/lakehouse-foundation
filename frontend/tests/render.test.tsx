@@ -11,6 +11,9 @@ import {
   serviceUrl,
 } from '../src/components.js';
 import type { Service } from '../src/types.js';
+import { WorkspaceAuthentication, WorkspaceLoginMethod } from '../src/pages/Authentication.js';
+import { SetupCard, SetupChecklist } from '../src/pages/Setup.js';
+import type { SetupComponent, SetupPlan } from '../src/setup.js';
 
 const service: Service = {
   id: 'grafana',
@@ -101,4 +104,111 @@ test('progress uses a bounded native element without CSP-unsafe inline CSS', () 
   assert.match(html, /value="0"/);
   assert.match(html, /value="100"/);
   assert.doesNotMatch(html, /style=/);
+});
+
+test('Cloudflare login has no fallback key input or manual API credential prompt', () => {
+  const html = renderToStaticMarkup(
+    <WorkspaceLoginMethod
+      mode="cloudflare-access"
+      token=""
+      busy={false}
+      onToken={() => undefined}
+    />,
+  );
+  assert.match(html, /Cloudflareでログイン/);
+  assert.doesNotMatch(html, /<input|type="password"|CONTROL_API_TOKEN/);
+});
+
+test('local workspace login stays ephemeral and disabled until a key is provided', () => {
+  const html = renderToStaticMarkup(
+    <WorkspaceLoginMethod mode="token" token="" busy={false} onToken={() => undefined} />,
+  );
+  assert.match(html, /ワークスペース接続キー/);
+  assert.match(html, /type="password"/);
+  assert.match(html, /autoComplete="off"/);
+  assert.match(html, /disabled=""/);
+});
+
+test('Access settings expose policy guidance without enabling local credential mutation', () => {
+  const html = renderToStaticMarkup(
+    <WorkspaceAuthentication
+      session={{
+        authenticated: true,
+        mode: 'cloudflare-access',
+        credential_change_supported: false,
+        logout_url: '/cdn-cgi/access/logout',
+      }}
+    />,
+  );
+  assert.match(html, /Cloudflare Access/);
+  assert.doesNotMatch(html, /<form|type="password"/);
+});
+
+test('key changes require current proof, confirmation and disable empty submit', () => {
+  const html = renderToStaticMarkup(
+    <WorkspaceAuthentication
+      session={{
+        authenticated: true,
+        mode: 'token',
+        credential_change_supported: true,
+        logout_url: null,
+      }}
+    />,
+  );
+  assert.match(html, /現在の接続キー/);
+  assert.match(html, /新しい接続キーを再入力/);
+  assert.match(html, /全員のワークスペース接続が終了/);
+  assert.match(html, /disabled=""/);
+  assert.doesNotMatch(html, /CONTROL_API_TOKEN/);
+});
+
+test('configuration readiness never renders as runtime success or one-click install', () => {
+  const component: SetupComponent = {
+    id: 'compute',
+    title: 'Spark',
+    description: 'Synthetic preparation only',
+    profile: 'compute',
+    selected: false,
+    configured: true,
+    missing_settings: [],
+    management_supported: true,
+    required_profiles: ['compute'],
+    depends_on: [],
+    steps: [],
+    state: 'ready_for_operator_review',
+    external_link_configured: false,
+  };
+  const html = renderToStaticMarkup(
+    <SetupCard component={component} onPrepare={() => undefined} busy={false} />,
+  );
+  assert.match(html, /設定は準備済み/);
+  assert.match(html, /初回準備後はGUIで起動・停止/);
+  assert.match(html, /外部から開く入口は別途準備/);
+  assert.doesNotMatch(html, /稼働中|インストール済み|localhost/);
+});
+
+test('setup checklist preserves before/after selection and explicit operator boundary', () => {
+  const plan: SetupPlan = {
+    version: 1,
+    component_id: 'notebooks',
+    title: 'JupyterLab',
+    profiles_before: ['demo'],
+    profiles_after: ['demo', 'notebooks'],
+    settings_to_review: ['NOTEBOOKS_DIR'],
+    steps: [
+      {
+        id: 'workspace',
+        title: '保存領域を確認',
+        description: 'Synthetic checklist; no ownership mutation.',
+        kind: 'host',
+      },
+    ],
+    can_apply: false,
+    requires_operator: true,
+    notice: '初回配置は管理者が確認してください。',
+  };
+  const html = renderToStaticMarkup(<SetupChecklist plan={plan} />);
+  assert.match(html, /NOTEBOOKS_DIR/);
+  assert.match(html, /初回配置は管理者が確認/);
+  assert.doesNotMatch(html, /<input|sudo |docker compose/);
 });

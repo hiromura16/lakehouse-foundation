@@ -1,0 +1,13 @@
+# Optional enterprise-proxy overlay for Access signing-key retrieval only.
+# Select the same normalized private bypass list as the PoC, adding manager.
+# Do not use this overlay for Vector/Loki or attach a private env to the image.
+services:
+  poc-manager:
+    environment:
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      http_proxy: ${HTTP_PROXY:-}
+      https_proxy: ${HTTPS_PROXY:-}
+      NO_PROXY: ${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1},poc-manager
+      no_proxy: ${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1},poc-manager
+      LAKEHOUSE_NO_PROXY: ${LAKEHOUSE_NO_PROXY:-localhost,127.0.0.1,::1},poc-manager

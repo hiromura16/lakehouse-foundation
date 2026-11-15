@@ -39,6 +39,13 @@ setopt INTERACTIVE_COMMENTS
 
 ## 起動と認証
 
+Reactの通常ログインは[Cloudflare Accessまたは専用接続キー](REACT-PORTAL.md)を使います。
+以下のCONTROL_API_TOKENはSwagger・内部API用で、通常利用者がコピーする前提ではありません。
+React BFFの`/api/auth/credential`は接続キーだけを変更し、内部CONTROL鍵は維持します。
+API内の`/portal-auth/*`は内部認証処理専用で、汎用BFFからの転送とSwagger表示を拒否します。
+追加機能の準備は`GET /setup`と`POST /setup/plan`です。固定component_idから手順を返し、
+profile保存・host権限変更・image取得・初回起動は行いません。
+
 private設定に `COMPOSE_PROFILES=demo` を追加し、既存のprofileを使っている場合はカンマで併記します。`CONTROL_SETTINGS_DIR` はこの環境専用の0700ディレクトリ、`CONTROL_SETTINGS_NAME` はその中の0600設定ファイル名です。生成器は生成先から両方を設定します。GUIの実行UID/GIDが、privateディレクトリとランディングへアクセスできることを確認します。
 
 **Bash / Zsh共通**
@@ -63,6 +70,11 @@ Swaggerの **Authorize** にprivate設定の `CONTROL_API_TOKEN` を入力しま
 SwaggerのJavaScript・CSS・faviconはimage内から配信します。ブラウザーから外部CDNや外部schema validatorへ接続せず、認証tokenの永続保存も無効にしています。依存ファイルの取得とchecksum確認はimage build時に行うため、閉域環境では許可したbuild経路を用意します。
 
 このAPIはDocker socket、sudo権限、Dokployの全体管理鍵を使用しません。host設定の反映やコンテナ再配置は管理者の操作として残します。
+
+React版の[サービス管理API](SERVICE-CONTROL.md#apiと結果未確認からの復旧)では、
+固定グループの起動・再起動・停止の要求を永続queueへ保存します。実行には別途、
+管理者がホストで承認・起動するrunnerが必要です。API自身にはDocker権限を追加せず、
+runner専用routeはWeb BFFで転送しません。受付成功とコンテナ操作の成功は別です。
 
 ## Swaggerで最初の1ジョブを完了する
 

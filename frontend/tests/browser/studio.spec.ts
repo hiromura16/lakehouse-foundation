@@ -51,7 +51,7 @@ test.beforeEach(async ({ page }) => {
 
 async function connect(page: import('@playwright/test').Page) {
   await page.goto('/');
-  await page.getByLabel('接続token', { exact: true }).fill('synthetic'.repeat(6));
+  await page.getByLabel('ワークスペース接続キー', { exact: true }).fill('synthetic'.repeat(6));
   await page.getByRole('button', { name: '接続する', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'データの現在地を、ひと目で。' })).toBeVisible();
 }
@@ -62,7 +62,7 @@ test('owner connection clears the token without browser storage', async ({ page 
     await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })),
   ).toEqual({ local: 0, session: 0 });
   await page.getByRole('button', { name: 'sessionを終了', exact: true }).click();
-  await expect(page.getByLabel('接続token', { exact: true })).toHaveValue('');
+  await expect(page.getByLabel('ワークスペース接続キー', { exact: true })).toHaveValue('');
 });
 
 test('public cards with no configured origin do not produce localhost anchors', async ({

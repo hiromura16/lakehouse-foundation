@@ -1,0 +1,30 @@
+# Operator-reviewed template only. Nothing installs/enables this unit for you.
+# Replace code paths/public origin, create root0700 intent dir, and enroll
+# the exact target containers before manually starting it. Keep Restart=no:
+# permission denial or an uncertain operation must not become an auto retry.
+[Unit]
+Description=Enrolled Lakehouse whole-PoC runner
+After=docker.service network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+UMask=0077
+WorkingDirectory=/opt/lakehouse-poc-manager/current
+ExecStart=/opt/lakehouse-poc-manager/venv/bin/python /opt/lakehouse-poc-manager/current/scripts/poc_manager.py --origin http://127.0.0.1:8010 --public-origin https://manager.example.invalid --token-file /etc/lakehouse-poc-manager/private/runner.token serve --manifest /etc/lakehouse-poc-manager/private/enrolled.json --intent-dir /var/lib/lakehouse-poc-manager/runner-intent --poll-seconds 2
+Restart=no
+TimeoutStopSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/lakehouse-poc-manager/runner-intent
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

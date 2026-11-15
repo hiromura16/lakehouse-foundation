@@ -1,7 +1,20 @@
 /** Synthetic transport contracts, independent of a browser or live API. */
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
-import { api, ApiError, getSession, importMetadata, login, logout } from '../src/api.js';
+import {
+  api,
+  ApiError,
+  changeWorkspaceCredential,
+  getSession,
+  getSessionInfo,
+  importMetadata,
+  login,
+  loginWithCloudflare,
+  logout,
+  parseSessionInfo,
+} from '../src/api.js';
+import { isSetupPlan, isSetupView, prepareSetup } from '../src/setup.js';
+import type { SetupPlan } from '../src/setup.js';
 
 type Call = { url: string; options: RequestInit };
 const originalFetch = globalThis.fetch;
@@ -93,6 +106,176 @@ test('login state is explicit and logout uses the protected endpoint', async () 
   assert.equal(calls[1].url, '/api/session');
   assert.equal(calls[1].options.method, 'DELETE');
   assert.equal(new Headers(calls[1].options.headers).get('X-Poc-Request'), '1');
+});
+
+test('legacy session responses retain token mode without gaining credential mutation', async () => {
+  assert.deepEqual(await getSessionInfo(), {
+    authenticated: true,
+    mode: 'token',
+    credential_change_supported: false,
+    logout_url: null,
+  });
+});
+
+test('Access login uses only the same-origin session endpoint and no browser token', async () => {
+  globalThis.fetch = async (input, options = {}) => {
+    calls.push({ url: String(input), options });
+    return Response.json({
+      authenticated: true,
+      mode: 'cloudflare-access',
+      credential_change_supported: false,
+      logout_url: '/cdn-cgi/access/logout',
+    });
+  };
+  assert.equal(await loginWithCloudflare(), true);
+  assert.deepEqual(JSON.parse(String(calls[0].options.body)), { method: 'cloudflare-access' });
+  assert.equal(calls[0].url, '/api/session');
+  assert.equal(calls[1].options.method, 'GET');
+  assert.equal(new Headers(calls[0].options.headers).has('Authorization'), false);
+});
+
+test('auth DTOs reject forged modes, inconsistent capabilities and untrusted logout destinations', () => {
+  const valid = {
+    authenticated: true,
+    mode: 'cloudflare-access',
+    credential_change_supported: false,
+    logout_url: '/cdn-cgi/access/logout',
+  };
+  for (const value of [
+    null,
+    { authenticated: 'true' },
+    { ...valid, mode: ['token'] },
+    { ...valid, credential_change_supported: true },
+    { ...valid, logout_url: 'https://example.invalid/logout' },
+    { ...valid, logout_url: '//example.invalid/logout' },
+    { ...valid, logout_url: '/cdn-cgi/access/logout?redirect=other' },
+    { ...valid, mode: 'token' },
+    { authenticated: false, mode: 'token' },
+  ]) {
+    assert.throws(() => parseSessionInfo(value), ApiError);
+  }
+  assert.deepEqual(parseSessionInfo(valid), valid);
+});
+
+test('key rotation uses a dedicated CSRF-protected request and invalidates the UI session', async () => {
+  const previous = 'synthetic-old'.repeat(3);
+  const replacement = 'synthetic-new'.repeat(3);
+  globalThis.fetch = async (input, options = {}) => {
+    calls.push({ url: String(input), options });
+    return Response.json({ changed: true, authenticated: false });
+  };
+  await changeWorkspaceCredential(previous, replacement);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, '/api/auth/credential');
+  assert.deepEqual(JSON.parse(String(calls[0].options.body)), {
+    current_token: previous,
+    new_token: replacement,
+  });
+  assert.equal(new Headers(calls[0].options.headers).get('X-Poc-Request'), '1');
+  assert.deepEqual(events, ['studio:credential-changed']);
+});
+
+test('ambiguous key rotation results are not retried or falsely reported as success', async () => {
+  globalThis.fetch = async (input, options = {}) => {
+    calls.push({ url: String(input), options });
+    return Response.json({ changed: true, authenticated: true });
+  };
+  await assert.rejects(
+    changeWorkspaceCredential('synthetic-current-key', 'synthetic-replacement-key'),
+    ApiError,
+  );
+  assert.equal(calls.length, 1);
+  assert.deepEqual(events, []);
+});
+
+const setupPlan = (): SetupPlan => ({
+  version: 1,
+  component_id: 'compute',
+  title: 'Spark',
+  profiles_before: ['demo'],
+  profiles_after: ['demo', 'compute'],
+  settings_to_review: [],
+  steps: [
+    {
+      id: 'build',
+      title: 'イメージを準備',
+      description: '管理者が対象を確認します。',
+      kind: 'build',
+    },
+  ],
+  can_apply: false,
+  requires_operator: true,
+  notice: '初回配置は管理者が確認します。',
+});
+
+test('setup preparation sends only the selected component and never an apply request', async () => {
+  globalThis.fetch = async (input, options = {}) => {
+    calls.push({ url: String(input), options });
+    return Response.json(setupPlan());
+  };
+  const result = await prepareSetup('compute');
+  assert.equal(calls[0].url, '/api/control/setup/plan');
+  assert.deepEqual(JSON.parse(String(calls[0].options.body)), { component_id: 'compute' });
+  assert.equal(result.can_apply, false);
+  assert.equal(result.requires_operator, true);
+  assert.equal(calls.length, 1);
+});
+
+test('setup export projects only its public DTO and drops unexpected secret fields', async () => {
+  globalThis.fetch = async () =>
+    Response.json({
+      ...setupPlan(),
+      unexpected_private_value: 'synthetic-secret-sentinel',
+      steps: [{ ...setupPlan().steps[0], raw_command: 'synthetic-sensitive-input' }],
+    });
+  const result = await prepareSetup('compute');
+  assert.doesNotMatch(
+    JSON.stringify(result),
+    /synthetic-secret-sentinel|synthetic-sensitive-input/,
+  );
+});
+
+test('setup refuses apply-capable, mismatched and malformed plans', async () => {
+  for (const result of [
+    { ...setupPlan(), can_apply: true },
+    { ...setupPlan(), requires_operator: false },
+    { ...setupPlan(), component_id: 'notebooks' },
+    { ...setupPlan(), steps: [{ ...setupPlan().steps[0], kind: 'shell' }] },
+  ]) {
+    globalThis.fetch = async () => Response.json(result);
+    await assert.rejects(prepareSetup('compute'));
+  }
+  assert.equal(isSetupPlan(setupPlan()), true);
+  assert.equal(
+    isSetupView({
+      version: 1,
+      manager: 'operator-compose',
+      apply_supported: false,
+      applied_profiles: ['demo'],
+      desired_profiles: ['demo'],
+      pending_restart: false,
+      components: [],
+    }),
+    true,
+  );
+  assert.equal(
+    isSetupView({
+      version: 1,
+      manager: 'operator-compose',
+      apply_supported: true,
+      applied_profiles: [],
+      desired_profiles: [],
+      pending_restart: false,
+      components: [],
+    }),
+    false,
+  );
+});
+
+test('unsafe component identifiers fail before any transport', async () => {
+  for (const id of ['../../etc', '--all', 'compute\n', 'http://example.invalid'])
+    await assert.rejects(prepareSetup(id));
+  assert.equal(calls.length, 0);
 });
 
 test('HTTP failures cancel the body and never reflect private error contents', async () => {

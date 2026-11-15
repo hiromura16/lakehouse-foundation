@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from './api';
+import { api } from './api.js';
+import { isLifecycleCapabilities } from './lifecycle.js';
+import { isSetupView } from './setup.js';
 
 export interface Resource<T> {
   data: T | null;
@@ -13,6 +15,8 @@ export interface Resource<T> {
 function validResource(path: string, value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const body = value as Record<string, unknown>;
+  if (path === '/lifecycle/capabilities') return isLifecycleCapabilities(value);
+  if (path === '/setup') return isSetupView(value);
   if (path === '/services')
     return (
       Array.isArray(body.services) &&

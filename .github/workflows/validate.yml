@@ -104,6 +104,14 @@ jobs:
         npm audit --omit=dev --audit-level=high
     - name: Verify compiled assets through the real gateway with a synthetic backend
       run: python scripts/check_react_build.py
+    - name: Validate the independent whole-PoC manager without startup
+      env:
+        MANAGER_STATE_DIR: /synthetic/private-manager-state
+        MANAGER_SECRETS_DIR: /synthetic/private-manager-secrets
+      run: >-
+        docker --config "$RUNNER_TEMP/unused-manager-docker-config"
+        compose --env-file /dev/null
+        -f infra/management/compose.yaml config --quiet
     - name: Parse fixed SQL Server DDL without a database
       shell: bash
       run: |

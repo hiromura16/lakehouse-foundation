@@ -167,6 +167,12 @@ values = {
     "DEMO_GUI_PORT": "8501",
     # Older deployments keep the existing UI until an operator selects React.
     "PORTAL_UI_MODE": "streamlit",
+    # Separate the human login bootstrap from the server-to-server API key.
+    # Upgrade keeps the legacy bootstrap until an explicit user rotation.
+    "PORTAL_AUTH_MODE": "token",
+    "PORTAL_ACCESS_TEAM_DOMAIN": "",
+    "PORTAL_ACCESS_AUD": "",
+    "PORTAL_LOGIN_TOKEN": "" if args.upgrade else secrets.token_hex(32),
     "DEMO_API_PORT": "8502",
     "CDC_CONNECT_PORT": "8083",
     "CDC_UI_PORT": "8084",

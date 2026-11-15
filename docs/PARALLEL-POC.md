@@ -493,3 +493,41 @@ notebooks、landing、DB/S3/Kafka、offset/history、GrafanaのGUI編集、各La
 
 公開する手順には、実ホスト名・IP・実パス・proxy・認証情報を転記しません。
 公開CIの構文検査やAppTestの成功は、会社環境の二系統運転の受入とは別です。
+
+## 空の環境へ二つのPoCを再構築するとき
+
+既存基盤の一括取り込みと、メタデータ駆動の新構想は、比較対象として別々に管理します。元ホストのDB・Landing・監視履歴を不要と判断した場合は、コードと必要な構想・手順を引き継ぎ、設定とテスト素材を新しい環境用に作成します。旧設定の保全アーカイブがあっても、接続値を自動的に有効にしません。
+
+### フォルダと管理主体
+
+| 対象 | 基盤PoC | 新構想PoC |
+| --- | --- | --- |
+| コードのフォルダ例 | `workspaces/lakehouse-foundation` | `workspaces/lakehouse-vision` |
+| 作業ブランチ例 | `codex/vm-poc-rebuild` | `codex/vm-vision-poc` |
+| 操作画面 | 既存Streamlit | React Studio |
+| Dokploy | 基盤用Project・Compose | 新構想用Project・Compose |
+| private設定 | 基盤専用のsite.env | 新構想専用のsite.env |
+| データ | 基盤専用Landing・catalog・S3・ログ | 新構想専用Landing・catalog・S3・ログ |
+
+二つのコードフォルダは独立したcheckoutにします。同じファイルを編集してからブランチだけを切り替えて運用しません。同じcommitから始めても、実際の配置元と採用commitをそれぞれ記録します。Dokployが管理する配置用snapshotと、開発者が編集するcheckoutも区別します。編集しただけでは稼働中imageは更新されません。
+
+ホーム直下へ作業のたびに一時フォルダを増やさず、開発ツールとアプリ用データは利用者の`.local/share`配下、移行記録・private受入結果・元コードの保全は`.local/state`配下など、用途ごとの専用領域へ整理します。保存先の絶対パスはprivate設定で指定し、実際のユーザー名や接続先を公開コードへ書き込みません。認証情報はツールや公開checkoutに同居させません。
+
+稼働後に保存先を整理する場合は、実行中ジョブがないことを確認し、所有者であるDokployから対象PoCだけを停止します。bind元の内容を保持して移動し、private設定とDokploy Environmentを同じ値へ更新し、predeploy検査後に同じComposeアプリから再配置します。named volumeは移動や削除の対象にしません。移動前後で素材の件数・原本hash・GUI/API応答を比較し、古いパスの空ディレクトリへ新たなwriterが起動していないことも確認します。
+
+### 同時運転と受入
+
+16GiB程度のホストでは、両方のcoreと画面から始め、必要な監視・分析・Labを段階的に加えます。全profileを二系統で一斉起動しません。上限memoryの合計と実使用量は別々に記録し、build中の一時消費、OS、Docker、Dokployの余力も確保します。監視を一方から始めた場合、それを他方の監視まで完了したとは記録しません。
+
+各PoCで、次の一連の経路を確認します。
+
+1. 新規生成した有限の合成素材を、そのPoC専用のLandingへ投入する。
+2. 認証付きAPIで原本・Bronzeへ取り込み、Silver・隔離・Goldへ変換する。
+3. 固定のGold参照と6表の品質件数を確認する。
+4. 素材を増やさず同じ処理を再実行し、業務行と表別件数が変わらないことを確認する。
+5. Reactでは未認証とCSRF条件不備を拒否し、ログイン後の契約案と計画を確認する。
+6. 監視は準備完了だけでなく、合成イベントがVectorからLokiへ届くことを確認する。実ログの継続収集・長時間運転は別途受け入れる。
+
+エクスポート時刻と再作成後のIceberg snapshot IDは、再実行で変わることがあります。業務行の同一性はそれらのmetadataと区別します。Trinoの返却順が未保証の結果は、表名などの業務キーで対応付けます。Goldの有界previewを全表集計と混同せず、全件性が必要なら固定SQLの件数と対象snapshotで別途確認します。
+
+新構想の合成metadata、contract案、自己申告の確認メモを、実DB Discovery・正式承認・CDC適用の成功に読み替えません。別ホストですでに動いているDB・データ生成・CDC基盤は、この空環境の再構築対象に含めません。

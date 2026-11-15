@@ -26,12 +26,16 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from job_manager import JobConflict, JobManager, OperationFailure
+from lifecycle_api import install_lifecycle
 from onboarding_api import onboarding_router
 from poc_api import portal_router
+from portal_credentials import credential_router
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from service import generate_batch, scenario_destination
+from setup_api import setup_router
 from sqlsource_api import sqlsource_router
 from sqlsource_observer import observation_router
+from whole_maintenance import install_whole_maintenance
 
 ROOT = Path(__file__).resolve().parents[2]
 SECURITY = HTTPBearer(auto_error=False)
@@ -256,6 +260,7 @@ def create_app(
     generator=generate_batch,
     ai_exporter=export_ai_context,
     cdc_runner=apply_cdc_demo,
+    lifecycle_worker_idle=None,
 ) -> FastAPI:
     """private設定・認証・単一JobManagerを持つFastAPIアプリを組み立てる。
 
@@ -779,6 +784,20 @@ def create_app(
     application.include_router(sqlsource_router(store, jobs, authorize))
     application.include_router(observation_router(store, jobs, authorize))
     application.include_router(onboarding_router(authorize))
+    application.include_router(setup_router(store, authorize))
+    application.include_router(
+        credential_router(
+            store,
+            authorize,
+            store.applied.get("PORTAL_LOGIN_TOKEN") or active_token,
+        )
+    )
+    install_lifecycle(
+        application, store, jobs, authorize, worker_idle=lifecycle_worker_idle
+    )
+    install_whole_maintenance(
+        application, store, jobs, worker_idle=lifecycle_worker_idle
+    )
     return application
 
 

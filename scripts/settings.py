@@ -113,6 +113,34 @@ def validate_portal_links(values):
         raise ValueError(
             "Reactの外部利用にはポータルのHTTPS originが必要です。"
         )
+    values.setdefault("PORTAL_AUTH_MODE", "token")
+    values.setdefault("PORTAL_ACCESS_TEAM_DOMAIN", "")
+    values.setdefault("PORTAL_ACCESS_AUD", "")
+    values.setdefault("PORTAL_LOGIN_TOKEN", "")
+    if values["PORTAL_AUTH_MODE"] not in {"token", "cloudflare-access"}:
+        raise ValueError("Invalid portal authentication mode.")
+    if values["PORTAL_LOGIN_TOKEN"] and not re.fullmatch(
+        r"[!-~]{24,128}", values["PORTAL_LOGIN_TOKEN"]
+    ):
+        raise ValueError("Invalid portal bootstrap credential.")
+    team = values["PORTAL_ACCESS_TEAM_DOMAIN"]
+    audience = values["PORTAL_ACCESS_AUD"]
+    if team and not re.fullmatch(
+        r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareaccess\.com", team
+    ):
+        raise ValueError("Invalid portal Access team domain.")
+    if audience and not re.fullmatch(r"[a-f0-9]{64}", audience):
+        raise ValueError("Invalid portal Access application audience.")
+    if values["PORTAL_AUTH_MODE"] == "cloudflare-access" and (
+        values["PORTAL_UI_MODE"] != "react"
+        or values["PORTAL_LINK_MODE"] != "public"
+        or not values["DEMO_GUI_PUBLIC_URL"]
+        or not team
+        or not audience
+    ):
+        raise ValueError(
+            "Access login requires public React and fixed trust settings."
+        )
 
 
 # Keep this list aligned with actual Compose services and installer services.
