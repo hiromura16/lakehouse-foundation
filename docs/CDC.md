@@ -125,6 +125,8 @@ DB単位CDCの有効化はSQL Server側のsysadmin権限が必要です。DBの�
 Agent の状態確認にサーバー全体の参照権限が必要な環境では、DBA の署名付き
 読取 scalar function を用意し、`CDC_SQLSERVER_AGENT_STATUS_QUERY` に
 `SELECT [#db].[dbo].[YOUR_APPROVED_FUNCTION]()` の形で設定できます。
+厳密な形式検証後、登録器は`[#db]`を`#db`へ正規化します。Debezium 3.7が
+DB名を括弧付きで置換するため、二重括弧による構文エラーを防ぐ処理です。
 この項目は任意の SQL を受け付けません。capture reader に sysadmin や db_owner を
 自動付与する処理はありません。
 

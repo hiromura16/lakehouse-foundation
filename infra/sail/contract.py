@@ -505,7 +505,10 @@ WITH plans AS (
 )
 SELECT factory_id,production_date,planned_qty,good_qty,reject_qty,
   downtime_ticks_100ns,
-  CAST(round(CAST(downtime_ticks_100ns AS DECIMAL(28,0))/600000000,9)
+  -- BIGINTの全域と小数9桁を確保してから除算する。
+  -- Sailの整数scale同士の除算は小数4桁になり、100nsの差が消える。
+  CAST(round(CAST(downtime_ticks_100ns AS DECIMAL(28,9)) /
+    CAST(600000000 AS DECIMAL(9,0)),9)
     AS DECIMAL(28,9)) AS downtime_minutes,
   good_qty+reject_qty AS total_qty,
   CAST(round(CAST(good_qty AS DECIMAL(28,4))*100/
