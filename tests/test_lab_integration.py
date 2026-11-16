@@ -66,7 +66,7 @@ class LabSettingsTests(PrivateSettingsFixture, unittest.TestCase):
         self,
     ):
         values = self.read_literal()
-        values["OPENOBSERVE_ROOT_USER_PASSWORD"] = "synthetic-" + "s" * 40
+        values["OPENOBSERVE_ROOT_USER_PASSWORD"] = "Synthetic-1!" + "s" * 40
         values["OPENOBSERVE_INGEST_TOKEN_FILE"] = str(self.token_file())
         values.pop("MONITORING_HOST_ALIAS")
         self.write_literal(values)
