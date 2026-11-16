@@ -60,12 +60,19 @@ def _port(values):
 
 
 def _credentials(values):
-    """Validate the bootstrap identity without opening an ingestion file."""
+    """取り込みtokenを開かず、固定版の起動用資格情報の要件を検査する。"""
     email = values.get("OPENOBSERVE_ROOT_USER_EMAIL", "")
     password = values.get("OPENOBSERVE_ROOT_USER_PASSWORD", "")
     if not re.fullmatch(r"[A-Za-z0-9_.+\-]+@[A-Za-z0-9.\-]+", email):
         raise LabError("Configure a valid lab bootstrap email.")
-    if not 32 <= len(password) <= 128 or any(c.isspace() for c in password):
+    if (
+        not 32 <= len(password) <= 128
+        or any(c.isspace() for c in password)
+        or not all(
+            re.search(pattern, password)
+            for pattern in (r"[a-z]", r"[A-Z]", r"[0-9]", r"[^A-Za-z0-9]")
+        )
+    ):
         raise LabError("Configure a strong private lab bootstrap password.")
     return email, password
 

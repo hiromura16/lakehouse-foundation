@@ -157,7 +157,8 @@ values = {
     "MONITORING_HOST_ALIAS": "local",
     "OPENOBSERVE_PORT": "5080",
     "OPENOBSERVE_ROOT_USER_EMAIL": "admin@example.invalid",
-    "OPENOBSERVE_ROOT_USER_PASSWORD": secrets.token_hex(32),
+    # 固定版OpenObserveは長さに加えて大小英字・数字・記号を要求する。
+    "OPENOBSERVE_ROOT_USER_PASSWORD": secrets.token_hex(30) + "Aa1!",
     "OPENOBSERVE_INGEST_TOKEN_FILE": "",
     "N8N_PORT": "5678",
     "AIRFLOW_PORT": "8081",

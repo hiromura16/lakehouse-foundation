@@ -51,7 +51,7 @@ Composeは [infra/openobserve/compose.yaml](../infra/openobserve/compose.yaml) �
 | `COMPOSE_PROFILES` | 通常はLabを含めない。有効化時は `monitoring,openobserve-lab` を含める |
 | `OPENOBSERVE_PORT` | hostのloopback UI/API port。既定5080 |
 | `OPENOBSERVE_ROOT_USER_EMAIL` | Lab内のbootstrap管理者ID。外部へのメール送信設定ではない |
-| `OPENOBSERVE_ROOT_USER_PASSWORD` | 管理用のprivate秘密値。既存volumeでは保持する |
+| `OPENOBSERVE_ROOT_USER_PASSWORD` | 大小英字・数字・記号をすべて含む32〜128文字の管理用private秘密値。既存volumeでは保持する |
 | `OPENOBSERVE_INGEST_TOKEN_FILE` | Git外・`WORKER_UID`所有0600のJSON file。`token`だけを持つ |
 | `WORKER_UID/GID` | VectorとLabの非root実行UID/GID |
 | `DATA_VOLUME_PREFIX` | 通常空欄。既存データ名を引き継ぐ場合だけ使用 |
@@ -189,6 +189,8 @@ python3 scripts/openobserve_lab.py token-create \
 Dokploy管理ではhost CLIの `up` を使いません。同じサービスのCommandを、控えた通常の9ファイルCommandへ戻してSaveし、同じサービスのDeployでVectorのfanoutを有効化します。private設定とサービスEnvironmentのLab選択・token pathが一致してから実行します。
 
 token fileはVectorのprivate file backendへreadonlyで渡され、実効権限は所有UIDの0600です。Vectorのconfig renderも秘密を含むため、`docker compose config`全文を公開しません。offに戻す時は通常VectorをLoki-onlyへ再配置し、OpenObserveだけを同managerから停止します。volumeと管理用秘密値は保持します。
+
+Vector 0.61.0のHTTP sinkはJSON codecとcomma framingで配列を生成します。`payload_prefix` / `payload_suffix` でさらに配列を追加すると二重配列になり、OpenObserveがHTTP 200を返しても全件を破棄します。配送判定ではHTTP応答や送信カウンターだけでなく、固定streamの検索件数も確認します。
 
 ## 6. 検索・比較と保持の受入
 

@@ -30,7 +30,7 @@ def settings():
     return {
         "OPENOBSERVE_PORT": "5080",
         "OPENOBSERVE_ROOT_USER_EMAIL": "operator@example.invalid",
-        "OPENOBSERVE_ROOT_USER_PASSWORD": "synthetic-bootstrap-" + "x" * 40,
+        "OPENOBSERVE_ROOT_USER_PASSWORD": "Synthetic-bootstrap-1!" + "x" * 40,
     }
 
 
@@ -484,6 +484,11 @@ class LabPrivateConfigTests(unittest.TestCase):
             ("OPENOBSERVE_ROOT_USER_EMAIL", "invalid-email"),
             ("OPENOBSERVE_ROOT_USER_PASSWORD", "too-short"),
             ("OPENOBSERVE_ROOT_USER_PASSWORD", "x" * 32 + "\n"),
+            ("OPENOBSERVE_ROOT_USER_PASSWORD", "a1" * 32),
+            ("OPENOBSERVE_ROOT_USER_PASSWORD", "a1!" * 12),
+            ("OPENOBSERVE_ROOT_USER_PASSWORD", "A1!" * 12),
+            ("OPENOBSERVE_ROOT_USER_PASSWORD", "Aa!" * 12),
+            ("OPENOBSERVE_ROOT_USER_PASSWORD", "Aa1" * 12),
         ):
             with self.subTest(key=key, length=len(value)):
                 self.rejected(dict(self.values, **{key: value}))

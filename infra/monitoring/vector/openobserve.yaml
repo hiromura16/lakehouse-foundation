@@ -29,8 +29,7 @@ sinks:
       method: character_delimited
       character_delimited:
         delimiter: ','
-    payload_prefix: '['
-    payload_suffix: ']'
+    # JSON codecとcomma framingが配列を生成する。追加の[]で二重に包まない。
     request:
       headers:
         Content-Type: application/json
