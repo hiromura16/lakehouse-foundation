@@ -878,6 +878,7 @@ class ServerPackagingTests(unittest.TestCase):
         }
         mapped = server.environment(values)
         self.assertEqual(mapped["AWS_ENDPOINT"], "http://storage:8333")
+        self.assertEqual(mapped["AWS_ALLOW_HTTP"], "true")
         self.assertEqual(mapped["AWS_ACCESS_KEY_ID"], values["S3_ACCESS_KEY"])
         self.assertEqual(mapped["AWS_VIRTUAL_HOSTED_STYLE_REQUEST"], "false")
         self.assertIn('type="iceberg-rest"', mapped["SAIL_CATALOG__LIST"])

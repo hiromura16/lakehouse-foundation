@@ -439,6 +439,8 @@ pin d24bacbb… は公式registryからnot foundとなりました。
 います。版番号付きタグでも不変とは限らず、現在のpinが将来も取得可能とは保証しません。
 旧53c6d042…も同履歴に存在するため、単なる転記誤りとは扱いません。
 
+2026-11-16 09:55:45 JSTにも同じ3.7.1.Finalタグが再公開され、上記05fcb3ca…は取得不能となりました。公式履歴と現行index `sha256:518829a652a43bf69939d4a75c55bd6ab376fa67340ed5e9cb002ad28f860650`、linux/amd64の子manifest `sha256:92b4ac9ae5e17ea212cba6a9497452bd85cd8382a353fc94e5c029fcccff0586`、image configを照合し、実pullのRepoDigest一致まで確認して同版のpinを更新しました。稼働中イメージからの再取得不能を防ぐ長期保管は別途必要です。SQL Serverへの接続・connector登録の成功を、このregistry検証から推定しません。
+
 MANIFEST_MISSINGとPLATFORM_MISSINGは明示的な欠落です。失敗JSONの
 failed_imageは公開image参照とregistry / pull段階を示し、
 生のstderrや認証情報は出しません。タグ失効はエラー名だけでは断定せず、

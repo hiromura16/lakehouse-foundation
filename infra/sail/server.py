@@ -32,6 +32,8 @@ def environment(values):
             "AWS_ACCESS_KEY_ID": values["S3_ACCESS_KEY"],
             "AWS_SECRET_ACCESS_KEY": values["S3_SECRET_KEY"],
             "AWS_ENDPOINT": "http://storage:8333",
+            # 既知のCompose内部S3だけHTTPを使用する。外部接続先は受け取らない。
+            "AWS_ALLOW_HTTP": "true",
             "AWS_REGION": "us-east-1",
             "AWS_VIRTUAL_HOSTED_STYLE_REQUEST": "false",
             "RUST_LOG": "info",
