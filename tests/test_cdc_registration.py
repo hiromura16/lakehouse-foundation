@@ -178,5 +178,44 @@ class RegistrationTests(unittest.TestCase):
         self.assertTrue(json.loads(self.output.getvalue())["registered"])
 
 
+class AgentQueryTests(unittest.TestCase):
+    """DB名を一度だけ引用し、任意SQLを引き続き拒否する。"""
+
+    def candidate(self, query):
+        """秘密値のない合成設定から実際のconnector設定を組み立てる。"""
+        values = CONNECTOR.settings(
+            {
+                "CDC_SQLSERVER_HOST": "example.invalid",
+                "CDC_SQLSERVER_DATABASE": "demo_database",
+                "CDC_SQLSERVER_USER": "synthetic_reader",
+                "CDC_SQLSERVER_PASSWORD": "synthetic_value",
+                "CDC_SQLSERVER_AGENT_STATUS_QUERY": query,
+            }
+        )
+        return CONNECTOR.configuration(values, {})
+
+    def test_debezium_database_replacement_quotes_the_database_once(self):
+        for placeholder in ("[#db]", "[#DB]"):
+            with self.subTest(placeholder=placeholder):
+                candidate = self.candidate(
+                    "SELECT " + placeholder + ".[probe].[is_running]()"
+                )
+                rendered = candidate["database.sqlserver.agent.status.query"]
+                self.assertEqual(
+                    rendered.replace("#db", "[demo_database]"),
+                    "SELECT [demo_database].[probe].[is_running]()",
+                )
+
+    def test_extra_sql_and_arguments_remain_rejected(self):
+        for query in (
+            "SELECT [#db].[probe].[is_running](); SELECT 1",
+            "SELECT [#db].[probe].[is_running](1)",
+            "SELECT 1",
+            "SELECT [other].[probe].[is_running]()",
+        ):
+            with self.subTest(query=query), self.assertRaises(ValueError):
+                self.candidate(query)
+
+
 if __name__ == "__main__":
     unittest.main()

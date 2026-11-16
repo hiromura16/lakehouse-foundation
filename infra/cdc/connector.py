@@ -118,8 +118,7 @@ def configuration(values, mapping):
         result["driver.hostNameInCertificate"] = hostname
     agent = values.get("CDC_SQLSERVER_AGENT_STATUS_QUERY", "")
     if agent:
-        # A database administrator may expose a signed read-only status UDF.
-        # Do not accept arbitrary SQL through a shared configuration field.
+        # DBA承認済みのscalar関数だけを受け入れ、任意SQLを拒否する。
         if not re.fullmatch(
             r"SELECT \[#db\]\.\[?[A-Za-z_][A-Za-z0-9_]*\]?"
             r"\.\[?[A-Za-z_][A-Za-z0-9_]*\]?\(\)",
@@ -127,7 +126,11 @@ def configuration(values, mapping):
             re.IGNORECASE,
         ):
             raise ValueError("Use a DBA-approved scalar status function.")
-        result["database.sqlserver.agent.status.query"] = agent
+        # Debezium 3.7が#dbを[DB名]へ置換するため、外側の括弧を一度だけ外す。
+        # 識別子や関数の検証は済ませたまま、二重括弧によるSQL構文エラーを防ぐ。
+        result["database.sqlserver.agent.status.query"] = re.sub(
+            r"\[#db\]", "#db", agent, count=1, flags=re.IGNORECASE
+        )
     return result
 
 

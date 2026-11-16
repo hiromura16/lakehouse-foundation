@@ -41,6 +41,11 @@ Sail Labは`COMPOSE_PROFILES`の`compute,sail-lab`を明示的に選ぶ比較用
 当基盤の4.1.4とのprotocol互換性は未確認です。
 公式deploymentガイドのPoC向けwheel方式を使い、未確認の公式container digestを作りません。
 serverのamd64/arm64 wheelと、client追加依存のCPython 3.10 Linux wheelを検査済みhashに限定します。
+Sailのversion RPCはserver側のPySparkを参照するため、既存Sparkと同じdigest固定imageから
+`pyspark.zip`とPy4Jだけをコピーし、build時に4.1.4のimportを検査します。
+serverへJVMやSpark実行系を追加せず、実行はnative Sailのままです。
+Goldの停止分数はBIGINTの100ns tickを`DECIMAL(28,9)`、分母を`DECIMAL(9,0)`として
+除算し、整数scale同士の除算による端数切捨てを避けます。原本tickと小数9桁を独立期待値で照合します。
 client元imageのPython ABIが異なる場合は安全にbuildが失敗します。実際のABI/build確認は受入項目です。
 既存Python/uv/Sparkのbase image digestは[lock](../infra/lakehouse/images.lock.json)を継承します。
 
