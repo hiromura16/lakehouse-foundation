@@ -1390,6 +1390,24 @@
         "docs/CUSTOMIZATION.md"
       ],
       "status": "active"
+    },
+    {
+      "path": "infra/app_portal/README.md",
+      "title": "中央アプリポータル",
+      "purpose": "中央ポータルの公開ソースと非公開台帳の境界、接続経路とUIの維持手順を確認する。",
+      "audience": [
+        "基盤構築担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "中央ポータルのカタログやWeb UIを変更・検証するとき。",
+      "category": "06 開発・レビュー",
+      "prerequisites": [
+        "docs/DIRECTORY-GUIDE.md"
+      ],
+      "next": [
+        "CONTRIBUTING.md"
+      ],
+      "status": "active"
     }
   ]
 }

@@ -235,8 +235,14 @@ class VectorConfigTests(unittest.TestCase):
         self.assertNotIn("source_event_id", json.dumps(loki["labels"]))
         self.assertEqual(sink["auth"]["strategy"], "basic")
         self.assertEqual(sink["auth"]["password"], "SECRET[openobserve.token]")
-        self.assertEqual(sink["payload_prefix"], "[")
-        self.assertEqual(sink["payload_suffix"], "]")
+        # JSON codecとcomma framingの配列を二重に包まない。
+        self.assertNotIn("payload_prefix", sink)
+        self.assertNotIn("payload_suffix", sink)
+        self.assertEqual(sink["encoding"]["codec"], "json")
+        self.assertEqual(sink["framing"]["method"], "character_delimited")
+        self.assertEqual(
+            sink["framing"]["character_delimited"]["delimiter"], ","
+        )
         self.assertFalse(sink["healthcheck"]["enabled"])
         self.assertEqual(
             "\n".join(
