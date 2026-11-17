@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f4f6fa">
+  <meta name="description" content="Foundation、Vision、TrueNASのアプリと接続先一覧。">
+  <title>アプリ一覧 | ChaosLab</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%231a3fcb'/%3E%3Cpath d='M17 17h12v12H17zm18 0h12v12H35zM17 35h12v12H17zm18 0h12v12H35z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">一覧へ移動</a>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="ChaosLab アプリ一覧"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>ChaosLab<small>アプリ一覧</small></span></a>
+    <span class="nav-label">環境</span><nav id="environments" aria-label="環境で絞り込む"></nav>
+    <span class="nav-label category-label">用途</span><nav id="categories" aria-label="用途で絞り込む"></nav>
+    <div class="sidebar-bottom"><span class="access-dot" aria-hidden="true"></span><span>Cloudflare Access</span></div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><span class="breadcrumb">ChaosLab <b>/</b> アプリ一覧</span><a id="nas-link" class="utility-link" href="https://truenas.chaoslab.fyi/ui/" target="_blank" rel="noopener noreferrer">TrueNAS管理 <span aria-hidden="true">↗</span></a></header>
+    <main id="main" tabindex="-1">
+      <div class="page-heading"><div><h1>アプリ一覧</h1><div id="summary" class="summary" aria-live="polite">読み込み中</div></div><button id="export" class="button secondary" type="button" disabled><span aria-hidden="true">↓</span> CSVを書き出す</button></div>
+      <section id="favorites-section" class="favorites-section" aria-labelledby="favorites-heading"><h2 id="favorites-heading">よく使うアプリ</h2><div id="favorites" class="favorites"></div></section>
+      <section class="directory" aria-labelledby="directory-heading">
+        <div class="directory-toolbar"><div class="section-title"><h2 id="directory-heading">すべてのアプリ</h2><span id="result-count" class="count"></span></div><label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><input id="search" type="search" placeholder="アプリ名・用途・URLを検索" aria-label="アプリ名・用途・URLを検索"><kbd>/</kbd></label></div>
+        <div class="connection-row"><div class="scope-picker" role="group" aria-label="接続方法"><button type="button" data-scope="public" aria-pressed="true">Cloudflare</button><button type="button" data-scope="lan" aria-pressed="false">LAN直通</button><button type="button" data-scope="tailscale" aria-pressed="false">Tailscale</button></div><p id="scope-hint"></p></div>
+        <div id="apps" class="app-grid" aria-live="polite"></div>
+        <div id="empty" class="empty" hidden><h3>該当するアプリがありません</h3><p>検索語や絞り込み条件を変更してください。</p><button id="reset" class="button secondary" type="button">絞り込みを解除</button></div>
+      </section>
+      <footer><span id="updated"></span><a id="lan-guide" href="#" target="_blank" rel="noopener noreferrer">LAN接続・証明書の案内 ↗</a></footer>
+    </main>
+  </div>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <noscript><p class="noscript">アプリ一覧の表示にはJavaScriptが必要です。</p></noscript>
+</body>
+</html>

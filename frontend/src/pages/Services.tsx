@@ -105,8 +105,8 @@ export function Services({
     <>
       <PageHeader
         eyebrow="WORKSPACE / SERVICES"
-        title="必要なツールへ、迷わず。"
-        description="内部の稼働確認と、ブラウザーから開く入口を分けて表示します。"
+        title="サービス"
+        description="稼働状態とアクセスURL。"
         action={
           <Button
             busy={resource.loading}

@@ -92,11 +92,7 @@ export function WorkspaceAuthentication({ session }: { session: SessionInfo }) {
           <ShieldCheck size={12} />
           {cloudflare ? 'Cloudflare Access' : '接続キーで認証'}
         </Badge>
-        <h3>
-          {cloudflare
-            ? 'Cloudflareの認証で、このワークスペースへ。'
-            : 'ワークスペース専用のキーを変更する。'}
-        </h3>
+        <h3>{cloudflare ? 'Cloudflare Access' : '接続キーの変更'}</h3>
         <p>
           {cloudflare
             ? 'Cloudflare Accessで認証された本人情報をサーバーで検証します。操作APIのトークンを入力する必要はありません。'

@@ -1,18 +1,4 @@
-import {
-  Activity,
-  ArrowRight,
-  ArrowUpRight,
-  Box,
-  Check,
-  Database,
-  GitBranch,
-  Layers3,
-  Plus,
-  RefreshCw,
-  Server,
-  Table2,
-  Workflow,
-} from 'lucide-react';
+import { Activity, ArrowRight, Database, Plus, Server, Workflow } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -77,18 +63,14 @@ export function Overview({
       color: 'violet',
     },
   ];
-  const silver = datasets?.filter((item) => item.layer === 'silver').length;
-  const gold = datasets?.filter((item) => item.layer === 'gold').length;
   return (
     <>
       <PageHeader
-        eyebrow="WORKSPACE / OVERVIEW"
-        title="データの現在地を、ひと目で。"
-        description="接続・データ契約・処理の状態を、同じワークスペースで確認します。"
+        title="概要"
         action={
           <Button variant="primary" onClick={() => navigate('onboarding')}>
             <Plus size={16} />
-            データ連携を組み立てる
+            データ連携を追加
           </Button>
         }
       />
@@ -108,82 +90,9 @@ export function Overview({
           </article>
         ))}
       </div>
-      <Panel
-        title="Lakehouseのデータフロー"
-        eyebrow="FROM SOURCE TO INSIGHT"
-        action={<Badge tone="muted">設計上の流れ</Badge>}
-      >
-        <div className="flow-grid">
-          {[
-            {
-              label: 'Source',
-              title: 'ソース',
-              detail: '表・列・業務要件を選択',
-              icon: GitBranch,
-              tone: 'source',
-              page: 'onboarding' as Page,
-              filter: '',
-            },
-            {
-              label: 'Bronze',
-              title: '受領原本',
-              detail: '件数は品質確認から取得',
-              icon: Box,
-              tone: 'bronze',
-              page: 'data' as Page,
-              filter: 'bronze',
-            },
-            {
-              label: 'Silver',
-              title: '整えたデータ',
-              detail: silver === undefined ? '契約を未取得' : `${silver} 件の公開契約`,
-              icon: Layers3,
-              tone: 'silver',
-              page: 'data' as Page,
-              filter: 'silver',
-            },
-            {
-              label: 'Gold',
-              title: '業務の指標',
-              detail: gold === undefined ? '契約を未取得' : `${gold} 件の公開契約`,
-              icon: Database,
-              tone: 'gold',
-              page: 'data' as Page,
-              filter: 'gold',
-            },
-            {
-              label: 'Explore',
-              title: 'BI・AI・分析',
-              detail: '各サービスのnative画面へ',
-              icon: Table2,
-              tone: 'explore',
-              page: 'services' as Page,
-              filter: '',
-            },
-          ].map((item, index) => (
-            <button
-              className={`flow-stage ${item.tone}`}
-              key={item.label}
-              onClick={() => navigate(item.page, item.filter)}
-            >
-              <span className="flow-order">0{index + 1}</span>
-              <item.icon size={24} />
-              <span className="flow-name">{item.label}</span>
-              <strong>{item.title}</strong>
-              <small>{item.detail}</small>
-              <ArrowUpRight className="flow-hover" size={17} />
-            </button>
-          ))}
-        </div>
-        <div className="panel-footnote">
-          <Check size={14} />
-          フローの表示は処理完了の証明ではありません。件数・実行結果はAPIから別に確認します。
-        </div>
-      </Panel>
       <div className="overview-bottom">
         <Panel
-          title="サービスの入口"
-          eyebrow="CONNECTED TOOLS"
+          title="サービス"
           action={
             <button className="text-link" onClick={() => navigate('services')}>
               すべて見る
@@ -222,7 +131,6 @@ export function Overview({
         </Panel>
         <Panel
           title="最近の処理"
-          eyebrow="ACTIVITY"
           action={
             <button className="text-link" onClick={() => navigate('operations')}>
               履歴を開く

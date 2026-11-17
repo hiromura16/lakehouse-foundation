@@ -92,8 +92,8 @@ export function Operations({ jobs }: { jobs: Resource<JobList> }) {
     <>
       <PageHeader
         eyebrow="OPERATIONS / RUNS"
-        title="処理を動かす。結果まで追う。"
-        description="素材の生成と後続処理を分け、実行は一つずつ明示的に開始します。"
+        title="運用・ジョブ"
+        description="パイプラインの実行とジョブ履歴。"
         action={
           <Button busy={jobs.loading} onClick={() => void jobs.refresh()}>
             <RefreshCw size={15} />

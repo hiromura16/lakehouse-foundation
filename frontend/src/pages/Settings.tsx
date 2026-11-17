@@ -145,8 +145,8 @@ export function Settings({ session }: { session?: SessionInfo }) {
     <>
       <PageHeader
         eyebrow="WORKSPACE / SETTINGS"
-        title="設定は見やすく、反映は確実に。"
-        description="許可された項目だけをprivate設定へ保存します。保存と実環境への反映は別の操作です。"
+        title="設定"
+        description="設定の保存と実環境への反映を行います。"
         action={
           <Button busy={resource.loading} disabled={busy} onClick={() => void resource.refresh()}>
             <RefreshCw size={15} />

@@ -432,8 +432,8 @@ export default function EnvironmentManager() {
       <main className="manager-main">
         <PageHeader
           eyebrow="ENVIRONMENT CONTROL"
-          title="検証環境を、自在に。"
-          description="基盤と将来構想。2つのPoCを独立して切り替え、負荷検証に集中できます。"
+          title="環境管理"
+          description="FoundationとVisionの状態確認・起動・停止・検証。"
           action={
             session?.authenticated ? (
               <Button

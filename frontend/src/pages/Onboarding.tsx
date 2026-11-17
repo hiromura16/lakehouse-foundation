@@ -270,8 +270,8 @@ export function Onboarding() {
     <>
       <PageHeader
         eyebrow="SOURCE / CONTRACT BUILDER"
-        title="データ連携を、組み立てる。"
-        description="YAMLではなく、表・列と業務上の意味を選択。取り込む前に、人が判断すべきことを見える化します。"
+        title="データ連携"
+        description="ソースと表・列を選び、データ契約の下書きを作成します。"
         action={
           <Badge tone="cyan">
             <LockKeyhole size={12} />
@@ -363,7 +363,7 @@ export function Onboarding() {
                   <span>Contract</span>
                 </div>
               </div>
-              <h2>技術設定を、人にやさしい選択へ。</h2>
+              <h2>データソースの選択</h2>
               <p>
                 主キー候補や型はmetadataから引き継ぎます。業務上の名前・必要な列・削除の意味は人が確認します。
               </p>

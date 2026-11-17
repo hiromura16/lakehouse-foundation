@@ -162,8 +162,8 @@ export function Setup({ navigate }: { navigate: (page: Page) => void }) {
     <>
       <PageHeader
         eyebrow="MANAGE / GUIDED SETUP"
-        title="使いたい機能から、ひとつずつ。"
-        description="必要な設定・保存領域・初期化を、機能ごとの手順で確認します。YAMLを書かずに準備内容を整理できます。"
+        title="セットアップ"
+        description="機能ごとの設定・保存領域・初期配置を確認します。"
         action={
           <Button busy={resource.loading} disabled={busy} onClick={() => void resource.refresh()}>
             <RefreshCw size={15} />
@@ -174,7 +174,7 @@ export function Setup({ navigate }: { navigate: (page: Page) => void }) {
       <div className="setup-intro">
         <Sparkles size={26} />
         <div>
-          <h2>選ぶ → 設定する → 管理者が初回配置 → GUIで運用</h2>
+          <h2>初期セットアップ</h2>
           <p>
             この画面は準備計画を作ります。起動対象設定や秘密値の保存、イメージ取得、ホストの権限変更、コンテナ起動はまだ行いません。
           </p>

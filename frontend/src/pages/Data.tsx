@@ -85,8 +85,8 @@ export function Data({
     <>
       <PageHeader
         eyebrow="DATA / CATALOG"
-        title="データの意味から、確かめる。"
-        description="粒度・主キー・列の意味を先に確認。プレビューは固定Goldだけを上限付きで読み取ります。"
+        title="データカタログ"
+        description="データ契約とGoldテーブルのプレビュー。"
         action={
           <Button busy={catalog.loading} onClick={() => void catalog.refresh()}>
             <RefreshCw size={15} />

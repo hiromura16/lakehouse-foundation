@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import {
-  Activity,
   ArrowRight,
   BookOpen,
   Cable,
@@ -37,7 +36,7 @@ import { Setup } from './pages/Setup';
 import { WorkspaceLoginMethod } from './pages/Authentication';
 
 const NAV = [
-  { id: 'overview' as Page, label: 'ワークスペース', icon: LayoutDashboard, group: 'workspace' },
+  { id: 'overview' as Page, label: '概要', icon: LayoutDashboard, group: 'workspace' },
   { id: 'services' as Page, label: 'サービス', icon: Cable, group: 'workspace' },
   { id: 'data' as Page, label: 'データカタログ', icon: Database, group: 'workspace' },
   { id: 'onboarding' as Page, label: 'データ連携を組む', icon: GitBranch, group: 'workspace' },
@@ -93,61 +92,20 @@ function Login({
       <div className="login-brand">
         <Logo />
         <span>
-          Lakehouse <strong>Studio</strong>
+          Lakehouse <strong>Vision</strong>
         </span>
-        <Badge tone="cyan">PREVIEW</Badge>
       </div>
-      <section className="login-intro">
-        <span className="eyebrow">YOUR DATA. ONE WORKSPACE.</span>
-        <h1>
-          データのつながりを、
-          <br />
-          <em>もっと自由に。</em>
-        </h1>
-        <p>
-          ソースの確認から契約の組立て、処理と運用まで。
-          <br />
-          人が判断するための、ひとつのコントロールプレーン。
-        </p>
-        <div className="login-flow" aria-hidden="true">
-          <div>
-            <Database size={27} />
-            <span>Source</span>
-          </div>
-          <i />
-          <div>
-            <GitBranch size={27} />
-            <span>Contract</span>
-          </div>
-          <i />
-          <div>
-            <Layers3 size={27} />
-            <span>Lakehouse</span>
-          </div>
-        </div>
-        <div className="login-values">
-          <span>
-            <ShieldCheck size={16} />
-            人が確認・承認する設計
-          </span>
-          <span>
-            <Activity size={16} />
-            実際の状態だけを表示
-          </span>
-        </div>
-      </section>
       <section className="login-card">
         <div className="login-lock">
           <LockKeyhole size={22} />
         </div>
-        <span className="eyebrow">{cloudflare ? 'CLOUDFLARE ACCESS' : 'WORKSPACE CONNECTION'}</span>
-        <h2>ワークスペースへ接続</h2>
+        <h2>ログイン</h2>
         <p>
           {!session
             ? '認証方式を取得できませんでした。再取得してから接続してください。'
             : cloudflare
               ? 'Cloudflareで認証したアカウントで接続します。APIトークンの入力は不要です。'
-              : 'ワークスペース専用の接続キーを入力してください。'}
+              : '接続キーを入力してください。'}
         </p>
         <ErrorNotice message={error} />
         {!session ? (
@@ -162,28 +120,7 @@ function Login({
             />
           </form>
         )}
-        <div className="login-security">
-          <ShieldCheck size={16} />
-          <span>
-            {cloudflare
-              ? 'Accessの署名・有効期限・接続先をサーバーで検証します。ログインできるアカウントはAccessポリシーに従います。'
-              : '入力値は送信直後にクリアします。以後はHttpOnlyのsessionで接続し、ブラウザーのstorageにキーを保存しません。'}
-          </span>
-        </div>
-        <details>
-          <summary>
-            <CircleHelp size={14} />
-            接続方法について
-          </summary>
-          <p>
-            個人のSQL Server
-            passwordやDBA資格情報は入力しません。接続キーは設定画面で変更できます。サーバー間APIのトークンはブラウザーに渡しません。sessionはgatewayの再起動や期限切れで終了します。
-          </p>
-        </details>
       </section>
-      <footer className="login-footer">
-        LAKEHOUSE STUDIO <span>METADATA-DRIVEN / HUMAN-GUIDED</span>
-      </footer>
     </main>
   );
 }
@@ -297,19 +234,19 @@ function Workspace({ onLogout, session }: { onLogout: () => void; session: Sessi
         <button className="sidebar-brand" onClick={() => navigate('overview')}>
           <Logo />
           <span>
-            Lakehouse<strong>Studio</strong>
+            Lakehouse<strong>Vision</strong>
           </span>
           <small>POC</small>
         </button>
         <div className="workspace-switch">
-          <div className="workspace-avatar">LF</div>
+          <div className="workspace-avatar">LV</div>
           <div>
-            <strong>Foundation</strong>
-            <span>実験ワークスペース</span>
+            <strong>Vision</strong>
+            <span>Lakehouse</span>
           </div>
           <ChevronRight size={15} />
         </div>
-        <div className="sidebar-label">WORKSPACE</div>
+        <div className="sidebar-label">メニュー</div>
         <nav>
           {NAV.filter((item) => item.group === 'workspace').map((item) => (
             <button
@@ -320,11 +257,10 @@ function Workspace({ onLogout, session }: { onLogout: () => void; session: Sessi
             >
               <item.icon size={18} />
               <span>{item.label}</span>
-              {item.id === 'onboarding' && <small>NEW</small>}
             </button>
           ))}
         </nav>
-        <div className="sidebar-label manage-label">MANAGE</div>
+        <div className="sidebar-label manage-label">管理</div>
         <nav>
           {NAV.filter((item) => item.group === 'manage').map((item) => (
             <button
@@ -339,15 +275,6 @@ function Workspace({ onLogout, session }: { onLogout: () => void; session: Sessi
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="sidebar-note">
-            <GitBranch size={18} />
-            <strong>Build with metadata.</strong>
-            <p>検出した情報から、人が確認するデータ契約へ。</p>
-            <button onClick={() => navigate('onboarding')}>
-              連携を組み立てる
-              <ArrowRight size={14} />
-            </button>
-          </div>
           <div className="sidebar-session">
             <span className="session-avatar">
               <ShieldCheck size={17} />
@@ -377,7 +304,7 @@ function Workspace({ onLogout, session }: { onLogout: () => void; session: Sessi
             >
               <Menu size={20} />
             </button>
-            <span>Foundation</span>
+            <span>Vision</span>
             <ChevronRight size={13} />
             <strong>{active.label}</strong>
           </div>
@@ -495,7 +422,7 @@ function Workspace({ onLogout, session }: { onLogout: () => void; session: Sessi
           <footer className="workspace-footer">
             <span>
               <Logo />
-              Lakehouse Studio <b>PREVIEW</b>
+              Lakehouse Vision
             </span>
             <span>
               {refreshed ? `サービス最終取得 ${refreshed}` : 'サービス未取得'}

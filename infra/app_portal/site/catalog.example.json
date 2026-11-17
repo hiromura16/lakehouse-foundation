@@ -1,0 +1,58 @@
+{
+  "updated_at": "2026-11-17T00:00:00Z",
+  "portal_url": "https://apps.example.test/",
+  "lan_host": "192.0.2.4",
+  "tailscale_host": "198.51.100.14",
+  "nas_public_url": "https://nas.example.test/",
+  "lakehouse_lan_guide_url": "http://192.0.2.103:18000/",
+  "apps": [
+    {
+      "id": "foundation-portal",
+      "name": "Foundation · ポータル",
+      "category": "management",
+      "environment": "foundation",
+      "description": "データ・サービス・ジョブの管理",
+      "icon": "LH",
+      "endpoints": [
+        {
+          "label": "Web画面",
+          "scope": "public",
+          "kind": "web",
+          "url": "https://foundation.example.test/"
+        },
+        {
+          "label": "Web画面",
+          "scope": "lan",
+          "kind": "web",
+          "url": "https://192.0.2.103:8501/"
+        }
+      ],
+      "state": "UNVERIFIED",
+      "note": "説明用の予約アドレス。実接続先ではありません。"
+    },
+    {
+      "id": "vision-portal",
+      "name": "Vision · ポータル",
+      "category": "management",
+      "environment": "vision",
+      "description": "データ・サービス・ジョブの管理",
+      "icon": "LH",
+      "endpoints": [
+        {
+          "label": "Web画面",
+          "scope": "public",
+          "kind": "web",
+          "url": "https://vision.example.test/"
+        },
+        {
+          "label": "Web画面",
+          "scope": "lan",
+          "kind": "web",
+          "url": "https://192.0.2.103:28501/"
+        }
+      ],
+      "state": "UNVERIFIED",
+      "note": "説明用の予約アドレス。実接続先ではありません。"
+    }
+  ]
+}
