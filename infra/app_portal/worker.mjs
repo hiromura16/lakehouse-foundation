@@ -1,5 +1,6 @@
 import html from "./site/index.html";
 import css from "./site/style.css";
+import theme from "./site/theme.js";
 import javascript from "./site/app.js";
 import catalog from "./site/catalog.json";
 
@@ -8,6 +9,7 @@ const files = Object.freeze({
   "/index.html": [html, "text/html; charset=utf-8"],
   "/style.css": [css, "text/css; charset=utf-8"],
   "/app.js": [javascript, "application/javascript; charset=utf-8"],
+  "/theme.js": [theme, "application/javascript; charset=utf-8"],
   "/catalog.json": [catalog, "application/json; charset=utf-8"],
 });
 

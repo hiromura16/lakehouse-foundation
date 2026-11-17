@@ -4,8 +4,8 @@ Foundation・Visionと共通管理を、一つの一覧から選ぶための静�
 
 ## ソースと非公開データ
 
-- `worker.mjs`：固定5モジュールを配信するWorker。GET/HEADだけを受け付け、専用ホスト名とCSPを固定します。
-- `site/index.html`・`style.css`・`app.js`：検索、環境・用途の絞り込み、接続経路切替、接続先のコピー、CSV出力。
+- `worker.mjs`：固定6モジュールを配信するWorker。GET/HEADだけを受け付け、専用ホスト名とCSPを固定します。
+- `site/index.html`・`style.css`・`app.js`・`theme.js`：検索、環境・用途の絞り込み、接続経路切替、接続先のコピー、CSV出力。
 - `site/catalog.example.json`：説明用の予約アドレスだけを使うサンプル。
 - `site/catalog.json`：配備時に管理者が非公開で用意する実台帳。Gitから除外しています。パスワード・トークン・URL中の資格情報を登録しません。
 
@@ -19,6 +19,10 @@ Web画面を持つアプリには、CloudflareのHTTPS URLとLAN直通URLを両�
 
 `state`と`checked_at`は確認時点の記録です。ポータルは常時監視装置ではありません。実行中コンテナとの照合とURL検査の後に台帳を更新します。
 
+## テーマ切り替え
+
+右上の「ダーク」でライト／ダークを切り替えます。初回は端末の配色設定を使い、手動選択後はブラウザーのlocalStorageへ保存します。保存は入口URLごとで、Cloudflare版とLAN版は別々です。保存が使えないブラウザーでも、そのページ内の切り替えは利用できます。`theme.js`をCSSより先に読み込み、再表示時の配色を先に適用します。
+
 ## 接続経路と認証
 
 外出先ではCloudflareを選択します。LAN内でCloudflareを通さず利用する場合はLAN版のポータルを開き、`LAN直通`を選びます。各サービス自身のログインは経路にかかわらず必要です。LAN側もSecure Cookieを必要とするアプリにはHTTPSを使い、配備先のLAN CAを端末へ登録します。
@@ -31,7 +35,7 @@ Cloudflare用のサービストークンと各アプリのキーは別の認証�
 
 1. 非公開の実台帳を準備し、ID重複・関連ID・URL・資格情報混入を検査します。
 2. Workerのホスト名を配備先に合わせ、Access保護を確認します。
-3. 既存Workerの`/content` APIへ、`worker.mjs`と4つの`site/*`をmultipartで更新します。メインはJavaScript module、他4件はtext moduleです。既存compatibility設定・Accessポリシーを保持します。
+3. 既存Workerの`/content` APIへ、`worker.mjs`と5つの`site/*`をmultipartで更新します。メインはJavaScript module、他4件はtext moduleです。既存compatibility設定・Accessポリシーを保持します。
 4. LAN版へ同じサイトファイルと実台帳を同期します。LAN版ではアセットと`/catalog.json`も同じホストで配信します。
 5. 公開URL、LAN URL、ログイン後の保護された読取り、狭い画面と詳細展開を検査します。
 
