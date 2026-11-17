@@ -117,6 +117,7 @@
 | [ファイルの場所と変更のしかた](<DIRECTORY-GUIDE.md>) | 目的に対応するファイル、実行経路、公開コードとprivate状態の置き場を探す。 | 実装を読み始めるときや、変更対象と関連する確認箇所を絞るとき。 | reference |
 | [外部レビュー指摘の対応と確認](<REVIEW-FOLLOWUP.md>) | PR #3の外部レビュー指摘と、再現・修正・回帰確認の対応を追跡する。 | 既存の指摘がどう解決されたか確認し、同種の回帰を避けるとき。 | reference |
 | [レビュー指摘を改善へ取り込む](<REVIEW-WORKFLOW.md>) | issue・PR・依頼文書の指摘を対象commitで確認し、安全な回帰と差分へつなげる。 | レビュー指摘を再現して修正し、検証根拠を揃えて返すとき。 | active |
+| [中央アプリポータル](<../infra/app_portal/README.md>) | 中央ポータルの公開ソースと非公開台帳の境界、接続経路とUIの維持手順を確認する。 | 中央ポータルのカタログやWeb UIを変更・検証するとき。 | active |
 
 ### 07 報告・図版
 
@@ -225,6 +226,7 @@
 | [Vectorによる対象ログの整形と秘匿化](<VECTOR.md>) | 対象projectの有限capture・VRL重大度・秘匿化・有界配送と未検証項目を確認する。 |
 | [PoCの評価計画と受入条件](<reports/EVALUATION-PLAN.md>) | 配置・品質・CDC・AI・復旧の評価範囲と受入条件を、実施前に記入する。 |
 | [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 41サービス・14profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
+| [中央アプリポータル](<../infra/app_portal/README.md>) | 中央ポータルの公開ソースと非公開台帳の境界、接続経路とUIの維持手順を確認する。 |
 | [Vectorのログ正規化・転送設定](<../infra/monitoring/vector/README.md>) | 選択版の明示YAML合成、parser期待fixture、権限と配送上限を開発時に照合する。 |
 
 ### 評価・報告担当
@@ -326,6 +328,7 @@
 | [報告する主張と根拠の対応表](<reports/EVIDENCE-MATRIX.md>) | 報告する主張を既存検証・合成fixture・導入先受入・未評価に分けて根拠へ結ぶ。 |
 | [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 41サービス・14profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
 | [PoC報告書・発表に使う図版と雛形](<reports/README.md>) | 用途別14図・キャプション・雛形を選び、PNG・PDF・PPTXへ書き出す。 |
+| [中央アプリポータル](<../infra/app_portal/README.md>) | 中央ポータルの公開ソースと非公開台帳の境界、接続経路とUIの維持手順を確認する。 |
 | [Vectorのログ正規化・転送設定](<../infra/monitoring/vector/README.md>) | 選択版の明示YAML合成、parser期待fixture、権限と配送上限を開発時に照合する。 |
 
 ## 文書を追加・変更するとき
