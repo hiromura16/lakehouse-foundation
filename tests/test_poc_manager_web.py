@@ -58,6 +58,28 @@ class WebTests(unittest.TestCase):
         )
         self.assertEqual(result.headers["cache-control"], "no-store")
 
+    def test_known_build_titles_only_change_the_manager_title(self):
+        """Studio互換とVision版のtitle変換・本文不変を実ASGIで確認。"""
+        for title in ("Lakehouse Studio", "Lakehouse Vision"):
+            with self.subTest(title=title):
+                source = (
+                    "<html><head><title>" + title + "</title></head>"
+                    "<body>" + title + "</body></html>"
+                )
+                (self.root / "index.html").write_text(source)
+                response = self.get("/")
+                self.assertEqual(response.status_code, 200)
+                self.assertIn(
+                    "<title>Lakehouse Control</title>", response.text
+                )
+                self.assertIn("<body>" + title + "</body>", response.text)
+                self.assertIn(
+                    'name="lakehouse-mode" content="manager"', response.text
+                )
+                self.assertEqual(
+                    (self.root / "index.html").read_text(), source
+                )
+
     def test_fixed_assets_and_no_api_spa_fallback(self):
         self.assertEqual(self.get("/assets/index-abc.js").status_code, 200)
         self.assertEqual(self.get("/api/private").status_code, 404)

@@ -111,7 +111,7 @@ async def verify(dist):
         assert response.status_code == 200
         response = await client.get("/")
         assert response.status_code == 200
-        assert "Lakehouse Studio" in response.text
+        assert "<title>Lakehouse Vision</title>" in response.text
         assert (
             "unsafe-inline" not in response.headers["content-security-policy"]
         )
@@ -167,7 +167,7 @@ async def verify_manager(dist):
             response = await client.get("/")
             assert response.status_code == 200
             assert 'name="lakehouse-mode" content="manager"' in response.text
-            assert "Lakehouse Control" in response.text
+            assert "<title>Lakehouse Control</title>" in response.text
             parser = Assets()
             parser.feed(response.text)
             assert len(parser.paths) >= 2

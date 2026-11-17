@@ -109,6 +109,11 @@ def asset_response(root, parts, *, index=False):
             "<title>Lakehouse Studio</title>",
             "<title>Lakehouse Control</title>",
         )
+        # Vision用buildでも管理入口のtitleだけを置換し、本文は保つ。
+        text = text.replace(
+            "<title>Lakehouse Vision</title>",
+            "<title>Lakehouse Control</title>",
+        )
         content = text.encode("utf-8")
     return Response(
         content,
