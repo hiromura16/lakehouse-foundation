@@ -7,6 +7,7 @@
   <meta name="description" content="Foundation、Vision、TrueNASのアプリと接続先一覧。">
   <title>アプリ一覧 | ChaosLab</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%231a3fcb'/%3E%3Cpath d='M17 17h12v12H17zm18 0h12v12H35zM17 35h12v12H17zm18 0h12v12H35z' fill='white'/%3E%3C/svg%3E">
+  <script src="/theme.js"></script>
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
 </head>
@@ -19,7 +20,7 @@
     <div class="sidebar-bottom"><span class="access-dot" aria-hidden="true"></span><span>Cloudflare Access</span></div>
   </aside>
   <div class="workspace">
-    <header class="topbar"><span class="breadcrumb">ChaosLab <b>/</b> アプリ一覧</span><a id="nas-link" class="utility-link" href="https://truenas.chaoslab.fyi/ui/" target="_blank" rel="noopener noreferrer">TrueNAS管理 <span aria-hidden="true">↗</span></a></header>
+    <header class="topbar"><span class="breadcrumb">ChaosLab <b>/</b> アプリ一覧</span><div class="topbar-actions"><button id="theme-toggle" class="theme-toggle" type="button" aria-label="ダークテーマ" aria-pressed="false" title="ダークテーマに切り替える"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20.6 13A8.5 8.5 0 0 1 11 3.4 8.5 8.5 0 1 0 20.6 13Z"/></svg><span>ダーク</span></button><a id="nas-link" class="utility-link" href="https://truenas.chaoslab.fyi/ui/" target="_blank" rel="noopener noreferrer">TrueNAS管理 <span aria-hidden="true">↗</span></a></div></header>
     <main id="main" tabindex="-1">
       <div class="page-heading"><div><h1>アプリ一覧</h1><div id="summary" class="summary" aria-live="polite">読み込み中</div></div><button id="export" class="button secondary" type="button" disabled><span aria-hidden="true">↓</span> CSVを書き出す</button></div>
       <section id="favorites-section" class="favorites-section" aria-labelledby="favorites-heading"><h2 id="favorites-heading">よく使うアプリ</h2><div id="favorites" class="favorites"></div></section>
