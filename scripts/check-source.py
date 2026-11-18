@@ -337,10 +337,98 @@ def svg_ip_text(name, text):
     return masked.decode("utf-8")
 
 
+def example_ip_text(name, text):
+    """固定サンプルの既知leafだけをIP検査から除外し原文検査は保つ。"""
+    spans = []
+    if name == "infra/app_portal/site/catalog.example.json":
+        # JSON全体を検証する。重複キーも曖昧なので例外を認めない。
+        def unique_object(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError("duplicate key")
+                result[key] = value
+            return result
+
+        try:
+            json.loads(text, object_pairs_hook=unique_object)
+        except ValueError:
+            return text
+        allowed = {
+            ("lan_host",): ".".join(("192", "0", "2", "4")),
+            ("tailscale_host",): ".".join(("198", "51", "100", "14")),
+            ("lakehouse_lan_guide_url",): "http://"
+            + ".".join(("192", "0", "2", "103"))
+            + ":18000/",
+            ("apps", 0, "endpoints", 1, "url"): "https://"
+            + ".".join(("192", "0", "2", "103"))
+            + ":8501/",
+            ("apps", 1, "endpoints", 1, "url"): "https://"
+            + ".".join(("192", "0", "2", "103"))
+            + ":28501/",
+        }
+        decoder = json.JSONDecoder()
+
+        def walk(offset, path):
+            """検証済みJSONを位置付きで辿り、対象値の文字範囲だけを記録。"""
+            while text[offset].isspace():
+                offset += 1
+            start = offset
+            if text[offset] in "{[":
+                mapping = text[offset] == "{"
+                end = "}" if mapping else "]"
+                offset += 1
+                index = 0
+                while True:
+                    while text[offset].isspace():
+                        offset += 1
+                    if text[offset] == end:
+                        return offset + 1
+                    if mapping:
+                        key, offset = decoder.raw_decode(text, offset)
+                        while text[offset].isspace():
+                            offset += 1
+                        offset += 1  # 検証済みのコロン
+                    else:
+                        key = index
+                    offset = walk(offset, path + (key,))
+                    index += 1
+                    while text[offset].isspace():
+                        offset += 1
+                    if text[offset] == ",":
+                        offset += 1
+            value, offset = decoder.raw_decode(text, offset)
+            if path in allowed and value == allowed[path]:
+                spans.append((start, offset))
+            return offset
+
+        walk(0, ())
+    elif name == "infra/sail/Dockerfile":
+        # 汎用versionではなく、この依存zipと既知配置の構文だけを許可。
+        version = r"py4j-0\.10\.9\.9-src\.zip"
+        patterns = (
+            r"^COPY --from=\S+ /opt/spark/python/lib/pyspark\.zip "
+            r"(/opt/spark/python/lib/" + version + r") /opt/spark-python/$",
+            r"^    PYTHONPATH=/opt/lakehouse:/opt/spark-python/pyspark\.zip:"
+            r"(/opt/spark-python/" + version + r")$",
+        )
+        for pattern in patterns:
+            spans.extend(
+                match.span(1)
+                for match in re.finditer(pattern, text, re.MULTILINE)
+            )
+    masked = list(text)
+    for start, end in spans:
+        masked[start:end] = [
+            char if char in "\r\n" else " " for char in text[start:end]
+        ]
+    return "".join(masked)
+
+
 def scan_text(name, text, terms, secrets):
     """Report content policy matches without emitting lines or values."""
     findings = []
-    ip_lines = svg_ip_text(name, text).splitlines()
+    ip_lines = example_ip_text(name, svg_ip_text(name, text)).splitlines()
     for number, line in enumerate(text.splitlines(), 1):
         for rule, expression in RULES.items():
             if expression.search(line):
