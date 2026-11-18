@@ -1,6 +1,7 @@
 """Test publication checks with synthetic values and temporary Git state."""
 
 import importlib.util
+import json
 import subprocess
 import sys
 import tempfile
@@ -13,6 +14,48 @@ SPEC = importlib.util.spec_from_file_location("source_checker", CHECKER)
 MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
+
+
+# Synthetic public fixtures; Vision files need not exist on main.
+CATALOG_EXAMPLE = json.dumps(
+    {
+        "lan_host": ".".join(("192", "0", "2", "4")),
+        "tailscale_host": ".".join(("198", "51", "100", "14")),
+        "lakehouse_lan_guide_url": "http://"
+        + ".".join(("192", "0", "2", "103"))
+        + ":18000/",
+        "apps": [
+            {
+                "endpoints": [
+                    {},
+                    {
+                        "url": "https://"
+                        + ".".join(("192", "0", "2", "103"))
+                        + ":8501/"
+                    },
+                ]
+            },
+            {
+                "endpoints": [
+                    {},
+                    {
+                        "url": "https://"
+                        + ".".join(("192", "0", "2", "103"))
+                        + ":28501/"
+                    },
+                ]
+            },
+        ],
+    },
+    indent=2,
+)
+SAIL_ZIP = "py4j-" + ".".join(("0", "10", "9", "9")) + "-src.zip"
+SAIL_EXAMPLE = (
+    "COPY --from=spark /opt/spark/python/lib/pyspark.zip "
+    "/opt/spark/python/lib/" + SAIL_ZIP + " /opt/spark-python/\n"
+    "    PYTHONPATH=/opt/lakehouse:/opt/spark-python/pyspark.zip:"
+    "/opt/spark-python/" + SAIL_ZIP + "\n"
+)
 
 
 class PublicationChecks(unittest.TestCase):
@@ -50,6 +93,92 @@ class PublicationChecks(unittest.TestCase):
             check=True,
             capture_output=True,
         )
+
+    def test_catalog_examples_are_path_and_value_scoped(self):
+        """固定JSON leafだけ許可し、未知欄・実IP・構文不正は拒否。"""
+        name = "infra/app_portal/site/catalog.example.json"
+        source = CATALOG_EXAMPLE
+        self.assertEqual(MODULE.scan_text(name, source, set(), set()), [])
+        document = json.loads(source)
+        host = ".".join(("203", "0", "113", "71"))
+        cases = [
+            ("other.json", source),
+            (name, source[:-2]),
+            (name, source.replace(document["lan_host"], host)),
+            (name, '{"unknown": ' + json.dumps(document["lan_host"]) + "}"),
+            (name, source.replace('"lan_host":', '"unknown":')),
+            (name, '{"lan_host": "x",' + source.lstrip()[1:]),
+        ]
+        document["unknown"] = host
+        cases.append((name, json.dumps(document)))  # 同じ行の別IPを維持
+        for path, text in cases:
+            with self.subTest(path=path, text=text[:20]):
+                rules = {
+                    item.rule
+                    for item in MODULE.scan_text(path, text, set(), set())
+                }
+                self.assertIn("concrete-ipv4-address", rules)
+        value = json.loads(source)["lan_host"]
+        rules = {
+            item.rule
+            for item in MODULE.scan_text(name, source, {value}, {value})
+        }
+        self.assertIn("private-deny-term", rules)
+        self.assertIn("private-credential-value", rules)
+
+    def test_sail_zip_is_not_a_generic_version_exception(self):
+        """既知COPY/ENVだけ許可し、同一行IPや未知版・他pathは拒否。"""
+        name = "infra/sail/Dockerfile"
+        source = SAIL_EXAMPLE
+        self.assertEqual(MODULE.scan_text(name, source, set(), set()), [])
+        host = ".".join(("203", "0", "113", "71"))
+        version = ".".join(("0", "10", "9", "9"))
+        cases = [
+            ("other/Dockerfile", source),
+            (name, source.replace(version, host)),
+            (name, source.replace("-src.zip", "-src.zip " + host)),
+            (name, "RUN echo " + version),
+        ]
+        for path, text in cases:
+            with self.subTest(path=path):
+                self.assertIn(
+                    "concrete-ipv4-address",
+                    {
+                        item.rule
+                        for item in MODULE.scan_text(path, text, set(), set())
+                    },
+                )
+        rules = {
+            item.rule
+            for item in MODULE.scan_text(name, source, {version}, {version})
+        }
+        self.assertIn("private-deny-term", rules)
+        self.assertIn("private-credential-value", rules)
+
+    def test_example_history_uses_the_same_narrow_ip_policy(self):
+        """削除済み履歴にも例外範囲とIP拒否が同じように適用される。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                ["git", "init", str(root)], check=True, capture_output=True
+            )
+            name = "infra/app_portal/site/catalog.example.json"
+            target = root / name
+            target.parent.mkdir(parents=True)
+            source = CATALOG_EXAMPLE
+            target.write_text(source)
+            self.commit(root, "synthetic example")
+            self.assertEqual(self.inspect(root, "--history").returncode, 0)
+            document = json.loads(source)
+            document["unknown"] = ".".join(("203", "0", "113", "71"))
+            target.write_text(json.dumps(document))
+            self.commit(root, "synthetic rejection")
+            target.write_text(source)
+            self.commit(root, "restore example")
+            result = self.inspect(root, "--history")
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("history:", result.stdout)
+            self.assertIn("concrete-ipv4-address", result.stdout)
 
     def test_network_constants_and_hosts_are_distinct(self):
         """Allow documented ranges while rejecting specific nonlocal hosts."""
