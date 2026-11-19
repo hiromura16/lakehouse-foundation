@@ -397,6 +397,17 @@ lock を使います。更新時は SQL Server の対応版と protocol を再�
 
 ### digest更新とregistry検証
 
+**2026-11-19の更新候補（リリース未承認）:** 公式Quayの同版タグを再照合し、
+index `sha256:3419f2c9e6970e87a383cd25b991c56630837046ed5ae97faceddc3e967dff73`、
+linux/amd64子manifest
+`sha256:015e78794776036f9ffccf22fb36feae451a9152a652db491929d9cce01642a5`
+を候補としてlock・Compose・台帳へ同期しています。公式configのdigest一致と
+linux/amd64、`DEBEZIUM_VERSION=3.7.1.Final` は確認しました。
+これは全layer取得・実pull・実行時互換性の確認ではありません。
+**GitHubの使い捨てrunnerでの実pullと互換性確認は未完了です。**
+その検証と独立レビューが終わるまで、この候補をリリース・デプロイしません。
+
+
 `images.lock.json` を変更したら、次の正規手順でComposeのimage行と台帳を生成します。
 台帳は手編集しません。専用の品質検査venvから実行します。
 
@@ -446,7 +457,12 @@ failed_imageは公開image参照とregistry / pull段階を示し、
 timeout・429・5xxはREGISTRY_TRANSIENTとして最大3回、2秒・4秒の間隔で
 再試行し、解消しなければ失敗にします。Interrupted/cancelled、認証拒否、
 Docker権限拒否、未知のエラーを「imageが存在しない」と読み替えません。
-タグ移動時に自動でpinを差し替えたり、検証をskipしたりしません。
+タグが別digestへ移動しただけなら `REGISTRY_TAG_DIGEST_MISMATCH` を
+JSONの `warnings` と標準エラーへ出し、固定digestの検証を継続します。
+成功は承認済み固定digest・子manifest・configの検証と、要求時の実pullが
+成功した場合だけです。新タグの内容を自動承認・pullしたりpinを差し替えたりしません。
+固定digest欠落、platform不一致、lock不整合、pull不一致は引き続き失敗です。
+タグ取得失敗や不正な応答も警告化しません。
 
 更新は同版の公式再公開と互換性を確認してから、lock・Compose・台帳を同期し、
 独立レビューとregistry/pull CIを通すPRで行います。既存の日次CIで再発を検出しますが、
@@ -454,8 +470,10 @@ Docker権限拒否、未知のエラーを「imageが存在しない」と読み
 検証済みimage保管と保持ポリシーが必要です。この手順ではmirror作成やdeployを行いません。
 
 共有Python入力はindexではなくamd64 manifestを固定しています。この場合は現在の
-タグのindexがその固定manifestをlinux/amd64として含み、configも一致することを
-要求します。JSONの `tag_contains_platform_pin: true` はこの関係を示します。
+タグのindexがその固定manifestをlinux/amd64として含む場合、
+JSONの `tag_contains_platform_pin: true` はこの関係を示し、タグ移動警告は出しません。
+含まれなくなった場合はタグ移動警告を出しますが、固定manifestのconfigが
+linux/amd64と一致することはどちらの場合も必須です。
 indexと子manifestの違いをタグ移動と誤認せず、無関係な共有lockを変更しません。
 
 [registry CI](../.github/workflows/cdc-images.yml) は全PR（draftとdigest更新を含む）、

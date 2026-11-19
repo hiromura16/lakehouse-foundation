@@ -1,6 +1,6 @@
 name: Validate public source
 
-on:
+on:  # yamllint disable-line rule:truthy
   push:
   pull_request:
   workflow_dispatch:
@@ -20,12 +20,12 @@ jobs:
     steps:
     # Official stable releases resolved to commits on 2026-11-09.
     - name: Check out complete public history
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       with:
         fetch-depth: 0
         persist-credentials: false
     - name: Set up Python
-      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
       with:
         python-version: '3.12'
     - name: Prepare Bash and Zsh syntax checkers
@@ -39,7 +39,7 @@ jobs:
         bash --version
         zsh --version
     - name: Set up pinned uv
-      uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
       with:
         version: '0.13.7'
         # Official uv x86_64 Linux archive SHA-256.
@@ -53,6 +53,31 @@ jobs:
         uv pip sync --python "$RUNNER_TEMP/lakehouse-tools/bin/python" \
           --require-hashes requirements-dev.lock
         printf '%s\n' "$RUNNER_TEMP/lakehouse-tools/bin" >> "$GITHUB_PATH"
+    - name: Install checksum-pinned source scanners
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        tools="$RUNNER_TEMP/source-scanners"
+        mkdir -p "$tools"
+        curl --fail --location --retry 3 --output "$tools/shellcheck.tar.gz" \
+          https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.gz
+        echo "b7af85e41cc99489dcc21d66c6d5f3685138f06d34651e6d34b42ec6d54fe6f6  $tools/shellcheck.tar.gz" | sha256sum --check
+        tar -xzf "$tools/shellcheck.tar.gz" -C "$tools"
+        curl --fail --location --retry 3 --output "$tools/gitleaks.tar.gz" \
+          https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+        echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $tools/gitleaks.tar.gz" | sha256sum --check
+        tar -xzf "$tools/gitleaks.tar.gz" -C "$tools" gitleaks
+        printf '%s\n' "$tools" "$tools/shellcheck-v0.11.0" >> "$GITHUB_PATH"
+    - name: Check every YAML and shell source including hidden directories
+      run: python scripts/check_ci_sources.py
+    - name: Scan complete target history and current files with Gitleaks
+      # HEADの全祖先を検査する。PR差分限定でも別のローカル枝全体でもない。
+      # 値を全redactし、秘密値を含み得るreport/artifactは作成しない。
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        gitleaks git --redact=100 --no-banner --log-opts=HEAD .
+        gitleaks dir --redact=100 --no-banner .
     - name: Check publishable source and history
       run: python scripts/check-source.py --history
     - name: Check Python imports and formatting

@@ -273,9 +273,8 @@ class RegistryTests(unittest.TestCase):
                 ):
                     images.validate_registry(REFERENCE)
 
-    def test_mutable_tag_pin_mismatch_platform_and_child_errors(self):
+    def test_pin_mismatch_platform_and_child_errors(self):
         cases = [
-            ([{**INDEX, "digest": OTHER}, INDEX], "TAG_DIGEST"),
             ([INDEX, {**INDEX, "digest": OTHER}], "PIN_DIGEST"),
             ([INDEX, {**INDEX, "manifests": []}], "PLATFORM_MISSING"),
             (
@@ -316,7 +315,7 @@ class RegistryTests(unittest.TestCase):
                 images.validate_registry(REFERENCE)["platform_digest"], TOP
             )
 
-    def test_platform_pin_must_belong_to_the_current_tag_and_match_config(
+    def test_platform_pin_membership_and_config(
         self,
     ):
         manifest = {**MANIFEST, "digest": TOP}
@@ -345,12 +344,132 @@ class RegistryTests(unittest.TestCase):
             images,
             "inspect",
             side_effect=[
-                {**tag, "manifests": []},
+                {**tag, "manifests": INDEX["manifests"]},
                 manifest,
+                CONFIG,
             ],
         ):
-            with self.assertRaisesRegex(images.ImageError, "TAG_DIGEST"):
-                images.validate_registry(REFERENCE)
+            drift = images.validate_registry(REFERENCE)
+        self.assertEqual(drift["warnings"], ["REGISTRY_TAG_DIGEST_MISMATCH"])
+        self.assertFalse(drift["tag_contains_platform_pin"])
+
+    def test_tag_drift_warns_and_pull_keeps_approved_reference(self):
+        with mock.patch.object(
+            images,
+            "inspect",
+            side_effect=[{**INDEX, "digest": OTHER}, INDEX, MANIFEST, CONFIG],
+        ) as inspect:
+            result = images.validate_registry(REFERENCE)
+        self.assertEqual(result["warnings"], ["REGISTRY_TAG_DIGEST_MISMATCH"])
+        self.assertEqual(result["image"], REFERENCE)
+        self.assertEqual(result["pinned_digest"], TOP)
+        self.assertFalse(result["tag_matches_pin"])
+        self.assertNotIn(
+            mock.call("example.invalid/public/image@" + OTHER),
+            inspect.call_args_list,
+        )
+        with (
+            mock.patch.object(images, "docker") as docker,
+            mock.patch.object(
+                images,
+                "docker_json",
+                return_value={
+                    "Os": "linux",
+                    "Architecture": "amd64",
+                    "RepoDigests": ["example.invalid/public/image@" + TOP],
+                },
+            ),
+        ):
+            images.pull_smoke(result)
+        self.assertEqual(docker.call_args.args[0][-1], REFERENCE)
+        self.assertEqual(result["pull"], "passed")
+
+    def test_tag_drift_does_not_hide_fixed_content_failures(self):
+        tag = {**INDEX, "digest": OTHER}
+        cases = [
+            ([tag, images.ImageError("MANIFEST_MISSING")], "MANIFEST_MISSING"),
+            (
+                [tag, INDEX, images.ImageError("MANIFEST_MISSING")],
+                "MANIFEST_MISSING",
+            ),
+            (
+                [tag, INDEX, MANIFEST, {**CONFIG, "architecture": "arm64"}],
+                "CONFIG_MISMATCH",
+            ),
+            ([tag, {**INDEX, "digest": OTHER}], "PIN_DIGEST_MISMATCH"),
+            ([tag, {**INDEX, "manifests": []}], "PLATFORM_MISSING"),
+        ]
+        for responses, error in cases:
+            with self.subTest(error=error):
+                with mock.patch.object(
+                    images, "inspect", side_effect=responses
+                ):
+                    with self.assertRaisesRegex(images.ImageError, error):
+                        images.validate_registry(REFERENCE)
+
+    def test_tag_read_failures_and_invalid_digest_still_fail(self):
+        for response, error in (
+            (images.ImageError("REGISTRY_TRANSIENT"), "REGISTRY_TRANSIENT"),
+            (images.ImageError("MANIFEST_MISSING"), "MANIFEST_MISSING"),
+            ({**INDEX, "digest": "invalid"}, "TAG_DIGEST_INVALID"),
+        ):
+            with mock.patch.object(
+                images, "inspect", side_effect=[response, INDEX]
+            ):
+                with self.assertRaisesRegex(images.ImageError, error):
+                    images.validate_registry(REFERENCE)
+
+    def test_cli_exposes_warning_and_still_requires_pull_success(self):
+        for failure in (None, images.ImageError("PULL_REPO_DIGEST_MISMATCH")):
+            output, errors = io.StringIO(), io.StringIO()
+            with (
+                mock.patch.object(
+                    images, "load_images", return_value={"debezium": REFERENCE}
+                ),
+                mock.patch.object(images, "compose_images"),
+                mock.patch.object(
+                    images,
+                    "inspect",
+                    side_effect=[
+                        {**INDEX, "digest": OTHER},
+                        INDEX,
+                        MANIFEST,
+                        CONFIG,
+                    ],
+                ),
+                mock.patch.object(
+                    images, "pull_smoke", side_effect=failure
+                ) as pull,
+                contextlib.redirect_stdout(output),
+                contextlib.redirect_stderr(errors),
+            ):
+                self.assertEqual(
+                    images.main(["--pull-smoke"]), 1 if failure else 0
+                )
+            self.assertEqual(pull.call_args.args[0]["image"], REFERENCE)
+            self.assertIn(
+                "WARNING: debezium: REGISTRY_TAG_DIGEST_MISMATCH",
+                errors.getvalue(),
+            )
+            report = json.loads(output.getvalue())
+            self.assertEqual(
+                report["images"]["debezium"]["warnings"],
+                ["REGISTRY_TAG_DIGEST_MISMATCH"],
+            )
+            if failure:
+                self.assertEqual(report["error"], "PULL_REPO_DIGEST_MISMATCH")
+
+    def test_malformed_drift_descriptor_is_not_a_warning(self):
+        for tag in (
+            {**INDEX, "digest": OTHER, "mediaType": "invalid"},
+            {**INDEX, "digest": OTHER, "manifests": []},
+            {**INDEX, "digest": OTHER, "manifests": [{}]},
+        ):
+            with mock.patch.object(
+                images, "inspect", side_effect=[tag, INDEX]
+            ):
+                with self.assertRaisesRegex(images.ImageError, "DESCRIPTOR"):
+                    images.validate_registry(REFERENCE)
 
     def test_smoke_checks_actual_platform_and_full_repo_digest(self):
         reference = "apache/kafka:4.4.0@" + TOP

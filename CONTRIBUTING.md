@@ -90,3 +90,40 @@ MDを追加・改名する場合は [documentation-manifest.json](docs/documenta
 | 図・報告 | 根拠commit、既存試験と現地受入の区別、未評価、再生成とリンク |
 
 失敗を広い例外処理で隠したり、検査をskipへ変えて通したりせず、再現する境界をテストします。必要な依存が本当に未導入の場合と、導入済み環境の破損は区別します。詳細な拡張例は [CUSTOMIZATION](docs/CUSTOMIZATION.md)、レビューの記録方法は [REVIEW-WORKFLOW](docs/REVIEW-WORKFLOW.md) を参照してください。
+
+## YAML・shell・秘密値の追加検査
+
+`.yamllint.yml` はdefault規則を継承し、既存の書式に合わせて
+document-start・line-length・indentationの3規則だけを無効にします。
+GitHub Actionsの`on:` は引用せず、その行だけtruthy検査を抑制します。
+`scripts/check_ci_sources.py` は未追跡ファイルと`.github`を含む
+全階層の`*.yml`・`*.yaml`・`*.sh`を検査し、`.git`以外は除外しません。
+symlinkは辿らず失敗にし、ファイル名の空白を引数として保ちます。
+ShellCheckはshellを実行せず、警告も失敗として扱います。
+
+yamllint 1.38.0は専用品質環境のhash付きlockに含みます。
+ShellCheck 0.11.0とGitleaks 8.30.1は公式GitHub releaseのLinux x86-64
+archiveをSHA-256で固定して検証します。CIの取得URLとchecksumは
+`.github/workflows/validate.yml`を参照してください。
+
+**Bash / Zsh共通**
+
+```bash
+python scripts/check_ci_sources.py
+gitleaks git --redact=100 --no-banner --log-opts=HEAD .
+gitleaks dir --redact=100 --no-banner .
+```
+
+GitleaksのGit検査は完全checkoutのHEADと全祖先commitを対象にします。
+pushでは対象commit、pull requestではcheckoutされたmerge commitと
+両親の履歴を検査します。変更差分だけの検査ではなく、別作業の未公開local
+branchを含む`--all`でもありません。現在の未追跡ファイルもdir検査で
+確認します。Markdownも対象です。値は100%redactし、CIではreportや
+artifactを作りません。検出時は非公開で原因を調べ、広い除外や
+検査成功扱いで隠しません。Git外の既知秘密値との照合と人の公開判断は、
+従来どおり別途必要です。
+
+Composeの検査は既存の全profile合成と`config --quiet`を維持します。
+demo・sail・cdc・openobserve・lakehouse・computeを含む設定は
+依存サービスを跨ぐため、単体ファイルではなく既存の合成順序で検証します。
+一時領域の合成値だけを使用し、コンテナ起動・実環境への接続は行いません。

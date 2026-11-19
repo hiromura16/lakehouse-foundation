@@ -227,7 +227,7 @@ def inspect(reference, field="Manifest"):
 
 
 def validate_registry(reference):
-    """Verify tag/pin equality, digest existence and the amd64 child/config."""
+    """Verify pinned content; report tag drift without adopting new content."""
     pin = parse_pin(reference)
     repository, digest = pin["repository"], pin["digest"]
     tag = inspect(repository + ":" + pin["tag"])
@@ -250,8 +250,21 @@ def validate_registry(reference):
             for item in tag.get("manifests", [])
         )
     )
-    if tag_digest != digest and not platform_pin:
-        raise ImageError("REGISTRY_TAG_DIGEST_MISMATCH")
+    # A mutable tag is advisory; only the approved pin is executable input.
+    tag_drift = tag_digest != digest and not platform_pin
+    if tag_drift:
+        # Do not turn malformed tag descriptors into an accepted drift warning.
+        if tag.get("mediaType") not in INDEX_TYPES | MANIFEST_TYPES:
+            raise ImageError("REGISTRY_TAG_DESCRIPTOR_INVALID")
+        if tag.get("mediaType") in INDEX_TYPES:
+            descriptors = tag.get("manifests")
+            if not isinstance(descriptors, list) or not descriptors:
+                raise ImageError("REGISTRY_TAG_DESCRIPTOR_INVALID")
+            for item in descriptors:
+                if not isinstance(item, dict) or not re.fullmatch(
+                    DIGEST, str(item.get("digest", ""))
+                ):
+                    raise ImageError("REGISTRY_TAG_DESCRIPTOR_INVALID")
     media_type = pinned.get("mediaType")
     if media_type in INDEX_TYPES:
         matches = [
@@ -285,6 +298,7 @@ def validate_registry(reference):
         "tag_digest": tag_digest,
         "tag_matches_pin": tag_digest == digest,
         "tag_contains_platform_pin": platform_pin,
+        "warnings": ["REGISTRY_TAG_DIGEST_MISMATCH"] if tag_drift else [],
         "pinned_digest": digest,
         "platform": "linux/amd64",
         "platform_digest": platform_digest,
@@ -364,6 +378,12 @@ def main(argv=None):
                     "phase": "registry",
                 }
                 evidence["images"][name] = validate_registry(reference)
+                for warning in evidence["images"][name].get("warnings", []):
+                    print(
+                        "WARNING: " + name + ": " + warning,
+                        file=sys.stderr,
+                        flush=True,
+                    )
                 if arguments.pull_smoke:
                     current_image["phase"] = "pull"
                     pull_smoke(evidence["images"][name])
