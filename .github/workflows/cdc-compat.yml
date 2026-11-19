@@ -1,0 +1,49 @@
+name: Disposable CDC connector compatibility
+
+# No default-branch installation or manual-dispatch assumption.
+on:
+  pull_request:
+    branches: [codex/vm-vision-poc]
+    paths:
+    - tests/integration/cdc_compat/**
+    - tests/test_cdc_compat_fixture.py
+    - infra/cdc/images.lock.json
+    - infra/cdc/connector.py
+    - infra/cdc/state.py
+    - .github/workflows/cdc-compat.yml
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      UV_PYTHON_DOWNLOADS: never
+      UV_NO_CONFIG: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        ref: ${{ github.event.pull_request.head.sha }}
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      with:
+        python-version: '3.12'
+    - name: Install existing hash-locked validation dependencies
+      run: python -m pip install --require-hashes -r requirements-dev.lock
+    - name: Install existing pinned SQL runtime driver
+      run: python -m pip install -r requirements-demo.txt
+    - name: Verify locked artifacts and actual linux amd64 pulls
+      run: |
+        python scripts/cdc_images.py
+        python scripts/compose_inventory.py --check
+        python scripts/cdc_images.py --registry --pull-smoke
+    - name: Exercise disposable generic connector and replay contract
+      timeout-minutes: 15
+      run: python tests/integration/cdc_compat/run.py --run
+    - name: Remove only this job's labelled fixture resources
+      if: ${{ always() }}
+      timeout-minutes: 3
+      run: python tests/integration/cdc_compat/run.py --cleanup
