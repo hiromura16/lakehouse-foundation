@@ -429,6 +429,8 @@ class Fixture:
             return json.load(response)
 
     def events(self):
+        # Kafka 4.4 --property writes deprecation text to record stdout.
+        # Use the supported formatter option; malformed records still fail.
         result = self.docker(
             "exec",
             self.names["kafka"],
@@ -440,11 +442,11 @@ class Fixture:
             "--from-beginning",
             "--timeout-ms",
             "4000",
-            "--property",
+            "--formatter-property",
             "print.partition=true",
-            "--property",
+            "--formatter-property",
             "print.offset=true",
-            "--property",
+            "--formatter-property",
             "print.key=true",
             optional=True,
             timeout=20,

@@ -167,6 +167,35 @@ class FixtureContracts(unittest.TestCase):
         self.assertNotIn("--publish", args)
         self.assertEqual(args[args.index("--network") + 1], "fixture-net")
 
+    def test_consumer_uses_supported_formatter_options(self):
+        fixture = object.__new__(FIXTURE.Fixture)
+        fixture.names = {"kafka": "fixture-kafka"}
+        fixture.docker = mock.Mock(
+            return_value=SimpleNamespace(stdout="", returncode=1)
+        )
+        self.assertEqual(fixture.events(), [])
+        args = fixture.docker.call_args.args
+        self.assertNotIn("--property", args)
+        properties = [
+            args[index + 1]
+            for index, value in enumerate(args)
+            if value == "--formatter-property"
+        ]
+        self.assertEqual(
+            properties,
+            [
+                "print.partition=true",
+                "print.offset=true",
+                "print.key=true",
+            ],
+        )
+        # Non-record stdout is not ignored, even beside valid records.
+        fixture.docker.return_value.stdout = (
+            "synthetic diagnostic line\nPartition:0\tOffset:0\tnull\tnull\n"
+        )
+        with self.assertRaisesRegex(FIXTURE.FixtureError, "^EVENT_FORMAT$"):
+            fixture.events()
+
     def test_only_hosted_numeric_identity(self):
         environment = {
             "GITHUB_ACTIONS": "true",
