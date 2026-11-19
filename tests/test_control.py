@@ -669,5 +669,164 @@ class MonitoringSpoolTests(ControlFixture, unittest.TestCase):
                 self.assertFalse(spool.exists())
 
 
+class GrafanaOutputTests(ControlFixture, unittest.TestCase):
+    """Freeze CLI output and setup ordering without Grafana or Docker."""
+
+    def configure(self, profiles="monitoring"):
+        """Use owned disposable directories; never inspect live settings."""
+        base = self.env_file.parent.parent
+        landing = base / "landing"
+        spool = base / "spool"
+        landing.mkdir(mode=0o700, exist_ok=True)
+        spool.mkdir(mode=0o700, exist_ok=True)
+        values = SETTINGS.load(self.env_file)
+        values.update(
+            COMPOSE_PROFILES=profiles,
+            LANDING_DIR=str(landing),
+            MONITORING_LOG_DIR=str(spool),
+        )
+        self.env_file.write_text(
+            "\n".join(key + "=" + value for key, value in values.items())
+            + "\n"
+        )
+        return values
+
+    def invoke_grafana(self, action, result):
+        """Record preceding Compose commands at the setup call boundary."""
+        before_setup = []
+
+        def setup(values):
+            before_setup.append(
+                [call.args[0] for call in subprocess.run.call_args_list]
+            )
+            return result
+
+        with mock.patch.dict(
+            sys.modules, {"grafana_setup": SimpleNamespace(setup=setup)}
+        ):
+            observed = self.invoke(["--env-file", str(self.env_file), action])
+        return observed, before_setup
+
+    def test_output_status_json_exit_and_setup_order(self):
+        self.configure()
+        results = [
+            {"status": "disabled"},
+            {"status": "exists"},
+            {"status": "created"},
+            {"status": "exists", "dashboards": []},
+            {"status": "partial"},
+            {"status": "partial", "dashboards": [{"status": "exists"}]},
+        ]
+        for result in results:
+            for action in ("up", "grafana-init"):
+                with self.subTest(result=result, action=action):
+                    observed, before = self.invoke_grafana(action, result)
+                    code, process, output, errors = observed
+                    expected = "Grafana dashboard: " + result["status"] + "\n"
+                    if "dashboards" in result:
+                        expected += json.dumps(result) + "\n"
+                    if action == "up":
+                        report = {
+                            "setting": "MONITORING_LOG_DIR",
+                            "enabled": True,
+                            "ready": True,
+                            "inspection": "metadata_only",
+                            "probe": "not_run",
+                            "mutated": False,
+                            "reason": None,
+                        }
+                        expected = json.dumps(report) + "\n" + expected
+                    self.assertEqual(output, expected)
+                    self.assertEqual(errors, "")
+                    self.assertEqual(
+                        code,
+                        "Some dashboard seeds failed; existing UIDs kept."
+                        if result["status"] == "partial"
+                        else None,
+                    )
+                    self.assertEqual(len(before), 1)
+                    commands = before[0]
+                    self.assertEqual(
+                        commands,
+                        [call.args[0] for call in process.call_args_list],
+                    )
+                    self.assertEqual(len(commands), 2 if action == "up" else 0)
+                    if action == "up":
+                        self.assertEqual(
+                            commands[0][-6:],
+                            [
+                                "up",
+                                "-d",
+                                "--build",
+                                "--wait",
+                                "--wait-timeout",
+                                "600",
+                            ],
+                        )
+                        self.assertEqual(
+                            commands[1][-6:],
+                            [
+                                "exec",
+                                "-T",
+                                "worker",
+                                "python",
+                                "/opt/lakehouse/admin.py",
+                                "bootstrap",
+                            ],
+                        )
+
+    def test_monitoring_off_only_skips_automatic_setup(self):
+        self.configure(profiles="")
+        observed, before = self.invoke_grafana("up", {"status": "disabled"})
+        code, process, output, errors = observed
+        self.assertEqual((code, output, errors), (None, "", ""))
+        self.assertEqual(process.call_count, 2)
+        self.assertEqual(before, [])
+        observed, before = self.invoke_grafana(
+            "grafana-init", {"status": "disabled"}
+        )
+        code, process, output, errors = observed
+        self.assertEqual(
+            (code, output, errors),
+            (None, "Grafana dashboard: disabled\n", ""),
+        )
+        self.assertEqual(before, [[]])
+        process.assert_not_called()
+
+    def test_missing_landing_guard_precedes_setup(self):
+        values = self.configure(profiles="")
+        Path(values["LANDING_DIR"]).rmdir()
+        observed, before = self.invoke_grafana("up", {"status": "exists"})
+        code, process, output, errors = observed
+        self.assertEqual(
+            code,
+            "Create LANDING_DIR with the intended owner "
+            "before starting services.",
+        )
+        self.assertEqual((output, errors, before), ("", "", []))
+        process.assert_not_called()
+
+    def test_notebook_guard_precedes_setup(self):
+        self.configure(profiles="notebooks")
+        with mock.patch.dict(
+            sys.modules,
+            {
+                "notebook_workspace": SimpleNamespace(
+                    inspect_workspace=lambda *args, **kwargs: {
+                        "action": "blocked"
+                    }
+                )
+            },
+        ):
+            observed, before = self.invoke_grafana("up", {"status": "exists"})
+        code, process, output, errors = observed
+        self.assertEqual(
+            code,
+            "Review notebook-workspace plan and approved apply/probe first.",
+        )
+        self.assertEqual((output, errors, before), ("", "", []))
+        process.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
