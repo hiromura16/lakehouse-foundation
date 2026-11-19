@@ -3,7 +3,7 @@
     "pinned": "apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f"
   },
   "debezium": {
-    "pinned": "quay.io/debezium/connect:3.7.1.Final@sha256:3e344e0b6a1d8c681a4eff5072d4ad558fef3c8542a4d6b419e9b388d88e53ec"
+    "pinned": "quay.io/debezium/connect:3.7.1.Final@sha256:3419f2c9e6970e87a383cd25b991c56630837046ed5ae97faceddc3e967dff73"
   },
   "kafbat": {
     "pinned": "ghcr.io/kafbat/kafka-ui:v1.5.0@sha256:7cda86a33344160309fdb65146332e4da65db81a945614f2fe32e210803f6fd1"
