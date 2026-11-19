@@ -1,8 +1,10 @@
 """Pure fixture parsing/guards: no Docker, SQL, network or site settings."""
 
 import contextlib
+import copy
 import importlib.util
 import io
+import ipaddress
 import json
 import subprocess
 import unittest
@@ -39,9 +41,9 @@ class FixtureContracts(unittest.TestCase):
                 actual = FIXTURE.docker_failure(text + " PRIVATE_SENTINEL")
                 self.assertEqual(actual, expected)
                 report = FIXTURE.failure_report(
-                    "sql_port", FIXTURE.FixtureError(actual)
+                    "sql_address", FIXTURE.FixtureError(actual)
                 )
-                self.assertEqual(report["stage"], "sql_port")
+                self.assertEqual(report["stage"], "sql_address")
                 self.assertNotIn("PRIVATE_SENTINEL", json.dumps(report))
 
     def test_command_classifies_only_failed_required_docker(self):
@@ -64,6 +66,106 @@ class FixtureContracts(unittest.TestCase):
             )
             result.returncode = 0
             self.assertIs(FIXTURE.command(["docker", "port"]), result)
+
+    def test_owned_internal_address_fails_closed(self):
+        fixture = object.__new__(FIXTURE.Fixture)
+        fixture.prefix = "fixture"
+        fixture.network = "fixture-net"
+        fixture.names = {"sql": "fixture-sql"}
+        # Derive synthetic hosts from a standard private network constant.
+        # These are test-only allocations, not site or observed addresses.
+        subnet = ipaddress.ip_network("172.16.0.0/12")
+        synthetic_ip = str(next(subnet.hosts()))
+        synthetic_cidr = synthetic_ip + "/" + str(subnet.prefixlen)
+        container = {
+            "Id": "container-id",
+            "Config": {"Labels": {FIXTURE.LABEL: "fixture"}},
+            "HostConfig": {"PortBindings": {}},
+            "NetworkSettings": {
+                "Networks": {
+                    "fixture-net": {
+                        "IPAddress": synthetic_ip,
+                        "IPPrefixLen": subnet.prefixlen,
+                        "NetworkID": "network-id",
+                    }
+                }
+            },
+        }
+        network = {
+            "Id": "network-id",
+            "Name": "fixture-net",
+            "Driver": "bridge",
+            "Internal": True,
+            "Labels": {FIXTURE.LABEL: "fixture"},
+            "IPAM": {"Config": [{"Subnet": str(subnet)}]},
+            "Containers": {"container-id": {"IPv4Address": synthetic_cidr}},
+        }
+
+        def address(c, n):
+            fixture.docker = mock.Mock(
+                side_effect=[
+                    SimpleNamespace(stdout=json.dumps([c])),
+                    SimpleNamespace(stdout=json.dumps([n])),
+                ]
+            )
+            return fixture.address("sql")
+
+        self.assertEqual(address(container, network), synthetic_ip)
+        for field, value in [
+            ("Internal", False),
+            ("Labels", {}),
+            ("Driver", "host"),
+            ("Containers", {}),
+            ("Id", "other"),
+            ("IPAM", {"Config": [{"Subnet": "192.168.0.0/16"}]}),
+        ]:
+            modified = dict(network, **{field: value})
+            with self.assertRaises(FIXTURE.FixtureError):
+                address(container, modified)
+        for ip in ["127.0.0.1", "invalid"]:
+            modified = copy.deepcopy(container)
+            modified["NetworkSettings"]["Networks"]["fixture-net"][
+                "IPAddress"
+            ] = ip
+            with self.assertRaises(FIXTURE.FixtureError):
+                address(modified, network)
+        # Exercise classification failures without storing real/public hosts.
+        for flag, value in [
+            ("is_private", False),
+            ("is_link_local", True),
+            ("is_unspecified", True),
+        ]:
+            fake = mock.Mock(
+                is_private=True,
+                is_loopback=False,
+                is_link_local=False,
+                is_unspecified=False,
+            )
+            setattr(fake, flag, value)
+            with mock.patch.object(
+                FIXTURE.ipaddress, "IPv4Address", return_value=fake
+            ):
+                with self.assertRaises(FIXTURE.FixtureError):
+                    address(container, network)
+        modified = copy.deepcopy(container)
+        modified["NetworkSettings"]["Networks"]["other"] = {}
+        with self.assertRaises(FIXTURE.FixtureError):
+            address(modified, network)
+        modified = copy.deepcopy(container)
+        modified["HostConfig"]["PortBindings"] = {"1433/tcp": [{}]}
+        with self.assertRaises(FIXTURE.FixtureError):
+            address(modified, network)
+
+    def test_start_never_publishes_ports(self):
+        fixture = object.__new__(FIXTURE.Fixture)
+        fixture.prefix = "fixture"
+        fixture.network = "fixture-net"
+        fixture.names = {"sql": "fixture-sql"}
+        fixture.docker = mock.Mock()
+        fixture.start("sql", "synthetic-image", {}, alias="fixture-sql")
+        args = fixture.docker.call_args.args
+        self.assertNotIn("--publish", args)
+        self.assertEqual(args[args.index("--network") + 1], "fixture-net")
 
     def test_only_hosted_numeric_identity(self):
         environment = {

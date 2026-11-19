@@ -10,6 +10,7 @@ Runtime remains unverified until the exact hosted candidate passes.
 import argparse
 import contextlib
 import io
+import ipaddress
 import json
 import os
 import re
@@ -42,7 +43,8 @@ STAGES = frozenset(
         "imports",
         "network",
         "sql_start",
-        "sql_port",
+        "sql_address",
+        "connect_address",
         "sql_readiness",
         "sql_schema",
         "kafka_start",
@@ -80,7 +82,7 @@ SAFE_ERRORS = frozenset(
         "RESTART_DELIVERY_GAP",
         "IMMUTABLE_IMAGES_REQUIRED",
         "OWNED_CLEANUP_INCOMPLETE",
-        "LOOPBACK_BIND_REQUIRED",
+        "OWNED_INTERNAL_ADDRESS_REQUIRED",
         "COMMITTED_OFFSET_REQUIRED",
         "REPLAY_STATE_MISMATCH",
     }
@@ -340,7 +342,7 @@ class Fixture:
         if failed:
             raise FixtureError("OWNED_CLEANUP_INCOMPLETE")
 
-    def start(self, name, image, environment, port=None, alias=None):
+    def start(self, name, image, environment, alias=None):
         parts = [
             "run",
             "--platform",
@@ -355,27 +357,60 @@ class Fixture:
         ]
         if alias:
             parts += ["--network-alias", alias]
-        if port:
-            parts += ["--publish", "127.0.0.1::" + str(port)]
         for key, value in environment.items():
             parts += ["--env", key if value is None else key + "=" + value]
         parts.append(image)
         self.docker(*parts, timeout=240)
 
-    def port(self, name, port):
-        value = self.docker(
-            "port", self.names[name], str(port) + "/tcp"
-        ).stdout.strip()
-        if not re.fullmatch(r"127\.0\.0\.1:[0-9]{1,5}", value):
-            raise FixtureError("LOOPBACK_BIND_REQUIRED")
-        return int(value.rsplit(":", 1)[1])
+    def address(self, name):
+        """Linux host reaches owned internal bridge IPs; publish is unused.
+
+        Docker documents host access with --internal in network/create.
+        Never accept site addresses, extra networks or published bindings.
+        """
+        container = json.loads(
+            self.docker("container", "inspect", self.names[name]).stdout
+        )[0]
+        network = json.loads(
+            self.docker("network", "inspect", self.network).stdout
+        )[0]
+        try:
+            attachment = container["NetworkSettings"]["Networks"]
+            endpoint = attachment[self.network]
+            address = ipaddress.IPv4Address(endpoint["IPAddress"])
+            subnets = network["IPAM"]["Config"]
+            owned = (
+                container["Config"]["Labels"].get(LABEL) == self.prefix
+                and network["Labels"].get(LABEL) == self.prefix
+                and network["Name"] == self.network
+                and network["Driver"] == "bridge"
+                and network["Internal"] is True
+                and set(attachment) == {self.network}
+                and endpoint["NetworkID"] == network["Id"]
+                and not container["HostConfig"].get("PortBindings")
+                and address.is_private
+                and not address.is_loopback
+                and not address.is_link_local
+                and not address.is_unspecified
+                and any(
+                    address in ipaddress.ip_network(item["Subnet"])
+                    for item in subnets
+                )
+                and network["Containers"][container["Id"]]["IPv4Address"]
+                == str(address) + "/" + str(endpoint["IPPrefixLen"])
+            )
+        except (KeyError, TypeError, ValueError):
+            owned = False
+        if not owned:
+            raise FixtureError("OWNED_INTERNAL_ADDRESS_REQUIRED")
+        return str(address)
 
     def sql(self, query, database="master"):
         import pymssql
 
         with pymssql.connect(
-            server="127.0.0.1",
-            port=str(self.sql_port),
+            server=self.sql_address,
+            port="1433",
             user="sa",
             password=self.password,
             database=database,
@@ -467,11 +502,10 @@ class Fixture:
                 "MSSQL_AGENT_ENABLED": "true",
                 "MSSQL_SA_PASSWORD": None,
             },
-            port=1433,
             alias="fixture-sql",
         )
-        self.mark("sql_port")
-        self.sql_port = self.port("sql", 1433)
+        self.mark("sql_address")
+        self.sql_address = self.address("sql")
 
         def sql_ready():
             try:
@@ -557,9 +591,9 @@ INSERT dbo.items VALUES (1,N'initial');
                 "CDC_SQLSERVER_PASSWORD": None,
                 "HEAP_OPTS": "-Xms256m -Xmx512m",
             },
-            port=8083,
         )
-        self.endpoint = "http://127.0.0.1:" + str(self.port("connect", 8083))
+        self.mark("connect_address")
+        self.endpoint = "http://" + self.address("connect") + ":8083"
         self.mark("connect_readiness")
         wait_for(lambda: isinstance(self.get("/connectors"), list))
         values = {
