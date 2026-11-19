@@ -36,6 +36,71 @@ MAPPING = {
     }
 }
 
+STAGES = frozenset(
+    {
+        "bootstrap",
+        "imports",
+        "network",
+        "sql_start",
+        "sql_readiness",
+        "sql_schema",
+        "kafka_start",
+        "kafka_readiness",
+        "connect_start",
+        "connect_readiness",
+        "registration",
+        "snapshot",
+        "insert",
+        "update",
+        "delete",
+        "offset_commit",
+        "restart",
+        "resume",
+        "replay",
+        "cleanup",
+    }
+)
+SAFE_ERRORS = frozenset(
+    {
+        "HOSTED_RUNNER_REQUIRED",
+        "RUN_ID_REQUIRED",
+        "COMMAND_FAILED",
+        "READINESS_TIMEOUT",
+        "EVENT_FORMAT",
+        "EVENT_POSITION",
+        "RESTART_RESNAPSHOT_OR_NO_PROGRESS",
+        "RESTART_DELIVERY_GAP",
+        "IMMUTABLE_IMAGES_REQUIRED",
+        "OWNED_CLEANUP_INCOMPLETE",
+        "LOOPBACK_BIND_REQUIRED",
+        "COMMITTED_OFFSET_REQUIRED",
+        "REPLAY_STATE_MISMATCH",
+    }
+)
+
+
+def failure_report(stage, error):
+    """Emit only enumerated codes; never exception bodies or object repr."""
+    code = "UNEXPECTED_ERROR"
+    if isinstance(error, FixtureError) and error.args:
+        candidate = error.args[0]
+        if isinstance(candidate, str) and candidate in SAFE_ERRORS:
+            code = candidate
+    elif isinstance(error, subprocess.TimeoutExpired):
+        code = "PROCESS_TIMEOUT"
+    elif isinstance(error, ImportError):
+        code = "IMPORT_ERROR"
+    elif isinstance(error, OSError):
+        code = "OS_ERROR"
+    elif isinstance(error, ValueError):
+        code = "VALUE_ERROR"
+    return {
+        "status": "failed",
+        "code": "CDC_COMPAT_FAILED",
+        "stage": stage if stage in STAGES else "bootstrap",
+        "reason": code,
+    }
+
 
 class FixtureError(RuntimeError):
     """Only fixed stage codes may reach public output."""
@@ -150,6 +215,7 @@ class Fixture:
     """Owned network and containers; no named volumes or host mounts."""
 
     def __init__(self, prefix):
+        self.stage = "bootstrap"
         self.prefix = prefix
         self.network = prefix + "-net"
         self.names = {
@@ -173,6 +239,13 @@ class Fixture:
             for p in self.images.values()
         ):
             raise FixtureError("IMMUTABLE_IMAGES_REQUIRED")
+
+    def mark(self, stage):
+        """Record fixed stage entry; not a claim of whole-test success."""
+        if stage not in STAGES:
+            raise ValueError("Invalid diagnostic stage.")
+        self.stage = stage
+        print(json.dumps({"status": "started", "stage": stage}), flush=True)
 
     def docker(self, *parts, **kwargs):
         return command(
@@ -327,10 +400,12 @@ class Fixture:
         )
 
     def run(self):
+        self.mark("imports")
         sys.path.insert(0, str(ROOT / "infra/cdc"))
         import connector
         import state
 
+        self.mark("network")
         self.docker(
             "network",
             "create",
@@ -339,6 +414,7 @@ class Fixture:
             LABEL + "=" + self.prefix,
             self.network,
         )
+        self.mark("sql_start")
         self.start(
             "sql",
             SQL_IMAGE,
@@ -359,7 +435,9 @@ class Fixture:
             except Exception:
                 return False
 
+        self.mark("sql_readiness")
         wait_for(sql_ready, 240)
+        self.mark("sql_schema")
         self.sql("CREATE DATABASE lh_cdc_fixture")
         self.sql(
             """
@@ -373,6 +451,7 @@ INSERT dbo.items VALUES (1,N'initial');
         )
         # Disposable sa isolates image compatibility, not permission safety.
         # It does NOT certify production least-privilege or fixed-demo guards.
+        self.mark("kafka_start")
         self.start(
             "kafka",
             self.images["kafka"],
@@ -395,6 +474,7 @@ INSERT dbo.items VALUES (1,N'initial');
             },
             alias="cdc-kafka",
         )
+        self.mark("kafka_readiness")
         wait_for(
             lambda: (
                 self.docker(
@@ -410,6 +490,7 @@ INSERT dbo.items VALUES (1,N'initial');
                 == 0
             )
         )
+        self.mark("connect_start")
         self.start(
             "connect",
             self.images["debezium"],
@@ -435,6 +516,7 @@ INSERT dbo.items VALUES (1,N'initial');
             port=8083,
         )
         self.endpoint = "http://127.0.0.1:" + str(self.port("connect", 8083))
+        self.mark("connect_readiness")
         wait_for(lambda: isinstance(self.get("/connectors"), list))
         values = {
             "CDC_SOURCE_MODE": "generic",
@@ -445,17 +527,22 @@ INSERT dbo.items VALUES (1,N'initial');
             "CDC_TOPIC_PREFIX": "fixture",
             "CDC_TEST_TRUST_SERVER_CERTIFICATE": "true",
         }
+        self.mark("registration")
         with contextlib.redirect_stdout(io.StringIO()):
             connector.register(values, MAPPING, self.endpoint)
             connector.register(values, MAPPING, self.endpoint)
+        self.mark("snapshot")
         self.require_event("r", 1, "initial")
+        self.mark("insert")
         self.sql("INSERT dbo.items VALUES (2,N'inserted')", "lh_cdc_fixture")
         self.require_event("c", 2, "inserted")
+        self.mark("update")
         self.sql(
             "UPDATE dbo.items SET value=N'updated' WHERE id=2",
             "lh_cdc_fixture",
         )
         self.require_event("u", 2, "updated")
+        self.mark("delete")
         self.sql("DELETE dbo.items WHERE id=2", "lh_cdc_fixture")
         deleted = self.require_event("d", 2)
         delete_lsn = max(
@@ -463,10 +550,12 @@ INSERT dbo.items VALUES (1,N'initial');
             for e in deleted
             if e["value"] and json.loads(e["value"]).get("op") == "d"
         )
+        self.mark("offset_commit")
         offsets = wait_for(lambda: self.committed(delete_lsn))
         if not offsets:
             raise FixtureError("COMMITTED_OFFSET_REQUIRED")
         boundary = max(e["offset"] for e in self.events())
+        self.mark("restart")
         self.docker("restart", self.names["connect"])
         wait_for(
             lambda: (
@@ -477,10 +566,12 @@ INSERT dbo.items VALUES (1,N'initial');
             )
         )
         wait_for(lambda: self.committed(delete_lsn))
+        self.mark("resume")
         self.sql("INSERT dbo.items VALUES (3,N'resumed')", "lh_cdc_fixture")
         events = self.require_event("c", 3, "resumed")
         resumed_events(events, boundary)
         # Replay actual envelopes through production SQLite LSN/version logic.
+        self.mark("replay")
         with tempfile.TemporaryDirectory(prefix="cdc-compat-") as directory:
             store = state.State(
                 Path(directory) / "state.sqlite3", {"source_mode": "generic"}
@@ -534,9 +625,14 @@ def main():
         else:
             fixture.cleanup()
         return 0
-    except Exception:
+    except Exception as error:
         # Never print raw driver errors, configuration, events or tokens.
-        print('{"status":"failed","code":"CDC_COMPAT_FAILED"}')
+        stage = getattr(fixture, "stage", "bootstrap")
+        if isinstance(error, FixtureError) and error.args == (
+            "OWNED_CLEANUP_INCOMPLETE",
+        ):
+            stage = "cleanup"
+        print(json.dumps(failure_report(stage, error)), flush=True)
         return 1
 
 

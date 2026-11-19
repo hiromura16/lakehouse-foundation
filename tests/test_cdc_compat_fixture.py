@@ -1,7 +1,10 @@
 """Pure fixture parsing/guards: no Docker, SQL, network or site settings."""
 
+import contextlib
 import importlib.util
+import io
 import json
+import subprocess
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -161,6 +164,62 @@ class FixtureContracts(unittest.TestCase):
             SimpleNamespace(returncode=0, stdout=""),
         ]
         fixture.cleanup()
+
+    def test_failure_reports_never_include_exception_content(self):
+        marker = "synthetic-private-payload-do-not-log"
+        errors = [
+            RuntimeError(marker),
+            ValueError(marker),
+            OSError(marker),
+            ImportError(marker),
+            FIXTURE.FixtureError(marker),
+            subprocess.TimeoutExpired(marker, 1, output=marker),
+        ]
+        for error in errors:
+            with self.subTest(kind=type(error).__name__):
+                report = FIXTURE.failure_report("sql_schema", error)
+                self.assertEqual(report["stage"], "sql_schema")
+                self.assertEqual(report["status"], "failed")
+                self.assertNotIn(marker, json.dumps(report))
+        report = FIXTURE.failure_report(
+            marker, FIXTURE.FixtureError("READINESS_TIMEOUT")
+        )
+        self.assertEqual(report["stage"], "bootstrap")
+        self.assertEqual(report["reason"], "READINESS_TIMEOUT")
+        self.assertNotIn(marker, json.dumps(report))
+
+    def test_failed_run_reports_stage_and_still_cleans_up(self):
+        fixture = mock.Mock()
+        fixture.stage = "sql_schema"
+        fixture.run.side_effect = RuntimeError("synthetic-private-payload")
+        output = io.StringIO()
+        with (
+            mock.patch.object(FIXTURE.sys, "argv", ["fixture", "--run"]),
+            mock.patch.object(FIXTURE, "owner", return_value="synthetic"),
+            mock.patch.object(FIXTURE, "Fixture", return_value=fixture),
+            contextlib.redirect_stdout(output),
+        ):
+            self.assertEqual(FIXTURE.main(), 1)
+        fixture.cleanup.assert_called_once_with()
+        report = json.loads(output.getvalue())
+        self.assertEqual(report["stage"], "sql_schema")
+        self.assertEqual(report["reason"], "UNEXPECTED_ERROR")
+        self.assertNotIn("synthetic-private-payload", output.getvalue())
+
+    def test_stage_entry_is_enumerated_and_not_success(self):
+        fixture = FIXTURE.Fixture.__new__(FIXTURE.Fixture)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            fixture.mark("offset_commit")
+            with self.assertRaises(ValueError):
+                fixture.mark("synthetic-private-payload")
+        self.assertEqual(
+            json.loads(output.getvalue()),
+            {
+                "status": "started",
+                "stage": "offset_commit",
+            },
+        )
 
 
 if __name__ == "__main__":
