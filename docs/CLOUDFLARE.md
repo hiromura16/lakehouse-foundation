@@ -14,6 +14,11 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+React版を公開する場合は[同一originの認証と設定](REACT-PORTAL.md#3-外部ブラウザーから開く)も
+確認します。`DEMO_GUI_PUBLIC_URL`とアクセスするPortalのHTTPS originを一致させます。
+Accessの認証とPoC所有者sessionは別で、Access loginを管理者権限へ自動変換しません。
+各製品への公開リンク設定だけでTunnel/Access/native URLが完成したとは扱いません。
+
 照合日: 2026-11-10。Cloudflareは外部のmanagedサービスで、このリポジトリに同梱するOSS・Compose profileではありません。社内のIceberg基盤を維持したまま入口を整える用途と、許可したデータをクラウド側へ置く用途を分けます。この資料は連携の設計・評価手順で、アカウント・ドメイン・Tunnel・課金サービスを自動的に有効化するものではありません。cloudflaredの採用版・lockも未設定です。
 
 ## この基盤への当てはめ
@@ -76,6 +81,63 @@ flowchart LR
 connectorを独立コンテナへ変えると、そのコンテナのlocalhostはhostのGrafanaではありません。内部networkやoriginの設計も変更になるため、上のhost向けURLをそのまま流用しません。社内HTTPS originを使う場合は信頼するCAとhostnameを設定し、TLS検証を無効にして通す手順にはしません。
 
 n8nのwebhook外部URL・cookie、Streamlit/JupyterのWebSocket、MCPのHost/Origin制限は製品ごとに追加確認が必要です。Grafana1画面の試験成功を、全UIやAPIの公開成功へ広げて扱いません。Samba、SQL Server、Kafka、S3管理APIをこの公開アプリ一覧へ追加する手順は用意していません。
+
+### 並行PoCを外から開く場合
+
+[並行PoC](PARALLEL-POC.md)の新projectだけを対象にします。既存mainのTunnelやDNSを
+転用せず、公開hostname、許可する利用者、origin、選択commitをprivateに記録します。
+次の名前は登録できない架空例です。実ドメイン、利用者のメール、Tunnel tokenはGitへ
+保存しません。表は**設定候補**で、DNS・Access・Tunnelを作成した結果ではありません。
+
+| 画面 | 公開hostnameの例 | hostで動くconnectorからのorigin候補 |
+| --- | --- | --- |
+| 合成metadataの単独preview | `onboarding-poc.example.invalid` | `http://127.0.0.1:8510` |
+| 新PoCのPortal | `poc.example.invalid` | `http://127.0.0.1:28501` |
+| 新PoCのGrafana | `grafana-poc.example.invalid` | `http://127.0.0.1:23000` |
+| OpenObserve Lab | `observe-poc.example.invalid` | `http://127.0.0.1:25080` |
+
+最初は動作確認済みの1画面で評価し、未起動のLabを公開済みとは扱いません。
+同じzone直下の別名を使い、既存名との衝突と適用されるedge証明書を事前確認します。
+container実行のconnectorへ上のloopback URLをコピーしません。networkの接続範囲や
+originを変更する場合は、その差分を別にレビューします。
+
+1. Cloudflareの **Zero Trust → Access controls → Applications** で
+   **Self-hosted and private** を選び、使うhostname全体を保護します。
+   `/dashboard`等の一部pathだけの制限では、他のAPI/WebSocket pathが対象外になり得ます。
+   Allow policyは本人または承認した利用者に限定し、Everyone/Bypassを追加しません。
+   Accessは既定拒否です。IdPとsession期間を選び、必要なMFAを設定します。
+   メールのone-time PINだけをMFA達成とは記録しません。
+2. Access applicationを保存した**後**で、専用Tunnelのpublished application routeを
+   追加します。公式手順の **Protect with Access** でconnectorによるapplication tokenの
+   検証を設定し、正しいteam/applicationに対応することを確認します。
+   origin側のtoken検証を選ぶ場合も、未検証のまま公開しません。
+3. 未認証、許可外アカウント、期限切れsessionが拒否され、許可した本人だけが
+   originへ到達することを確認します。nativeのアプリ認証・権限は維持します。
+   Accessのログインをアプリ管理者権限へ自動変換しません。
+4. Streamlitのwidget/session、Grafanaの保存/Explore、OpenObserveの検索など、
+   対象画面で必要なWebSocket・POST・redirect・cookieを確認します。
+   CORS/XSRFやTLS検証を無効化して通しません。外部URLの変更が必要なら、
+   対象アプリだけの設定差分としてレビューします。
+5. 解除時は新PoCのrouteとAccess applicationの対応を確認し、routeを先に停止します。
+   Accessだけを削除して、保護のないrouteを残しません。mainの入口・volume・GUI編集は
+   この解除の対象にしません。
+
+Tunnelは内側から外向きに接続するため、origin向けの新しい受信port開放を前提にしません。
+外向き到達・組織の利用許可は別に必要です。Tunnel接続、DNS/Access作成、実ブラウザーの
+認証/拒否試験は未実施で、cloudflaredの採用版・配布物もまだ固定していません。
+この章にconnectorのインストールや起動を自動実行するコマンドはありません。
+Docker APIの拒否がある場合に、別経路で配置を強行する手順として使いません。
+
+Jupyter/n8n/Superset等を広げるときも別hostnameと許可対象を個別確認します。
+SQL Server、Samba、Kafka、S3/catalog管理API、Spark/Sail RPC、Docker/Dokploy管理入口は
+この画面公開に含めません。機械向けAPI/MCPはAccessのService Authと既存Bearer認証、
+CSRF/Host/Originの扱いを別に設計します。
+
+2026-11-12に公式資料を再確認しました。
+[Tunnelの接続方向](https://developers.cloudflare.com/tunnel/concepts/)、
+[Access作成順・既定拒否・token検証](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/)、
+[dashboardからのTunnel作成](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/)
+を参照してください。
 
 ## AIの補助に使う案
 

@@ -14,6 +14,15 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+## Portalの画面を選ぶ
+
+`PORTAL_UI_MODE`は`streamlit`または`react`です。通常の生成・upgradeは既存画面を維持する
+`streamlit`、新規`parallel-lab` presetは`react`を選びます。同じ`DEMO_GUI_PORT`を使います。
+Reactをpublicモードで使う場合、`DEMO_GUI_PUBLIC_URL`へ正確なHTTPS originが必要です。
+Composeはその値を`PORTAL_PUBLIC_ORIGIN`、project名を`PORTAL_PROJECT_NAME`として渡します。
+別のprivate keyやtokenをbrowser bundleへ追加しません。保存は配置と別で、再配置まで反映待ちです。
+[Reactの認証・origin・切替と制約](REACT-PORTAL.md)
+
 <!-- shell-usage:start -->
 **コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
 
@@ -42,6 +51,14 @@ export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 ```
 
 生成は通常利用者で行います。`WORKER_UID` / `WORKER_GID` にその利用者の数値IDが入るため、同じ利用者がランディングを扱う場合に権限を揃えやすくなります。既存の設定ファイルは上書きせず、秘密値は表示しません。導入後にもう一度生成してパスワードや暗号鍵を入れ替える操作には使いません。
+
+既存mainを保持したまま別の比較PoCを作る場合は、
+`--preset parallel-lab --project-name <new-project> --data-root <new-data-root>`
+を新しい`--output`と組み合わせます。新規専用なので`--upgrade`とは併用しません。
+loopback限定、UI/APIの既定port＋20000、初回`demo,monitoring,bi,automation`を選び、
+新しい秘密値を生成します。指定data rootは未使用のGit外絶対パスを要求し、
+その配下のdirectory作成・権限変更・配置は行いません。既存projectとの実port/volume競合は
+別途確認します。[全OSS・Labを分離して段階導入する手順](PARALLEL-POC.md#7-lakehouse一式を専用projectへ段階導入する)
 
 | 保存するもの | 場所と扱い |
 | --- | --- |

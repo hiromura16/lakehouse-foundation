@@ -54,6 +54,11 @@ setopt INTERACTIVE_COMMENTS
 
 ## できること
 
+[React版 Lakehouse Studio](docs/REACT-PORTAL.md)で、サービス・基本操作・メタデータの下書きを
+同じ画面から評価できます。通常は既存Streamlitを維持し、新規`parallel-lab`はReactを選択します。
+高度な異常生成やSQL/CDC等の詳細操作は既存画面を使用します。実ブラウザー・Docker・実DBの
+受入は未実施で、型/build・合成テストの成功とは区別します。
+
 | 目的 | 同梱するもの | 詳細 |
 | --- | --- | --- |
 | **受け取る・蓄積する** | Samba landing、SQL読取、Debezium / Kafka CDC、SeaweedFS S3、Lakekeeper | [SQL抽出](docs/SOURCE-SQLSERVER.md) · [CDC](docs/CDC.md) |

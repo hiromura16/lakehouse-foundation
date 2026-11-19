@@ -617,6 +617,29 @@
       "status": "active"
     },
     {
+      "path": "docs/REACT-PORTAL.md",
+      "title": "React版 Lakehouse Studioを利用する",
+      "purpose": "React画面の起動・接続・操作範囲と、private設定・外部公開・従来画面への戻し方を確認する。",
+      "audience": [
+        "初めて使う人",
+        "データ利用担当",
+        "基盤構築担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "新しいPoCでReact版を選ぶとき、外部入口を揃えるとき、画面を変更・検証するとき。",
+      "category": "03 データ・操作",
+      "prerequisites": [
+        "docs/POC-PORTAL.md",
+        "docs/CONFIGURATION.md"
+      ],
+      "next": [
+        "docs/SOURCE-ONBOARDING.md",
+        "docs/CLOUDFLARE.md",
+        "docs/PARALLEL-POC.md"
+      ],
+      "status": "active"
+    },
+    {
       "path": "docs/POC-TOOLS.md",
       "title": "BI・Notebook・ベクトル検索・データ系統を追加する",
       "purpose": "Superset・Jupyter・Qdrant・MarquezのGUIと合成デモを追加して用途別に検証する。",
@@ -1263,6 +1286,48 @@
       "next": [
         "docs/VALIDATION.md",
         "docs/OPERATIONS.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/SOURCE-ONBOARDING.md",
+      "title": "テーブルと列をGUIで選ぶソース登録の下書き",
+      "purpose": "YAMLを書かずに表・列・業務方針から未承認contract案を作り、GUI/API試作と将来の実適用を区別する。",
+      "audience": [
+        "データ利用担当",
+        "開発・設計担当",
+        "基盤構築担当"
+      ],
+      "when_to_use": "メタデータ駆動の取込対象選択を合成データで試し、現場・DBAの確認事項と後続開発を整理するとき。",
+      "category": "04 設計・拡張",
+      "prerequisites": [
+        "docs/POC-PORTAL.md",
+        "docs/SQLSERVER-FIXED-DEMO.md"
+      ],
+      "next": [
+        "docs/API.md",
+        "docs/CUSTOMIZATION.md"
+      ],
+      "status": "active"
+    },
+    {
+      "path": "docs/PARALLEL-POC.md",
+      "title": "mainのPoCと試作ブランチを並行して使う",
+      "purpose": "既存mainを維持し、単独GUIと専用projectの全OSS・Labを段階配置する並行PoCの設定・入口・停止条件を示す。",
+      "audience": [
+        "初めて使う人",
+        "基盤構築担当",
+        "開発・設計担当"
+      ],
+      "when_to_use": "mainのPoCを止めずにGUIを試すときや、監視・OpenObserve・Sailを別projectへ追加する前提と手順を確認するとき。",
+      "category": "02 構築・通信",
+      "prerequisites": [
+        "docs/SOURCE-ONBOARDING.md",
+        "docs/SHELLS.md"
+      ],
+      "next": [
+        "docs/DEPLOYMENT.md",
+        "docs/SQLSERVER-FIXED-DEMO.md"
       ],
       "status": "active"
     }

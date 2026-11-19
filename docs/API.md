@@ -14,6 +14,12 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
+表・列・業務方針を選ぶ試作には、既存Bearer認証を使う
+[`/onboarding/*`の下書きAPI](SOURCE-ONBOARDING.md#5-apiとswagger)を追加しています。
+metadataの形式検査、未承認contract案、非適用planだけを返し、DB接続や正式承認・
+適用を行いません。JSON SchemaとSwaggerからAI/APIクライアントも利用できます。
+
+
 <!-- shell-usage:start -->
 **コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
 

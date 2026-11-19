@@ -1,0 +1,33 @@
+{
+  "name": "lakehouse-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.22.3 <25"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "check": "tsc --noEmit && tsc --project tsconfig.browser.json",
+    "test:e2e": "playwright test",
+    "test": "tsc --project tsconfig.tests.json && node .test-dist/tests/client.test.js && node .test-dist/tests/render.test.js",
+    "format:check": "prettier --check src tests index.html vite.config.ts tsconfig.json tsconfig.tests.json package.json playwright.config.ts tsconfig.browser.json",
+    "format": "prettier --write src tests index.html vite.config.ts tsconfig.json tsconfig.tests.json package.json playwright.config.ts tsconfig.browser.json"
+  },
+  "dependencies": {
+    "lucide-react": "1.72.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "prettier": "3.10.1",
+    "typescript": "7.0.2",
+    "vite": "8.3.8"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "node-build": {
+    "pinned": "docker.io/library/node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54",
+    "provenance": "https://github.com/docker-library/node",
+    "verification": "Official registry index SHA-256 verified on 2026-11-12; amd64 and arm64 metadata present. Local Docker build/runtime not yet tested.",
+    "role": "Build-only React compiler. The runtime remains the existing Python image."
+  }
+}
