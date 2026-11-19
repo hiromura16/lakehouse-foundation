@@ -42,6 +42,23 @@
 
 coreは6service、全機能の定義は41serviceです。one-shotと明示実行smokeも含む数なので、起動中コンテナ数と一致しません。Compose・digest lock・requirements lockが機械的な正本です。図のロゴと線は [出典](assets/README.md) を持ち、第三者による認定を意味しません。
 
+
+### UIとデータサービスの宣言的な依存境界
+
+`tests/test_compose_inventory.py` は登録済みComposeの正本から
+`depends_on` を読み、profileなしのcoreと明示選択した
+`cdc-consumer` の直接・推移依存に管理API・PoC UIが入らないことを検査します。
+既知の境界はdemo／demo-api、cdc-ui、Grafana、Superset、Jupyter、
+Marquez Web、n8n、Airflow、OpenObserve、MCPです。
+これは依存グラフの回帰検査であり、UIを削除・停止する変更ではありません。
+
+サービスを明示選択する場合とprofile全体を有効にする場合は異なります。
+`--profile cdc up` は同じprofileの `cdc-ui` も起動対象に含めるため、
+「cdc profileならUIなし」とは扱いません。
+この検査はComposeの `depends_on` に限り、アプリ内部の通信・import依存や
+稼働中サービスの停止後の継続処理を証明しません。
+UI停止時の取込・障害復旧・下流到達は隔離環境での別のE2E受入が必要です。
+
 ## 保存・制御・参照の経路
 
 ```mermaid

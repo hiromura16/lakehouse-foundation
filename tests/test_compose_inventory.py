@@ -411,5 +411,100 @@ class ActualPublicSourcesTests(unittest.TestCase):
         )
 
 
+def dependency_closure(sources, roots):
+    """Walk depends_on; unknown nodes fail and cycles terminate."""
+    pending, visited = list(roots), set()
+    while pending:
+        name = pending.pop()
+        if name not in sources:
+            raise AssertionError("Unknown dependency: " + name)
+        if name in visited:
+            continue
+        visited.add(name)
+        dependencies = sources[name]["definition"].get("depends_on", {})
+        if not isinstance(dependencies, (dict, list)):
+            raise AssertionError("Invalid depends_on: " + name)
+        if any(not isinstance(item, str) for item in dependencies):
+            raise AssertionError("Invalid dependency name: " + name)
+        pending.extend(dependencies)
+    return visited
+
+
+class CoreDependencyTests(unittest.TestCase):
+    """Protect explicit data selection, not runtime/UI-off acceptance."""
+
+    UI_BOUNDARY = {
+        "demo",
+        "demo-api",
+        "cdc-ui",
+        "grafana",
+        "superset",
+        "jupyter",
+        "marquez-web",
+        "n8n",
+        "airflow",
+        "openobserve",
+        "mcp",
+    }
+
+    def assert_no_ui(self, sources, roots):
+        """Reject both direct and transitive management/PoC dependencies."""
+        self.assertFalse(dependency_closure(sources, roots) & self.UI_BOUNDARY)
+
+    def test_public_core_and_explicit_cdc_data_roots_do_not_require_ui(self):
+        sources, _, _ = inventory.read_sources(inventory.ROOT)
+        core = [
+            name
+            for name, item in sources.items()
+            if not item["definition"].get("profiles")
+        ]
+        self.assertTrue(core)
+        self.assert_no_ui(sources, [*core, "cdc-consumer"])
+        # Profile activation is broader than explicit service dependency.
+        self.assertIn("cdc", sources["cdc-ui"]["definition"]["profiles"])
+        self.assertIn("cdc-ui", sources)
+
+    def test_direct_and_transitive_ui_edges_are_rejected_in_both_forms(self):
+        for edge in (["demo"], {"demo": {"condition": "service_started"}}):
+            for intermediate in (False, True):
+                sources = {
+                    "worker": {"definition": {"depends_on": edge}},
+                    "adapter": {"definition": {"depends_on": edge}},
+                    "demo": {"definition": {}},
+                }
+                if intermediate:
+                    sources["worker"]["definition"]["depends_on"] = ["adapter"]
+                with self.subTest(edge=edge, intermediate=intermediate):
+                    with self.assertRaises(AssertionError):
+                        self.assert_no_ui(sources, ["worker"])
+
+    def test_cycle_terminates_without_hiding_reachable_ui(self):
+        sources = {
+            "worker": {"definition": {"depends_on": ["adapter"]}},
+            "adapter": {"definition": {"depends_on": {"worker": {}}}},
+            "demo": {"definition": {}},
+        }
+        self.assertEqual(
+            dependency_closure(sources, ["worker"]), {"worker", "adapter"}
+        )
+        sources["adapter"]["definition"]["depends_on"]["demo"] = {}
+        with self.assertRaises(AssertionError):
+            self.assert_no_ui(sources, ["worker"])
+
+    def test_unknown_root_or_dependency_is_not_silently_ignored(self):
+        sources = {"worker": {"definition": {"depends_on": ["missing"]}}}
+        for roots in (["missing"], ["worker"]):
+            with self.subTest(roots=roots):
+                with self.assertRaisesRegex(AssertionError, "Unknown"):
+                    dependency_closure(sources, roots)
+
+    def test_malformed_dependency_shape_is_rejected(self):
+        for dependencies in ("demo", None, [None], [True]):
+            sources = {"worker": {"definition": {"depends_on": dependencies}}}
+            with self.subTest(dependencies=dependencies):
+                with self.assertRaisesRegex(AssertionError, "Invalid"):
+                    dependency_closure(sources, ["worker"])
+
+
 if __name__ == "__main__":
     unittest.main()
