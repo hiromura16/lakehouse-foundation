@@ -42,6 +42,7 @@ STAGES = frozenset(
         "imports",
         "network",
         "sql_start",
+        "sql_port",
         "sql_readiness",
         "sql_schema",
         "kafka_start",
@@ -65,6 +66,13 @@ SAFE_ERRORS = frozenset(
         "HOSTED_RUNNER_REQUIRED",
         "RUN_ID_REQUIRED",
         "COMMAND_FAILED",
+        "DOCKER_IMAGE_UNAVAILABLE",
+        "DOCKER_PLATFORM_UNAVAILABLE",
+        "DOCKER_PORT_UNAVAILABLE",
+        "DOCKER_NAME_CONFLICT",
+        "DOCKER_NETWORK_UNAVAILABLE",
+        "DOCKER_RESOURCE_EXHAUSTED",
+        "DOCKER_DAEMON_UNAVAILABLE",
         "READINESS_TIMEOUT",
         "EVENT_FORMAT",
         "EVENT_POSITION",
@@ -121,6 +129,36 @@ def owner(environment):
     return "lh-cdc-compat-" + "-".join(parts)
 
 
+def docker_failure(stderr):
+    """Classify captured Docker stderr without returning any of its text."""
+    text = stderr.lower()
+    patterns = (
+        (
+            "DOCKER_IMAGE_UNAVAILABLE",
+            ("manifest unknown", "manifest not found", "pull access denied"),
+        ),
+        ("DOCKER_PLATFORM_UNAVAILABLE", ("no matching manifest",)),
+        (
+            "DOCKER_PORT_UNAVAILABLE",
+            ("port is already allocated", "no public port"),
+        ),
+        ("DOCKER_NAME_CONFLICT", ("container name", "already in use")),
+        ("DOCKER_NETWORK_UNAVAILABLE", ("network not found",)),
+        ("DOCKER_RESOURCE_EXHAUSTED", ("no space left on device",)),
+        (
+            "DOCKER_DAEMON_UNAVAILABLE",
+            ("cannot connect to the docker daemon",),
+        ),
+    )
+    for code, phrases in patterns:
+        if code == "DOCKER_NAME_CONFLICT":
+            if all(phrase in text for phrase in phrases):
+                return code
+        elif any(phrase in text for phrase in phrases):
+            return code
+    return "COMMAND_FAILED"
+
+
 def command(parts, *, environment=None, optional=False, timeout=120):
     """Never forward command output/errors that might contain credentials."""
     result = subprocess.run(
@@ -132,7 +170,12 @@ def command(parts, *, environment=None, optional=False, timeout=120):
         check=False,
     )
     if result.returncode and not optional:
-        raise FixtureError("COMMAND_FAILED")
+        code = (
+            docker_failure(result.stderr)
+            if parts and parts[0] == "docker"
+            else "COMMAND_FAILED"
+        )
+        raise FixtureError(code)
     return result
 
 
@@ -427,6 +470,7 @@ class Fixture:
             port=1433,
             alias="fixture-sql",
         )
+        self.mark("sql_port")
         self.sql_port = self.port("sql", 1433)
 
         def sql_ready():

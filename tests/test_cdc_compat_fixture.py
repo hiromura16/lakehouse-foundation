@@ -21,6 +21,50 @@ SPEC.loader.exec_module(FIXTURE)
 class FixtureContracts(unittest.TestCase):
     """Fail closed on runner identity and malformed broker output."""
 
+    def test_docker_failure_categories_never_copy_input(self):
+        samples = {
+            "manifest unknown": "DOCKER_IMAGE_UNAVAILABLE",
+            "no matching manifest": "DOCKER_PLATFORM_UNAVAILABLE",
+            "no public port": "DOCKER_PORT_UNAVAILABLE",
+            "port is already allocated": "DOCKER_PORT_UNAVAILABLE",
+            "container name is already in use": "DOCKER_NAME_CONFLICT",
+            "network not found": "DOCKER_NETWORK_UNAVAILABLE",
+            "no space left on device": "DOCKER_RESOURCE_EXHAUSTED",
+            "cannot connect to the Docker daemon": "DOCKER_DAEMON_UNAVAILABLE",
+            "unrecognized private detail": "COMMAND_FAILED",
+            "container name only": "COMMAND_FAILED",
+        }
+        for text, expected in samples.items():
+            with self.subTest(expected=expected):
+                actual = FIXTURE.docker_failure(text + " PRIVATE_SENTINEL")
+                self.assertEqual(actual, expected)
+                report = FIXTURE.failure_report(
+                    "sql_port", FIXTURE.FixtureError(actual)
+                )
+                self.assertEqual(report["stage"], "sql_port")
+                self.assertNotIn("PRIVATE_SENTINEL", json.dumps(report))
+
+    def test_command_classifies_only_failed_required_docker(self):
+        result = SimpleNamespace(
+            returncode=1,
+            stdout="PRIVATE_SENTINEL",
+            stderr="no public port PRIVATE_SENTINEL",
+        )
+        with mock.patch.object(FIXTURE.subprocess, "run", return_value=result):
+            with self.assertRaisesRegex(
+                FIXTURE.FixtureError, "^DOCKER_PORT_UNAVAILABLE$"
+            ):
+                FIXTURE.command(["docker", "port"])
+            with self.assertRaisesRegex(
+                FIXTURE.FixtureError, "^COMMAND_FAILED$"
+            ):
+                FIXTURE.command(["other"])
+            self.assertIs(
+                FIXTURE.command(["docker", "port"], optional=True), result
+            )
+            result.returncode = 0
+            self.assertIs(FIXTURE.command(["docker", "port"]), result)
+
     def test_only_hosted_numeric_identity(self):
         environment = {
             "GITHUB_ACTIONS": "true",
