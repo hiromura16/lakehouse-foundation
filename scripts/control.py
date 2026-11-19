@@ -161,6 +161,15 @@ def run(parts, **kwargs):
     return subprocess.run(compose + parts, env=env, check=True, **kwargs)
 
 
+def report_grafana_result(result):
+    """Print the shared seed result and preserve the partial-failure exit."""
+    print("Grafana dashboard: " + result["status"])
+    if "dashboards" in result:
+        print(json.dumps(result))
+    if result["status"] == "partial":
+        raise SystemExit("Some dashboard seeds failed; existing UIDs kept.")
+
+
 def inspect_monitoring_spool(selected_values):
     """Check only selected spool/ancestor metadata, never create or probe.
 
@@ -313,22 +322,12 @@ elif args.action == "up":
         from grafana_setup import setup
 
         result = setup(values)
-        print("Grafana dashboard: " + result["status"])
-        if "dashboards" in result:
-            print(json.dumps(result))
-        if result["status"] == "partial":
-            raise SystemExit(
-                "Some dashboard seeds failed; existing UIDs kept."
-            )
+        report_grafana_result(result)
 elif args.action == "grafana-init":
     from grafana_setup import setup
 
     result = setup(values)
-    print("Grafana dashboard: " + result["status"])
-    if "dashboards" in result:
-        print(json.dumps(result))
-    if result["status"] == "partial":
-        raise SystemExit("Some dashboard seeds failed; existing UIDs kept.")
+    report_grafana_result(result)
 elif args.action == "spark-check":
     from compute_check import run_check
 
