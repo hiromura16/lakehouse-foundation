@@ -358,7 +358,7 @@ host診断の成功は、そのhost上のPython通信だけの結果です。コ
 
 R版の[固定イメージ診断](https://github.com/hiromura16/lakehouse-foundation-R/commit/6f51122a00fe148d7da95156a2a4283d1dcf2dce)
 と同様に、Git取得・レジストリ照会・Engineのpull・BuildKitのbuildを
-分けて確認します。現行版のイメージやdigestは変更しません。
+分けて確認します。照会自体はイメージやdigestを変更しません。
 
 まず、配置で使うユーザーから、現行Composeの固定参照を照会します。
 次はcoreのcatalogを調べる例です。privateのproxy値を引数へ書きません。

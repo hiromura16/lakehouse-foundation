@@ -397,16 +397,19 @@ lock を使います。更新時は SQL Server の対応版と protocol を再�
 
 ### digest更新とregistry検証
 
-**2026-11-19の更新候補（リリース未承認）:** 公式Quayの同版タグを再照合し、
-index `sha256:3419f2c9e6970e87a383cd25b991c56630837046ed5ae97faceddc3e967dff73`、
+**2026-11-24の更新候補（リリース未承認）:** 公式Quayの同版タグを再照合し、
+index `sha256:e20f73da3136cbc1c2a12a67f5f4a4c2cfd83120e886c3c961917e8ca3383769`、
 linux/amd64子manifest
-`sha256:015e78794776036f9ffccf22fb36feae451a9152a652db491929d9cce01642a5`
+`sha256:30296c9dd713146d4291fd20527921fdfaba296e25e5c422414619b7e0811dfa`
 を候補としてlock・Compose・台帳へ同期しています。公式configのdigest一致と
 linux/amd64、`DEBEZIUM_VERSION=3.7.1.Final` は確認しました。
-これは全layer取得・実pull・実行時互換性の確認ではありません。
-**GitHubの使い捨てrunnerでの実pullと互換性確認は未完了です。**
-その検証と独立レビューが終わるまで、この候補をリリース・デプロイしません。
-
+製品・版は変更せず、取得不能になった固定参照だけを更新する候補です。
+2026-11-19の旧index `3419f2c9…` は今回の公式registry照会でnot found、
+公式タグ履歴では11月20日の再公開でタグ対象から外れています。
+新indexは11月24日00:47:34 UTCの同版タグと一致します。
+同版でもイメージ内容は更新されるため、実pullと実行時互換性は別に確認します。
+GitHubの使い捨てrunnerでの実pull、および実行時互換性の結果はPRへ記録し、
+互換性の受入と独立レビューが終わるまで、この候補をリリース・デプロイしません。
 
 `images.lock.json` を変更したら、次の正規手順でComposeのimage行と台帳を生成します。
 台帳は手編集しません。専用の品質検査venvから実行します。
