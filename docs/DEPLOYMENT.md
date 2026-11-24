@@ -212,7 +212,26 @@ fi
 
 ```bash
 ./scripts/lakehouse.sh --env-file /absolute/private/site.env plan
+./scripts/lakehouse.sh --env-file /absolute/private/site.env preflight
 ```
+
+`plan`はComposeの構文・変数展開、`preflight`は配備先の読取診断です。
+診断には通常操作と同じ9ファイル・private設定・選択profileを使います。
+有効サービスのbind/secret/config参照元、固定公開ポート、既存Docker
+ネットワークとホスト経路の重なり、新規IPv4 bridgeの空きを確認します。
+外部DBへの接続、image取得、ファイル作成、ポート予約、コンテナ起動は
+行いません。名前付きvolumeの内容やDBの正常性も検証しません。
+
+`FAIL`は修正が必要な問題で終了1、`WARN`・`SKIP`だけなら終了0です。
+終了0でも未確認の項目を読み、配置前に管理者が確認します。ポート競合は
+コードと件数で表示し、privateのパス・IP・秘密値は表示しません。
+同一project/serviceの同一ポートは再配備として扱います。別環境との
+確定した重複は`FAIL`、OS待受や再作成に依存するものは`WARN`です。
+remote Engine・Docker Desktop・コンテナ内ではホスト検査を省きます。
+rootlessではホストのポート照合・IPv4空き概算を省きます。
+`DOCKER_HOST`の明示指定もローカルと断定せず省く場合があります。
+この診断は`up`へ自動挿入しておらず、正常なDeployを保証するものでは
+ありません。Notebookや監視spoolの準備確認は既存の`predeploy`で行います。
 
 **Bash / Zsh共通**
 
@@ -492,6 +511,7 @@ Docker 29／Buildx Bake／社内proxyで判明した互換性修正の取り込�
 | 取得 | cloneしたcommit、lockと必要fileを確認 | 取得漏れやローカル一時修正の混入がない |
 | host/private | Docker、proxy、path、所有者、空port | 通常配置利用者が必要な操作を行える |
 | 構成 | `lakehouse.sh plan` | 終了0。有効profileと永続先の対応を確認済み |
+| 配備前診断 | `lakehouse.sh preflight` | FAILを解消し、WARN/SKIPの未確認範囲を確認済み |
 | build/pull | 同じ管理入口から配置 | 依存checksumとimage作成が成功 |
 | 起動/初期化 | DB→migration→catalog→worker | one-shot0、常駐serviceのhealthが正常 |
 | 内部往復 | `lakehouse.sh verify` | 合成の11検査、同じ原本の再投入skip |

@@ -43,7 +43,7 @@ class ControlFixture:
         ):
             runpy.run_path(str(CONFIGURE), run_name="__main__")
 
-    def invoke(self, arguments, fallback=None):
+    def invoke(self, arguments, fallback=None, process_status=0):
         """Run the CLI while recording every external process request."""
         environment = dict(os.environ)
         environment.pop("LAKEHOUSE_ENV_FILE", None)
@@ -59,7 +59,7 @@ class ControlFixture:
             mock.patch.object(sys, "argv", [str(CONTROL), *arguments]),
             mock.patch(
                 "subprocess.run",
-                return_value=subprocess.CompletedProcess([], 0),
+                return_value=subprocess.CompletedProcess([], process_status),
             ) as process,
             mock.patch(
                 "socket.create_connection",
@@ -92,6 +92,55 @@ class ControlEnvironmentTests(ControlFixture, unittest.TestCase):
         self.assertEqual(
             output, "Compose configuration valid. Profiles: core only\n"
         )
+
+    def test_preflight_keeps_private_env_and_the_nine_compose_inputs(self):
+        """診断にも通常操作と同じ設定を使い、会社の除外先を保持する。"""
+        values = SETTINGS.load(self.env_file)
+        lines = self.env_file.read_text().splitlines()
+        self.env_file.write_text(
+            "\n".join(
+                "NO_PROXY=fixture.internal"
+                if line.startswith("NO_PROXY=")
+                else line
+                for line in lines
+            )
+            + "\n"
+        )
+        with mock.patch.dict(os.environ, {"NO_PROXY": "wrong-shell.invalid"}):
+            code, process, output, _ = self.invoke(
+                ["--env-file", str(self.env_file), "preflight"]
+            )
+        self.assertEqual(code, 0)
+        self.assertEqual(process.call_count, 1)
+        command = process.call_args.args[0]
+        self.assertEqual(
+            command[:2], [sys.executable, str(ROOT / "scripts/preflight.py")]
+        )
+        self.assertEqual(command.count("-f"), 9)
+        self.assertEqual(
+            command[command.index("--env-file") + 1],
+            str(self.env_file.resolve()),
+        )
+        child = process.call_args.kwargs["env"]
+        self.assertEqual(
+            child["COMPOSE_PROJECT_NAME"], values["COMPOSE_PROJECT_NAME"]
+        )
+        self.assertIn("fixture.internal", child["NO_PROXY"].split(","))
+        self.assertNotIn("wrong-shell.invalid", child["NO_PROXY"])
+        self.assertEqual(child["NO_PROXY"], child["no_proxy"])
+        self.assertFalse(process.call_args.kwargs["check"])
+        self.assertEqual(output, "")
+
+    def test_preflight_preserves_failure_and_usage_exit_status(self):
+        """診断の失敗を起動や構成検査の成功へ読み替えない。"""
+        for status in (1, 2):
+            with self.subTest(status=status):
+                code, process, _, _ = self.invoke(
+                    ["--env-file", str(self.env_file), "preflight"],
+                    process_status=status,
+                )
+                self.assertEqual(code, status)
+                self.assertEqual(process.call_count, 1)
 
     def test_spark_target_overrides_project_interpolation_only_explicitly(
         self,

@@ -55,6 +55,7 @@ parser.add_argument(
     "action",
     choices=[
         "plan",
+        "preflight",
         "predeploy",
         "notebook-workspace",
         "up",
@@ -68,7 +69,8 @@ parser.add_argument(
         "grafana-init",
     ],
     help=(
-        "plan/status/source-check=検査。up/down=起動停止（volume保持）。"
+        "plan/status/source-check=検査。preflight=配備前の読取診断。"
+        "up/down=起動停止（volume保持）。"
         "ingest/medallion=原本取込/変換。verify=隔離検証。"
         "spark-check=互換smoke、grafana-init=初回dashboard作成"
     ),
@@ -266,6 +268,19 @@ elif args.action == "plan":
         "Compose configuration valid. Profiles: "
         + (values.get("COMPOSE_PROFILES") or "core only")
     )
+elif args.action == "preflight":
+    # 診断にも同じ9 Composeと正規化済みprivate環境を渡す。
+    # plan/upへ自動挿入せず、既存配置の起動契約は変えない。
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts/preflight.py"),
+            *compose[2:],
+        ],
+        env=env,
+        check=False,
+    )
+    raise SystemExit(result.returncode)
 elif args.action == "notebook-workspace":
     from notebook_workspace import prepare_workspace
 
