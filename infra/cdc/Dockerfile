@@ -25,6 +25,7 @@ RUN uv --no-cache venv --python /usr/local/bin/python /opt/venv \
        --require-hashes requirements.lock cdc-requirements.lock
 ENV UV_OFFLINE=1
 COPY scripts/admin.py ./admin.py
+COPY scripts/raw_file_input.py ./scripts/raw_file_input.py
 COPY scripts/sqlserver_demo.py ./scripts/sqlserver_demo.py
 COPY scripts/sqlserver_safety.sql ./scripts/sqlserver_safety.sql
 COPY scripts/sqlserver_batch.py ./scripts/sqlserver_batch.py

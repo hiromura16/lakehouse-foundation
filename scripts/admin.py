@@ -37,6 +37,9 @@ from PIL import Image
 from pyiceberg.catalog import load_catalog
 from pyiceberg.expressions import EqualTo
 
+from scripts.raw_file_input import completion_hash as completion_hash
+from scripts.raw_file_input import ready_files
+
 ROOT = Path("/opt/lakehouse")
 HTTP = requests.Session()
 S3 = boto3.client(
@@ -59,7 +62,6 @@ STATE = {
     "imported_files": 0,
 }
 CONTRACT = json.loads((ROOT / "medallion/sources.json").read_text())["sources"]
-MAX_BYTES = 16 * 1024 * 1024
 
 
 def request(method, url, payload=None, accepted=(200, 201, 204)):
@@ -244,22 +246,6 @@ def overwrite(table, rows, column, value):
     table.overwrite(arrow, overwrite_filter=EqualTo(column, value))
 
 
-def completion_hash(marker):
-    """改行付きのSHA-256完了markerを検査してhash文字列を返す。
-
-    サイズ確認の後も読取量を制限し、読取前後のfile成長に備える。
-    原本との一致は呼出元のingestが別に検査する。
-    """
-    if marker.stat().st_size > 66:
-        raise ValueError("Invalid completion marker.")
-    # stat後の成長にも備え、読取量そのものにも上限を設ける。
-    with marker.open("rb") as stream:
-        content = stream.read(67)
-    if not re.fullmatch(rb"[a-f0-9]{64}\r?\n", content):
-        raise ValueError("Invalid completion marker.")
-    return content[:64].decode("ascii")
-
-
 def resolve_source(relative):
     """相対pathから、固定6契約または正式なGUI増分名を照合する。
 
@@ -294,27 +280,14 @@ def ingest(directory=Path("/landing"), prefix=""):
     cat = catalog()
     files = cat.load_table(schema(prefix, "bronze") + ".files")
     imported = skipped = 0
-    # 工程1: readyがある原本だけを対象にし、転送途中のfileを扱わない。
-    for marker in sorted(directory.rglob("*.ready")):
-        path = marker.with_name(marker.name[:-6])
-        if marker.is_symlink() or path.is_symlink() or not path.is_file():
-            continue
-        relative = path.relative_to(directory).as_posix()
-        if path.stat().st_size > MAX_BYTES:
-            raise ValueError("Landing file exceeds the bounded import limit.")
-        expected = completion_hash(marker)
-        # 内容hashと読取前後の属性で、marker作成後や読取中の変更を拒否する。
-        before = path.stat()
-        data = path.read_bytes()
-        after = path.stat()
-        digest = sha256(data).hexdigest()
-        if digest != expected or (before.st_size, before.st_mtime_ns) != (
-            after.st_size,
-            after.st_mtime_ns,
-        ):
-            raise ValueError(
-                "Landing file changed or does not match its completion marker."
-            )
+    # 工程1: 完了印と原本を照合した RAW 入力だけを永続化へ渡す。
+    for raw in ready_files(directory):
+        path, relative, data, digest = (
+            raw.path,
+            raw.relative,
+            raw.data,
+            raw.digest,
+        )
         previous = (
             files.scan(row_filter=EqualTo("path", relative))
             .to_arrow()
