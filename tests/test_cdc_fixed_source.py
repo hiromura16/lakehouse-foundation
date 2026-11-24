@@ -41,6 +41,7 @@ import config  # noqa: E402
 import connector  # noqa: E402
 import consumer  # noqa: E402
 import fixed_source  # noqa: E402
+import raw_writer  # noqa: E402
 
 VALUES = {
     "CDC_SOURCE_MODE": "fixed-demo",
@@ -637,6 +638,105 @@ class FixedRawLogTests(unittest.TestCase):
             namespace="sqlcdc_events",
             identity=self.identity,
         )
+
+    def raw_only(self, catalog, records):
+        """呼出側は合成カタログだけ。状態・broker・実接続先は受けない。"""
+        if type(catalog) is not MemoryRawCatalog:
+            raise AssertionError(
+                "Raw-only experiment needs a synthetic catalog."
+            )
+        return raw_writer.append_raw(
+            catalog,
+            records,
+            namespace="sqlcdc_events",
+            identity=self.identity,
+        )
+
+    def restart_raw_only(self, original, path):
+        """合成履歴だけ保存して、新しいカタログから再開する。"""
+        name = "sqlcdc_events.events"
+        table = original.tables[name]
+        path.write_text(json.dumps(table.rows, ensure_ascii=False))
+        fresh = MemoryRawCatalog()
+        fresh.create_namespace("sqlcdc_events")
+        fresh.create_table(
+            name, schema=table.arrow_schema, properties=table.properties
+        )
+        fresh.tables[name].rows = json.loads(path.read_text())
+        return fresh
+
+    def test_raw_only_matches_legacy_rows_without_derivation_or_completion(
+        self,
+    ):
+        """同じ入力で既存経路の Raw と独立 Raw-only の全列が一致する。"""
+        values = config.settings(VALUES)
+        mapping = fixed_source.table_mapping()
+        topics = config.topic_names(values, mapping)
+        self.identity = consumer.identity_digest(
+            consumer.source_identity(values, mapping)
+        )
+        rows = [raw_record(), raw_record(1, tombstone=True)]
+        old = self.catalog
+        isolated = MemoryRawCatalog()
+        state = mock.Mock(fixed_source=True)
+        state.offset.return_value = -1
+        admin = SimpleNamespace(catalog=lambda: old)
+        with mock.patch.object(
+            consumer, "materialize", return_value={}
+        ) as materialize:
+            legacy = consumer.process(
+                admin, state, rows, mapping, topics, values=values
+            )
+            state.complete.assert_called_once_with(rows)
+            materialize.assert_called_once()
+            self.assertEqual(
+                self.raw_only(isolated, rows), legacy["raw_events_appended"]
+            )
+            state.complete.assert_called_once_with(rows)
+            materialize.assert_called_once()
+        name = "sqlcdc_events.events"
+        self.assertEqual(set(isolated.tables), {name})
+        self.assertEqual(isolated.tables[name].rows, old.tables[name].rows)
+
+    def test_raw_only_restarts_before_and_after_uncertain_append(self):
+        """確定前なら再送で追記、確定済なら再送しても二重化しない。"""
+        record = raw_record(1, tombstone=True)
+        name = "sqlcdc_events.events"
+        for persisted in (False, True):
+            with self.subTest(persisted=persisted):
+                catalog = MemoryRawCatalog()
+                self.raw_only(catalog, [raw_record()])
+                table = catalog.tables[name]
+                append = table.append
+
+                def interrupt(batch):
+                    if persisted:
+                        append(batch)
+                    raise OSError("synthetic append outcome unknown")
+
+                with mock.patch.object(table, "append", side_effect=interrupt):
+                    with self.assertRaises(OSError):
+                        self.raw_only(catalog, [record])
+                with tempfile.TemporaryDirectory() as tmp:
+                    restored = self.restart_raw_only(
+                        catalog, Path(tmp) / "raw-fixture.json"
+                    )
+                retry = {**record, "ingested_at": "2026-04-02T12:00:00Z"}
+                self.assertEqual(
+                    self.raw_only(restored, [retry]), 0 if persisted else 1
+                )
+                rows = restored.tables[name].rows
+                self.assertEqual([row["offset"] for row in rows], ["0", "1"])
+                expected_stamp = (
+                    record["ingested_at"]
+                    if persisted
+                    else retry["ingested_at"]
+                )
+                self.assertEqual(rows[1]["ingested_at"], expected_stamp)
+                self.assertIsNone(rows[1]["envelope_json"])
+                with self.assertRaisesRegex(ValueError, "changed payload"):
+                    self.raw_only(restored, [{**record, "value": ""}])
+                self.assertEqual(len(rows), 2)
 
     def test_raw_retains_full_envelope_and_explicit_operation_metadata(self):
         record = raw_record()
