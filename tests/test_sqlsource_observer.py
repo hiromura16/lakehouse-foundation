@@ -631,6 +631,7 @@ class ObserverRouteTests(unittest.TestCase):
                 raise HTTPException(401)
 
         self.app = FastAPI()
+        self.query = mock.Mock(side_effect=observation_query)
 
         @self.app.exception_handler(RequestValidationError)
         async def invalid_request(_, __):
@@ -641,7 +642,7 @@ class ObserverRouteTests(unittest.TestCase):
                 self.store,
                 self.jobs,
                 authorize,
-                query=observation_query,
+                query=self.query,
                 requester=self.requester,
             )
         )
@@ -704,6 +705,51 @@ class ObserverRouteTests(unittest.TestCase):
             self.assertEqual(response.status_code, status)
             self.assertNotIn(TOKEN, response.text)
             self.assertFalse(self.jobs.operation.locked())
+
+    def test_pipeline_route_keeps_query_order_and_response_shape(self):
+        """認可済み route の固定 SQL と観測順・応答順を固定する。"""
+        response = self.client.get(
+            "/sql-source/pipeline-status", headers=self.headers
+        )
+        self.assertEqual(response.status_code, 200)
+        result = response.json()
+        self.assertEqual(
+            list(result),
+            [
+                "state",
+                "observed_at",
+                "layers",
+                "history_observed",
+                "last_batch",
+                "progress_observed",
+                "pending",
+                "consistent_snapshot",
+            ],
+        )
+        self.assertEqual(result["state"], "observed")
+        self.assertEqual(
+            [layer["table"] for layer in result["layers"]], list(OBSERVER.IDS)
+        )
+        self.assertEqual(
+            list(result["last_batch"]["changed_counts"]), list(OBSERVER.IDS)
+        )
+        self.assertFalse(result["consistent_snapshot"])
+        self.assertEqual(
+            self.query.call_args_list,
+            [
+                mock.call(OBSERVER.count_statement("batch"), maximum=6),
+                mock.call(
+                    "SELECT apply_id,batch_id,mode,observed_at,counts_json,"
+                    "sql_statements FROM iceberg.sql_control.batches "
+                    "ORDER BY observed_at DESC LIMIT 1",
+                    maximum=1,
+                ),
+                mock.call(
+                    "SELECT status FROM iceberg.sql_control.progress LIMIT 2",
+                    maximum=2,
+                ),
+            ],
+        )
 
     def test_observations_are_typed_and_preview_identifiers_are_finite(self):
         response = self.client.get(
