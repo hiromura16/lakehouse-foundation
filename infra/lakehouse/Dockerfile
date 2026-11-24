@@ -23,6 +23,7 @@ RUN uv --no-cache venv --python /usr/local/bin/python /opt/venv \
 # Runtime executes the built environment without dependency downloads.
 ENV UV_OFFLINE=1
 COPY scripts/admin.py ./admin.py
+COPY scripts/raw_file_input.py ./scripts/raw_file_input.py
 COPY scripts/generate-demo.py ./scripts/generate-demo.py
 COPY scripts/source_scenarios.py ./scripts/source_scenarios.py
 COPY scripts/sql_batch_worker.py ./scripts/sql_batch_worker.py

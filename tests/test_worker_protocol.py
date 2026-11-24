@@ -293,6 +293,59 @@ class CompletionMarkerTests(unittest.TestCase):
         stream.read.assert_called_once_with(67)
 
 
+class IngestRawBoundaryTests(unittest.TestCase):
+    """検証済み原本を受け取る実 ingest の永続化順序を固定する。"""
+
+    def test_later_checksum_failure_does_not_undo_earlier_writes(self):
+        """順序が遅い不一致を検出するまで先行確定順は変わらない。"""
+        from hashlib import sha256
+
+        ledger, bronze = mock.Mock(), mock.Mock()
+        arrow = ledger.scan.return_value.to_arrow.return_value
+        arrow.to_pylist.return_value = []
+        catalog = mock.Mock()
+        catalog.load_table.side_effect = [ledger, bronze]
+        effects = mock.Mock()
+        with (
+            tempfile.TemporaryDirectory() as temp,
+            mock.patch.object(WORKER, "catalog", return_value=catalog),
+            mock.patch.object(WORKER, "ensure_tables"),
+            mock.patch.object(WORKER, "S3", effects.s3),
+            mock.patch.object(WORKER, "overwrite", effects.overwrite),
+            mock.patch.object(
+                WORKER,
+                "CONTRACT",
+                [
+                    {
+                        "path": "a.csv",
+                        "table": "synthetic",
+                        "columns": ["id"],
+                    }
+                ],
+            ),
+            mock.patch.dict(os.environ, {"S3_BUCKET_RAW": "synthetic-raw"}),
+        ):
+            root = Path(temp)
+            for name in ("a", "b"):
+                data = b"id\n1\n"
+                (root / (name + ".csv")).write_bytes(data)
+                digest = sha256(data).hexdigest() if name == "a" else "0" * 64
+                (root / (name + ".csv.ready")).write_text(digest + "\n")
+            with self.assertRaisesRegex(
+                ValueError, "does not match its completion marker"
+            ):
+                WORKER.ingest(root)
+        self.assertEqual(
+            [call[0] for call in effects.mock_calls],
+            ["s3.put_object", "overwrite", "overwrite"],
+        )
+        self.assertIs(effects.overwrite.call_args_list[0].args[0], bronze)
+        self.assertIs(effects.overwrite.call_args_list[1].args[0], ledger)
+        self.assertEqual(
+            effects.overwrite.call_args_list[1].args[1][0]["path"], "a.csv"
+        )
+
+
 class SourceNameTests(unittest.TestCase):
     """Keep GUI microbatches within the declared business-source contract."""
 
