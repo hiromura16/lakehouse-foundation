@@ -18,11 +18,14 @@ from cdc_fixtures import (  # noqa: E402
     IDENTITY,
     MAPPING,
     TOPICS,
+    VALUES,
     ReplayCatalog,
     ReplayTable,
     complete_history,
     record,
 )
+from test_cdc_fixed_source import MemoryRawCatalog  # noqa: E402
+from test_worker_protocol import WORKER  # noqa: E402
 
 
 class RawRebuildTests(unittest.TestCase):
@@ -98,6 +101,104 @@ class RawRebuildTests(unittest.TestCase):
         )
         self.materialize.assert_called_once()
         self.assertEqual(self.materialize.call_args.args[1].fixed_source, True)
+
+    def test_forward_raw_replay_matches_bronze_and_medallion_inputs(self):
+        """従来経路と Raw 再構築の同値を SQL 実行直前まで確認する。"""
+        update = record(offset=1, operation="u", sequence=2, name="改訂")
+        removed = record(
+            offset=2, operation="c", sequence=3, key="temporary-product"
+        )
+        delete = record(
+            offset=3, operation="d", sequence=4, key="temporary-product"
+        )
+        tombstone = {**delete, "offset": 4, "value": None}
+        final_batch = [update, removed, delete, tombstone]
+        with tempfile.TemporaryDirectory() as directory:
+            forward = state.State(Path(directory) / "live.sqlite3", IDENTITY)
+            self.addCleanup(forward.connection.close)
+            live_catalog = MemoryRawCatalog()
+            replay_catalog = ReplayCatalog(self.table)
+            materialize_cdc = consumer.materialize
+            expressions = sys.modules["pyiceberg.expressions"]
+            expressions.In = lambda field, values: (field, tuple(values))
+
+            def materialize(admin, current):
+                """実 Arrow 変換・管理 SQL を固定の局所観測点へ通す。"""
+                derived = MemoryRawCatalog()
+                bronze, statements = {}, []
+                create = derived.create_table
+
+                def create_table(name, **kwargs):
+                    create(name, **kwargs)
+                    derived.tables[name].overwrite = lambda arrow: (
+                        bronze.update({name: arrow.to_pylist()})
+                    )
+
+                derived.create_table = create_table
+
+                def submit(statement):
+                    statements.append(statement.strip())
+
+                with (
+                    mock.patch.object(WORKER, "ROOT", ROOT),
+                    mock.patch.object(WORKER, "CONTRACT", config.CONTRACTS),
+                    mock.patch.object(WORKER, "pa", sys.modules["pyarrow"]),
+                    mock.patch.object(WORKER, "catalog", return_value=derived),
+                    mock.patch.object(WORKER, "query", side_effect=submit),
+                ):
+                    result = materialize_cdc(WORKER, current, prefix="sqlcdc_")
+                evidence.append((bronze, statements, result))
+                return result
+
+            evidence = []
+            live_admin = SimpleNamespace(
+                catalog=lambda: live_catalog, STATE={"blocked": False}
+            )
+            with mock.patch.object(
+                consumer,
+                "materialize",
+                side_effect=lambda admin, current, **_: materialize(
+                    admin, current
+                ),
+            ):
+                for batch in (self.records, final_batch, final_batch):
+                    consumer.process(
+                        live_admin,
+                        forward,
+                        batch,
+                        MAPPING,
+                        TOPICS,
+                        values=VALUES,
+                    )
+            self.assertEqual(evidence[-2], evidence[-1])
+            rows = live_catalog.tables["sqlcdc_events.events"].rows
+            self.assertEqual(len(rows), len(self.records) + len(final_batch))
+            # Feed the actual writer output to the pinned snapshot adapter.
+            self.table.pinned = copy.deepcopy(rows)
+            self.admin.catalog = lambda: replay_catalog
+            self.materialize = materialize
+            self.assertEqual(self.rebuild(), 42)
+            self.assertEqual(
+                self.store.completed_offsets(), forward.completed_offsets()
+            )
+            self.assertEqual(evidence[-1], evidence[-2])
+            bronze, statements, result = evidence[-1]
+            self.assertEqual(len(bronze), 6)
+            products = bronze["sqlcdc_bronze.erp_products"]
+            self.assertEqual(
+                [row["product_name"] for row in products], ["改訂"]
+            )
+            self.assertEqual(result["sql_statements"], len(statements))
+            self.assertTrue(
+                any(
+                    sql.startswith(
+                        "CREATE OR REPLACE TABLE "
+                        "iceberg.sqlcdc_silver.erp_products"
+                    )
+                    and "iceberg.sqlcdc_bronze.erp_products" in sql
+                    for sql in statements
+                )
+            )
 
     def test_raw_gap_missing_table_or_lost_completed_prefix_is_refused(self):
         cases = (
