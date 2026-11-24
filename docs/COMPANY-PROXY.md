@@ -354,6 +354,52 @@ host診断の成功は、そのhost上のPython通信だけの結果です。コ
 | n8nだけTLS失敗 | CA fileの公開PEM・読取権限・起動時の追加CA、独自nodeのca指定を確認 |
 | 内部通信がproxyへ出る | private設定をupgradeしcanonical3項目を確認。Dokploy Environmentにも転記して既存アプリを再配置。Java/SDK独自除外は別に確認 |
 
+### 固定イメージが取得できない場合
+
+R版の[固定イメージ診断](https://github.com/hiromura16/lakehouse-foundation-R/commit/6f51122a00fe148d7da95156a2a4283d1dcf2dce)
+と同様に、Git取得・レジストリ照会・Engineのpull・BuildKitのbuildを
+分けて確認します。照会自体はイメージやdigestを変更しません。
+
+まず、配置で使うユーザーから、現行Composeの固定参照を照会します。
+次はcoreのcatalogを調べる例です。privateのproxy値を引数へ書きません。
+
+**Bash / Zsh共通**
+
+```bash
+image=$(docker compose --env-file /absolute/private/site.env \
+  -f infra/lakehouse/compose.yaml config --images catalog)
+docker buildx imagetools inspect "$image"
+```
+
+指定digestの存在と対象platformを確認します。tagの現時点の参照先だけを
+見て固定digestが存在すると判断しません。indexのdigestとその子の
+platform manifestのdigestも区別します。この照会の成功だけでは、
+Engineのレイヤー取得・Dokployのbuild・アプリの外部通信は検証できません。
+それぞれ配置に使う経路とCAで確認します。
+
+| 結果 | 次の確認 |
+| --- | --- |
+| TLS検証エラー | 照会するclientのCA。pullやbuildはdaemon/builder側も別に確認 |
+| HTTP 407 | 企業proxyの認証方式・資格情報・接続先許可 |
+| HTTP 401/403 | `/v2/`の認証案内と実際の認証失敗を区別し、registry権限・許可リストを確認 |
+| HTTP 429 | registryの利用制限、組織の認証・承認済みミラー |
+| `manifest unknown`・指定digestがない | 会社ミラーの同期、同じ固定版の上流での存在 |
+| 対象platformがない | 配備VMのCPUと固定イメージの対応 |
+| 照会は成功、pullだけ失敗 | Docker daemonのproxy・CA・認証・取得経路 |
+| pullは成功、buildのmetadata取得で失敗 | Dokploy本体とBuildKitのtoken取得経路・版・proxy・CA |
+
+CDCについては`python3 scripts/cdc_images.py`がlockとComposeの
+**オフライン整合検査**です。`--registry`は固定版とlinux/amd64の照会、
+`--pull-smoke`は加えてEngineへのダウンロードを行います。全サービスの
+取得試験ではありません。既定検査の成功と実経路の取得成功を分けます。
+
+障害を回避するためにdigestを外したり、TLS検証を無効にしたりしません。
+共有する記録はcommit・公開イメージ参照・エラーの種類・実行した層を
+中心にし、生ログに混ざるproxy認証情報やprivate設定を除きます。
+[Dockerのイメージ照会](https://docs.docker.com/reference/cli/docker/buildx/imagetools/inspect/)、
+[daemonのproxy設定](https://docs.docker.com/engine/daemon/proxy/)
+も参照してください。会社の実proxy環境での受入は引き続き別途必要です。
+
 ## 検証済み範囲と元へ戻す方法
 
 ローカルのループバック上で模擬Basic認証CONNECT proxyとTLS originを起動し、認証＋CAの成功、誤認証407、CA不足、NO_PROXY迂回、redirect拒否、秘密値非表示を試験しています。生成した秘密鍵・証明書は一時領域だけに置き、公開sourceへ含めません。

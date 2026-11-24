@@ -44,3 +44,27 @@ PR 3〜6 の番号は計画上の順番であり、既存 GitHub PR 番号では
 - 別の担当者が手順から構成を再現し、元経路の復元と再送を実演する。新方式が原表の復元、監査、閲覧権限を維持できなければ PoC にとどめる。
 
 現時点で確認済みなのは Git 管理の構成・コードと試験の対象範囲であり、UI 停止下の稼働、別 Sink、移行、実データ、費用の合格を示すものではない。
+
+## R版から取り込む改善の境界（2026-11-24）
+
+今回の比較基準はFoundation main `8adaef6`と
+[Foundation R `6370e2d`](https://github.com/hiromura16/lakehouse-foundation-R/commit/6370e2d)です。
+R版の別チャットでの独立構成・JVM削減の方針も照合し、
+採用判断はGitのコード・変更履歴・検証記録を根拠にしています。
+利用者の指定により、現行コンポーネントの置換は今回の対象外です。
+
+| 比較した改善 | 現行版での扱いと理由 |
+| --- | --- |
+| Raw読取・書込の分離と再送比較 | mainの[PR #38](https://github.com/hiromura16/lakehouse-foundation/pull/38)・[#40](https://github.com/hiromura16/lakehouse-foundation/pull/40)・[#41](https://github.com/hiromura16/lakehouse-foundation/pull/41)・[#42](https://github.com/hiromura16/lakehouse-foundation/pull/42)で既存の責務分離と合成比較を確認。維持する |
+| SQLのローカル完了とGold公開の区別 | R版`36a13f7`と比較。現行版も[PR #39](https://github.com/hiromura16/lakehouse-foundation/pull/39)の独立read modelで層・未完了・不明値を扱うため、Rのnative実装へ差し替えない |
+| 配備前のファイル・IPAM・IPv4プール診断 | R版`1790f50`の標準ライブラリによる読取診断を採用。現行の9 Composeとprivate設定を使う`lakehouse.sh preflight`を追加 |
+| 固定公開ポートの競合とLinuxのscope表記 | R版`fc774fe`・`d3a9568`を採用。同じproject/serviceの再配備を競合扱いせず、確定と未確認を区別 |
+| 固定イメージ取得障害の切り分け | R版`6f51122`の考え方を[会社proxy手順](../COMPANY-PROXY.md#固定イメージが取得できない場合)へ反映。同時に見つかったDebezium旧pin欠落は、同じ3.7.1.Finalの取得可能なdigestへ更新。[候補と受入条件](../CDC.md#digest更新とregistry検証)を参照 |
+| 同じ型のSilverを使うRust/DuckDB比較と更新・復元の検証記録 | R版`ac3785e`・`6370e2d`を確認。別構成の計測を現行版の合格や性能値として転用せず、現行版の[Sail比較](../SAIL-LAB.md)・配備・復元の受入を維持 |
+| R版のnative engine・保存・telemetry構成 | 現行のSpark/Trino/SeaweedFS/Lakekeeper/Kafka/Debezium等を置き換えるため採用しない |
+
+移植側では`DOCKER_HOST`による接続先の上書きも確認し、配備VM自身と
+判定できない場合はホストのパス・待受・経路から成功を推測しません。
+診断は任意実行とし、既存の`plan`・`predeploy`・`up`の動作や、
+CDCのoffset・writer・volume・データ契約を変更しません。
+具体的な実行と判定範囲は[配備手順](../DEPLOYMENT.md#3-coreを起動する)を参照します。

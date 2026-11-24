@@ -113,7 +113,7 @@ services:
   # connectorの設定・offset・statusはKafkaのtopicに保存し、独立DBは設けない。
   cdc-connect:
     profiles: [cdc]
-    image: quay.io/debezium/connect:3.7.1.Final@sha256:3419f2c9e6970e87a383cd25b991c56630837046ed5ae97faceddc3e967dff73
+    image: quay.io/debezium/connect:3.7.1.Final@sha256:e20f73da3136cbc1c2a12a67f5f4a4c2cfd83120e886c3c961917e8ca3383769
     restart: unless-stopped
     labels: *cdc_labels
     logging: *cdc_logging

@@ -177,10 +177,22 @@ python3 scripts/configure.py --output "$LAKEHOUSE_ENV_FILE"
 
 ```bash
 ./scripts/lakehouse.sh plan
+./scripts/lakehouse.sh preflight
 python3 scripts/proxy-doctor.py --env-file "$LAKEHOUSE_ENV_FILE"
 ```
 
 **期待結果:** 設定検証が成功します。planは起動しません。ここでCLIの `up` を実行して、Dokployと二つのwriterを作らないようにします。既存CLIからの切替は [会社VM更新](COMPANY-UPDATE.md) を先に読みます。
+
+`preflight`も起動・ファイル作成・ポート予約を行わない読取診断です。
+通常操作と同じ9 Composeとprivate設定を使い、未選択profileを除いて
+ホストの参照元、公開ポート、DockerネットワークとIPAMを確認します。
+`COMPOSE_PROJECT_NAME`を生成後appNameに合わせてから実行すると、
+既存の同一サービスの同一割当を再配備として扱えます。実際のDeployで
+Composeやprofileを変更した場合は、その設定で再診断します。
+`FAIL`は終了1、`WARN`/`SKIP`のみなら終了0ですが、未確認範囲を手動で
+確認します。判定範囲と各操作の違いは[配備手順](DEPLOYMENT.md#3-coreを起動する)
+を参照します。別ホストのDockerへ接続している端末から、ローカルの空き
+ポートやパスを検査して配備VMの正常性を推測しないようにします。
 
 ## 5. Compose自身のEnvironmentタブへ登録する
 
