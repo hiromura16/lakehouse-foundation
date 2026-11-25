@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from hashlib import sha256
 from pathlib import Path
 from unittest import mock
 
@@ -34,6 +35,10 @@ INDEX = {
     ],
 }
 CONFIG = {"os": "linux", "architecture": "amd64"}
+RELEASE = "quay.io/debezium/connect:3.7.1.Final"
+VERSION_ENV = "DEBEZIUM_VERSION=3.7.1.Final"
+RELEASE_CONFIG = {**CONFIG, "config": {"Env": [VERSION_ENV, "OTHER=x"]}}
+IMAGE_ID = "sha256:" + "d" * 64
 
 
 class SourceTests(unittest.TestCase):
@@ -54,23 +59,127 @@ class SourceTests(unittest.TestCase):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(images.ROOT / name, target)
 
-    def test_all_current_pins_match_compose_and_build_inputs(self):
+    def test_all_current_references_match_compose_and_build_inputs(self):
         pins = images.load_images(self.root)
         images.compose_images(self.root, pins)
         self.assertEqual(set(pins), {*images.SERVICES, "python", "uv"})
+        self.assertEqual(pins["debezium"], RELEASE)
+        for name in ("kafka", "kafbat", "python", "uv"):
+            images.parse_pin(pins[name])
+
+    def test_duplicate_lock_keys_fail_even_if_last_pin_is_valid(self):
+        """CDC自身と共有ビルド入力のトップ・入れ子重複を拒否する。"""
+        for scope, service in (
+            ("cdc", "debezium"),
+            ("lakehouse", "python"),
+            ("uv", "uv"),
+        ):
+            path = self.root / f"infra/{scope}/images.lock.json"
+            original = path.read_text()
+            top = f'"{service}":'
+            properties = (
+                ('"tag":', '"policy":')
+                if service == "debezium"
+                else ('"pinned":',)
+            )
+            for member in (top, *properties):
+                insertion = member + " null, "
+                with self.subTest(scope=scope, member=member):
+                    invalid = original.replace(member, insertion + member, 1)
+                    self.assertNotEqual(original, invalid)
+                    path.write_text(invalid)
+                    with self.assertRaisesRegex(
+                        images.ImageError, "CDC_LOCK_DUPLICATE_KEY"
+                    ):
+                        images.load_images(self.root)
+            path.write_text(original)
+
+    def test_lock_rejects_non_json_constants(self):
+        """値を利用しない追加項目でも非標準JSON定数は拒否する。"""
+        path = self.root / "infra/cdc/images.lock.json"
+        path.write_text(path.read_text().replace("{", '{"extra": NaN,', 1))
+        with self.assertRaisesRegex(
+            images.ImageError, "CDC_LOCK_INVALID_JSON"
+        ):
+            images.load_images(self.root)
 
     def test_generate_changes_only_the_image_and_is_idempotent(self):
-        pins = images.load_images(self.root)
-        original = (self.root / images.COMPOSE).read_text()
-        pins["debezium"] = REFERENCE
-        with self.assertRaisesRegex(images.ImageError, "COMPOSE_LOCK"):
-            images.compose_images(self.root, pins)
-        images.compose_images(self.root, pins, write=True)
-        updated = (self.root / images.COMPOSE).read_text()
-        before = images.load_images(self.root)["debezium"]
-        self.assertEqual(updated, original.replace(before, REFERENCE))
-        images.compose_images(self.root, pins, write=True)
-        self.assertEqual((self.root / images.COMPOSE).read_text(), updated)
+        path = self.root / images.COMPOSE
+        canonical = path.read_text()
+        stale = canonical.replace(RELEASE, RELEASE + "@" + TOP)
+        self.assertNotEqual(stale, canonical)
+        path.write_text(stale)
+        with (
+            mock.patch.object(images, "ROOT", self.root),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(images.main([]), 1)
+            self.assertEqual(path.read_text(), stale)
+            self.assertEqual(images.main(["--write-compose"]), 0)
+            self.assertEqual(path.read_text(), canonical)
+            self.assertEqual(images.main(["--write-compose"]), 0)
+            self.assertEqual(path.read_text(), canonical)
+            self.assertEqual(images.main([]), 0)
+
+    def test_only_exact_debezium_tag_and_policy_are_accepted(self):
+        path = self.root / "infra/cdc/images.lock.json"
+        correct = json.loads(path.read_text())
+        for entry in (
+            {"tag": RELEASE, "policy": "pinned"},
+            {"tag": RELEASE},
+            {"pinned": RELEASE + "@" + TOP},
+            {"tag": RELEASE, "policy": "release-tag", "digest": TOP},
+            {"tag": RELEASE + "@" + TOP, "policy": "release-tag"},
+            {
+                "tag": RELEASE.replace("quay.io", "example.invalid"),
+                "policy": "release-tag",
+            },
+            *(
+                {
+                    "tag": RELEASE.rsplit(":", 1)[0] + ":" + tag,
+                    "policy": "release-tag",
+                }
+                for tag in (
+                    "latest",
+                    "3",
+                    "3.7",
+                    "3.7.1",
+                    "3.7.1.CR1",
+                    "3.7.2.Final",
+                    "3.7.1.Final-extra",
+                )
+            ),
+        ):
+            with self.subTest(entry=entry):
+                path.write_text(json.dumps({**correct, "debezium": entry}))
+                with self.assertRaisesRegex(
+                    images.ImageError, "DEBEZIUM_RELEASE_TAG_REQUIRED"
+                ):
+                    images.load_images(self.root)
+
+    def test_immutable_inputs_do_not_accept_the_mutable_policy_or_release(
+        self,
+    ):
+        for scope, name in (
+            ("cdc", "kafka"),
+            ("cdc", "kafbat"),
+            ("lakehouse", "python"),
+            ("uv", "uv"),
+        ):
+            path = self.root / f"infra/{scope}/images.lock.json"
+            original = path.read_text()
+            locks = json.loads(original)
+            for change in (
+                {"tag": RELEASE, "policy": "release-tag"},
+                {"pinned": RELEASE},
+                {"pinned": RELEASE + "@" + TOP},
+                {"pinned": locks[name]["pinned"].split("@")[0]},
+            ):
+                with self.subTest(scope=scope, name=name, change=change):
+                    path.write_text(json.dumps({**locks, name: change}))
+                    with self.assertRaises((images.ImageError, KeyError)):
+                        images.load_images(self.root)
+            path.write_text(original)
 
     def test_new_external_service_and_missing_lock_are_rejected(self):
         pins = images.load_images(self.root)
@@ -513,6 +622,476 @@ class RegistryTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(images.ImageError, error):
                     images.pull_smoke({"image": reference})
+
+    def test_release_manifest_uses_exact_bytes_and_strict_config_descriptor(
+        self,
+    ):
+        media = "application/vnd.oci.image.manifest.v1+json"
+        descriptor = {
+            "mediaType": "application/vnd.oci.image.config.v1+json",
+            "digest": IMAGE_ID,
+            "size": 1234,
+        }
+        manifest = {
+            "schemaVersion": 2,
+            "mediaType": media,
+            "config": descriptor,
+        }
+        body = json.dumps(manifest, indent=2).replace("\n", "\r\n").encode()
+        digest = "sha256:" + sha256(body).hexdigest()
+        ref = "quay.io/debezium/connect@" + digest
+        with mock.patch.object(images, "docker", return_value=body) as cli:
+            self.assertEqual(
+                images.release_config_digest(ref, digest, media), IMAGE_ID
+            )
+            cli.assert_called_once_with(
+                ["buildx", "imagetools", "inspect", ref, "--raw"], binary=True
+            )
+        with (
+            mock.patch.object(images, "docker", return_value=body + b"\n"),
+            self.assertRaisesRegex(images.ImageError, "BYTES_MISMATCH"),
+        ):
+            images.release_config_digest(ref, digest, media)
+        for bad, error in (
+            (
+                body.replace(b'"size":', b'"size": 1, "size":', 1),
+                "MANIFEST_INVALID",
+            ),
+            (
+                body.replace(b'"size": 1234', b'"size": NaN', 1),
+                "MANIFEST_INVALID",
+            ),
+            (
+                body.replace(b"1234", b"true", 1),
+                "CONFIG_DESCRIPTOR_INVALID",
+            ),
+            (
+                body.replace(b"1234", b"0", 1),
+                "CONFIG_DESCRIPTOR_INVALID",
+            ),
+            (
+                body.replace(IMAGE_ID.encode(), b"not-a-digest", 1),
+                "CONFIG_DESCRIPTOR_INVALID",
+            ),
+            (
+                body.replace(b"oci.image.config", b"oci.image.index", 1),
+                "CONFIG_DESCRIPTOR_INVALID",
+            ),
+            (b"{", "MANIFEST_INVALID"),
+        ):
+            with (
+                self.subTest(error=error),
+                mock.patch.object(images, "docker", return_value=bad),
+                self.assertRaisesRegex(images.ImageError, error),
+            ):
+                observed = "sha256:" + sha256(bad).hexdigest()
+                images.release_config_digest(ref, observed, media)
+
+    def test_debezium_release_reads_fresh_digest_and_exact_metadata(self):
+        for index_digest in (TOP, OTHER):
+            index = {**INDEX, "digest": index_digest}
+            with (
+                mock.patch.object(
+                    images,
+                    "inspect",
+                    side_effect=[index, index, MANIFEST, RELEASE_CONFIG],
+                ) as inspect,
+                mock.patch.object(
+                    images, "release_config_digest", return_value=IMAGE_ID
+                ) as manifest,
+            ):
+                result = images.validate_registry(RELEASE)
+            manifest.assert_called_once_with(
+                RELEASE.rsplit(":", 1)[0] + "@" + CHILD,
+                CHILD,
+                MANIFEST["mediaType"],
+            )
+            self.assertEqual(result["observed_amd64_config_digest"], IMAGE_ID)
+            self.assertEqual(result["observed_index_digest"], index_digest)
+            self.assertEqual(result["policy"], "release-tag")
+            self.assertEqual(result["platform_digest"], CHILD)
+            self.assertEqual(result["debezium_version"], "3.7.1.Final")
+            self.assertNotIn("pinned_digest", result)
+            repo = RELEASE.rsplit(":", 1)[0]
+            self.assertEqual(
+                inspect.call_args_list,
+                [
+                    mock.call(RELEASE),
+                    mock.call(repo + "@" + index_digest),
+                    mock.call(repo + "@" + CHILD),
+                    mock.call(repo + "@" + CHILD, "Image"),
+                ],
+            )
+
+    def test_debezium_rejects_invalid_release_evidence(self):
+        cases = (
+            ([{**INDEX, "digest": "invalid"}], "TAG_DIGEST_INVALID"),
+            ([{**MANIFEST, "digest": TOP}], "RELEASE_INDEX_REQUIRED"),
+            ([INDEX, {**INDEX, "digest": OTHER}], "RELEASE_INDEX_MISMATCH"),
+            ([INDEX, {**INDEX, "manifests": [{}]}], "RELEASE_INDEX_INVALID"),
+            (
+                [INDEX, {**INDEX, "manifests": [INDEX["manifests"][0]]}],
+                "PLATFORM_MISSING",
+            ),
+            (
+                [INDEX, {**INDEX, "manifests": [INDEX["manifests"][1]] * 2}],
+                "PLATFORM_AMBIGUOUS",
+            ),
+            (
+                [INDEX, INDEX, {**MANIFEST, "digest": OTHER}],
+                "PLATFORM_DIGEST_MISMATCH",
+            ),
+            (
+                [INDEX, INDEX, {**MANIFEST, "mediaType": "not-a-manifest"}],
+                "PLATFORM_MANIFEST_INVALID",
+            ),
+            (
+                [INDEX, INDEX, MANIFEST, {**RELEASE_CONFIG, "os": "windows"}],
+                "PLATFORM_CONFIG_MISMATCH",
+            ),
+            ([INDEX, INDEX, MANIFEST, CONFIG], "VERSION_INVALID"),
+            (
+                [
+                    INDEX,
+                    INDEX,
+                    MANIFEST,
+                    {
+                        **CONFIG,
+                        "config": {"Env": ["DEBEZIUM_VERSION=3.7.2.Final"]},
+                    },
+                ],
+                "VERSION_MISMATCH",
+            ),
+            (
+                [
+                    INDEX,
+                    INDEX,
+                    MANIFEST,
+                    {**CONFIG, "config": {"Env": [VERSION_ENV, VERSION_ENV]}},
+                ],
+                "VERSION_MISMATCH",
+            ),
+        )
+        for responses, error in cases:
+            with (
+                self.subTest(error=error),
+                mock.patch.object(images, "inspect", side_effect=responses),
+                mock.patch.object(
+                    images, "release_config_digest", return_value=IMAGE_ID
+                ),
+                self.assertRaisesRegex(images.ImageError, error),
+            ):
+                images.validate_registry(RELEASE)
+
+    def test_release_cli_checks_explicit_amd64_and_current_repo_digest(self):
+        repo = RELEASE.rsplit(":", 1)[0]
+        classic = {
+            "Os": "linux",
+            "Architecture": "amd64",
+            "Id": IMAGE_ID,
+            "RepoDigests": [repo + "@" + TOP, repo + "@" + OTHER],
+            "Config": {"Env": [VERSION_ENV, "PRIVATE_FIXTURE=do-not-print"]},
+        }
+        root = {
+            **classic,
+            "Id": TOP,
+            "Descriptor": {"digest": TOP, "mediaType": INDEX["mediaType"]},
+        }
+        child = {
+            **classic,
+            "Id": CHILD,
+            "Descriptor": {
+                "digest": CHILD,
+                "mediaType": MANIFEST["mediaType"],
+                "platform": CONFIG,
+            },
+        }
+        no_platform = {
+            **child,
+            "Descriptor": {
+                "digest": CHILD,
+                "mediaType": MANIFEST["mediaType"],
+            },
+        }
+        receipt = "Digest: " + TOP
+        for result, local, selected, final, error, kind in (
+            (receipt, classic, classic, INDEX, None, "config"),
+            (receipt, root, child, INDEX, None, "manifest"),
+            (receipt, root, no_platform, INDEX, None, "manifest"),
+            (
+                "Digest: " + OTHER,
+                root,
+                child,
+                INDEX,
+                "PULL_RELEASE_DIGEST_CHANGED",
+                None,
+            ),
+            ("", root, child, INDEX, "PULL_RELEASE_DIGEST_CHANGED", None),
+            (
+                receipt + "\nDigest: " + OTHER,
+                root,
+                child,
+                INDEX,
+                "PULL_RELEASE_DIGEST_CHANGED",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                child,
+                {**INDEX, "digest": OTHER},
+                "PULL_RELEASE_DIGEST_CHANGED",
+                None,
+            ),
+            (
+                receipt,
+                {**root, "Id": "private-looking-bad"},
+                child,
+                INDEX,
+                "PULL_RELEASE_ROOT_ID_INVALID",
+                None,
+            ),
+            (
+                receipt,
+                {**root, "Id": OTHER},
+                child,
+                INDEX,
+                "PULL_RELEASE_ROOT_ID_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                {**root, "Descriptor": None},
+                child,
+                INDEX,
+                "PULL_RELEASE_ROOT_ID_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                {**root, "Architecture": "arm64"},
+                child,
+                INDEX,
+                "PULL_PLATFORM_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                {**root, "RepoDigests": [repo + "@" + CHILD]},
+                child,
+                INDEX,
+                "PULL_REPO_DIGEST_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                root,
+                INDEX,
+                "PULL_RELEASE_AMD64_ID_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                {**child, "Id": OTHER},
+                INDEX,
+                "PULL_RELEASE_AMD64_ID_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                {**child, "Id": "private-looking-bad"},
+                INDEX,
+                "PULL_RELEASE_AMD64_ID_INVALID",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                {**child, "Descriptor": None},
+                INDEX,
+                "PULL_RELEASE_AMD64_ID_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                {
+                    **child,
+                    "Descriptor": {
+                        **child["Descriptor"],
+                        "digest": OTHER,
+                    },
+                },
+                INDEX,
+                "PULL_RELEASE_AMD64_ID_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                {
+                    **child,
+                    "Descriptor": {
+                        **child["Descriptor"],
+                        "mediaType": INDEX["mediaType"],
+                    },
+                },
+                INDEX,
+                "PULL_RELEASE_AMD64_ID_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                {
+                    **child,
+                    "Descriptor": {
+                        **child["Descriptor"],
+                        "platform": {"architecture": "arm64"},
+                    },
+                },
+                INDEX,
+                "PULL_RELEASE_AMD64_DESCRIPTOR_INVALID",
+                None,
+            ),
+            (
+                receipt,
+                classic,
+                {**classic, "Descriptor": child["Descriptor"]},
+                INDEX,
+                "PULL_RELEASE_AMD64_ID_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                {**child, "Architecture": "arm64"},
+                INDEX,
+                "PULL_RELEASE_AMD64_PLATFORM_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                {**child, "Config": {"Env": [VERSION_ENV] * 2}},
+                INDEX,
+                "PULL_RELEASE_VERSION_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                {**child, "Config": {"Env": []}},
+                INDEX,
+                "PULL_RELEASE_VERSION_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                images.ImageError("REGISTRY_COMMAND_FAILED"),
+                INDEX,
+                "PULL_RELEASE_AMD64_INSPECT_UNAVAILABLE",
+                None,
+            ),
+        ):
+            output = io.StringIO()
+            with (
+                self.subTest(error=error, kind=kind),
+                mock.patch.object(
+                    images, "load_images", return_value={"debezium": RELEASE}
+                ),
+                mock.patch.object(images, "compose_images"),
+                mock.patch.object(
+                    images,
+                    "inspect",
+                    side_effect=[
+                        INDEX,
+                        INDEX,
+                        MANIFEST,
+                        RELEASE_CONFIG,
+                        final,
+                    ],
+                ),
+                mock.patch.object(
+                    images, "release_config_digest", return_value=IMAGE_ID
+                ),
+                mock.patch.object(
+                    images, "docker", return_value=result
+                ) as cli,
+                mock.patch.object(
+                    images, "docker_json", side_effect=[local, selected]
+                ) as inspect_local,
+                contextlib.redirect_stdout(output),
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                self.assertEqual(images.main(["--pull-smoke"]), bool(error))
+                cli.assert_called_once_with(
+                    ["pull", "--platform", "linux/amd64", RELEASE], timeout=300
+                )
+            self.assertNotIn("private-looking-bad", output.getvalue())
+            self.assertNotIn("PRIVATE_FIXTURE", output.getvalue())
+            report = json.loads(output.getvalue())
+            evidence = report["images"]["debezium"]
+            if error:
+                self.assertEqual(report["error"], error)
+                self.assertEqual(report["failed_image"]["phase"], "pull")
+                self.assertEqual(evidence["pull"], "not_requested")
+                self.assertNotIn("repo_digest", evidence)
+                self.assertNotIn(OTHER, output.getvalue())
+                if error == "PULL_RELEASE_ROOT_ID_MISMATCH":
+                    if local["Id"] == OTHER:
+                        self.assertEqual(
+                            evidence["local_root_image_id_state"],
+                            "unrecognized",
+                        )
+            else:
+                self.assertEqual(
+                    inspect_local.call_args_list,
+                    [
+                        mock.call(
+                            [
+                                "image",
+                                "inspect",
+                                RELEASE,
+                                "--format",
+                                "{{json .}}",
+                            ]
+                        ),
+                        mock.call(
+                            [
+                                "image",
+                                "inspect",
+                                "--platform",
+                                "linux/amd64",
+                                RELEASE,
+                                "--format",
+                                "{{json .}}",
+                            ]
+                        ),
+                    ],
+                )
+                self.assertEqual(evidence["repo_digest"], repo + "@" + TOP)
+                self.assertEqual(evidence["local_root_image_id"], local["Id"])
+                self.assertEqual(
+                    evidence["local_amd64_image_id"], selected["Id"]
+                )
+                self.assertEqual(evidence["local_amd64_identity_kind"], kind)
+                self.assertEqual(
+                    evidence["observed_amd64_config_digest"], IMAGE_ID
+                )
+                self.assertEqual(evidence["pull"], "passed")
+
+    def test_pull_smoke_requires_same_process_observation_contract(self):
+        with (
+            mock.patch.object(images, "docker") as cli,
+            self.assertRaisesRegex(images.ImageError, "OBSERVATION_REQUIRED"),
+        ):
+            images.pull_smoke({"image": RELEASE, "observed_index_digest": TOP})
+        cli.assert_not_called()
 
     def test_registry_failure_is_nonzero_and_keeps_sanitized_evidence(self):
         output = io.StringIO()

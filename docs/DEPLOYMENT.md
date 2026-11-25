@@ -482,7 +482,7 @@ Docker 29／Buildx Bake／社内proxyで判明した互換性修正の取り込�
 
 ## 監査した版・公式資料
 
-ホストEngine29系とCompose5.6.1を対象に、公開コードの挙動を照合しました。ホスト版の自動更新は行いません。実際に配置するimageは各Composeとlockのdigestが正本です。n8n2.46.7、Debezium3.7.1.Final、Kafka4.4.0の個別設定は [SSRF.md](SSRF.md) と [CDC.md](CDC.md) を参照します。
+ホストEngine29系とCompose5.6.1を対象に、公開コードの挙動を照合しました。ホスト版の自動更新は行いません。実際に配置するimageは、原則として各Composeとlockのdigestが正本です。例外はDebeziumのPoC用正式タグだけで、同じタグでも内容が変わるため[CDCの確認手順](CDC.md#digest更新とregistry検証)に従います。n8n2.46.7、Debezium3.7.1.Final、Kafka4.4.0の個別設定は [SSRF.md](SSRF.md) と [CDC.md](CDC.md) を参照します。
 
 | 一次資料 | 用途 |
 | --- | --- |

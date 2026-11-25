@@ -4,9 +4,10 @@
 The default check is offline and reads only public lock/Compose/Dockerfile
 sources. --write-compose updates image lines from the CDC lock; regenerate
 the inventory separately with compose_inventory.py. --registry uses daemon-
-free buildx reads for tags, pinned indexes/manifests and linux/amd64 configs.
---pull-smoke additionally downloads each immutable image to the caller's
-authorized Docker daemon and verifies its platform and RepoDigests. It never
+free buildx reads for tags, indexes/manifests and linux/amd64 configs.
+--pull-smoke additionally pulls the managed references to the caller's
+authorized Docker daemon and verifies content, platform and RepoDigests.
+Only the exact Debezium PoC release tag is intentionally mutable. It never
 starts containers, changes daemon permissions, or reads deployment settings.
 """
 
@@ -17,6 +18,7 @@ import shlex
 import subprocess
 import sys
 import time
+from hashlib import sha256
 from pathlib import Path
 
 import yaml
@@ -28,6 +30,9 @@ SERVICES = {
     "debezium": "cdc-connect",
     "kafbat": "cdc-ui",
 }
+DEBEZIUM_REPOSITORY = "quay.io/debezium/connect"
+DEBEZIUM_VERSION = "3.7.1.Final"
+DEBEZIUM_RELEASE = f"{DEBEZIUM_REPOSITORY}:{DEBEZIUM_VERSION}"
 DIGEST = r"sha256:[0-9a-f]{64}"
 PIN = re.compile(
     r"(?P<repository>[a-z0-9][a-z0-9./_-]*)"
@@ -40,6 +45,10 @@ INDEX_TYPES = {
 MANIFEST_TYPES = {
     "application/vnd.oci.image.manifest.v1+json",
     "application/vnd.docker.distribution.manifest.v2+json",
+}
+CONFIG_TYPES = {
+    "application/vnd.oci.image.config.v1+json",
+    "application/vnd.docker.container.image.v1+json",
 }
 ATTEMPTS = 3
 
@@ -56,19 +65,61 @@ def parse_pin(reference):
     return match.groupdict()
 
 
+def strict_json(source, *, duplicate, invalid):
+    """重複キーや標準JSON外の値を後勝ちにせず拒否する。"""
+
+    def unique_object(pairs):
+        """同じ名前が二度出た場合、後勝ちで不整合を隠さない。"""
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ImageError(duplicate)
+            result[key] = value
+        return result
+
+    def invalid_constant(_):
+        """NaNやInfinityを管理対象のJSONに受け入れない。"""
+        raise ImageError(invalid)
+
+    return json.loads(
+        source,
+        object_pairs_hook=unique_object,
+        parse_constant=invalid_constant,
+    )
+
+
+def read_image_lock(path):
+    """重複キーや標準JSON外の値があるイメージlockを拒否する。"""
+    return strict_json(
+        path.read_text(encoding="utf-8"),
+        duplicate="CDC_LOCK_DUPLICATE_KEY",
+        invalid="CDC_LOCK_INVALID_JSON",
+    )
+
+
 def load_images(root):
     """Load service pins and shared build inputs, rejecting coverage gaps."""
-    locks = json.loads((root / "infra/cdc/images.lock.json").read_text())
+    locks = read_image_lock(root / "infra/cdc/images.lock.json")
     if set(locks) != set(SERVICES):
         raise ImageError("CDC_LOCK_COVERAGE_MISMATCH")
-    images = {name: entry["pinned"] for name, entry in locks.items()}
+    images = {}
+    for name, entry in locks.items():
+        if name == "debezium":
+            if entry != {"tag": DEBEZIUM_RELEASE, "policy": "release-tag"}:
+                raise ImageError("CDC_DEBEZIUM_RELEASE_TAG_REQUIRED")
+            images[name] = DEBEZIUM_RELEASE
+        else:
+            if not isinstance(entry, dict) or set(entry) != {"pinned"}:
+                raise ImageError("CDC_IMMUTABLE_ENTRY_REQUIRED")
+            images[name] = entry["pinned"]
     for name, source in (("python", "lakehouse"), ("uv", "uv")):
-        shared = json.loads(
-            (root / f"infra/{source}/images.lock.json").read_text()
-        )
+        shared = read_image_lock(root / f"infra/{source}/images.lock.json")
         images[name] = shared[name]["pinned"]
-    for reference in images.values():
-        parse_pin(reference)
+    for name, reference in images.items():
+        if name != "debezium":
+            pin = parse_pin(reference)
+            if canonical_repository(pin["repository"]) == DEBEZIUM_REPOSITORY:
+                raise ImageError("CDC_DEBEZIUM_RELEASE_ROLE_REQUIRED")
     dockerfile = (root / "infra/cdc/Dockerfile").read_text()
     build_images = dockerfile_images(dockerfile)
     if sorted(build_images) != sorted([images["python"], images["uv"]]):
@@ -169,7 +220,7 @@ def failure_kind(message, returncode=1):
     return "REGISTRY_COMMAND_FAILED"
 
 
-def docker(arguments, *, timeout=60):
+def docker(arguments, *, timeout=60, binary=False):
     """Retry only transient errors with bounded deadlines and backoff.
 
     Buildx may itself retry requests. Keep an outer bound and never infer
@@ -181,7 +232,7 @@ def docker(arguments, *, timeout=60):
             result = subprocess.run(
                 ["docker", *arguments],
                 capture_output=True,
-                text=True,
+                text=not binary,
                 timeout=timeout,
                 check=False,
             )
@@ -192,8 +243,15 @@ def docker(arguments, *, timeout=60):
         else:
             if result.returncode == 0:
                 return result.stdout
+            messages = (result.stderr, result.stdout)
             kind = failure_kind(
-                result.stderr + "\n" + result.stdout, result.returncode
+                "\n".join(
+                    message.decode("utf-8", errors="replace")
+                    if isinstance(message, bytes)
+                    else message
+                    for message in messages
+                ),
+                result.returncode,
             )
         if kind != "REGISTRY_TRANSIENT" or attempt == ATTEMPTS - 1:
             raise ImageError(kind)
@@ -227,7 +285,9 @@ def inspect(reference, field="Manifest"):
 
 
 def validate_registry(reference):
-    """Verify pinned content; report tag drift without adopting new content."""
+    """Verify the PoC release tag or immutable content under each policy."""
+    if reference == DEBEZIUM_RELEASE:
+        return observe_debezium_release()
     pin = parse_pin(reference)
     repository, digest = pin["repository"], pin["digest"]
     tag = inspect(repository + ":" + pin["tag"])
@@ -307,6 +367,128 @@ def validate_registry(reference):
     }
 
 
+def release_config_digest(child_ref, manifest_digest, media_type):
+    """Buildx --rawで取得したamd64 manifestの実バイトからconfigを特定。"""
+    raw = docker(
+        ["buildx", "imagetools", "inspect", child_ref, "--raw"], binary=True
+    )
+    # CLIの出力を変換したり改行除去したりせず、公開descriptorと照合する。
+    if "sha256:" + sha256(raw).hexdigest() != manifest_digest:
+        raise ImageError("REGISTRY_RELEASE_MANIFEST_BYTES_MISMATCH")
+    try:
+        manifest = strict_json(
+            raw.decode("utf-8"),
+            duplicate="REGISTRY_RELEASE_MANIFEST_INVALID",
+            invalid="REGISTRY_RELEASE_MANIFEST_INVALID",
+        )
+    except (UnicodeError, json.JSONDecodeError):
+        raise ImageError("REGISTRY_RELEASE_MANIFEST_INVALID") from None
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("schemaVersion") != 2
+        or type(manifest["schemaVersion"]) is not int
+        or manifest.get("mediaType") != media_type
+    ):
+        raise ImageError("REGISTRY_RELEASE_MANIFEST_INVALID")
+    descriptor = manifest.get("config")
+    if not isinstance(descriptor, dict):
+        raise ImageError("REGISTRY_RELEASE_CONFIG_DESCRIPTOR_INVALID")
+    digest = descriptor.get("digest")
+    size = descriptor.get("size")
+    mime = descriptor.get("mediaType")
+    if (
+        not isinstance(digest, str)
+        or not re.fullmatch(DIGEST, digest)
+        or type(size) is not int
+        or size <= 0
+        or not isinstance(mime, str)
+        or mime not in CONFIG_TYPES
+    ):
+        raise ImageError("REGISTRY_RELEASE_CONFIG_DESCRIPTOR_INVALID")
+    return digest
+
+
+def validate_release_version(metadata, prefix):
+    """env全体を出力せず、Debezium版が一意に一致することを確認する。"""
+    values = metadata.get("Env") if isinstance(metadata, dict) else None
+    if not isinstance(values, list) or not all(
+        isinstance(item, str) for item in values
+    ):
+        raise ImageError(prefix + "_RELEASE_VERSION_INVALID")
+    versions = [
+        item for item in values if item.split("=", 1)[0] == "DEBEZIUM_VERSION"
+    ]
+    if versions != [f"DEBEZIUM_VERSION={DEBEZIUM_VERSION}"]:
+        raise ImageError(prefix + "_RELEASE_VERSION_MISMATCH")
+
+
+def observe_debezium_release():
+    """公式PoCタグの現時点のindex、amd64子manifestとconfigを照合する。"""
+    index = inspect(DEBEZIUM_RELEASE)
+    digest = index.get("digest")
+    if not isinstance(digest, str) or not re.fullmatch(DIGEST, digest):
+        raise ImageError("REGISTRY_TAG_DIGEST_INVALID")
+    if index.get("mediaType") not in INDEX_TYPES:
+        raise ImageError("REGISTRY_RELEASE_INDEX_REQUIRED")
+    immutable = inspect(DEBEZIUM_REPOSITORY + "@" + digest)
+    if (
+        immutable.get("digest") != digest
+        or immutable.get("mediaType") != index["mediaType"]
+    ):
+        raise ImageError("REGISTRY_RELEASE_INDEX_MISMATCH")
+    descriptors = immutable.get("manifests")
+    if not isinstance(descriptors, list) or not descriptors:
+        raise ImageError("REGISTRY_RELEASE_INDEX_INVALID")
+    matches = []
+    for descriptor in descriptors:
+        if not isinstance(descriptor, dict):
+            raise ImageError("REGISTRY_RELEASE_INDEX_INVALID")
+        child_digest = descriptor.get("digest")
+        platform = descriptor.get("platform", {})
+        if (
+            not isinstance(child_digest, str)
+            or not re.fullmatch(DIGEST, child_digest)
+            or not isinstance(platform, dict)
+        ):
+            raise ImageError("REGISTRY_RELEASE_INDEX_INVALID")
+        if (platform.get("os"), platform.get("architecture")) == (
+            "linux",
+            "amd64",
+        ):
+            matches.append(child_digest)
+    if not matches:
+        raise ImageError("PLATFORM_MISSING: linux/amd64")
+    if len(matches) != 1:
+        raise ImageError("PLATFORM_AMBIGUOUS: linux/amd64")
+    platform_digest = matches[0]
+    child_ref = DEBEZIUM_REPOSITORY + "@" + platform_digest
+    child = inspect(child_ref)
+    if child.get("digest") != platform_digest:
+        raise ImageError("PLATFORM_DIGEST_MISMATCH")
+    if child.get("mediaType") not in MANIFEST_TYPES:
+        raise ImageError("PLATFORM_MANIFEST_INVALID")
+    config_digest = release_config_digest(
+        child_ref, platform_digest, child["mediaType"]
+    )
+    config = inspect(child_ref, "Image")
+    if (config.get("os"), config.get("architecture")) != ("linux", "amd64"):
+        raise ImageError("PLATFORM_CONFIG_MISMATCH")
+    validate_release_version(config.get("config"), "REGISTRY")
+    return {
+        "image": DEBEZIUM_RELEASE,
+        "policy": "release-tag",
+        "media_type": index["mediaType"],
+        "observed_index_digest": digest,
+        "observed_amd64_config_digest": config_digest,
+        "observed_amd64_media_type": child["mediaType"],
+        "platform": "linux/amd64",
+        "platform_digest": platform_digest,
+        "debezium_version": DEBEZIUM_VERSION,
+        "registry": "passed",
+        "pull": "not_requested",
+    }
+
+
 def canonical_repository(repository):
     """Normalize Docker Hub aliases before comparing Docker RepoDigests."""
     parts = repository.split("/")
@@ -319,11 +501,138 @@ def canonical_repository(repository):
     return "/".join(parts)
 
 
+def record_local_digest(evidence, field, digest, error):
+    """失敗JSONにも、形式を検証したdigestだけを残す。"""
+    if not isinstance(digest, str) or not re.fullmatch(DIGEST, digest):
+        raise ImageError(error)
+    expected = {
+        evidence["observed_index_digest"],
+        evidence["platform_digest"],
+        evidence["observed_amd64_config_digest"],
+    }
+    if digest in expected:
+        evidence[field] = digest
+    else:
+        evidence[field + "_state"] = "unrecognized"
+    return digest
+
+
+def release_pull_identity(evidence, root):
+    """indexと明示的に選んだamd64の同一性を保存方式ごとに確かめる。"""
+    top = evidence["observed_index_digest"]
+    manifest = evidence["platform_digest"]
+    config = evidence["observed_amd64_config_digest"]
+    root_id = record_local_digest(
+        evidence,
+        "local_root_image_id",
+        root.get("Id"),
+        "PULL_RELEASE_ROOT_ID_INVALID",
+    )
+    try:
+        selected = docker_json(
+            [
+                "image",
+                "inspect",
+                "--platform",
+                "linux/amd64",
+                DEBEZIUM_RELEASE,
+                "--format",
+                "{{json .}}",
+            ]
+        )
+    except ImageError:
+        raise ImageError("PULL_RELEASE_AMD64_INSPECT_UNAVAILABLE") from None
+    identity = record_local_digest(
+        evidence,
+        "local_amd64_image_id",
+        selected.get("Id"),
+        "PULL_RELEASE_AMD64_ID_INVALID",
+    )
+    if (selected.get("Os"), selected.get("Architecture")) != (
+        "linux",
+        "amd64",
+    ):
+        raise ImageError("PULL_RELEASE_AMD64_PLATFORM_MISMATCH")
+    descriptor = selected.get("Descriptor")
+    if isinstance(descriptor, dict) and "digest" in descriptor:
+        record_local_digest(
+            evidence,
+            "local_amd64_descriptor_digest",
+            descriptor["digest"],
+            "PULL_RELEASE_AMD64_DESCRIPTOR_INVALID",
+        )
+    root_descriptor = root.get("Descriptor")
+    if root_id == config and root_descriptor is None:
+        # 従来のimage storeはconfig digestをIDにする。
+        if identity != config or descriptor is not None:
+            raise ImageError("PULL_RELEASE_AMD64_ID_MISMATCH")
+        kind = "config"
+    elif (
+        root_id == top
+        and isinstance(root_descriptor, dict)
+        and root_descriptor.get("digest") == top
+        and root_descriptor.get("mediaType") == evidence["media_type"]
+    ):
+        # Mobyのcontainerd storeでは選んだmanifestがIdとDescriptorになる。
+        if (
+            identity != manifest
+            or not isinstance(descriptor, dict)
+            or descriptor.get("digest") != manifest
+            or descriptor.get("mediaType")
+            != evidence["observed_amd64_media_type"]
+        ):
+            raise ImageError("PULL_RELEASE_AMD64_ID_MISMATCH")
+        descriptor_platform = descriptor.get("platform")
+        if descriptor_platform is not None and (
+            not isinstance(descriptor_platform, dict)
+            or (
+                descriptor_platform.get("os"),
+                descriptor_platform.get("architecture"),
+            )
+            != ("linux", "amd64")
+        ):
+            raise ImageError("PULL_RELEASE_AMD64_DESCRIPTOR_INVALID")
+        kind = "manifest"
+    else:
+        raise ImageError("PULL_RELEASE_ROOT_ID_MISMATCH")
+    validate_release_version(selected.get("Config"), "PULL")
+    evidence["local_amd64_identity_kind"] = kind
+
+
 def pull_smoke(evidence):
-    """Pull immutable amd64 content and prove RepoDigest/config equality."""
+    """Pull amd64 and verify immutable pins or this run's release digest."""
     reference = evidence["image"]
-    pin = parse_pin(reference)
-    docker(["pull", "--platform", "linux/amd64", reference], timeout=300)
+    release = reference == DEBEZIUM_RELEASE
+    if release:
+        digest = evidence.get("observed_index_digest")
+        if (
+            evidence.get("policy") != "release-tag"
+            or evidence.get("registry") != "passed"
+            or not all(
+                isinstance(evidence.get(key), str)
+                and re.fullmatch(DIGEST, evidence[key])
+                for key in (
+                    "observed_index_digest",
+                    "platform_digest",
+                    "observed_amd64_config_digest",
+                )
+            )
+            or evidence.get("observed_amd64_media_type") not in MANIFEST_TYPES
+            or evidence.get("media_type") not in INDEX_TYPES
+        ):
+            raise ImageError("PULL_RELEASE_OBSERVATION_REQUIRED")
+        repository = DEBEZIUM_REPOSITORY
+    else:
+        pin = parse_pin(reference)
+        repository, digest = pin["repository"], pin["digest"]
+    receipt = docker(
+        ["pull", "--platform", "linux/amd64", reference], timeout=300
+    )
+    if release and re.findall(
+        r"^Digest:[ \t]+([^\s]+)[ \t]*$", receipt, re.M
+    ) != [digest]:
+        # RepoDigestsが以前のpullも含む場合に、過去の一致で隠さない。
+        raise ImageError("PULL_RELEASE_DIGEST_CHANGED")
     image = docker_json(
         [
             "image",
@@ -335,13 +644,22 @@ def pull_smoke(evidence):
     )
     if (image.get("Os"), image.get("Architecture")) != ("linux", "amd64"):
         raise ImageError("PULL_PLATFORM_MISMATCH")
-    expected = canonical_repository(pin["repository"]) + "@" + pin["digest"]
+    expected = canonical_repository(repository) + "@" + digest
     repo_digests = []
     for value in image.get("RepoDigests", []):
-        repository, _, digest = value.partition("@")
-        repo_digests.append(canonical_repository(repository) + "@" + digest)
+        repo, _, resolved = value.partition("@")
+        repo_digests.append(canonical_repository(repo) + "@" + resolved)
     if expected not in repo_digests:
         raise ImageError("PULL_REPO_DIGEST_MISMATCH")
+    if release:
+        release_pull_identity(evidence, image)
+        # pull中に版タグが移動した場合は、キャッシュが一致しても拒否する。
+        latest = inspect(reference)
+        if (
+            latest.get("digest") != digest
+            or latest.get("mediaType") != evidence["media_type"]
+        ):
+            raise ImageError("PULL_RELEASE_DIGEST_CHANGED")
     evidence.update(pull="passed", repo_digest=expected)
 
 
@@ -361,7 +679,7 @@ def main(argv=None):
     parser.add_argument(
         "--pull-smoke",
         action="store_true",
-        help="Also pull immutable linux/amd64 images; needs Docker access.",
+        help="Also pull the managed linux/amd64 images; needs Docker access.",
     )
     arguments = parser.parse_args(argv)
     evidence = {"platform": "linux/amd64", "images": {}, "status": "failed"}
