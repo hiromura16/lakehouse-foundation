@@ -388,30 +388,27 @@ DELETE 後はデモ追加分が消え、初期 clean データが残ります。
 進めないこと、cancel 未確定時の blocked 永続化、保持期限や broker reset による
 欠落を拒否することは [unit tests](../tests/test_cdc_state.py) でも検証します。
 
-## 9. 固定した OSS と参照先
+## 9. 管理する OSS と参照先
 
-[images.lock.json](../infra/cdc/images.lock.json) で multiarch image digest を固定しています。
-Kafka 4.4.0、Debezium 3.7.1.Final、Kafbat UI v1.5.0、Python Kafka client 2.16.1 を
-組み合わせています。client の追加依存は hash 付き lock、基盤依存は既存 worker の
-lock を使います。更新時は SQL Server の対応版と protocol を再確認してください。
+[images.lock.json](../infra/cdc/images.lock.json) は、Kafka 4.4.0 と Kafbat UI
+v1.5.0 を引き続きdigest固定し、Debezium Connect だけをPoC用の正式リリースタグ
+`quay.io/debezium/connect:3.7.1.Final` で管理します。Python/uvのビルド入力も
+従来のdigest固定、Python Kafka client 2.16.1等の依存は従来のhash付きlockです。
+更新時はSQL Serverの対応版とprotocolを再確認してください。
 
 ### digest更新とregistry検証
 
-**2026-11-25の更新候補（リリース未承認）:** 公式Quayの同版タグを再照合し、
-index `sha256:4281e3b55ce64e2991024d54f874e5798088e940d337567258dd996c2f2cd1a7`、
-linux/amd64子manifest
-`sha256:0eadbc0b25e2692f0920d9045de05e4ded4959977ca9ade89ab59ba87981e319`
-を候補としてlock・Compose・台帳へ同期しています。公式configのdigest一致と
-linux/amd64、`DEBEZIUM_VERSION=3.7.1.Final` は確認しました。
-この検証はレジストリ照合であり、実pullや起動の確認ではありません。
-2026-11-19の旧index `3419f2c9…` は11月20日の公式タグ更新で対象から外れ、
-2026-11-24のindex `e20f73da…` も11月25日00:40:53 UTCに対象から外れました。
-どちらの旧indexも公式レジストリから取得できないため、切り戻しには使いません。
-同版でもイメージ内容は更新されるため、実pullと実行時互換性は別に確認します。
-GitHubの使い捨てrunnerでの実pull、および実行時互換性の結果はPRへ記録し、
-互換性の受入と独立レビューが終わるまで、この候補をリリース・デプロイしません。
+Debeziumのlockは `policy: release-tag` と上記の完全なタグだけを認め、digestは
+lock・Compose・台帳に保存しません。`latest`、メジャー／マイナーだけのタグ、
+プレリリース、別リポジトリやdigest付きのDebezium参照は拒否します。
 
-`images.lock.json` を変更したら、次の正規手順でComposeのimage行と台帳を生成します。
+**PoC限定の理由と注意:** [Quay公式タグ履歴](https://quay.io/api/v1/repository/debezium/connect/tag/?specificTag=3.7.1.Final)
+には、同じ正式版タグの再公開と旧digestの取得不可が起きた記録があります。タグ方式は
+古いdigestの消滅に追随できますが、同じGitコミット・同じタグでも別のイメージになり得るため、
+digest固定より再現性が低く、旧内容に戻れる保証もありません。稼働中は不用意な
+再build・pull・再作成を避け、計画した更新のときだけ同一性と回帰を確認します。
+
+lockを変更したら、次の正規手順でComposeのimage行と台帳を生成します。
 台帳は手編集しません。専用の品質検査venvから実行します。
 
 **Bash / Zsh共通**
@@ -425,38 +422,34 @@ python scripts/cdc_images.py --registry
 python scripts/cdc_images.py --registry --pull-smoke
 ```
 
-既定の検査は公開lockとCompose/Dockerfileの一致だけを確認し、networkやdaemonを
-使いません。`--registry` はDocker CLI/buildxでタグ、固定digest、linux/amd64の
-子manifestとimage configを個別に読みます。外部3serviceと、CDC用自作imageの
-Python/uv入力を検査し、未登録の外部image追加も拒否します。`--pull-smoke` は
-利用権限のあるDocker daemonへ同じ固定参照を実際にpullし、OS/architectureと
-RepoDigestの一致を確認します。container起動やDB接続は行いません。
+既定の検査は公開lockとCompose/Dockerfileの一致だけを読み、network・daemonを使いません。
+`--registry` はDocker CLI/buildxでdaemonを使わず、Debeziumのタグから毎回その時点の
+indexを読み、digest参照でindexを再照合してから、唯一のlinux/amd64子manifestの生バイトを
+そのdigestと照合し、amd64のconfig digestと `DEBEZIUM_VERSION=3.7.1.Final` を確認します。古い実行の観測値を使いません。
+他の4入力は従来どおり固定参照・amd64子manifest・configを検査します。正式タグの確認は
+未知の外部イメージを許可するものではありません。
 
-OCI index（Docker manifest listを含む）のdigestと、platform別manifestのdigestは
-異なります。lockへはmultiarch indexを固定し、その中のlinux/amd64を検査します。
-attestation用のunknown/unknownを実行対象platformとして扱いません。
+`--pull-smoke` は利用権限のあるDocker daemonで参照を実際にpullします。Debeziumは
+同じ実行で観測したindex digestをpullの応答とローカルRepoDigestと照合し、OS/architecture、
+ローカルImage IDが上記config digestと一致し、pull後もタグが同じindexを指すことを確認します。食い違えば
+採用せず失敗します。他の入力は従来の固定参照のままです。OCI index、platform別
+manifest、ローカルImage IDは別の識別子です。unknown/unknownのattestationは
+実行対象のplatformに数えません。いずれもcontainerを起動せず、DBへも接続しません。
 
-2026-11-12のregistry照合では、Debeziumのindexは
-`sha256:05fcb3ca2160820450b83d06bedca444102f393568495feb329a75252eccee5f`、
-amd64の子は
-`sha256:38c5676db1bae16ef72ec94ae738faee5b1fbc387f2ba641aeeebc86967614dd`
-でした。Kafkaの既存index
-`sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f`
-とamd64の子
-`sha256:76af3d0116abbb33b4cd964af410d4921c33d1f663e7a95d5453a9c35a84869b`
-は有効なので変更していません。タグの存在だけでは固定digestの存在を証明できません。
-
-2026-11-12 01:31:34 UTCに同じ3.7.1.Finalタグが再公開され、直前の
-pin d24bacbb… は公式registryからnot foundとなりました。
-[Quay公式タグ履歴API](https://quay.io/api/v1/repository/debezium/connect/tag/?specificTag=3.7.1.Final)
-は新旧digestの開始・終了時刻を示します。同APIにはそれ以前の日次更新も記録されて
-います。版番号付きタグでも不変とは限らず、現在のpinが将来も取得可能とは保証しません。
-旧53c6d042…も同履歴に存在するため、単なる転記誤りとは扱いません。
+**承認済みの配置後に残す記録（読取のみ）:** Gitコミット、観測日時（UTC）、設定タグ、
+実稼働イメージのRepoDigestとローカルImage ID、OS/architecture、およびConnectorと
+Taskそれぞれの状態を、運用側の非公開記録に残します。稼働コンテナが参照するImage IDを
+読み取り、そのIDのメタデータだけを参照します。タグの再pullやコンテナの再作成、
+Connectの設定本文、環境変数全体、接続情報・秘密値の収集は行いません。前回とイメージが
+違えば自動採用せず、合成データを使う独立環境でConnector/Task、初回snapshot、
+INSERT/UPDATE/DELETE、再開、既存位置との照合を再確認します。registry・pull試験と
+この機能受入は別です。本番では承認済みの成果物を管理下の内部レジストリに保持し、
+その配布先のdigestを固定する方針とし、実URLや認証情報は公開文書に書きません。
 
 MANIFEST_MISSINGとPLATFORM_MISSINGは明示的な欠落です。失敗JSONの
 failed_imageは公開image参照とregistry / pull段階を示し、
 生のstderrや認証情報は出しません。タグ失効はエラー名だけでは断定せず、
-公式registryのタグ履歴、旧pin、新index、amd64子manifestとconfigを照合します。
+公式registryのタグ履歴、観測したindex、amd64子manifestとconfigを照合します。
 timeout・429・5xxはREGISTRY_TRANSIENTとして最大3回、2秒・4秒の間隔で
 再試行し、解消しなければ失敗にします。Interrupted/cancelled、認証拒否、
 Docker権限拒否、未知のエラーを「imageが存在しない」と読み替えません。
