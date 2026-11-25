@@ -56,16 +56,37 @@ def parse_pin(reference):
     return match.groupdict()
 
 
+def read_image_lock(path):
+    """重複キーや標準JSON外の値があるイメージlockを拒否する。"""
+
+    def unique_object(pairs):
+        """同じ名前が二度出た場合、後勝ちで不整合を隠さない。"""
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ImageError("CDC_LOCK_DUPLICATE_KEY")
+            result[key] = value
+        return result
+
+    def invalid_constant(_):
+        """NaNやInfinityを管理対象のJSONに受け入れない。"""
+        raise ImageError("CDC_LOCK_INVALID_JSON")
+
+    return json.loads(
+        path.read_text(encoding="utf-8"),
+        object_pairs_hook=unique_object,
+        parse_constant=invalid_constant,
+    )
+
+
 def load_images(root):
     """Load service pins and shared build inputs, rejecting coverage gaps."""
-    locks = json.loads((root / "infra/cdc/images.lock.json").read_text())
+    locks = read_image_lock(root / "infra/cdc/images.lock.json")
     if set(locks) != set(SERVICES):
         raise ImageError("CDC_LOCK_COVERAGE_MISMATCH")
     images = {name: entry["pinned"] for name, entry in locks.items()}
     for name, source in (("python", "lakehouse"), ("uv", "uv")):
-        shared = json.loads(
-            (root / f"infra/{source}/images.lock.json").read_text()
-        )
+        shared = read_image_lock(root / f"infra/{source}/images.lock.json")
         images[name] = shared[name]["pinned"]
     for reference in images.values():
         parse_pin(reference)

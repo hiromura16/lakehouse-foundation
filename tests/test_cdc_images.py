@@ -59,6 +59,39 @@ class SourceTests(unittest.TestCase):
         images.compose_images(self.root, pins)
         self.assertEqual(set(pins), {*images.SERVICES, "python", "uv"})
 
+    def test_duplicate_lock_keys_fail_even_if_last_pin_is_valid(self):
+        """CDC自身と共有ビルド入力のトップ・入れ子重複を拒否する。"""
+        for scope, service in (
+            ("cdc", "debezium"),
+            ("lakehouse", "python"),
+            ("uv", "uv"),
+        ):
+            path = self.root / f"infra/{scope}/images.lock.json"
+            original = path.read_text()
+            top = f'"{service}":'
+            for member, insertion in (
+                (top, top + " null, "),
+                ('"pinned":', '"pinned": null, '),
+            ):
+                with self.subTest(scope=scope, member=member):
+                    invalid = original.replace(member, insertion + member, 1)
+                    self.assertNotEqual(original, invalid)
+                    path.write_text(invalid)
+                    with self.assertRaisesRegex(
+                        images.ImageError, "CDC_LOCK_DUPLICATE_KEY"
+                    ):
+                        images.load_images(self.root)
+            path.write_text(original)
+
+    def test_lock_rejects_non_json_constants(self):
+        """値を利用しない追加項目でも非標準JSON定数は拒否する。"""
+        path = self.root / "infra/cdc/images.lock.json"
+        path.write_text(path.read_text().replace("{", '{"extra": NaN,', 1))
+        with self.assertRaisesRegex(
+            images.ImageError, "CDC_LOCK_INVALID_JSON"
+        ):
+            images.load_images(self.root)
+
     def test_generate_changes_only_the_image_and_is_idempotent(self):
         pins = images.load_images(self.root)
         original = (self.root / images.COMPOSE).read_text()
