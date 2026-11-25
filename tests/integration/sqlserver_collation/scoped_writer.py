@@ -38,6 +38,7 @@ def fixture_database(cursor, database, login, password, selected):
     )
     version, edition = cursor.fetchone()
     require(str(version) == "16" and "Developer" in edition)
+    stage("create_disposable_database")
     cursor.execute("CREATE DATABASE [" + database + "]")
     cursor.execute(
         "CREATE LOGIN [" + login + "] WITH PASSWORD=%s, CHECK_POLICY=OFF",
@@ -48,9 +49,11 @@ def fixture_database(cursor, database, login, password, selected):
     for user in ("fixture_reader", "fixture_control", "fixture_legacy"):
         cursor.execute("CREATE USER [" + user + "] WITHOUT LOGIN")
     for number in ("001", "002", "003"):
+        stage("canonical_ddl_" + number)
         cursor.execute(render(number, selected))
         while cursor.nextset():
             pass
+    stage("seed_disposable_legacy")
     cursor.execute("CREATE SCHEMA legacy AUTHORIZATION dbo")
     cursor.execute("CREATE TABLE legacy.unrelated (id int NOT NULL)")
     cursor.execute("INSERT INTO legacy.unrelated VALUES (42)")
@@ -63,6 +66,7 @@ def fixture_database(cursor, database, login, password, selected):
 
 def positive_permission_evidence(values):
     """実SQLで0件とOUTERの補完NULLを区別し、固定所有権も検証する。"""
+    stage("normal_writer_login_and_role")
     with adapter.connection(values) as writer:
         cursor = writer.cursor()
         cursor.execute(
@@ -72,6 +76,7 @@ def positive_permission_evidence(values):
         require(cursor.fetchone() == (1, 0))
         # 対象名を固定した一行で、権限TVFの実出力は0件、従来の外部
         # 結合はNULL行1件になる。別objectのカタログ可視性は仮定しない。
+        stage("normal_writer_sql_apply_zero_rows")
         for apply, expected in (("CROSS APPLY", 0), ("OUTER APPLY", 1)):
             cursor.execute(
                 "SELECT COUNT_BIG(*) FROM "
@@ -81,6 +86,7 @@ def positive_permission_evidence(values):
                 "WHERE p.permission_name IS NULL"
             )
             require(cursor.fetchone() == (expected,))
+        stage("normal_writer_runtime_allow")
         require(adapter.permissions_safe(cursor))
 
 
@@ -91,8 +97,10 @@ def visible_legacy_without_grants(values, cursor, run):
     require(type(expected_id) is int and expected_id > 0)
     # SQL2022のメタデータ専用権限をこの合成DB内だけに一時付与する。
     # 開発/運用のwriter設定に追加する権限ではない。
+    stage("temporary_metadata_grant")
     cursor.execute("GRANT VIEW SECURITY DEFINITION TO fixture_writer")
     try:
+        stage("visible_legacy_catalog_query")
         with adapter.connection(values) as writer:
             limited = writer.cursor()
             limited.execute(
@@ -103,10 +111,19 @@ def visible_legacy_without_grants(values, cursor, run):
                 "ON s.schema_id=o.schema_id "
                 "WHERE s.name=N'legacy' AND o.name=N'unrelated'"
             )
-            require(limited.fetchone() == (expected_id, expected_id, 0))
+            row = limited.fetchone()
+            stage("visible_legacy_catalog_row")
+            require(row is not None)
+            stage("visible_legacy_catalog_identity")
+            require(row[:2] == (expected_id, expected_id))
+            stage("visible_legacy_effective_count")
+            require(row[2:] == (0,))
             require(limited.fetchone() is None)
+            stage("visible_legacy_strict_audit_refused")
             require(not adapter.permissions_safe(limited, full_audit=True))
+            stage("visible_legacy_runtime_allow")
             require(adapter.permissions_safe(limited))
+        stage("visible_legacy_dml_readback")
         require(
             adapter.mutate(values, "insert", run_id=run, consent=True)[
                 "changed_rows"
@@ -127,6 +144,7 @@ def visible_legacy_without_grants(values, cursor, run):
 
 def check_status(values):
     """通常の限定writerでもCDC captureを参照せず診断が通る。"""
+    stage("normal_writer_status")
     result = adapter.diagnose(values)
     require(
         result["connected"]
