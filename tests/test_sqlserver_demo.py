@@ -735,6 +735,7 @@ class PermissionTests(unittest.TestCase):
         object_type="U",
         unknown_object=False,
         unknown_permission=False,
+        denied_object_id=999,
     ):
         cursor = mock.Mock()
         result = [None]
@@ -765,9 +766,15 @@ class PermissionTests(unittest.TestCase):
                     self.assertIn(" IS NULL OR ", statement)
                     if operation == arguments[0] and (
                         effective is None
-                        or (effective == 1 and name not in arguments[2:])
+                        or (
+                            effective == 1
+                            and name not in arguments[2:]
+                            and denied_object_id not in arguments[2:]
+                        )
                     ):
                         result[0] = (999, 1)
+            elif "LEFT JOIN sys.tables t" in statement:
+                result[0] = []
             elif "o.type NOT IN" in statement:
                 result[0] = (999,) if unknown_object else None
             elif "sys.objects o" in statement:
@@ -779,6 +786,7 @@ class PermissionTests(unittest.TestCase):
                     and denied_object
                     and operation == denied_object[0]
                     and name not in arguments[1:]
+                    and denied_object_id not in arguments[1:]
                 )
                 result[0] = (999,) if unsafe or unknown_permission else None
             elif "SELECT COUNT_BIG(*) FROM sys.tables" in statement:
@@ -805,6 +813,172 @@ class PermissionTests(unittest.TestCase):
         cursor.fetchall.side_effect = lambda: result[0]
         cursor.statements = statements
         return cursor
+
+    def test_opt_in_only_accepts_exact_effective_object_and_operation(self):
+        approved = (71, 72, ((999, "UPDATE"),))
+        for role, options, expected in (
+            ("demo", {}, True),
+            ("demo", {"full_audit": True}, False),
+            ("control", {}, False),
+        ):
+            with self.subTest(role=role, options=options):
+                cursor = self.cursor(denied_object=("UPDATE", "test.other"))
+                with mock.patch.object(
+                    DEMO, "approved_legacy_dml", return_value=approved
+                ) as optional:
+                    self.assertEqual(
+                        DEMO.permissions_safe(
+                            cursor,
+                            role=role,
+                            trusted_policy_transport=True,
+                            **options,
+                        ),
+                        expected,
+                    )
+                self.assertEqual(optional.call_count, int(expected))
+        for options in (
+            {"denied_object": ("INSERT", "test.other")},
+            {"denied_object": ("SELECT", "test.other")},
+            {"denied_object": ("EXECUTE", "test.other")},
+            {
+                "denied_object": ("UPDATE", "test.other"),
+                "denied_object_id": 998,
+            },
+            {"unknown_permission": True},
+        ):
+            with (
+                self.subTest(options=options),
+                mock.patch.object(
+                    DEMO, "approved_legacy_dml", return_value=approved
+                ),
+            ):
+                self.assertFalse(
+                    DEMO.permissions_safe(
+                        self.cursor(**options), trusted_policy_transport=True
+                    )
+                )
+
+    def test_unverified_tls_never_reads_optional_policy(self):
+        cursor = self.cursor(denied_object=("UPDATE", "test.other"))
+        with mock.patch.object(DEMO, "approved_legacy_dml") as loader:
+            self.assertFalse(
+                DEMO.writer_permissions_safe(
+                    cursor, {"DEMO_SQLSERVER_TRUST_SERVER_CERTIFICATE": "true"}
+                )
+            )
+        loader.assert_not_called()
+
+    def test_policy_rows_require_exact_identity_and_full_effective_object_dml(
+        self,
+    ):
+        cursor = mock.Mock()
+        cursor.fetchall.side_effect = [
+            [(71, 1)],
+            [
+                (col, *shape, 0, 0, 0)
+                for col, shape in DEMO.LEGACY_POLICY_COLUMNS.items()
+            ],
+            [(999, "INSERT", 999, 1), (999, "UPDATE", 999, 0)],
+        ]
+        cursor.fetchone.side_effect = [(1,), None, None, (1, 0, 0, 0, 0, 0, 0)]
+        with mock.patch.object(DEMO, "legacy_checker_safe", return_value=72):
+            self.assertEqual(
+                DEMO.approved_legacy_dml(cursor),
+                (71, 72, ((999, "INSERT"),)),
+            )
+        for rows in (
+            [(999, "UPDATE", None, 1)],
+            [(999, "EXECUTE", 999, 1)],
+            [(999, "UPDATE", 999, None)],
+            [(999, "UPDATE", 999, 1), (999, "UPDATE", 999, 1)],
+        ):
+            cursor = mock.Mock()
+            cursor.fetchall.side_effect = [
+                [(71, 1)],
+                [
+                    (col, *shape, 0, 0, 0)
+                    for col, shape in DEMO.LEGACY_POLICY_COLUMNS.items()
+                ],
+                rows,
+            ]
+            cursor.fetchone.side_effect = [
+                (1,),
+                None,
+                None,
+                (1, 0, 0, 0, 0, 0, 0),
+            ]
+            with (
+                mock.patch.object(
+                    DEMO, "legacy_checker_safe", return_value=72
+                ),
+                self.assertRaises(DEMO.SqlServerError),
+            ):
+                DEMO.approved_legacy_dml(cursor)
+
+    def test_policy_cannot_be_used_if_unowned_column_writable_or_unknown(self):
+        for objects, columns in (
+            ([(71, 0)], []),
+            (
+                [(71, 1)],
+                [
+                    (col, *shape, 0, 0, 1)
+                    for col, shape in DEMO.LEGACY_POLICY_COLUMNS.items()
+                ],
+            ),
+            (
+                [(71, 1)],
+                [
+                    (col, *shape, 0, 0, None)
+                    for col, shape in DEMO.LEGACY_POLICY_COLUMNS.items()
+                ],
+            ),
+        ):
+            cursor = mock.Mock()
+            cursor.fetchall.side_effect = [objects, columns]
+            cursor.fetchone.side_effect = [
+                (1,),
+                None,
+                None,
+                (1, 0, 0, 0, 0, 0, 0),
+            ]
+            with (
+                mock.patch.object(DEMO, "legacy_checker_safe") as checker,
+                self.assertRaises(DEMO.SqlServerError),
+            ):
+                DEMO.approved_legacy_dml(cursor)
+            checker.assert_not_called()
+
+    def test_legacy_checker_must_be_exact_dbo_and_return_single_pass_bit(self):
+        definition = (ROOT / "scripts" / DEMO.LEGACY_CHECKER_ASSET).read_text()
+        for rows, expected in (
+            (
+                [
+                    (72, definition.rstrip("\n"), 1),
+                    (1, 0, 0, 0, 0, 0, 0),
+                    (1,),
+                    None,
+                ],
+                True,
+            ),
+            ([(72, definition + "--alternate", 1)], False),
+            ([(72, definition.rstrip("\n"), None)], False),
+            (
+                [
+                    (72, definition.rstrip("\n"), 1),
+                    (1, 0, 0, 0, 0, 0, 0),
+                    (0,),
+                    None,
+                ],
+                False,
+            ),
+        ):
+            cursor = mock.Mock()
+            cursor.fetchone.side_effect = rows
+            if expected:
+                self.assertEqual(DEMO.legacy_checker_safe(cursor), 72)
+            else:
+                with self.assertRaises(DEMO.SqlServerError):
+                    DEMO.legacy_checker_safe(cursor)
 
     def test_clr_synonym_external_sequence_and_queue_grants_are_refused(self):
         cases = (
