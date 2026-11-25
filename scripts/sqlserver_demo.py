@@ -588,12 +588,28 @@ def permissions_safe(cursor, role="demo", *, full_audit=False):
     )
     if cursor.fetchone():
         return False
+    qualified = "QUOTENAME(s.name)+N'.'+QUOTENAME(o.name)"
+    fixed_writer = role == "demo" and not full_audit
+    if fixed_writer:
+        # fn_my_permissions takes sysname. Never treat an unresolved or
+        # truncated identifier as an object with zero effective permissions.
+        cursor.execute(
+            "SELECT TOP (1) o.object_id FROM sys.objects o JOIN "
+            "sys.schemas s ON o.schema_id=s.schema_id WHERE "
+            + eligible
+            + " AND (DATALENGTH("
+            + qualified
+            + ")>256 OR "
+            "COALESCE(OBJECT_ID(" + qualified + "),0)<>o.object_id)"
+        )
+        if cursor.fetchone():
+            return False
+    apply = "CROSS APPLY " if fixed_writer else "OUTER APPLY "
     for operation, allowed in allowed_by_operation.items():
-        # Calling HAS_PERMS_BY_NAME with a guessed permission/object pairing
-        # can produce NULL for an unsupported permission, or miss CLR/synonym
-        # grants when the type list is incomplete. Audit effective rows,
-        # including column grants. OUTER APPLY also retains an empty/failed
-        # lookup as NULL, so incomplete metadata cannot silently pass.
+        # Check actual effective rows, including column grants, not guessed
+        # permission/object pairs. The writer does not mistake a synthetic
+        # OUTER APPLY NULL for a permission result on a resolved object.
+        # Actual NULL rows and all disallowed grants still fail closed.
         clause = "p.permission_name IS NULL OR (p.permission_name=%s"
         arguments = [operation]
         if allowed:
@@ -606,9 +622,11 @@ def permissions_safe(cursor, role="demo", *, full_audit=False):
         clause += ")"
         cursor.execute(
             "SELECT TOP (1) o.object_id FROM sys.objects o JOIN "
-            "sys.schemas s ON o.schema_id=s.schema_id OUTER APPLY "
-            "sys.fn_my_permissions(QUOTENAME(s.name)+N'.'+"
-            "QUOTENAME(o.name),N'OBJECT') p WHERE "
+            "sys.schemas s ON o.schema_id=s.schema_id "
+            + apply
+            + "sys.fn_my_permissions("
+            + qualified
+            + ",N'OBJECT') p WHERE "
             + eligible
             + " AND o.type IN ("
             + known_types

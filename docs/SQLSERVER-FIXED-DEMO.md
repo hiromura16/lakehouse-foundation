@@ -130,6 +130,11 @@ UPDATE on installation.ownership_hash, legacy column SELECT/UPDATE, a hidden
 legacy child with ON DELETE CASCADE, and a missing/altered checker. Each unsafe
 writer must be refused before DML.
 
+固定writerの[使い捨てSQL2022試験](../tests/integration/sqlserver_collation/scoped_writer.py)
+は、無関係なprincipal・objectを持つ合成DBで、固定DMLの許可・実commitと、
+必須権限の不足・追加の書込権限・広範なrole・隠れた外部キーの拒否を
+実行します。本番や共有DBは対象外であり、CDCの配送成功を意味しません。
+
 ## 3. GUIで診断して素材を投入する
 
 1. private設定とDokploy側を整合させ、承認済み手順でアプリへ反映します。GUIのSaveだけでは稼働設定は変わりません。
@@ -356,7 +361,10 @@ TAKE OWNERSHIP、固定6表とinstallationのDML/DDL権限は拒否します。
 列単位の実効UPDATE権限も対象です。無関係なDB objectは列挙しません。
 無関係objectの `fn_my_permissions` が空でも登録拒否にはしません。
 これはDB全体の最小権限を証明するものではなく、DBAが管理する境界です。
-writer/controlは従来の厳格な全体監査を維持します。
+writerは従来の全体監査を維持します。自身が実効権限を持たない有効な
+別objectは、権限の検査結果が0件というだけでは拒否しません。
+object名の照合不能、実際のNULL状態の権限行、許可リスト外の実効権限は
+引き続き拒否します。controlの判定と明示的な全体監査は変更していません。
 
 従来の保守的な全DB監査は、承認されたSOURCE環境変数を設定した
 非公開の作業セッションで `python scripts/audit_sqlserver_source_permissions.py`

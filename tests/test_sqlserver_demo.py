@@ -735,6 +735,8 @@ class PermissionTests(unittest.TestCase):
         object_type="U",
         unknown_object=False,
         unknown_permission=False,
+        visible_ungranted=False,
+        invalid_securable=False,
     ):
         cursor = mock.Mock()
         result = [None]
@@ -770,6 +772,8 @@ class PermissionTests(unittest.TestCase):
                         result[0] = (999, 1)
             elif "o.type NOT IN" in statement:
                 result[0] = (999,) if unknown_object else None
+            elif "COALESCE(OBJECT_ID(" in statement:
+                result[0] = (999,) if invalid_securable else None
             elif "sys.objects o" in statement:
                 operation = arguments[0]
                 name = denied_object[1] if denied_object else None
@@ -780,7 +784,15 @@ class PermissionTests(unittest.TestCase):
                     and operation == denied_object[0]
                     and name not in arguments[1:]
                 )
-                result[0] = (999,) if unsafe or unknown_permission else None
+                outer_empty = (
+                    visible_ungranted
+                    and "OUTER APPLY sys.fn_my_permissions" in statement
+                )
+                result[0] = (
+                    (999,)
+                    if unsafe or unknown_permission or outer_empty
+                    else None
+                )
             elif "SELECT COUNT_BIG(*) FROM sys.tables" in statement:
                 result[0] = (len(arguments),)
             elif (
@@ -805,6 +817,86 @@ class PermissionTests(unittest.TestCase):
         cursor.fetchall.side_effect = lambda: result[0]
         cursor.statements = statements
         return cursor
+
+    def test_fixed_mutation_allows_only_empty_unrelated_permissions(self):
+        for case, expected in (
+            ({}, True),
+            ({"unknown_permission": True}, False),
+            ({"denied_object": ("INSERT", "legacy.unrelated")}, False),
+            (
+                {
+                    "column_permission": (
+                        "UPDATE",
+                        "legacy.orders",
+                        "amount",
+                        1,
+                    )
+                },
+                False,
+            ),
+            ({"broad": True}, False),
+            ({"invalid_securable": True}, False),
+        ):
+            with self.subTest(case=case):
+                handle = Handle()
+                data = handle.reader
+                preflight = self.cursor(visible_ungranted=True, **case)
+                cursor = mock.Mock()
+                ready = False
+
+                def execute(statement, arguments=()):
+                    """Use the same cursor for the real guard and fixed DML."""
+                    nonlocal ready
+                    if statement == "SET XACT_ABORT ON":
+                        ready = True
+                    if ready:
+                        return data.execute(statement, arguments)
+                    return preflight.execute(statement, arguments)
+
+                cursor.execute.side_effect = execute
+                cursor.fetchone.side_effect = lambda: (
+                    data.fetchone() if ready else preflight.fetchone()
+                )
+                cursor.fetchall.side_effect = preflight.fetchall
+                with (
+                    mock.patch.object(
+                        DEMO,
+                        "connection",
+                        return_value=injected_connection(handle),
+                    ),
+                    mock.patch.object(handle, "cursor", return_value=cursor),
+                    mock.patch.object(DEMO, "ownership") as ownership,
+                ):
+                    if expected:
+                        result = DEMO.mutate(
+                            VALUES, "insert", run_id=RUN, consent=True
+                        )
+                        self.assertEqual(result["changed_rows"], 1)
+                        self.assertEqual(handle.commits, 1)
+                        self.assertTrue(
+                            any(
+                                query.startswith(
+                                    "INSERT INTO [lh_demo_erp].[products]"
+                                )
+                                for query, _ in data.calls
+                            )
+                        )
+                    else:
+                        with self.assertRaises(DEMO.SqlServerError):
+                            DEMO.mutate(
+                                VALUES, "insert", run_id=RUN, consent=True
+                            )
+                        self.assertEqual(handle.commits, 0)
+                        self.assertEqual(handle.rollbacks, 1)
+                        self.assertEqual(data.calls, [])
+                    ownership.assert_called_once()
+                if expected:
+                    self.assertTrue(
+                        any(
+                            query.startswith("EXEC ")
+                            for query, _ in preflight.statements
+                        )
+                    )
 
     def test_clr_synonym_external_sequence_and_queue_grants_are_refused(self):
         cases = (
@@ -863,7 +955,7 @@ class PermissionTests(unittest.TestCase):
         applicable = [
             statement
             for statement in object_queries
-            if "OUTER APPLY sys.fn_my_permissions" in statement
+            if "CROSS APPLY sys.fn_my_permissions" in statement
         ]
         self.assertEqual(len(applicable), 9)
         for statement in applicable:
@@ -879,6 +971,24 @@ class PermissionTests(unittest.TestCase):
         self.assertFalse(
             {"C", "F", "PK", "UQ", "EC"} & set(DEMO.PERMISSION_OBJECT_TYPES)
         )
+
+    def test_explicit_full_audit_remains_conservative(self):
+        self.assertTrue(
+            DEMO.permissions_safe(self.cursor(visible_ungranted=True))
+        )
+        for role, options in (
+            ("demo", {"full_audit": True}),
+            ("control", {}),
+            ("source", {"full_audit": True}),
+        ):
+            with self.subTest(role=role):
+                self.assertFalse(
+                    DEMO.permissions_safe(
+                        self.cursor(visible_ungranted=True),
+                        role=role,
+                        **options,
+                    )
+                )
 
     def test_broad_role_unknown_membership_and_dangerous_grant_are_denied(
         self,
