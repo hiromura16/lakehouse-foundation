@@ -10,6 +10,7 @@ from run import render, variables
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts"))
+import sqlserver_batch as batch  # noqa: E402
 import sqlserver_demo as adapter  # noqa: E402
 
 HOST = "127.0.0.1"
@@ -30,7 +31,7 @@ def stage(name):
     print("SCOPED_WRITER_STAGE=" + name, flush=True)
 
 
-def fixture_database(cursor, database, login, password, selected):
+def fixture_database(cursor, database, logins, selected):
     """新規DBに公開DDLをそのまま適用し、無関係な別ユーザーも持つ。"""
     cursor.execute(
         "SELECT CONVERT(nvarchar(128),SERVERPROPERTY('ProductMajorVersion')),"
@@ -40,13 +41,16 @@ def fixture_database(cursor, database, login, password, selected):
     require(str(version) == "16" and "Developer" in edition)
     stage("create_disposable_database")
     cursor.execute("CREATE DATABASE [" + database + "]")
-    cursor.execute(
-        "CREATE LOGIN [" + login + "] WITH PASSWORD=%s, CHECK_POLICY=OFF",
-        (password,),
-    )
+    accounts = (WRITER, "fixture_control")
+    for login, password in logins:
+        cursor.execute(
+            "CREATE LOGIN [" + login + "] WITH PASSWORD=%s,CHECK_POLICY=OFF",
+            (password,),
+        )
     cursor.execute("USE [" + database + "]")
-    cursor.execute("CREATE USER [" + WRITER + "] FOR LOGIN [" + login + "]")
-    for user in ("fixture_reader", "fixture_control", "fixture_legacy"):
+    for user, (login, _) in zip(accounts, logins, strict=True):
+        cursor.execute("CREATE USER [" + user + "] FOR LOGIN [" + login + "]")
+    for user in ("fixture_reader", "fixture_legacy"):
         cursor.execute("CREATE USER [" + user + "] WITHOUT LOGIN")
     for number in ("001", "002", "003"):
         stage("canonical_ddl_" + number)
@@ -90,40 +94,268 @@ def positive_permission_evidence(values):
         require(adapter.permissions_safe(cursor))
 
 
-def visible_legacy_without_grants(values, cursor, run):
-    """追加の書込権なしでカタログに現れる0権限の行を実SQLで証明。"""
-    cursor.execute("SELECT OBJECT_ID(N'legacy.unrelated',N'U')")
-    (expected_id,) = cursor.fetchone()
-    require(type(expected_id) is int and expected_id > 0)
-    # SQL2022のメタデータ専用権限をこの合成DB内だけに一時付与する。
-    # 開発/運用のwriter設定に追加する権限ではない。
-    stage("temporary_metadata_grant")
-    cursor.execute("GRANT VIEW SECURITY DEFINITION TO fixture_writer")
+def apply_legacy_policy(cursor, selected):
+    """公開のオプションDDLを使い、固定スキーマだけを準備する。"""
+    source = (
+        ROOT / "infra/sqlserver/optional/007_writer_legacy_policy_v2.sql"
+    ).read_text(encoding="utf-8")
+    for key in ("TargetDatabase", "InstallationId", "OwnershipHash"):
+        source = source.replace("$(" + key + ")", selected[key])
+    require("$(" not in source)
+    cursor.execute(source)
+    while cursor.nextset():
+        pass
+
+
+def policy_row(cursor, operation):
+    """固定の合成表への1種類の許可だけをDBAコンテキストで記す。"""
+    cursor.execute(
+        "INSERT INTO [lh_demo_ctl].[writer_legacy_policy_v2] "
+        "SELECT i.installation_id,u.sid,u.principal_id,t.object_id,"
+        "s.schema_id,s.name,t.name,t.create_date,%s "
+        "FROM lh_demo_ctl.installation i CROSS JOIN sys.database_principals u "
+        "JOIN sys.tables t ON t.object_id=OBJECT_ID(N'legacy.approved',N'U') "
+        "JOIN sys.schemas s ON s.schema_id=t.schema_id "
+        "WHERE i.singleton_id=1 AND u.name=N'fixture_writer'",
+        (operation,),
+    )
+    cursor.execute(
+        "SELECT COUNT_BIG(*) FROM lh_demo_ctl.writer_legacy_policy_v2 "
+        "WHERE operation=%s AND object_id=OBJECT_ID(N'legacy.approved',N'U')",
+        (operation,),
+    )
+    require(cursor.fetchone() == (1,))
+
+
+def actual_role_dml(values, cursor, selected, run, sentinel, expected):
+    """継承した実DMLは明示承認後だけ、固定DMLの判定に影響しない。"""
+    cursor.execute("CREATE ROLE fixture_dml AUTHORIZATION dbo")
+    cursor.execute("CREATE ROLE fixture_dml_nested AUTHORIZATION dbo")
+    cursor.execute("ALTER ROLE fixture_dml ADD MEMBER fixture_dml_nested")
+    cursor.execute("ALTER ROLE fixture_dml_nested ADD MEMBER fixture_writer")
+    cursor.execute("CREATE TABLE legacy.approved (id int NOT NULL)")
+    cursor.execute("INSERT INTO legacy.approved VALUES (37)")
+    stage("unrelated_limited_role_alone")
+    with adapter.connection(values) as writer:
+        limited = writer.cursor()
+        limited.execute("SELECT IS_MEMBER(N'fixture_dml')")
+        require(limited.fetchone() == (1,))
+    require(
+        adapter.mutate(values, "insert", run_id=run, consent=True)[
+            "changed_rows"
+        ]
+        == 1
+    )
+    compare_product(cursor, run, "合成CDC投入")
+    require(
+        adapter.mutate(values, "delete", run_id=run, consent=True)[
+            "changed_rows"
+        ]
+        == 1
+    )
+    compare_product(cursor, run, None)
+    compare_unrelated(cursor, sentinel, expected)
+    cursor.execute(
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON legacy.approved "
+        "TO fixture_dml"
+    )
+    with adapter.connection(values) as writer:
+        limited = writer.cursor()
+        limited.execute(
+            "SELECT IS_MEMBER(N'lh_demo_writer'),IS_MEMBER(N'fixture_dml'), "
+            "HAS_PERMS_BY_NAME(N'legacy.approved',N'OBJECT',N'SELECT'), "
+            "HAS_PERMS_BY_NAME(N'legacy.approved',N'OBJECT',N'INSERT'), "
+            "HAS_PERMS_BY_NAME(N'legacy.approved',N'OBJECT',N'UPDATE'), "
+            "HAS_PERMS_BY_NAME(N'legacy.approved',N'OBJECT',N'DELETE')"
+        )
+        require(limited.fetchone() == (1, 1, 1, 1, 1, 1))
+
+    def denied():
+        """別の障害や試験の未実行を、権限拒否に数えない。"""
+        try:
+            adapter.mutate(values, "insert", run_id=run, consent=True)
+        except adapter.SqlServerError as error:
+            require(str(error).startswith(GUARD_FAILURE))
+        else:
+            raise RuntimeError("UNSAFE_DML_ACCEPTED")
+        compare_product(cursor, run, None)
+        compare_unrelated(cursor, sentinel, expected)
+        cursor.execute("SELECT id FROM legacy.approved ORDER BY id")
+        require(cursor.fetchall() == [(37,)])
+
+    stage("inherited_dml_without_policy_refused")
+    denied()
+    stage("provision_read_only_policy")
+    apply_legacy_policy(cursor, selected)
+    policy_row(cursor, "INSERT")
+    stage("wrong_policy_operation_refused")
+    denied()
+    for operation in ("SELECT", "UPDATE", "DELETE"):
+        policy_row(cursor, operation)
+
+    stage("exact_inherited_dml_approved")
+    with adapter.connection(values) as writer:
+        limited = writer.cursor()
+        require(adapter.writer_permissions_safe(limited, values))
+        require(not adapter.permissions_safe(limited, full_audit=True))
+    require(
+        adapter.mutate(values, "insert", run_id=run, consent=True)[
+            "changed_rows"
+        ]
+        == 1
+    )
+    compare_product(cursor, run, "合成CDC投入")
+    require(
+        adapter.mutate(values, "delete", run_id=run, consent=True)[
+            "changed_rows"
+        ]
+        == 1
+    )
+    compare_product(cursor, run, None)
+    compare_unrelated(cursor, sentinel, expected)
+
+    cases = (
+        (
+            "unapproved_object_refused",
+            "GRANT INSERT ON legacy.unrelated TO fixture_dml",
+            "REVOKE INSERT ON legacy.unrelated FROM fixture_dml",
+        ),
+        (
+            "unapproved_select_refused",
+            "GRANT SELECT ON legacy.unrelated TO fixture_dml",
+            "REVOKE SELECT ON legacy.unrelated FROM fixture_dml",
+        ),
+        (
+            "broad_schema_write_refused",
+            "GRANT UPDATE ON SCHEMA::legacy TO fixture_dml",
+            "REVOKE UPDATE ON SCHEMA::legacy FROM fixture_dml",
+        ),
+        (
+            "approved_object_delegation_refused",
+            "GRANT INSERT ON legacy.approved TO fixture_writer "
+            "WITH GRANT OPTION",
+            "REVOKE INSERT ON legacy.approved FROM fixture_writer CASCADE",
+        ),
+        (
+            "nested_role_delegation_refused",
+            "GRANT INSERT ON legacy.approved TO fixture_dml_nested "
+            "WITH GRANT OPTION",
+            "REVOKE INSERT ON legacy.approved FROM fixture_dml_nested CASCADE",
+        ),
+        (
+            "approved_table_and_explicit_role_column_refused",
+            "GRANT UPDATE (id) ON legacy.approved TO fixture_dml_nested",
+            "REVOKE UPDATE (id) ON legacy.approved FROM fixture_dml_nested",
+        ),
+        (
+            "approved_column_only_refused",
+            "REVOKE UPDATE ON legacy.approved FROM fixture_dml; "
+            "GRANT UPDATE (id) ON legacy.approved TO fixture_dml",
+            "REVOKE UPDATE (id) ON legacy.approved FROM fixture_dml; "
+            "GRANT UPDATE ON legacy.approved TO fixture_dml",
+        ),
+        (
+            "third_party_policy_editor_refused",
+            "GRANT UPDATE (operation) ON lh_demo_ctl.writer_legacy_policy_v2 "
+            "TO fixture_legacy_role",
+            "REVOKE UPDATE (operation) ON lh_demo_ctl.writer_legacy_policy_v2 "
+            "FROM fixture_legacy_role",
+        ),
+        (
+            "implicit_policy_editor_refused",
+            "ALTER ROLE db_datawriter ADD MEMBER fixture_legacy",
+            "ALTER ROLE db_datawriter DROP MEMBER fixture_legacy",
+        ),
+        (
+            "stale_policy_incarnation_refused",
+            "UPDATE lh_demo_ctl.writer_legacy_policy_v2 SET "
+            "object_created_at=DATEADD(second,-1,object_created_at)",
+            "UPDATE lh_demo_ctl.writer_legacy_policy_v2 SET "
+            "object_created_at=DATEADD(second,1,object_created_at)",
+        ),
+    )
+    for name, mutate, rollback in cases:
+        stage(name)
+        cursor.execute(mutate)
+        try:
+            if name in (
+                "approved_object_delegation_refused",
+                "nested_role_delegation_refused",
+            ):
+                grantee = (
+                    "fixture_writer"
+                    if name == "approved_object_delegation_refused"
+                    else "fixture_dml_nested"
+                )
+                cursor.execute(
+                    "SELECT COUNT_BIG(*) FROM sys.database_permissions "
+                    "WHERE major_id=OBJECT_ID(N'legacy.approved',N'U') "
+                    "AND grantee_principal_id=DATABASE_PRINCIPAL_ID(%s) "
+                    "AND state=N'W' AND permission_name=N'INSERT'",
+                    (grantee,),
+                )
+                require(cursor.fetchone() == (1,))
+            denied()
+        finally:
+            cursor.execute(rollback)
+    for db_role in ("db_owner", "db_ddladmin"):
+        stage("dangerous_role_" + db_role)
+        cursor.execute("ALTER ROLE " + db_role + " ADD MEMBER fixture_writer")
+        try:
+            denied()
+        finally:
+            cursor.execute(
+                "ALTER ROLE " + db_role + " DROP MEMBER fixture_writer"
+            )
+    stage("dangerous_role_sysadmin")
+    login = "[" + values["DEMO_SQLSERVER_USER"] + "]"
+    database = "[" + selected["TargetDatabase"] + "]"
+
+    def server_role(change):
+        """サーバーロールの試験は作成した合成loginだけ。"""
+        cursor.execute("USE master")
+        try:
+            cursor.execute("ALTER SERVER ROLE [sysadmin] " + change + login)
+        finally:
+            cursor.execute("USE " + database)
+
+    server_role("ADD MEMBER ")
     try:
-        stage("visible_legacy_catalog_query")
+        denied()
+    finally:
+        server_role("DROP MEMBER ")
+    stage("exact_policy_recovered")
+    require(
+        adapter.mutate(values, "insert", run_id=run, consent=True)[
+            "changed_rows"
+        ]
+        == 1
+    )
+    compare_product(cursor, run, "合成CDC投入")
+    compare_unrelated(cursor, sentinel, expected)
+    cursor.execute("SELECT id FROM legacy.approved ORDER BY id")
+    require(cursor.fetchall() == [(37,)])
+
+
+def metadata_only(values, cursor, run, sentinel, expected):
+    """別objectのメタデータだけが見えても固定DMLは可能。"""
+    stage("metadata_only_no_data_rights")
+    cursor.execute(
+        "GRANT VIEW DEFINITION ON legacy.unrelated TO fixture_writer"
+    )
+    try:
         with adapter.connection(values) as writer:
             limited = writer.cursor()
             limited.execute(
-                "SELECT o.object_id, OBJECT_ID(N'legacy.unrelated',N'U'),"
-                "(SELECT COUNT_BIG(*) FROM "
-                "sys.fn_my_permissions(N'legacy.unrelated',N'OBJECT')) "
-                "FROM sys.objects o JOIN sys.schemas s "
-                "ON s.schema_id=o.schema_id "
-                "WHERE s.name=N'legacy' AND o.name=N'unrelated'"
+                "SELECT OBJECT_ID(N'legacy.unrelated',N'U'),"
+                "HAS_PERMS_BY_NAME(N'legacy.unrelated',N'OBJECT',N'SELECT'),"
+                "HAS_PERMS_BY_NAME(N'legacy.unrelated',N'OBJECT',N'INSERT'),"
+                "HAS_PERMS_BY_NAME(N'legacy.unrelated',N'OBJECT',N'UPDATE'),"
+                "HAS_PERMS_BY_NAME(N'legacy.unrelated',N'OBJECT',N'DELETE')"
             )
-            row = limited.fetchone()
-            stage("visible_legacy_catalog_row")
-            require(row is not None)
-            stage("visible_legacy_catalog_identity")
-            require(row[:2] == (expected_id, expected_id))
-            stage("visible_legacy_effective_count")
-            require(row[2:] == (0,))
-            require(limited.fetchone() is None)
-            stage("visible_legacy_strict_audit_refused")
-            require(not adapter.permissions_safe(limited, full_audit=True))
-            stage("visible_legacy_runtime_allow")
-            require(adapter.permissions_safe(limited))
-        stage("visible_legacy_dml_readback")
+            seen = limited.fetchone()
+            require(seen and type(seen[0]) is int and seen[0] > 0)
+            require(seen[1:] == (0, 0, 0, 0))
         require(
             adapter.mutate(values, "insert", run_id=run, consent=True)[
                 "changed_rows"
@@ -138,8 +370,38 @@ def visible_legacy_without_grants(values, cursor, run):
             == 1
         )
         compare_product(cursor, run, None)
+        compare_unrelated(cursor, sentinel, expected)
     finally:
-        cursor.execute("REVOKE VIEW SECURITY DEFINITION FROM fixture_writer")
+        cursor.execute(
+            "REVOKE VIEW DEFINITION ON legacy.unrelated FROM fixture_writer"
+        )
+
+
+def control_checks(values, cursor):
+    """別の限定control接続の必須権限不足を実leaseで確認する。"""
+    stage("control_rights_baseline")
+    with batch.checkpoint_lease(values, adapter):
+        pass
+    cursor.execute(
+        "DENY UPDATE ON lh_demo_ctl.batch_watermarks TO fixture_control"
+    )
+    try:
+        stage("missing_control_rights_refused")
+        try:
+            with batch.checkpoint_lease(values, adapter):
+                raise RuntimeError("UNSAFE_CONTROL_LEASE_ACCEPTED")
+        except batch.BatchError as error:
+            require(
+                str(error)
+                == "The checkpoint writer requires narrow control rights."
+            )
+    finally:
+        cursor.execute(
+            "REVOKE UPDATE ON lh_demo_ctl.batch_watermarks "
+            "FROM fixture_control"
+        )
+    with batch.checkpoint_lease(values, adapter):
+        pass
 
 
 def check_status(values):
@@ -279,6 +541,8 @@ def main():
     database = "lh_collation_" + suffix + "_writer"
     login = "writer_fixture_" + suffix
     password = secrets.token_hex(24) + "Aa1!"
+    control_login = "control_fixture_" + suffix
+    control_password = secrets.token_hex(24) + "Aa1!"
     nonce = secrets.token_hex(16)
     selected = variables(database, nonce, os.environ["GITHUB_SHA"])
     values = {
@@ -287,7 +551,9 @@ def main():
         "DEMO_SQLSERVER_DATABASE": database,
         "DEMO_SQLSERVER_USER": login,
         "DEMO_SQLSERVER_PASSWORD": password,
-        "DEMO_SQLSERVER_TRUST_SERVER_CERTIFICATE": "true",
+        "DEMO_SQLSERVER_TRUST_SERVER_CERTIFICATE": "false",
+        "DEMO_SQLSERVER_CA_FILE": os.environ["LAKEHOUSE_FIXTURE_CA"],
+        "DEMO_SQLSERVER_HOSTNAME_IN_CERTIFICATE": "localhost",
         "DEMO_SQLSERVER_INSTALLATION_ID": nonce,
         "DEMO_SQLSERVER_OWNERSHIP_TOKEN": nonce * 2,
     }
@@ -303,7 +569,18 @@ def main():
         timeout=30,
     ) as admin:
         cursor = admin.cursor()
-        fixture_database(cursor, database, login, password, selected)
+        fixture_database(
+            cursor,
+            database,
+            ((login, password), (control_login, control_password)),
+            selected,
+        )
+        stage("wrong_certificate_name_refused")
+        wrong = {
+            **values,
+            "DEMO_SQLSERVER_HOSTNAME_IN_CERTIFICATE": "wrong.example.invalid",
+        }
+        require(not adapter.diagnose(wrong)["connected"])
         stage("zero_effective_permissions")
         positive_permission_evidence(values)
         check_status(values)
@@ -318,10 +595,29 @@ def main():
         )
         expected = compare_product(cursor, sentinel, "合成CDC投入")
         compare_unrelated(cursor, sentinel, expected)
-        stage("visible_legacy_zero_permissions")
-        visible_legacy_without_grants(values, cursor, run)
-        compare_unrelated(cursor, sentinel, expected)
+        metadata_only(values, cursor, run, sentinel, expected)
+        control_checks(
+            {
+                **values,
+                "SOURCE_SQLSERVER_HOST": HOST,
+                "SOURCE_SQLSERVER_PORT": str(PORT),
+                "SOURCE_SQLSERVER_DATABASE": database,
+                "SOURCE_SQLSERVER_USER": "fixture_reader",
+                "SOURCE_SQLSERVER_CONTROL_USER": control_login,
+                "SOURCE_SQLSERVER_CONTROL_PASSWORD": control_password,
+                "SOURCE_SQLSERVER_CA_FILE": values["DEMO_SQLSERVER_CA_FILE"],
+                "SOURCE_SQLSERVER_HOSTNAME_IN_CERTIFICATE": "localhost",
+            },
+            cursor,
+        )
         mutations(values, cursor, run, sentinel, expected)
+        require(
+            adapter.mutate(values, "delete", run_id=run, consent=True)[
+                "changed_rows"
+            ]
+            == 1
+        )
+        actual_role_dml(values, cursor, selected, run, sentinel, expected)
     stage("passed")
 
 

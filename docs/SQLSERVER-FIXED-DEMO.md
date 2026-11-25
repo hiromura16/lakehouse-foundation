@@ -130,10 +130,34 @@ UPDATE on installation.ownership_hash, legacy column SELECT/UPDATE, a hidden
 legacy child with ON DELETE CASCADE, and a missing/altered checker. Each unsafe
 writer must be refused before DML.
 
-固定writerの[使い捨てSQL2022試験](../tests/integration/sqlserver_collation/scoped_writer.py)
-は、無関係なprincipal・objectを持つ合成DBで、固定DMLの許可・実commitと、
-必須権限の不足・追加の書込権限・広範なrole・隠れた外部キーの拒否を
-実行します。本番や共有DBは対象外であり、CDCの配送成功を意味しません。
+### 既存PoCの別テーブルに限定DMLを併有する場合（任意）
+
+任意の[DBA専用V2準備SQL](../infra/sqlserver/optional/007_writer_legacy_policy_v2.sql)
+は、承認台帳と読取り専用の厳格なメタデータcheckerを追加します。
+標準001–006や起動時には実行せず、既存権限を自動で許可しません。
+対象DB・installation一致とDBA専用権限を別途確認した場合だけ、DBAが
+別PoCの個別テーブルと1操作ずつを台帳へ登録します。dbo自身が
+`sys.tables`、`sys.schemas`、`sys.database_principals` と既存の
+installationから、現在のobject/schema ID、厳密な名前、作成時刻、
+限定writerのSID/DB principal IDを照合してください。同名の再作成、
+ログイン変更やDB移行は承認を引き継ぎません。
+
+許可は通常テーブルの実効object-level `SELECT` / `INSERT` / `UPDATE` /
+`DELETE` のうち、DBAが個別に承認した操作だけです。このV2を利用するには
+SQL Serverの証明書を検証する既存TLS設定が必要です。証明書を未検証のまま
+信頼する設定ではV2を使わず、従来の厳格判定に戻ります。別object、
+列単位の個別GRANT、委任可能な権限、
+未確認の役割、DDL、管理権限はこの例外に含めません。オプションの
+表・checkerの所有者や定義・権限境界を確認できない場合はfail closedと
+します。固定DMLの対象は従来と同じ固定6表と管理表で、別PoC表へ書き込む
+経路を追加しません。reader、control、全体監査、V1の副作用checkerは
+変えません。台帳はDBAだけが管理し、定義・権限・役割を変える間は
+writerを停止してください。
+
+[使い捨てSQL2022のwriter受入](../tests/integration/sqlserver_collation/scoped_writer.py)
+は、別ロール経由の限定DMLを合成DBで再現し、行の実commit/読戻しと、
+対象外書込み・委任・必須権限不足の拒否を別接続で検査します。
+実サイトの権限・CDC・デプロイは対象外です。
 
 ## 3. GUIで診断して素材を投入する
 
@@ -361,10 +385,7 @@ TAKE OWNERSHIP、固定6表とinstallationのDML/DDL権限は拒否します。
 列単位の実効UPDATE権限も対象です。無関係なDB objectは列挙しません。
 無関係objectの `fn_my_permissions` が空でも登録拒否にはしません。
 これはDB全体の最小権限を証明するものではなく、DBAが管理する境界です。
-writerは従来の全体監査を維持します。自身が実効権限を持たない有効な
-別objectは、権限の検査結果が0件というだけでは拒否しません。
-object名の照合不能、実際のNULL状態の権限行、許可リスト外の実効権限は
-引き続き拒否します。controlの判定と明示的な全体監査は変更していません。
+writer/controlは従来の厳格な全体監査を維持します。
 
 従来の保守的な全DB監査は、承認されたSOURCE環境変数を設定した
 非公開の作業セッションで `python scripts/audit_sqlserver_source_permissions.py`

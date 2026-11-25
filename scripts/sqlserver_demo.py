@@ -463,7 +463,197 @@ def source_permissions_safe(cursor):
     return True
 
 
-def permissions_safe(cursor, role="demo", *, full_audit=False):
+LEGACY_POLICY = "lh_demo_ctl.writer_legacy_policy_v2"
+LEGACY_CHECKER = "lh_demo_ctl.check_writer_legacy_delegation_v2"
+LEGACY_CHECKER_ASSET = "sqlserver_writer_legacy_delegation.sql"
+LEGACY_OPERATIONS = frozenset(("SELECT", "INSERT", "UPDATE", "DELETE"))
+LEGACY_POLICY_COLUMNS = {
+    "installation_id": ("char", 32),
+    "writer_sid": ("varbinary", 85),
+    "writer_principal_id": ("int", 4),
+    "object_id": ("int", 4),
+    "schema_id": ("int", 4),
+    "schema_name": ("nvarchar", 256),
+    "table_name": ("nvarchar", 256),
+    "object_created_at": ("datetime", 8),
+    "operation": ("varchar", 6),
+}
+
+
+def legacy_checker_safe(cursor):
+    """Return only the identity of an immutable canonical dbo checker."""
+    cursor.execute(
+        "SELECT o.object_id,m.definition,CASE WHEN "
+        "m.execute_as_principal_id=DATABASE_PRINCIPAL_ID(N'dbo') "
+        "AND COALESCE(o.principal_id,s.principal_id)="
+        "DATABASE_PRINCIPAL_ID(N'dbo') AND "
+        "s.principal_id=DATABASE_PRINCIPAL_ID(N'dbo') "
+        "AND m.uses_ansi_nulls=1 AND m.uses_quoted_identifier=1 "
+        "THEN 1 ELSE 0 END "
+        "FROM sys.sql_modules m JOIN sys.objects o ON o.object_id=m.object_id "
+        "JOIN sys.schemas s ON s.schema_id=o.schema_id "
+        "WHERE o.object_id=OBJECT_ID(%s,N'P') AND o.is_ms_shipped=0",
+        (LEGACY_CHECKER,),
+    )
+    row = cursor.fetchone()
+    if (
+        not row
+        or len(row) != 3
+        or type(row[0]) is not int
+        or row[0] <= 0
+        or row[2] != 1
+        or not isinstance(row[1], str)
+        or row[1].replace("\r\n", "\n")
+        != Path(__file__)
+        .with_name(LEGACY_CHECKER_ASSET)
+        .read_text(encoding="utf-8")
+        .rstrip("\n")
+    ):
+        raise SqlServerError("Writer approval checker is unverifiable.")
+    cursor.execute(
+        "SELECT HAS_PERMS_BY_NAME(%s,N'OBJECT',N'EXECUTE'), "
+        "HAS_PERMS_BY_NAME(%s,N'OBJECT',N'ALTER'), "
+        "HAS_PERMS_BY_NAME(%s,N'OBJECT',N'CONTROL'), "
+        "HAS_PERMS_BY_NAME(%s,N'OBJECT',N'TAKE OWNERSHIP'), "
+        "HAS_PERMS_BY_NAME(N'lh_demo_ctl',N'SCHEMA',N'ALTER'), "
+        "HAS_PERMS_BY_NAME(N'lh_demo_ctl',N'SCHEMA',N'CONTROL'), "
+        "HAS_PERMS_BY_NAME(N'lh_demo_ctl',N'SCHEMA',N'TAKE OWNERSHIP')",
+        (LEGACY_CHECKER,) * 4,
+    )
+    if cursor.fetchone() != (1, 0, 0, 0, 0, 0, 0):
+        raise SqlServerError("Writer approval checker is not read-only.")
+    cursor.execute(
+        "EXEC [lh_demo_ctl].[check_writer_legacy_delegation_v2]", ()
+    )
+    if cursor.fetchone() != (1,) or cursor.fetchone() is not None:
+        raise SqlServerError("Writer approval delegation was not verified.")
+    return row[0]
+
+
+def approved_legacy_dml(cursor):
+    """Read only the checked DBA policy for this login and installation."""
+    cursor.execute(
+        "SELECT o.object_id, CASE WHEN t.object_id IS NOT NULL "
+        "AND o.is_ms_shipped=0 AND t.temporal_type=0 "
+        "AND t.is_memory_optimized=0 "
+        "AND COALESCE(o.principal_id,s.principal_id)="
+        "DATABASE_PRINCIPAL_ID(N'dbo') "
+        "AND s.principal_id=DATABASE_PRINCIPAL_ID(N'dbo') THEN 1 ELSE 0 END "
+        "FROM sys.objects o JOIN sys.schemas s ON s.schema_id=o.schema_id "
+        "LEFT JOIN sys.tables t ON t.object_id=o.object_id "
+        "WHERE s.name COLLATE Latin1_General_100_BIN2=N'lh_demo_ctl' "
+        "AND o.name COLLATE Latin1_General_100_BIN2=N'writer_legacy_policy_v2'"
+    )
+    rows = cursor.fetchall()
+    if not rows:
+        # Absence or invisibility cannot authorize any extra permission.
+        return None, None, ()
+    if len(rows) != 1 or len(rows[0]) != 2:
+        raise SqlServerError("Writer approval policy is unverifiable.")
+    policy_id, trusted = rows[0]
+    if type(policy_id) is not int or policy_id <= 0 or trusted != 1:
+        raise SqlServerError("Writer approval policy is unverifiable.")
+    cursor.execute("SELECT IS_MEMBER(N'lh_demo_writer')")
+    if cursor.fetchone() != (1,):
+        raise SqlServerError("Writer approval role was not verified.")
+    cursor.execute(
+        "SELECT TOP (1) 1 FROM sys.fn_my_permissions(NULL,N'DATABASE') "
+        "WHERE permission_name IS NULL OR "
+        "permission_name IN (N'SELECT',N'INSERT',N'UPDATE',N'DELETE')"
+    )
+    if cursor.fetchone() is not None:
+        raise SqlServerError("Writer approval cannot admit broad DML.")
+    cursor.execute(
+        "SELECT TOP (1) 1 FROM sys.schemas s WHERE "
+        "HAS_PERMS_BY_NAME(QUOTENAME(s.name),N'SCHEMA',N'SELECT')=1 OR "
+        "HAS_PERMS_BY_NAME(QUOTENAME(s.name),N'SCHEMA',N'INSERT')=1 OR "
+        "HAS_PERMS_BY_NAME(QUOTENAME(s.name),N'SCHEMA',N'UPDATE')=1 OR "
+        "HAS_PERMS_BY_NAME(QUOTENAME(s.name),N'SCHEMA',N'DELETE')=1"
+    )
+    if cursor.fetchone() is not None:
+        raise SqlServerError("Writer approval cannot admit broad DML.")
+    cursor.execute(
+        "SELECT HAS_PERMS_BY_NAME(%s,N'OBJECT',N'SELECT'), "
+        "HAS_PERMS_BY_NAME(%s,N'OBJECT',N'INSERT'), "
+        "HAS_PERMS_BY_NAME(%s,N'OBJECT',N'UPDATE'), "
+        "HAS_PERMS_BY_NAME(%s,N'OBJECT',N'DELETE'), "
+        "HAS_PERMS_BY_NAME(%s,N'OBJECT',N'ALTER'), "
+        "HAS_PERMS_BY_NAME(%s,N'OBJECT',N'CONTROL'), "
+        "HAS_PERMS_BY_NAME(%s,N'OBJECT',N'TAKE OWNERSHIP')",
+        (LEGACY_POLICY,) * 7,
+    )
+    if cursor.fetchone() != (1, 0, 0, 0, 0, 0, 0):
+        raise SqlServerError("Writer approval policy must be read-only.")
+    cursor.execute(
+        "SELECT c.name,TYPE_NAME(c.system_type_id),c.max_length,"
+        "c.is_nullable,c.is_computed,HAS_PERMS_BY_NAME("
+        "%s,N'OBJECT',N'UPDATE',c.name,N'COLUMN') "
+        "FROM sys.columns c WHERE c.object_id=%s",
+        (LEGACY_POLICY, policy_id),
+    )
+    columns = cursor.fetchall()
+    if (
+        len(columns) != len(LEGACY_POLICY_COLUMNS)
+        or any(
+            len(row) != 6
+            or row[3:] != (0, 0, 0)
+            or LEGACY_POLICY_COLUMNS.get(row[0]) != row[1:3]
+            for row in columns
+        )
+        or {row[0] for row in columns} != LEGACY_POLICY_COLUMNS.keys()
+    ):
+        raise SqlServerError("Writer approval policy must be read-only.")
+    checker_id = legacy_checker_safe(cursor)
+    cursor.execute(
+        "SELECT TOP (65) p.object_id,p.operation,t.object_id, "
+        "HAS_PERMS_BY_NAME(QUOTENAME(s.name)+N'.'+QUOTENAME(t.name),"
+        "N'OBJECT',p.operation) "
+        "FROM [lh_demo_ctl].[writer_legacy_policy_v2] p "
+        "JOIN [lh_demo_ctl].[installation] i ON i.singleton_id=1 "
+        "AND p.installation_id COLLATE Latin1_General_100_BIN2="
+        "i.installation_id COLLATE Latin1_General_100_BIN2 "
+        "JOIN sys.database_principals u ON u.principal_id=USER_ID() "
+        "AND u.type=N'S' AND u.authentication_type=1 "
+        "AND u.principal_id>4 AND u.sid=SUSER_SID() "
+        "AND ORIGINAL_LOGIN() COLLATE Latin1_General_100_BIN2="
+        "SUSER_SNAME() COLLATE Latin1_General_100_BIN2 "
+        "AND p.writer_principal_id=u.principal_id AND p.writer_sid=u.sid "
+        "LEFT JOIN sys.schemas s ON s.schema_id=p.schema_id AND "
+        "s.name COLLATE Latin1_General_100_BIN2="
+        "p.schema_name COLLATE Latin1_General_100_BIN2 "
+        "LEFT JOIN sys.tables t ON t.schema_id=s.schema_id "
+        "AND t.object_id=p.object_id AND t.create_date=p.object_created_at "
+        "AND t.name COLLATE Latin1_General_100_BIN2="
+        "p.table_name COLLATE Latin1_General_100_BIN2 "
+        "AND t.is_ms_shipped=0 AND t.temporal_type=0 "
+        "AND s.name COLLATE Latin1_General_100_BIN2 NOT IN "
+        "(N'lh_demo_ctl',N'lh_demo_erp',N'lh_demo_mes',"
+        "N'sys',N'INFORMATION_SCHEMA')"
+    )
+    rows = cursor.fetchall()
+    grants = set()
+    seen = set()
+    if len(rows) > 64:
+        raise SqlServerError("Writer approval policy exceeds its bounds.")
+    for object_id, operation, observed_id, effective in rows:
+        if (
+            type(object_id) is not int
+            or object_id <= 0
+            or observed_id != object_id
+            or operation not in LEGACY_OPERATIONS
+            or effective not in (0, 1)
+            or (object_id, operation) in seen
+        ):
+            raise SqlServerError("Writer approval policy is unverifiable.")
+        seen.add((object_id, operation))
+        if effective == 1:
+            grants.add((object_id, operation))
+    return policy_id, checker_id, tuple(sorted(grants))
+
+
+def permissions_safe(
+    cursor, role="demo", *, full_audit=False, trusted_policy_transport=False
+):
     """Fail closed on broad roles, dangerous grants or unrelated object access.
 
     The writer's legacy grants are inspected, never revoked. A separate
@@ -542,6 +732,24 @@ def permissions_safe(cursor, role="demo", *, full_audit=False):
             return False
     if role == "source" and not full_audit:
         return source_permissions_safe(cursor)
+    policy_id, checker_id, grants = None, None, ()
+    if role == "demo" and not full_audit and trusted_policy_transport is True:
+        try:
+            policy_id, checker_id, grants = approved_legacy_dml(cursor)
+        except (OSError, SqlServerError):
+            return False
+
+    def approved_objects(operation):
+        """Only DBA-approved numeric row identities can escape the audit."""
+        approved = [
+            object_id for object_id, verb in grants if verb == operation
+        ]
+        if operation == "SELECT" and policy_id is not None:
+            approved.append(policy_id)
+        if operation == "EXECUTE" and checker_id is not None:
+            approved.append(checker_id)
+        return approved
+
     business = [
         item["schema"] + "." + item["table"] for item in TABLES.values()
     ]
@@ -588,28 +796,12 @@ def permissions_safe(cursor, role="demo", *, full_audit=False):
     )
     if cursor.fetchone():
         return False
-    qualified = "QUOTENAME(s.name)+N'.'+QUOTENAME(o.name)"
-    fixed_writer = role == "demo" and not full_audit
-    if fixed_writer:
-        # fn_my_permissions takes sysname. Never treat an unresolved or
-        # truncated identifier as an object with zero effective permissions.
-        cursor.execute(
-            "SELECT TOP (1) o.object_id FROM sys.objects o JOIN "
-            "sys.schemas s ON o.schema_id=s.schema_id WHERE "
-            + eligible
-            + " AND (DATALENGTH("
-            + qualified
-            + ")>256 OR "
-            "COALESCE(OBJECT_ID(" + qualified + "),0)<>o.object_id)"
-        )
-        if cursor.fetchone():
-            return False
-    apply = "CROSS APPLY " if fixed_writer else "OUTER APPLY "
     for operation, allowed in allowed_by_operation.items():
-        # Check actual effective rows, including column grants, not guessed
-        # permission/object pairs. The writer does not mistake a synthetic
-        # OUTER APPLY NULL for a permission result on a resolved object.
-        # Actual NULL rows and all disallowed grants still fail closed.
+        # Calling HAS_PERMS_BY_NAME with a guessed permission/object pairing
+        # can produce NULL for an unsupported permission, or miss CLR/synonym
+        # grants when the type list is incomplete. Audit effective rows,
+        # including column grants. OUTER APPLY also retains an empty/failed
+        # lookup as NULL, so incomplete metadata cannot silently pass.
         clause = "p.permission_name IS NULL OR (p.permission_name=%s"
         arguments = [operation]
         if allowed:
@@ -619,14 +811,20 @@ def permissions_safe(cursor, role="demo", *, full_audit=False):
                 + ")"
             )
             arguments += allowed
+        approved = approved_objects(operation)
+        if approved:
+            clause += (
+                " AND o.object_id NOT IN ("
+                + ",".join("%s" for _ in approved)
+                + ")"
+            )
+            arguments += approved
         clause += ")"
         cursor.execute(
             "SELECT TOP (1) o.object_id FROM sys.objects o JOIN "
-            "sys.schemas s ON o.schema_id=s.schema_id "
-            + apply
-            + "sys.fn_my_permissions("
-            + qualified
-            + ",N'OBJECT') p WHERE "
+            "sys.schemas s ON o.schema_id=s.schema_id OUTER APPLY "
+            "sys.fn_my_permissions(QUOTENAME(s.name)+N'.'+"
+            "QUOTENAME(o.name),N'OBJECT') p WHERE "
             + eligible
             + " AND o.type IN ("
             + known_types
@@ -657,6 +855,14 @@ def permissions_safe(cursor, role="demo", *, full_audit=False):
                 + ")"
             )
             arguments += allowed
+        approved = approved_objects(operation)
+        if approved:
+            clause += (
+                " AND o.object_id NOT IN ("
+                + ",".join("%s" for _ in approved)
+                + ")"
+            )
+            arguments += approved
         clause += ")"
         cursor.execute(
             "SELECT TOP (1) o.object_id, c.column_id FROM sys.columns c "
@@ -720,6 +926,17 @@ def permissions_safe(cursor, role="demo", *, full_audit=False):
     return side_effects_safe(cursor, role)
 
 
+def writer_permissions_safe(cursor, values):
+    """Do not accept the server's optional policy over unverified TLS."""
+    return permissions_safe(
+        cursor,
+        trusted_policy_transport=values.get(
+            "DEMO_SQLSERVER_TRUST_SERVER_CERTIFICATE", "false"
+        )
+        == "false",
+    )
+
+
 def diagnose(values):
     """Return only allowlisted state, never connection names or driver text."""
     result = {
@@ -748,7 +965,9 @@ def diagnose(values):
                 result["ownership"] = True
             except SqlServerError:
                 return result
-            result["permissions_safe"] = permissions_safe(cursor)
+            result["permissions_safe"] = writer_permissions_safe(
+                cursor, selected
+            )
             for name in TABLES:
                 target = table_name(name)
                 cursor.execute("SELECT OBJECT_ID(%s, N'U')", (target,))
@@ -937,7 +1156,7 @@ def prepare_data(data):
 def check_writer(cursor, values):
     """Check ownership and narrow effective permissions before any DML."""
     ownership(cursor, values)
-    if not permissions_safe(cursor):
+    if not writer_permissions_safe(cursor, values):
         raise SqlServerError(
             "Fixed demo writer permissions exceed the allowed boundary "
             "or are incomplete."
