@@ -387,14 +387,30 @@ def control_checks(values, cursor):
     )
     try:
         stage("missing_control_rights_refused")
+        # 実controlセッションで、接続不良ではなく特定権限の不足と
+        # 既存の権限判定Falseを確かめてから、実際のlease拒否を確認する。
+        with adapter.connection(values, role="control") as control:
+            limited = control.cursor()
+            adapter.ownership(limited, values, role="control")
+            limited.execute(
+                "SELECT HAS_PERMS_BY_NAME("
+                "N'lh_demo_ctl.batch_watermarks',N'OBJECT',N'UPDATE')"
+            )
+            require(limited.fetchone() == (0,))
+            require(not adapter.permissions_safe(limited, role="control"))
+        entered = False
         try:
             with batch.checkpoint_lease(values, adapter):
-                raise RuntimeError("UNSAFE_CONTROL_LEASE_ACCEPTED")
-        except batch.BatchError as error:
+                entered = True
+        except adapter.SqlServerError as error:
+            # connectionは内部BatchErrorを秘匿済みの外側例外に変換する。
             require(
-                str(error)
-                == "The checkpoint writer requires narrow control rights."
+                not entered
+                and str(error)
+                == "Fixed SQL operation failed; private details withheld."
             )
+        else:
+            raise RuntimeError("UNSAFE_CONTROL_LEASE_ACCEPTED")
     finally:
         cursor.execute(
             "REVOKE UPDATE ON lh_demo_ctl.batch_watermarks "
