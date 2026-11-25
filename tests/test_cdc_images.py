@@ -783,60 +783,224 @@ class RegistryTests(unittest.TestCase):
             ):
                 images.validate_registry(RELEASE)
 
-    def test_release_cli_rejects_pull_or_later_tag_drift_with_stale_cache(
-        self,
-    ):
+    def test_release_cli_checks_explicit_amd64_and_current_repo_digest(self):
         repo = RELEASE.rsplit(":", 1)[0]
-        actual = {
+        classic = {
             "Os": "linux",
             "Architecture": "amd64",
             "Id": IMAGE_ID,
             "RepoDigests": [repo + "@" + TOP, repo + "@" + OTHER],
+            "Config": {"Env": [VERSION_ENV, "PRIVATE_FIXTURE=do-not-print"]},
         }
-        for receipt, local, final, error in (
-            ("Digest: " + TOP, actual, INDEX, None),
-            ("Digest: " + OTHER, actual, INDEX, "PULL_RELEASE_DIGEST_CHANGED"),
-            ("", actual, INDEX, "PULL_RELEASE_DIGEST_CHANGED"),
+        root = {
+            **classic,
+            "Id": TOP,
+            "Descriptor": {"digest": TOP, "mediaType": INDEX["mediaType"]},
+        }
+        child = {
+            **classic,
+            "Id": CHILD,
+            "Descriptor": {
+                "digest": CHILD,
+                "mediaType": MANIFEST["mediaType"],
+                "platform": CONFIG,
+            },
+        }
+        no_platform = {
+            **child,
+            "Descriptor": {
+                "digest": CHILD,
+                "mediaType": MANIFEST["mediaType"],
+            },
+        }
+        receipt = "Digest: " + TOP
+        for result, local, selected, final, error, kind in (
+            (receipt, classic, classic, INDEX, None, "config"),
+            (receipt, root, child, INDEX, None, "manifest"),
+            (receipt, root, no_platform, INDEX, None, "manifest"),
             (
-                "Digest: " + TOP + "\nDigest: " + OTHER,
-                actual,
+                "Digest: " + OTHER,
+                root,
+                child,
                 INDEX,
                 "PULL_RELEASE_DIGEST_CHANGED",
+                None,
+            ),
+            ("", root, child, INDEX, "PULL_RELEASE_DIGEST_CHANGED", None),
+            (
+                receipt + "\nDigest: " + OTHER,
+                root,
+                child,
+                INDEX,
+                "PULL_RELEASE_DIGEST_CHANGED",
+                None,
             ),
             (
-                "Digest: " + TOP,
-                actual,
+                receipt,
+                root,
+                child,
                 {**INDEX, "digest": OTHER},
                 "PULL_RELEASE_DIGEST_CHANGED",
+                None,
             ),
             (
-                "Digest: " + TOP,
-                {**actual, "Id": "invalid"},
+                receipt,
+                {**root, "Id": "private-looking-bad"},
+                child,
                 INDEX,
-                "PULL_RELEASE_IMAGE_ID_INVALID",
+                "PULL_RELEASE_ROOT_ID_INVALID",
+                None,
             ),
             (
-                "Digest: " + TOP,
-                {**actual, "Id": OTHER},
+                receipt,
+                {**root, "Id": OTHER},
+                child,
                 INDEX,
-                "PULL_RELEASE_IMAGE_ID_MISMATCH",
+                "PULL_RELEASE_ROOT_ID_MISMATCH",
+                None,
             ),
             (
-                "Digest: " + TOP,
-                {**actual, "Architecture": "arm64"},
+                receipt,
+                {**root, "Descriptor": None},
+                child,
+                INDEX,
+                "PULL_RELEASE_ROOT_ID_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                {**root, "Architecture": "arm64"},
+                child,
                 INDEX,
                 "PULL_PLATFORM_MISMATCH",
+                None,
             ),
             (
-                "Digest: " + TOP,
-                {**actual, "RepoDigests": [repo + "@" + CHILD]},
+                receipt,
+                {**root, "RepoDigests": [repo + "@" + CHILD]},
+                child,
                 INDEX,
                 "PULL_REPO_DIGEST_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                root,
+                INDEX,
+                "PULL_RELEASE_AMD64_ID_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                {**child, "Id": OTHER},
+                INDEX,
+                "PULL_RELEASE_AMD64_ID_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                {**child, "Id": "private-looking-bad"},
+                INDEX,
+                "PULL_RELEASE_AMD64_ID_INVALID",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                {**child, "Descriptor": None},
+                INDEX,
+                "PULL_RELEASE_AMD64_ID_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                {
+                    **child,
+                    "Descriptor": {
+                        **child["Descriptor"],
+                        "digest": OTHER,
+                    },
+                },
+                INDEX,
+                "PULL_RELEASE_AMD64_ID_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                {
+                    **child,
+                    "Descriptor": {
+                        **child["Descriptor"],
+                        "mediaType": INDEX["mediaType"],
+                    },
+                },
+                INDEX,
+                "PULL_RELEASE_AMD64_ID_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                {
+                    **child,
+                    "Descriptor": {
+                        **child["Descriptor"],
+                        "platform": {"architecture": "arm64"},
+                    },
+                },
+                INDEX,
+                "PULL_RELEASE_AMD64_DESCRIPTOR_INVALID",
+                None,
+            ),
+            (
+                receipt,
+                classic,
+                {**classic, "Descriptor": child["Descriptor"]},
+                INDEX,
+                "PULL_RELEASE_AMD64_ID_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                {**child, "Architecture": "arm64"},
+                INDEX,
+                "PULL_RELEASE_AMD64_PLATFORM_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                {**child, "Config": {"Env": [VERSION_ENV] * 2}},
+                INDEX,
+                "PULL_RELEASE_VERSION_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                {**child, "Config": {"Env": []}},
+                INDEX,
+                "PULL_RELEASE_VERSION_MISMATCH",
+                None,
+            ),
+            (
+                receipt,
+                root,
+                images.ImageError("REGISTRY_COMMAND_FAILED"),
+                INDEX,
+                "PULL_RELEASE_AMD64_INSPECT_UNAVAILABLE",
+                None,
             ),
         ):
             output = io.StringIO()
             with (
-                self.subTest(error=error),
+                self.subTest(error=error, kind=kind),
                 mock.patch.object(
                     images, "load_images", return_value={"debezium": RELEASE}
                 ),
@@ -856,26 +1020,69 @@ class RegistryTests(unittest.TestCase):
                     images, "release_config_digest", return_value=IMAGE_ID
                 ),
                 mock.patch.object(
-                    images, "docker", return_value=receipt
+                    images, "docker", return_value=result
                 ) as cli,
-                mock.patch.object(images, "docker_json", return_value=local),
+                mock.patch.object(
+                    images, "docker_json", side_effect=[local, selected]
+                ) as inspect_local,
                 contextlib.redirect_stdout(output),
                 contextlib.redirect_stderr(io.StringIO()),
             ):
                 self.assertEqual(images.main(["--pull-smoke"]), bool(error))
                 cli.assert_called_once_with(
-                    ["pull", "--platform", "linux/amd64", RELEASE],
-                    timeout=300,
+                    ["pull", "--platform", "linux/amd64", RELEASE], timeout=300
                 )
-            result = json.loads(output.getvalue())
-            evidence = result["images"]["debezium"]
+            self.assertNotIn("private-looking-bad", output.getvalue())
+            self.assertNotIn("PRIVATE_FIXTURE", output.getvalue())
+            report = json.loads(output.getvalue())
+            evidence = report["images"]["debezium"]
             if error:
-                self.assertEqual(result["error"], error)
-                self.assertEqual(result["failed_image"]["phase"], "pull")
+                self.assertEqual(report["error"], error)
+                self.assertEqual(report["failed_image"]["phase"], "pull")
                 self.assertEqual(evidence["pull"], "not_requested")
+                self.assertNotIn("repo_digest", evidence)
+                self.assertNotIn(OTHER, output.getvalue())
+                if error == "PULL_RELEASE_ROOT_ID_MISMATCH":
+                    if local["Id"] == OTHER:
+                        self.assertEqual(
+                            evidence["local_root_image_id_state"],
+                            "unrecognized",
+                        )
             else:
+                self.assertEqual(
+                    inspect_local.call_args_list,
+                    [
+                        mock.call(
+                            [
+                                "image",
+                                "inspect",
+                                RELEASE,
+                                "--format",
+                                "{{json .}}",
+                            ]
+                        ),
+                        mock.call(
+                            [
+                                "image",
+                                "inspect",
+                                "--platform",
+                                "linux/amd64",
+                                RELEASE,
+                                "--format",
+                                "{{json .}}",
+                            ]
+                        ),
+                    ],
+                )
                 self.assertEqual(evidence["repo_digest"], repo + "@" + TOP)
-                self.assertEqual(evidence["local_image_id"], IMAGE_ID)
+                self.assertEqual(evidence["local_root_image_id"], local["Id"])
+                self.assertEqual(
+                    evidence["local_amd64_image_id"], selected["Id"]
+                )
+                self.assertEqual(evidence["local_amd64_identity_kind"], kind)
+                self.assertEqual(
+                    evidence["observed_amd64_config_digest"], IMAGE_ID
+                )
                 self.assertEqual(evidence["pull"], "passed")
 
     def test_pull_smoke_requires_same_process_observation_contract(self):

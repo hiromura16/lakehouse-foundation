@@ -430,11 +430,16 @@ indexを読み、digest参照でindexを再照合してから、唯一のlinux/a
 未知の外部イメージを許可するものではありません。
 
 `--pull-smoke` は利用権限のあるDocker daemonで参照を実際にpullします。Debeziumは
-同じ実行で観測したindex digestをpullの応答とローカルRepoDigestと照合し、OS/architecture、
-ローカルImage IDが上記config digestと一致し、pull後もタグが同じindexを指すことを確認します。食い違えば
-採用せず失敗します。他の入力は従来の固定参照のままです。OCI index、platform別
-manifest、ローカルImage IDは別の識別子です。unknown/unknownのattestationは
-実行対象のplatformに数えません。いずれもcontainerを起動せず、DBへも接続しません。
+同じ実行で観測したindex digestをpull応答・ローカルRepoDigestと照合します。さらに
+[Dockerのplatform指定のinspect](https://docs.docker.com/reference/cli/docker/image/inspect/)
+（API 1.49以上）でlinux/amd64とDebeziumの版を再確認します。従来のimage storeでは
+ローカルのconfig IDを、containerd image storeではindex IDと、明示選択したamd64の
+Image ID／descriptorをそれぞれ照合します。後者のamd64 IDはconfig digestではなく
+子manifestのdigestです。その子manifestの生バイトから確認したconfig digestと紐づきます。
+結果にはルートID、amd64 ID、照合方式、観測済みconfig digestを区別して記録します。
+pull後のタグ移動、識別子の食い違い、platform指定を使えない場合は失敗します。
+他の入力は従来の固定参照のままです。attestationは実行対象に数えません。いずれも
+containerを起動せず、DBへも接続しません。
 
 **承認済みの配置後に残す記録（読取のみ）:** Gitコミット、観測日時（UTC）、設定タグ、
 実稼働イメージのRepoDigestとローカルImage ID、OS/architecture、およびConnectorと
