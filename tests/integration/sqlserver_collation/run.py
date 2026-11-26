@@ -560,11 +560,9 @@ IF @ErrorNumber IS NULL OR @ErrorNumber<>50000
 """
 
 
-def assert_fixed_captures(count):
-    """Check captures and tracked flags only for the exact six tables."""
-    if count not in range(7):
-        raise FixtureError("FIXED_CAPTURE_COUNT_REQUIRED")
-    objects = ",".join(
+def fixed_source_object_ids():
+    """固定6表のOBJECT_ID式だけを合成する。"""
+    return ",".join(
         "OBJECT_ID(" + literal(name) + ",N'U')"
         for name in (
             "lh_demo_erp.products",
@@ -575,6 +573,26 @@ def assert_fixed_captures(count):
             "lh_demo_mes.downtime",
         )
     )
+
+
+def assert_virgin_cdc_absent():
+    """未初期化DBではCDC実表や独立fixtureを参照せず、不在を証明する。"""
+    return (
+        "IF NOT EXISTS (SELECT 1 FROM sys.databases "
+        "WHERE database_id=DB_ID() AND is_cdc_enabled=0) "
+        "OR OBJECT_ID(N'cdc.change_tables') IS NOT NULL "
+        "OR (SELECT COUNT_BIG(*) FROM sys.tables "
+        "WHERE object_id IN (" + fixed_source_object_ids() + ") "
+        "AND is_tracked_by_cdc=0)<>6\n"
+        " THROW 51974, 'Virgin source acquired unexpected CDC state.', 1;\n"
+    )
+
+
+def assert_fixed_captures(count):
+    """Check captures and tracked flags only for the exact six tables."""
+    if count not in range(7):
+        raise FixtureError("FIXED_CAPTURE_COUNT_REQUIRED")
+    objects = fixed_source_object_ids()
     return (
         "IF (SELECT COUNT_BIG(*) FROM cdc.change_tables WHERE "
         + captures()
@@ -1818,7 +1836,14 @@ DECLARE @BadCapture int=(SELECT object_id FROM cdc.change_tables
             + record("corrupt_capture_preserved"),
         )
 
-    def validation(self, database, selected, count):
+    def validation(self, database, selected, count, *, virgin=False):
+        if virgin and count != 0:
+            raise FixtureError("VIRGIN_CAPTURE_COUNT_MUST_BE_ZERO")
+        expected_state = (
+            assert_virgin_cdc_absent()
+            if virgin
+            else assert_fixed_captures(count) + preserve_legacy()
+        )
         # Hash only fixture metadata; the real 006 is read-only and unchanged.
         before = """DECLARE @Before006 varbinary(32)=HASHBYTES('SHA2_256',
  CONVERT(nvarchar(max),(SELECT object_id,name,type FROM sys.objects
@@ -1836,8 +1861,7 @@ DECLARE @BadCapture int=(SELECT object_id FROM cdc.change_tables
             + literal(render("006", selected))
             + ";\n"
             + after
-            + assert_fixed_captures(count)
-            + preserve_legacy()
+            + expected_state
             + record("validation_006_captures_" + str(count)),
         )
 

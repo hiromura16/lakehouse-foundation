@@ -376,6 +376,33 @@ class FaultInjectionContractTests(unittest.TestCase):
             Linter(dialect="tsql").parse_string(retained).violations, []
         )
 
+    def test_virgin_validation_does_not_query_absent_cdc_or_legacy_tables(
+        self,
+    ):
+        fixture_runner = FIXTURE.Runner(
+            "tcp:127.0.0.1,1433", "sqlcmd", "synthetic", NONCE, VERSION
+        )
+        with mock.patch.object(fixture_runner, "execute") as execute:
+            fixture_runner.validation(DATABASE, selected(), 0, virgin=True)
+            fixture_runner.validation(DATABASE, selected(), 0)
+            with self.assertRaisesRegex(FIXTURE.FixtureError, "VIRGIN"):
+                fixture_runner.validation(DATABASE, selected(), 1, virgin=True)
+        self.assertEqual(execute.call_count, 2)
+        virgin, live = (call.args[1] for call in execute.call_args_list)
+        self.assertIn("is_cdc_enabled=0", virgin)
+        self.assertIn("is_tracked_by_cdc=0)<>6", virgin)
+        self.assertIn("OBJECT_ID(N'cdc.change_tables') IS NOT NULL", virgin)
+        self.assertNotIn(
+            "FROM cdc.change_tables", virgin.split("IF @Before006", 1)[1]
+        )
+        self.assertNotIn("fixture_ctl.legacy_identity", virgin)
+        self.assertIn("FROM cdc.change_tables", live)
+        self.assertIn("fixture_ctl.legacy_identity", live)
+        body = FIXTURE.assert_virgin_cdc_absent()
+        self.assertEqual(
+            Linter(dialect="tsql").parse_string(body).violations, []
+        )
+
     def test_initialization_matrix_is_explicit_and_never_edits_system_rows(
         self,
     ):
