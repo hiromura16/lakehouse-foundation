@@ -14,7 +14,7 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
-この資料は固定疑似ERP/MESのDBA用DDLを、安全に診断・再実行する手順です。会社DBへの操作結果を公開する記録ではありません。実際の認証情報・接続先・principal・installation ID/hashはGit外で管理します。[通常導入](SQLSERVER-FIXED-DEMO.md)・[診断SQL](../infra/sqlserver/diagnostics/003_permissions_preflight.sql)
+この資料はDBA用の固定source DDL診断資料です。内蔵writer廃止を理由に既存サイトを移行・再初期化するものではありません。既存DBの表・役割・GRANT・captureは保全します。会社DBへの操作結果を公開する記録ではありません。実際の認証情報・接続先・principal・installation ID/hashはGit外で管理します。[通常導入](SQLSERVER-FIXED-DEMO.md)・[診断SQL](../infra/sqlserver/diagnostics/003_permissions_preflight.sql)
 
 ## 1. error 468の条件と修正範囲
 
@@ -84,7 +84,7 @@ v1の正本は[scripts/sqlserver_safety.sql](../scripts/sqlserver_safety.sql)で
 | 確認できた状態 | 順序 |
 | --- | --- |
 | 001/002だけ成功、003の結果が不明 | private preflight → 必要な003の再実行 → 006 → 修正版004の承認後に004 → 006 |
-| 003と3用途のrole割当まで成功確認済み | まず006。問題がなければ修正版004の承認を待ち、004 → 006。不要なchecker削除や003再実行はしない |
+| 003と必要なreader/controlのrole割当まで確認済み | まず006。問題がなければ修正版004の承認を待ち、004 → 006。不要なchecker削除や003再実行はしない |
 | 004が途中で停止 | fixed captureの現在定義・残存・legacy/jobを確認。一致するものを保持し、同じ修正版004で不足分のみ再開 |
 | 明示承認した005が途中で停止 | CDC履歴の必要分を保全済みか確認。残存fixed captureの定義を再検査し、確認付き005だけで続行 |
 
@@ -134,6 +134,8 @@ try {
 passwordを`-P`やwrapperへ書かず、対話入力します。`-N mandatory`は上記Go版で確認した構文で、採用版helpを再確認します。`-C`は自己署名PoCの判断で、証明書検証を省く影響があります。`strict`や別clientのTLS optionを同じ意味として流用しません。`-i`はPowerShellが解釈する引数で、`:r`の行とは別です。`winget`はここで実行しておらず、導入は会社のソフトウェア配布・承認手順に従います。[版の確認](https://learn.microsoft.com/en-us/sql/tools/sqlcmd/sqlcmd-installed-version)・[Go v1.10.0 TLS option](https://github.com/microsoft/go-sqlcmd/blob/v1.10.0/README.md)
 
 業務DBへの接続・DDL適用の前に、別途許可された隔離合成DBへ採用clientで接続し、`SELECT 1`だけの合成include fileと、空白入り作業directoryで`:r`/`-i`を確認してください。既存SQLを実行してパスのテストをしません。
+
+旧V2の任意承認表・手続きが残る環境は、通常のアプリ更新でDBA用SQLを再実行せず、そのまま維持します。002/003の衝突検査はこれらを導入対象として認識しないため、DBAが誤って再適用すると拒否され得ます。削除して通す手順はありません。使い捨てCIでは同名の休止オブジェクトを合成し、再適用の拒否と従来のreader/controlが引き続き使えることを別々に検証します。本物の旧V2機能や会社環境の互換を証明する試験ではありません。
 
 ## 6. 検証と残る受入
 

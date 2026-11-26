@@ -22,7 +22,7 @@ with mock.patch.object(sys, "path", [str(ROOT / "scripts"), *sys.path]):
 def values():
     """Return clearly synthetic identifiers and generated-format ownership."""
     return {
-        "DEMO_SQLSERVER_DATABASE": "fixture_database",
+        "SOURCE_SQLSERVER_DATABASE": "fixture_database",
         "DEMO_SQLSERVER_INSTALLATION_ID": "a" * 32,
         "DEMO_SQLSERVER_OWNERSHIP_TOKEN": "b" * 64,
         "DEMO_SQLSERVER_USER": "fixture_writer",
@@ -42,11 +42,13 @@ class PrepareSqlTests(unittest.TestCase):
         self.assertIn(sha256(token.encode()).hexdigest(), output)
         self.assertIn(':setvar TargetDatabase "fixture_database"', output)
         self.assertNotIn("PASSWORD", output)
+        self.assertNotIn("DemoWriterUser", output)
+        self.assertNotIn(selected["DEMO_SQLSERVER_USER"], output)
         self.assertIn(':setvar ConfirmDisableCdc "0"', output)
 
     def test_sqlcmd_injection_and_reused_credentials_are_rejected(self):
         for changes in (
-            {"DEMO_SQLSERVER_DATABASE": "fixture'; DROP DATABASE x;--"},
+            {"SOURCE_SQLSERVER_DATABASE": "fixture'; DROP DATABASE x;--"},
             {"SOURCE_SQLSERVER_USER": 'fixture"\n:r invalid.sql'},
             {"SOURCE_SQLSERVER_CONTROL_USER": "fixture_reader"},
             {"DEMO_SQLSERVER_OWNERSHIP_TOKEN": "invalid"},

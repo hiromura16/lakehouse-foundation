@@ -319,7 +319,7 @@ HTTP timeoutでjob IDを受け取れなかった場合、既に受付/commitさ�
 | 種類 | 取消・再試行の考え方 |
 | --- | --- |
 | sourceの有限stream | 次のbatch境界で取消。完了済み素材は残る |
-| CDC固定DML | 開始済みtransactionは取消しない。結果と固定行の状態を確認 |
+| 隔離CDCラボのDML | 開始済みtransactionは取消しない。結果と固定行の状態を確認 |
 | pipeline | workerへ依頼済みなら停止を推測しない。busy/blockedと実体を確認 |
 | read API | 表が未作成、認証、接続、上限のどれかを調べる。書込み操作で修復しない |
 
@@ -337,9 +337,7 @@ API仕様は `openapi.json` をクライアント生成の入力にできます�
 
 ## 固定SQL sourceの操作
 
-`GET /sql-source/status` は固定schema・所有権・権限・6表の状態を読み取ります。DB接続先・認証・所有権hashは返しません。`POST /sql-source/demo/{insert|update|delete}` はstrict booleanの `confirm: true` と12桁hexの `run_id` を受け付け、固定試験productへのDMLを非同期実行します。任意table・SQLは受け付けません。
-
-`POST /jobs` のdestinationは `fixed-sqlserver` / `landing-fixed-sqlserver` を追加し、`allow_sql_write` と `confirm_shared_source_database` をともにtrueとします。`run_id` は省略時に自動生成します。SQLのDMLや素材生成成功と、後続取込の成功は別です。[安全条件・準備](SQLSERVER-FIXED-DEMO.md)
+`GET /sql-source/status` はSOURCE readerで、固定schema・所有権・読取り権限・6表の状態を観測します。DB接続先・認証・所有権hashは返しません。以前の固定試験行の書込みAPIと、固定表を宛先とする `POST /jobs` の投入モードは廃止しました。Landing・専用別DBへの汎用SQL生成、および所有権付き専用ラボ向けの `/cdc/demo/*` は別経路です。[安全条件・準備](SQLSERVER-FIXED-DEMO.md)
 
 ### SQL snapshotの明示処理
 

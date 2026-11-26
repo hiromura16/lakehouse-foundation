@@ -79,7 +79,6 @@ def validate_sql_source_policy(values):
     explicit request consent are additionally checked by the fixed adapter.
     """
     for key in (
-        "DEMO_SQLSERVER_ALLOW_SHARED_SOURCE_DATABASE",
         "DEMO_SQLSERVER_TRUST_SERVER_CERTIFICATE",
         "SOURCE_SQLSERVER_TRUST_SERVER_CERTIFICATE",
     ):

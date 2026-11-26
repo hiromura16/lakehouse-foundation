@@ -117,8 +117,6 @@ IF EXISTS (SELECT 1 FROM sys.databases
     EXEC sys.sp_cdc_help_jobs;
 -- Only metadata/status/counts and shared job settings are selected. Keep
 -- output private; never publish database/job names, business data or hashes.
-SELECT N'fixed_demo_runs' AS check_name, run_id,status,record_count,completed_at
-FROM [lh_demo_ctl].[demo_runs] ORDER BY started_at DESC;
 SELECT N'fixed_demo_watermarks' AS check_name, source_table,last_watermark,
     last_primary_key,snapshot_id,updated_at
 FROM [lh_demo_ctl].[batch_watermarks] ORDER BY source_table;

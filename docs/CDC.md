@@ -573,7 +573,7 @@ SELECT sys.fn_cdc_get_max_lsn() AS newest_captured_lsn;
 | [connector.py](../infra/cdc/connector.py) | 登録候補と厳密な既存比較 | 設定一致no-opと差異拒否、secret非表示 |
 | [state.py](../infra/cdc/state.py) | LSN/DELETE/現在値/checkpoint | 順序逆転、再配送、DELETE後の正当な再INSERT |
 | [consumer.py](../infra/cdc/consumer.py) | raw→state→派生→checkpoint→ack | 各確定点の失敗と再開、取消未確定、保持切れ |
-| [cdc-demo.py](../scripts/cdc-demo.py) | 所有確認済み専用DBの固定DML | source-only、誤接続拒否、同意とrollback |
+| [cdc-demo.py](../scripts/cdc-demo.py) | 所有権確認済みの隔離ラボ専用DBでのI/U/D | source-only、誤接続拒否、同意とrollback |
 
 複合キー・schema evolution・並列consumer・増分MERGE等は、設定値を増やすだけでは実装できません。source contract、event identity、state migration、表更新の競合と受入試験を設計し、現在の小さい全表再構築方式と性能・保証の差を記録します。
 

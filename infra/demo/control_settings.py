@@ -30,7 +30,7 @@ SETTING_KEYS = frozenset(
     "SOURCE_SQLSERVER_TIMEZONE DEMO_SQLSERVER_HOST DEMO_SQLSERVER_PORT "
     "DEMO_SQLSERVER_DATABASE DEMO_SQLSERVER_USER DEMO_SQLSERVER_PASSWORD "
     "DEMO_SQLSERVER_CA_FILE DEMO_SQLSERVER_HOSTNAME_IN_CERTIFICATE "
-    "DEMO_SQLSERVER_ALLOW_SHARED_SOURCE_DATABASE DEMO_SQLSERVER_ERP_SCHEMA "
+    "DEMO_SQLSERVER_ERP_SCHEMA "
     "DEMO_SQLSERVER_MES_SCHEMA DEMO_SQLSERVER_CONTROL_SCHEMA "
     "DEMO_SQLSERVER_INSTALLATION_ID DEMO_SQLSERVER_OWNERSHIP_TOKEN "
     "DEMO_SQLSERVER_ENCRYPT DEMO_SQLSERVER_TRUST_SERVER_CERTIFICATE "
@@ -189,13 +189,8 @@ class SettingsStore:
                 "ERP_SCHEMA",
                 "MES_SCHEMA",
                 "CONTROL_SCHEMA",
-                "ALLOW_SHARED_SOURCE_DATABASE",
             )
         }
-        if include_control:
-            keys.add(
-                "DEMO_SQLSERVER_USER"
-            )  # Identity check only, no DEMO auth.
         values = {
             key: value
             for key, value in self.applied.items()

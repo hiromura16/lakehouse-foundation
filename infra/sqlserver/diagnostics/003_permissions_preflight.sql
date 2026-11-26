@@ -18,7 +18,6 @@ SET NOCOUNT ON;
 DECLARE @ExpectedDatabase nvarchar(4000)=N'$(TargetDatabase)';
 DECLARE @InstallationId nvarchar(4000)=N'$(InstallationId)';
 DECLARE @OwnershipHash nvarchar(4000)=N'$(OwnershipHash)';
-DECLARE @Writer nvarchar(4000)=N'$(DemoWriterUser)';
 DECLARE @Reader nvarchar(4000)=N'$(SourceReaderUser)';
 DECLARE @Control nvarchar(4000)=N'$(ControlWriterUser)';
 IF LEN(@ExpectedDatabase) NOT BETWEEN 1 AND 128
@@ -86,6 +85,13 @@ BEGIN
                OR rs.name IN (N''lh_demo_erp'',N''lh_demo_mes'',N''lh_demo_ctl''))
         THEN 1 ELSE 0 END AS bit) AS safe;
 END';
+-- Keep the exact legacy function body valid on upgrade. Any newly created
+-- control checker binds only the eight required tables (not legacy history).
+DECLARE @ControlSafetyDefinition nvarchar(max) =
+    REPLACE(REPLACE(@SafetyDefinition,
+        N'N''lh_demo_ctl.installation'',N''lh_demo_ctl.demo_runs'',',
+        N'N''lh_demo_ctl.installation'','), N'))=9', N'))=8');
+
 -- LEFT JOIN returns a mismatch row even for a wrong-kind same-name object.
 SELECT N'fixed_demo_checker_preflight' AS check_name,
     CONVERT(bit,CASE WHEN o.object_id IS NULL THEN 0 ELSE 1 END) AS checker_present,
@@ -99,9 +105,14 @@ SELECT N'fixed_demo_checker_preflight' AS check_name,
         THEN 1 ELSE 0 END) AS execute_as_dbo,
     CONVERT(bit,COALESCE(m.uses_ansi_nulls,0)) AS ansi_nulls_on,
     CONVERT(bit,COALESCE(m.uses_quoted_identifier,0)) AS quoted_identifier_on,
-    CONVERT(bit,CASE WHEN DATALENGTH(m.[definition])=DATALENGTH(@SafetyDefinition)
-        AND m.[definition] COLLATE Latin1_General_100_BIN2
-            = @SafetyDefinition COLLATE Latin1_General_100_BIN2
+    CONVERT(bit,CASE WHEN
+        (DATALENGTH(m.[definition])=DATALENGTH(@SafetyDefinition)
+         AND m.[definition] COLLATE Latin1_General_100_BIN2
+             = @SafetyDefinition COLLATE Latin1_General_100_BIN2)
+        OR
+        (DATALENGTH(m.[definition])=DATALENGTH(@ControlSafetyDefinition)
+         AND m.[definition] COLLATE Latin1_General_100_BIN2
+             = @ControlSafetyDefinition COLLATE Latin1_General_100_BIN2)
         THEN 1 ELSE 0 END) AS exact_definition_match,
     N'v1' AS expected_checker_version,
     N'Installation marker verified; no per-attempt persisted origin proof.'
@@ -115,54 +126,17 @@ LEFT JOIN sys.schemas s ON s.schema_id=SCHEMA_ID(N'lh_demo_ctl')
 LEFT JOIN sys.sql_modules m ON m.object_id=o.object_id;
 DECLARE @AllowedGrants TABLE (role_name sysname, object_name nvarchar(257), permission_name sysname);
 INSERT INTO @AllowedGrants VALUES
-    (N'lh_demo_writer',N'lh_demo_ctl.check_write_safety_v1',N'EXECUTE'),
-    (N'lh_demo_writer',N'lh_demo_ctl.check_write_safety_v1',N'VIEW DEFINITION'),
     (N'lh_demo_control_writer',N'lh_demo_ctl.check_write_safety_v1',N'EXECUTE'),
     (N'lh_demo_control_writer',N'lh_demo_ctl.check_write_safety_v1',N'VIEW DEFINITION'),
-    (N'lh_demo_writer',N'lh_demo_erp.products',N'VIEW DEFINITION'),
-    (N'lh_demo_writer',N'lh_demo_erp.work_orders',N'VIEW DEFINITION'),
-    (N'lh_demo_writer',N'lh_demo_erp.sales_orders',N'VIEW DEFINITION'),
-    (N'lh_demo_writer',N'lh_demo_erp.shipments',N'VIEW DEFINITION'),
-    (N'lh_demo_writer',N'lh_demo_mes.events',N'VIEW DEFINITION'),
-    (N'lh_demo_writer',N'lh_demo_mes.downtime',N'VIEW DEFINITION'),
-    (N'lh_demo_writer',N'lh_demo_ctl.demo_runs',N'VIEW DEFINITION'),
     (N'lh_demo_control_writer',N'lh_demo_ctl.batch_watermarks',N'VIEW DEFINITION'),
-    (N'lh_demo_writer',N'lh_demo_erp.products',N'SELECT'),
-    (N'lh_demo_writer',N'lh_demo_erp.products',N'INSERT'),
-    (N'lh_demo_writer',N'lh_demo_erp.products',N'UPDATE'),
-    (N'lh_demo_writer',N'lh_demo_erp.products',N'DELETE'),
     (N'lh_demo_reader',N'lh_demo_erp.products',N'SELECT'),
-    (N'lh_demo_writer',N'lh_demo_erp.work_orders',N'SELECT'),
-    (N'lh_demo_writer',N'lh_demo_erp.work_orders',N'INSERT'),
-    (N'lh_demo_writer',N'lh_demo_erp.work_orders',N'UPDATE'),
-    (N'lh_demo_writer',N'lh_demo_erp.work_orders',N'DELETE'),
     (N'lh_demo_reader',N'lh_demo_erp.work_orders',N'SELECT'),
-    (N'lh_demo_writer',N'lh_demo_erp.sales_orders',N'SELECT'),
-    (N'lh_demo_writer',N'lh_demo_erp.sales_orders',N'INSERT'),
-    (N'lh_demo_writer',N'lh_demo_erp.sales_orders',N'UPDATE'),
-    (N'lh_demo_writer',N'lh_demo_erp.sales_orders',N'DELETE'),
     (N'lh_demo_reader',N'lh_demo_erp.sales_orders',N'SELECT'),
-    (N'lh_demo_writer',N'lh_demo_erp.shipments',N'SELECT'),
-    (N'lh_demo_writer',N'lh_demo_erp.shipments',N'INSERT'),
-    (N'lh_demo_writer',N'lh_demo_erp.shipments',N'UPDATE'),
-    (N'lh_demo_writer',N'lh_demo_erp.shipments',N'DELETE'),
     (N'lh_demo_reader',N'lh_demo_erp.shipments',N'SELECT'),
-    (N'lh_demo_writer',N'lh_demo_mes.events',N'SELECT'),
-    (N'lh_demo_writer',N'lh_demo_mes.events',N'INSERT'),
-    (N'lh_demo_writer',N'lh_demo_mes.events',N'UPDATE'),
-    (N'lh_demo_writer',N'lh_demo_mes.events',N'DELETE'),
     (N'lh_demo_reader',N'lh_demo_mes.events',N'SELECT'),
-    (N'lh_demo_writer',N'lh_demo_mes.downtime',N'SELECT'),
-    (N'lh_demo_writer',N'lh_demo_mes.downtime',N'INSERT'),
-    (N'lh_demo_writer',N'lh_demo_mes.downtime',N'UPDATE'),
-    (N'lh_demo_writer',N'lh_demo_mes.downtime',N'DELETE'),
     (N'lh_demo_reader',N'lh_demo_mes.downtime',N'SELECT'),
-    (N'lh_demo_writer',N'lh_demo_ctl.installation',N'SELECT'),
     (N'lh_demo_reader',N'lh_demo_ctl.installation',N'SELECT'),
     (N'lh_demo_control_writer',N'lh_demo_ctl.installation',N'SELECT'),
-    (N'lh_demo_writer',N'lh_demo_ctl.demo_runs',N'SELECT'),
-    (N'lh_demo_writer',N'lh_demo_ctl.demo_runs',N'INSERT'),
-    (N'lh_demo_writer',N'lh_demo_ctl.demo_runs',N'UPDATE'),
     (N'lh_demo_control_writer',N'lh_demo_ctl.batch_watermarks',N'SELECT'),
     (N'lh_demo_control_writer',N'lh_demo_ctl.batch_watermarks',N'INSERT'),
     (N'lh_demo_control_writer',N'lh_demo_ctl.batch_watermarks',N'UPDATE');
@@ -205,7 +179,6 @@ SELECT N'fixed_demo_role_preflight' AS check_name, expected.role_name,
                = p.permission_name COLLATE Latin1_General_100_BIN2
            AND OBJECT_ID(a.object_name)=p.major_id))) AS unexpected_permissions
 FROM (VALUES
-    (N'lh_demo_writer',@Writer),
     (N'lh_demo_reader',@Reader),
     (N'lh_demo_control_writer',@Control)
 ) expected(role_name,user_name)

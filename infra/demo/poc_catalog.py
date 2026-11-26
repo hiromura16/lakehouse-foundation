@@ -245,7 +245,7 @@ HELP_DOCUMENTS = {
     "fixed-sql": (
         "固定SQL source",
         "SQLSERVER-FIXED-DEMO.md",
-        "所有権・限定権限・同意と固定6表の検証",
+        "所有権・限定reader権限と固定6表の検証",
     ),
     "anomalies": (
         "異常シナリオ",
@@ -546,13 +546,6 @@ def capabilities(values=None) -> dict:
             "/sql-source/preview",
             "read",
             "batch/CDC別の固定Goldをsnapshot固定・上限付きで参照",
-        ),
-        (
-            "fixed_sql_dml",
-            "POST",
-            "/sql-source/demo/{action}",
-            "write",
-            "固定試験レコードのINSERT・UPDATE・DELETE",
         ),
         (
             "pipeline",

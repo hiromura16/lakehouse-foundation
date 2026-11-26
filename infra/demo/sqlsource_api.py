@@ -11,23 +11,8 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from job_manager import JobConflict, OperationFailure
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from service import fixed_sql_module
+from service import source_scripts_path
 from sqlsource_client import public_result, send_batch
-
-
-class SqlConsent(BaseModel):
-    """Require explicit consent and a bounded synthetic run identifier."""
-
-    model_config = ConfigDict(extra="forbid", strict=True)
-    confirm: bool
-    run_id: str = Field(pattern=r"^[0-9a-f]{12}$")
-
-    @model_validator(mode="after")
-    def explicit_consent(self):
-        """Require a strict boolean true, including for shared DB writes."""
-        if self.confirm is not True:
-            raise ValueError("Explicit confirmation required.")
-        return self
 
 
 class SqlTableStatus(BaseModel):
@@ -119,8 +104,14 @@ class BatchConsent(BaseModel):
 
 def batch_module():
     """Load the reader with the shared process-local TLS safety adapter."""
-    fixed_sql_module()  # Adds only this repository's scripts to import path.
+    source_scripts_path()
     return importlib.import_module("sqlserver_batch")
+
+
+def source_diagnostic_module():
+    """Load the read-only SOURCE diagnostic without opening a connection."""
+    source_scripts_path()
+    return importlib.import_module("sqlserver_demo")
 
 
 def sqlsource_router(store, jobs, authorize):
@@ -222,7 +213,9 @@ def sqlsource_router(store, jobs, authorize):
                 },
             )
         try:
-            return fixed_sql_module().diagnose(store.source_settings())
+            return source_diagnostic_module().diagnose(
+                store.reader_settings(), role="source"
+            )
         except Exception:
             raise HTTPException(
                 422,
@@ -235,48 +228,5 @@ def sqlsource_router(store, jobs, authorize):
             ) from None
         finally:
             jobs.operation.release()
-
-    @router.post("/demo/{action}", status_code=202)
-    def mutate(
-        action: Literal["insert", "update", "delete"], body: SqlConsent
-    ):
-        """Queue one owned synthetic product DML, without applying DDL."""
-        values = store.source_settings()
-
-        def runner(selected):
-            """Keep the result contract source-only and exclude driver text."""
-            try:
-                result = fixed_sql_module().mutate(
-                    values,
-                    selected,
-                    run_id=body.run_id,
-                    consent=True,
-                )
-                count = result["changed_rows"]
-                if type(count) is not int or count not in {0, 1}:
-                    raise ValueError("Invalid source mutation result.")
-                return {
-                    "action": selected,
-                    "changed_rows": count,
-                    "run_id": body.run_id,
-                    "source_only": True,
-                }
-            except Exception:
-                raise OperationFailure(
-                    "FIXED_SQL_DML_FAILED",
-                    "固定SQL sourceの所有権・権限・行の状態を"
-                    "確認してください。",
-                ) from None
-
-        try:
-            return jobs.submit_cdc(action, runner)
-        except JobConflict:
-            raise HTTPException(
-                409,
-                detail={
-                    "code": "OPERATION_RUNNING",
-                    "message": "実行中の操作が終わるまで待ってください。",
-                },
-            ) from None
 
     return router

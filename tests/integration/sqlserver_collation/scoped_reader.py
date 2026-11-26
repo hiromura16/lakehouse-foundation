@@ -9,6 +9,7 @@ import json
 import os
 import secrets
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -19,6 +20,89 @@ import sqlserver_demo as adapter  # noqa: E402
 def progress(stage):
     """Emit only fixture-owned stage labels, never SQL or values."""
     print("SCOPED_READER_STAGE=" + stage, flush=True)
+
+
+def external_product_capture(cursor, values):
+    """専用の外部source役の確定I/U/Dが既存captureで読めることを確認する。"""
+    cursor.execute("SELECT DB_NAME()")
+    if cursor.fetchone() != (values["SOURCE_SQLSERVER_DATABASE"],):
+        raise RuntimeError("DISPOSABLE_SOURCE_DATABASE_REQUIRED")
+    adapter.ownership(cursor, values, role="source")
+    cursor.execute("CREATE USER [fixture_external] WITHOUT LOGIN")
+    cursor.execute(
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON "
+        "OBJECT::lh_demo_erp.products TO [fixture_external]"
+    )
+    # autocommit=True separates the three transactions. The fixture cannot
+    # use an application writer credential or the removed endpoints.
+    marker = "a" * 12
+    at = "2026-01-01T00:00:00.0000000"
+    changed_at = "2026-01-01T00:00:01.0000000"
+    first, second = (
+        json.dumps(
+            {
+                "product_id": "fixture-external",
+                "product_name": value,
+                "product_family": None,
+                "unit": "",
+                "standard_cycle_seconds": "1.000",
+                "updated_at": stamp + "Z",
+            },
+            separators=(",", ":"),
+        )
+        for value, stamp in (("first", at), ("later", changed_at))
+    )
+    cursor.execute("EXECUTE AS USER=N'fixture_external'")
+    try:
+        cursor.execute(
+            "INSERT lh_demo_erp.products "
+            "(product_id,product_name,product_family,unit,"
+            "standard_cycle_seconds,updated_at,created_at,run_id,"
+            "original_values)"
+            " VALUES (N'fixture-external',N'first',NULL,N'',N'1.000',"
+            "%s,%s,%s,%s)",
+            (at, at, marker, first),
+        )
+        cursor.execute(
+            "UPDATE lh_demo_erp.products SET product_name=N'later',"
+            " updated_at=%s, original_values=%s "
+            "WHERE product_id=N'fixture-external'",
+            (changed_at, second),
+        )
+        cursor.execute(
+            "DELETE FROM lh_demo_erp.products "
+            "WHERE product_id=N'fixture-external'"
+        )
+    finally:
+        cursor.execute("REVERT")
+
+    product_capture = adapter.CAPTURE_INSTANCES["erp_products"]
+    expected = (
+        (2, "first", marker, first),
+        (3, "first", marker, first),
+        (4, "later", marker, second),
+        (1, "later", marker, second),
+    )
+    deadline = time.monotonic() + 45
+    # Open a fresh read-only session per observation so a transaction cannot
+    # pin an earlier view. Yield only exact SQL capture proof, not Kafka E2E.
+    while time.monotonic() < deadline:
+        with adapter.connection(values, role="source") as handle:
+            reader = handle.cursor()
+            reader.execute(
+                "SELECT [__$operation],product_name,run_id,original_values "
+                "FROM [cdc].["
+                + product_capture
+                + "_CT] WHERE product_id=N'fixture-external' "
+                "ORDER BY [__$start_lsn],[__$seqval],[__$operation]"
+            )
+            observed = tuple(reader.fetchall())
+        if observed == expected:
+            return
+        if observed != expected[: len(observed)]:
+            raise RuntimeError("EXTERNAL_CAPTURE_UNEXPECTED_CHANGE")
+        time.sleep(1)
+    raise RuntimeError("EXTERNAL_CAPTURE_NOT_OBSERVED")
 
 
 def cdc_preflight_cases(cursor, login, password, suffix, receipts):
@@ -62,8 +146,13 @@ def cdc_preflight_cases(cursor, login, password, suffix, receipts):
         )
         definitions = []
         for column in [*item["columns"], *fixed_source.EXTRA_COLUMNS]:
-            data_type = (
-                "datetime2(7)" if column in timestamps else "nvarchar(128)"
+            data_type = {
+                "original_values": "nvarchar(max)",
+                "run_id": "char(12)",
+                "standard_cycle_seconds": "decimal(18,3)",
+            }.get(
+                column,
+                "datetime2(7)" if column in timestamps else "nvarchar(128)",
             )
             if column == item["pk"]:
                 data_type += " NOT NULL PRIMARY KEY"
@@ -127,6 +216,11 @@ def cdc_preflight_cases(cursor, login, password, suffix, receipts):
     # This executes the actual CT and generated TVF TOP(0), including the
     # NULL LSN parameters. An optimizer/permission error must fail this case.
     check("cdc_real_six_capture_preflight", True)
+    progress("external_product_insert_update_delete")
+    external_product_capture(cursor, values)
+    receipts.append(
+        {"case": "external_product_insert_update_delete", "passed": True}
+    )
     for role in ("lh_demo_reader", "lh_demo_cdc_reader"):
         mutation(
             "cdc_missing_" + role,
@@ -240,13 +334,15 @@ def main():
             raise RuntimeError("UNRELATED_ZERO_ROWS_REQUIRED")
     check("unrelated_zero_permissions", True)
     # An unrelated write grant is outside this source startup boundary.
-    # It remains the DBA's responsibility; writer/control must still reject it.
+    # The separate full source audit and control guard must reject it.
     cursor.execute("GRANT INSERT ON unrelated.legacy TO reader")
     check("unrelated_write_is_not_startup_audit", True)
-    for role in ("demo", "control"):
+    for role in ("source", "control"):
         with connect() as reader:
-            if adapter.permissions_safe(reader.cursor(), role=role):
-                raise RuntimeError("WRITER_CONTROL_AUDIT_WEAKENED")
+            if adapter.permissions_safe(
+                reader.cursor(), role=role, full_audit=True
+            ):
+                raise RuntimeError("FULL_SOURCE_OR_CONTROL_AUDIT_WEAKENED")
         receipts.append({"case": role + "_audit_retained", "passed": True})
     cursor.execute("REVOKE INSERT ON unrelated.legacy FROM reader")
 

@@ -209,6 +209,22 @@ class DemoSourceUiTests(unittest.TestCase):
         self.assertEqual(posts[0][2]["anomaly_rate"], 35)
         self.assertEqual(posts[0][2]["scenario"], "clean")
 
+    def test_fixed_source_writes_are_not_offered(self):
+        """Keep generic destinations and the read-only SOURCE diagnosis."""
+        app = self.app()
+        destinations = next(
+            box for box in app.selectbox if box.label == "投入先"
+        )
+        self.assertEqual(
+            destinations.options,
+            ["ランディング", "専用の検証SQL Server", "両方"],
+        )
+        keys = {button.key for button in app.button}
+        self.assertFalse(
+            keys & {"sql-fixed-insert", "sql-fixed-update", "sql-fixed-delete"}
+        )
+        self.assertIn("sql-diagnose", keys)
+
     def test_file_fault_requires_consent_and_rejects_sql_only_before_post(
         self,
     ):

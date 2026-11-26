@@ -319,8 +319,8 @@ verifyは既存workerへexecします。Dokploy管理中に、別プロジェク
 
 ## 固定SQL sourceの拡張を反映する場合
 
-コードのレビュー・公開反映後、既存private設定へ通常の `configure.py --upgrade` を実行し、新しいownership ID/tokenは初回設定後に保持します。Source/Demoの接続・TLS、shared-source明示許可、別control principal、CDC mode/state volumeを [固定SQL source手順](SQLSERVER-FIXED-DEMO.md) に従って確認します。旧設定や秘密値を新しい生成ファイルで置き換えません。
+この版では内蔵固定writerを廃止します。既存の所有権情報・SOURCE reader/control設定・CDCの構成と履歴は保全します。別専用DBへの汎用DEMO生成設定と、固定sourceの読取り設定は別用途です。
 
-DDLはアプリDeployと別工程です。DBAが001→002→003→006で固定sourceを受け入れ、GUIで投入・snapshot・増分を確認した後だけ004を適用します。実SQL Serverで未検証のDDLをアプリ起動時に自動実行することはありません。005は明示的な無効化専用で通常更新に含めません。[段階別受入とrollback](COMPANY-ROLLOUT.md#固定sql-sourceバッチcdcを追加するときの受入順)
+この廃止に伴う既存環境のDDL、役割変更、権限取消、captureの再作成やデプロイは行いません。新規合成環境の準備と、監督付きのsnapshot・増分・CDCの受入は別工程です。[段階別受入](COMPANY-ROLLOUT.md#固定sql-sourceバッチcdcを追加するときの受入順)
 
 既存Dokploy、Swarm、管理者、保存volumeは保持します。固定SQLの新コード・unit/staticテスト成功は、BuildKit proxy対策やCDCの会社側での成功を保証しません。初回は実機受入の証拠を別に取得します。
