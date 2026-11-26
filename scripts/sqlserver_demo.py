@@ -1,26 +1,16 @@
-"""Own a fixed, synthetic SQL Server source without granting runtime DDL.
+"""接続先を固定したSQL Serverの読取・watermark制御アダプター。
 
-The six business tables mirror the Landing contracts. SQL ``updated_at`` is a
-server UTC watermark; the original business revision stays in original_values.
-Unrepresentable non-key scalars become typed NULL while the complete original
-JSON remains available to Bronze/quarantine. A missing or oversized key is
-rejected because a stable primary key cannot be invented safely.
-
-Only the DBA SQL files create objects or grant permissions. Runtime writers
-must pass configuration, ownership, effective-permission and explicit-consent
-checks before any DML. Driver errors are replaced with fixed safe messages.
+公開の6表・CDC契約および既存の所有権/TLS検証を維持する。
+業務表の書込みは行わず、制御資格情報は別のcheckpoint表だけに使う。
 """
 
 import hmac
 import json
-import math
 import os
 import re
 import tempfile
 import threading
 from contextlib import contextmanager
-from datetime import date, datetime, timezone
-from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 from pathlib import Path
 
@@ -33,6 +23,11 @@ SAFETY_DEFINITION = (
     .read_text(encoding="utf-8")
     .rstrip("\n")
 )
+# 新規制御用の厳密な定義。旧DBの同名定義は変更せず認識する。
+CONTROL_SAFETY_DEFINITION = SAFETY_DEFINITION.replace(
+    "N'lh_demo_ctl.installation',N'lh_demo_ctl.demo_runs',",
+    "N'lh_demo_ctl.installation',",
+).replace("))=9", "))=8")
 SCHEMAS = {
     "ERP": "lh_demo_erp",
     "MES": "lh_demo_mes",
@@ -95,49 +90,18 @@ NON_GRANTABLE_CHILD_TYPES = (
     "ST",
 )
 IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
-RUN_ID = re.compile(r"[0-9a-f]{12}")
 TLS_LOCK = threading.RLock()
-INTEGER_COLUMNS = {
-    "planned_qty",
-    "ordered_qty",
-    "shipped_qty",
-    "good_qty",
-    "reject_qty",
-}
-DECIMAL_COLUMNS = {"standard_cycle_seconds": (18, 3), "unit_price": (18, 2)}
-DATE_COLUMNS = {"planned_date", "order_date", "promised_date"}
 TIME_COLUMNS = {"event_time", "shipped_at", "start_time", "end_time"}
-TEXT_LENGTHS = {
-    "product_name": 256,
-    "product_family": 128,
-    "unit": 32,
-    "factory_id": 64,
-    "reason_code": 64,
-}
 
 
 class SqlServerError(ValueError):
     """Carry only application-owned, private-value-free failure messages."""
 
 
-def endpoint(values, prefix):
-    """Return an internal comparison tuple; never return it through an API."""
-    return (
-        values.get(prefix + "_HOST", ""),
-        values.get(prefix + "_PORT", "1433"),
-        values.get(prefix + "_DATABASE", ""),
-    )
-
-
-def validate_settings(values, *, consent=False, role="demo"):
-    """Validate fixed boundaries without connecting or interpreting env code.
-
-    Consent is checked again by each write operation. Read-only diagnostics
-    may inspect configuration before the user consents to changing SQL rows.
-    The source reader and control writer share an endpoint, never credentials.
-    """
-    if role not in {"demo", "source", "control"} or type(consent) is not bool:
-        raise SqlServerError("Invalid fixed SQL operation role or consent.")
+def validate_settings(values, *, role="source"):
+    """固定読取と制御の設定だけを検証し、SQLには接続しない。"""
+    if role not in {"source", "control"}:
+        raise SqlServerError("Invalid fixed SQL operation role.")
     selected = dict(values)
     for key, schema in SCHEMAS.items():
         setting = "DEMO_SQLSERVER_" + key + "_SCHEMA"
@@ -154,12 +118,7 @@ def validate_settings(values, *, consent=False, role="demo"):
             raise SqlServerError(
                 "Configure the fixed demo installation identity."
             )
-    shared = selected.get(
-        "DEMO_SQLSERVER_ALLOW_SHARED_SOURCE_DATABASE", "false"
-    )
-    if shared not in {"true", "false"}:
-        raise SqlServerError("Shared database flag must be true or false.")
-    prefix = "DEMO_SQLSERVER" if role == "demo" else "SOURCE_SQLSERVER"
+    prefix = "SOURCE_SQLSERVER"
     for suffix in ("HOST", "DATABASE", "USER", "PASSWORD"):
         key = prefix + "_" + suffix
         if role == "control" and suffix in {"USER", "PASSWORD"}:
@@ -174,24 +133,17 @@ def validate_settings(values, *, consent=False, role="demo"):
                 "Complete the selected fixed SQL credentials."
             )
     if role == "control":
-        # A missing comparison identity is not proof of separate principals.
-        # Only usernames are needed here; DEMO credentials stay excluded from
-        # the batch reader/control configuration passed by SettingsStore.
-        principals = [
-            selected.get(key, "")
-            for key in (
-                "SOURCE_SQLSERVER_CONTROL_USER",
-                "SOURCE_SQLSERVER_USER",
-                "DEMO_SQLSERVER_USER",
-            )
-        ]
-        if any(not isinstance(user, str) or not user for user in principals):
+        # The source reader and the checkpoint writer cannot share auth.
+        reader = selected.get("SOURCE_SQLSERVER_USER")
+        control = selected["SOURCE_SQLSERVER_CONTROL_USER"]
+        if (
+            not isinstance(reader, str)
+            or not reader
+            or any(c in reader for c in "\r\n\x00")
+            or reader.casefold() == control.casefold()
+        ):
             raise SqlServerError(
-                "Configure the three distinct fixed SQL principal identities."
-            )
-        if len({user.casefold() for user in principals}) != 3:
-            raise SqlServerError(
-                "The control principal must differ from source and demo users."
+                "Use distinct source reader and control principal identities."
             )
     host = selected[prefix + "_HOST"]
     database = selected[prefix + "_DATABASE"]
@@ -209,18 +161,6 @@ def validate_settings(values, *, consent=False, role="demo"):
         or not 1 <= int(port) <= 65535
     ):
         raise SqlServerError("Invalid fixed SQL port setting.")
-    if (
-        role == "demo"
-        and database.casefold()
-        == selected.get("SOURCE_SQLSERVER_DATABASE", "").casefold()
-    ):
-        if shared != "true" or endpoint(
-            selected, "DEMO_SQLSERVER"
-        ) != endpoint(selected, "SOURCE_SQLSERVER"):
-            raise SqlServerError(
-                "Shared source database is denied without an exact approved "
-                "endpoint."
-            )
     if selected.get(prefix + "_ENCRYPT", "true") != "true":
         raise SqlServerError("Fixed SQL connections require encryption.")
     trust = selected.get(prefix + "_TRUST_SERVER_CERTIFICATE", "false")
@@ -244,7 +184,7 @@ def validate_settings(values, *, consent=False, role="demo"):
 
 
 @contextmanager
-def connection(values, role="demo"):
+def connection(values, role="source"):
     """Use encrypted process-local FreeTDS settings and role-specific auth.
 
     Certificate trust is verified by default. Explicit private PoC trust=true
@@ -253,7 +193,7 @@ def connection(values, role="demo"):
     All mutations remain uncommitted until the caller explicitly commits.
     """
     selected = validate_settings(values, role=role)
-    prefix = "DEMO_SQLSERVER" if role == "demo" else "SOURCE_SQLSERVER"
+    prefix = "SOURCE_SQLSERVER"
     credentials = prefix if role != "control" else "SOURCE_SQLSERVER_CONTROL"
     with (
         TLS_LOCK,
@@ -343,12 +283,13 @@ def table_name(contract):
     return "[" + item["schema"] + "].[" + item["table"] + "]"
 
 
-def ownership(cursor, values, role="demo"):
+def ownership(cursor, values, role="source"):
     """Compare the connected database and immutable marker in constant time."""
-    prefix = "DEMO_SQLSERVER" if role == "demo" else "SOURCE_SQLSERVER"
+    if role not in {"source", "control"}:
+        raise SqlServerError("Invalid fixed SQL operation role.")
     cursor.execute("SELECT DB_NAME()")
     row = cursor.fetchone()
-    if not row or row[0] != values[prefix + "_DATABASE"]:
+    if not row or row[0] != values["SOURCE_SQLSERVER_DATABASE"]:
         raise SqlServerError(
             "The connected database did not match fixed settings."
         )
@@ -377,7 +318,7 @@ def ownership(cursor, values, role="demo"):
     return SCHEMA_VERSION
 
 
-def side_effects_safe(cursor, role="demo"):
+def side_effects_safe(cursor, role="control"):
     """Trust only the exact DBA-installed, read-only dbo metadata checker.
 
     Caller metadata can omit inbound legacy FKs. Never fall back to the
@@ -385,6 +326,8 @@ def side_effects_safe(cursor, role="demo"):
     """
     if role == "source":
         return True
+    if role != "control":
+        return False
     cursor.execute(
         "SELECT m.definition, "
         "CASE WHEN m.execute_as_principal_id=DATABASE_PRINCIPAL_ID(N'dbo') "
@@ -403,7 +346,8 @@ def side_effects_safe(cursor, role="demo"):
         or len(row) != 2
         or row[1] != 1
         or not isinstance(row[0], str)
-        or row[0].replace("\r\n", "\n") != SAFETY_DEFINITION
+        or row[0].replace("\r\n", "\n")
+        not in (SAFETY_DEFINITION, CONTROL_SAFETY_DEFINITION)
     ):
         return False
     cursor.execute("EXEC [lh_demo_ctl].[check_write_safety_v1]", ())
@@ -463,205 +407,10 @@ def source_permissions_safe(cursor):
     return True
 
 
-LEGACY_POLICY = "lh_demo_ctl.writer_legacy_policy_v2"
-LEGACY_CHECKER = "lh_demo_ctl.check_writer_legacy_delegation_v2"
-LEGACY_CHECKER_ASSET = "sqlserver_writer_legacy_delegation.sql"
-LEGACY_OPERATIONS = frozenset(("SELECT", "INSERT", "UPDATE", "DELETE"))
-LEGACY_POLICY_COLUMNS = {
-    "installation_id": ("char", 32),
-    "writer_sid": ("varbinary", 85),
-    "writer_principal_id": ("int", 4),
-    "object_id": ("int", 4),
-    "schema_id": ("int", 4),
-    "schema_name": ("nvarchar", 256),
-    "table_name": ("nvarchar", 256),
-    "object_created_at": ("datetime", 8),
-    "operation": ("varchar", 6),
-}
-
-
-def legacy_checker_safe(cursor):
-    """Return only the identity of an immutable canonical dbo checker."""
-    cursor.execute(
-        "SELECT o.object_id,m.definition,CASE WHEN "
-        "m.execute_as_principal_id=DATABASE_PRINCIPAL_ID(N'dbo') "
-        "AND COALESCE(o.principal_id,s.principal_id)="
-        "DATABASE_PRINCIPAL_ID(N'dbo') AND "
-        "s.principal_id=DATABASE_PRINCIPAL_ID(N'dbo') "
-        "AND m.uses_ansi_nulls=1 AND m.uses_quoted_identifier=1 "
-        "THEN 1 ELSE 0 END "
-        "FROM sys.sql_modules m JOIN sys.objects o ON o.object_id=m.object_id "
-        "JOIN sys.schemas s ON s.schema_id=o.schema_id "
-        "WHERE o.object_id=OBJECT_ID(%s,N'P') AND o.is_ms_shipped=0",
-        (LEGACY_CHECKER,),
-    )
-    row = cursor.fetchone()
-    if (
-        not row
-        or len(row) != 3
-        or type(row[0]) is not int
-        or row[0] <= 0
-        or row[2] != 1
-        or not isinstance(row[1], str)
-        or row[1].replace("\r\n", "\n")
-        != Path(__file__)
-        .with_name(LEGACY_CHECKER_ASSET)
-        .read_text(encoding="utf-8")
-        .rstrip("\n")
-    ):
-        raise SqlServerError("Writer approval checker is unverifiable.")
-    cursor.execute(
-        "SELECT HAS_PERMS_BY_NAME(%s,N'OBJECT',N'EXECUTE'), "
-        "HAS_PERMS_BY_NAME(%s,N'OBJECT',N'ALTER'), "
-        "HAS_PERMS_BY_NAME(%s,N'OBJECT',N'CONTROL'), "
-        "HAS_PERMS_BY_NAME(%s,N'OBJECT',N'TAKE OWNERSHIP'), "
-        "HAS_PERMS_BY_NAME(N'lh_demo_ctl',N'SCHEMA',N'ALTER'), "
-        "HAS_PERMS_BY_NAME(N'lh_demo_ctl',N'SCHEMA',N'CONTROL'), "
-        "HAS_PERMS_BY_NAME(N'lh_demo_ctl',N'SCHEMA',N'TAKE OWNERSHIP')",
-        (LEGACY_CHECKER,) * 4,
-    )
-    if cursor.fetchone() != (1, 0, 0, 0, 0, 0, 0):
-        raise SqlServerError("Writer approval checker is not read-only.")
-    cursor.execute(
-        "EXEC [lh_demo_ctl].[check_writer_legacy_delegation_v2]", ()
-    )
-    if cursor.fetchone() != (1,) or cursor.fetchone() is not None:
-        raise SqlServerError("Writer approval delegation was not verified.")
-    return row[0]
-
-
-def approved_legacy_dml(cursor):
-    """Read only the checked DBA policy for this login and installation."""
-    cursor.execute(
-        "SELECT o.object_id, CASE WHEN t.object_id IS NOT NULL "
-        "AND o.is_ms_shipped=0 AND t.temporal_type=0 "
-        "AND t.is_memory_optimized=0 "
-        "AND COALESCE(o.principal_id,s.principal_id)="
-        "DATABASE_PRINCIPAL_ID(N'dbo') "
-        "AND s.principal_id=DATABASE_PRINCIPAL_ID(N'dbo') THEN 1 ELSE 0 END "
-        "FROM sys.objects o JOIN sys.schemas s ON s.schema_id=o.schema_id "
-        "LEFT JOIN sys.tables t ON t.object_id=o.object_id "
-        "WHERE s.name COLLATE Latin1_General_100_BIN2=N'lh_demo_ctl' "
-        "AND o.name COLLATE Latin1_General_100_BIN2=N'writer_legacy_policy_v2'"
-    )
-    rows = cursor.fetchall()
-    if not rows:
-        # Absence or invisibility cannot authorize any extra permission.
-        return None, None, ()
-    if len(rows) != 1 or len(rows[0]) != 2:
-        raise SqlServerError("Writer approval policy is unverifiable.")
-    policy_id, trusted = rows[0]
-    if type(policy_id) is not int or policy_id <= 0 or trusted != 1:
-        raise SqlServerError("Writer approval policy is unverifiable.")
-    cursor.execute("SELECT IS_MEMBER(N'lh_demo_writer')")
-    if cursor.fetchone() != (1,):
-        raise SqlServerError("Writer approval role was not verified.")
-    cursor.execute(
-        "SELECT TOP (1) 1 FROM sys.fn_my_permissions(NULL,N'DATABASE') "
-        "WHERE permission_name IS NULL OR "
-        "permission_name IN (N'SELECT',N'INSERT',N'UPDATE',N'DELETE')"
-    )
-    if cursor.fetchone() is not None:
-        raise SqlServerError("Writer approval cannot admit broad DML.")
-    cursor.execute(
-        "SELECT TOP (1) 1 FROM sys.schemas s WHERE "
-        "HAS_PERMS_BY_NAME(QUOTENAME(s.name),N'SCHEMA',N'SELECT')=1 OR "
-        "HAS_PERMS_BY_NAME(QUOTENAME(s.name),N'SCHEMA',N'INSERT')=1 OR "
-        "HAS_PERMS_BY_NAME(QUOTENAME(s.name),N'SCHEMA',N'UPDATE')=1 OR "
-        "HAS_PERMS_BY_NAME(QUOTENAME(s.name),N'SCHEMA',N'DELETE')=1"
-    )
-    if cursor.fetchone() is not None:
-        raise SqlServerError("Writer approval cannot admit broad DML.")
-    cursor.execute(
-        "SELECT HAS_PERMS_BY_NAME(%s,N'OBJECT',N'SELECT'), "
-        "HAS_PERMS_BY_NAME(%s,N'OBJECT',N'INSERT'), "
-        "HAS_PERMS_BY_NAME(%s,N'OBJECT',N'UPDATE'), "
-        "HAS_PERMS_BY_NAME(%s,N'OBJECT',N'DELETE'), "
-        "HAS_PERMS_BY_NAME(%s,N'OBJECT',N'ALTER'), "
-        "HAS_PERMS_BY_NAME(%s,N'OBJECT',N'CONTROL'), "
-        "HAS_PERMS_BY_NAME(%s,N'OBJECT',N'TAKE OWNERSHIP')",
-        (LEGACY_POLICY,) * 7,
-    )
-    if cursor.fetchone() != (1, 0, 0, 0, 0, 0, 0):
-        raise SqlServerError("Writer approval policy must be read-only.")
-    cursor.execute(
-        "SELECT c.name,TYPE_NAME(c.system_type_id),c.max_length,"
-        "c.is_nullable,c.is_computed,HAS_PERMS_BY_NAME("
-        "%s,N'OBJECT',N'UPDATE',c.name,N'COLUMN') "
-        "FROM sys.columns c WHERE c.object_id=%s",
-        (LEGACY_POLICY, policy_id),
-    )
-    columns = cursor.fetchall()
-    if (
-        len(columns) != len(LEGACY_POLICY_COLUMNS)
-        or any(
-            len(row) != 6
-            or row[3:] != (0, 0, 0)
-            or LEGACY_POLICY_COLUMNS.get(row[0]) != row[1:3]
-            for row in columns
-        )
-        or {row[0] for row in columns} != LEGACY_POLICY_COLUMNS.keys()
-    ):
-        raise SqlServerError("Writer approval policy must be read-only.")
-    checker_id = legacy_checker_safe(cursor)
-    cursor.execute(
-        "SELECT TOP (65) p.object_id,p.operation,t.object_id, "
-        "HAS_PERMS_BY_NAME(QUOTENAME(s.name)+N'.'+QUOTENAME(t.name),"
-        "N'OBJECT',p.operation) "
-        "FROM [lh_demo_ctl].[writer_legacy_policy_v2] p "
-        "JOIN [lh_demo_ctl].[installation] i ON i.singleton_id=1 "
-        "AND p.installation_id COLLATE Latin1_General_100_BIN2="
-        "i.installation_id COLLATE Latin1_General_100_BIN2 "
-        "JOIN sys.database_principals u ON u.principal_id=USER_ID() "
-        "AND u.type=N'S' AND u.authentication_type=1 "
-        "AND u.principal_id>4 AND u.sid=SUSER_SID() "
-        "AND ORIGINAL_LOGIN() COLLATE Latin1_General_100_BIN2="
-        "SUSER_SNAME() COLLATE Latin1_General_100_BIN2 "
-        "AND p.writer_principal_id=u.principal_id AND p.writer_sid=u.sid "
-        "LEFT JOIN sys.schemas s ON s.schema_id=p.schema_id AND "
-        "s.name COLLATE Latin1_General_100_BIN2="
-        "p.schema_name COLLATE Latin1_General_100_BIN2 "
-        "LEFT JOIN sys.tables t ON t.schema_id=s.schema_id "
-        "AND t.object_id=p.object_id AND t.create_date=p.object_created_at "
-        "AND t.name COLLATE Latin1_General_100_BIN2="
-        "p.table_name COLLATE Latin1_General_100_BIN2 "
-        "AND t.is_ms_shipped=0 AND t.temporal_type=0 "
-        "AND s.name COLLATE Latin1_General_100_BIN2 NOT IN "
-        "(N'lh_demo_ctl',N'lh_demo_erp',N'lh_demo_mes',"
-        "N'sys',N'INFORMATION_SCHEMA')"
-    )
-    rows = cursor.fetchall()
-    grants = set()
-    seen = set()
-    if len(rows) > 64:
-        raise SqlServerError("Writer approval policy exceeds its bounds.")
-    for object_id, operation, observed_id, effective in rows:
-        if (
-            type(object_id) is not int
-            or object_id <= 0
-            or observed_id != object_id
-            or operation not in LEGACY_OPERATIONS
-            or effective not in (0, 1)
-            or (object_id, operation) in seen
-        ):
-            raise SqlServerError("Writer approval policy is unverifiable.")
-        seen.add((object_id, operation))
-        if effective == 1:
-            grants.add((object_id, operation))
-    return policy_id, checker_id, tuple(sorted(grants))
-
-
-def permissions_safe(
-    cursor, role="demo", *, full_audit=False, trusted_policy_transport=False
-):
-    """Fail closed on broad roles, dangerous grants or unrelated object access.
-
-    The writer's legacy grants are inspected, never revoked. A separate
-    control principal is limited to watermark DML plus installation SELECT.
-    Source readers use the fixed boundary unless full_audit is requested.
-    Full audit is a separate conservative DBA diagnostic, not startup policy.
-    Metadata visibility is evaluated as the actual connected principal.
-    """
+def permissions_safe(cursor, role="source", *, full_audit=False):
+    """読取とwatermark更新を分離し、過大権限は拒否する。"""
+    if role not in {"source", "control"}:
+        return False
     roles = [
         "db_owner",
         "db_ddladmin",
@@ -732,43 +481,13 @@ def permissions_safe(
             return False
     if role == "source" and not full_audit:
         return source_permissions_safe(cursor)
-    policy_id, checker_id, grants = None, None, ()
-    if role == "demo" and not full_audit and trusted_policy_transport is True:
-        try:
-            policy_id, checker_id, grants = approved_legacy_dml(cursor)
-        except (OSError, SqlServerError):
-            return False
-
-    def approved_objects(operation):
-        """Only DBA-approved numeric row identities can escape the audit."""
-        approved = [
-            object_id for object_id, verb in grants if verb == operation
-        ]
-        if operation == "SELECT" and policy_id is not None:
-            approved.append(policy_id)
-        if operation == "EXECUTE" and checker_id is not None:
-            approved.append(checker_id)
-        return approved
-
-    business = [
-        item["schema"] + "." + item["table"] for item in TABLES.values()
-    ]
-    selectable = ["lh_demo_ctl.installation"]
-    writable = []
-    deletable = []
-    if role == "demo":
-        selectable += [*business, "lh_demo_ctl.demo_runs"]
-        writable = [*business, "lh_demo_ctl.demo_runs"]
-        deletable = business
-    elif role == "control":
-        selectable += ["lh_demo_ctl.batch_watermarks"]
-        writable = ["lh_demo_ctl.batch_watermarks"]
+    watermarks = ["lh_demo_ctl.batch_watermarks"] if role == "control" else []
     allowed_by_operation = {
-        "SELECT": selectable,
-        "INSERT": writable,
-        "UPDATE": writable,
-        "DELETE": deletable,
-        "EXECUTE": [SAFETY_CHECKER] if role != "source" else [],
+        "SELECT": ["lh_demo_ctl.installation", *watermarks],
+        "INSERT": watermarks,
+        "UPDATE": watermarks,
+        "DELETE": [],
+        "EXECUTE": [SAFETY_CHECKER] if role == "control" else [],
         "RECEIVE": [],
         "ALTER": [],
         "CONTROL": [],
@@ -811,14 +530,6 @@ def permissions_safe(
                 + ")"
             )
             arguments += allowed
-        approved = approved_objects(operation)
-        if approved:
-            clause += (
-                " AND o.object_id NOT IN ("
-                + ",".join("%s" for _ in approved)
-                + ")"
-            )
-            arguments += approved
         clause += ")"
         cursor.execute(
             "SELECT TOP (1) o.object_id FROM sys.objects o JOIN "
@@ -855,14 +566,6 @@ def permissions_safe(
                 + ")"
             )
             arguments += allowed
-        approved = approved_objects(operation)
-        if approved:
-            clause += (
-                " AND o.object_id NOT IN ("
-                + ",".join("%s" for _ in approved)
-                + ")"
-            )
-            arguments += approved
         clause += ")"
         cursor.execute(
             "SELECT TOP (1) o.object_id, c.column_id FROM sys.columns c "
@@ -896,22 +599,11 @@ def permissions_safe(
     if cursor.fetchone():
         return False
     required = [("lh_demo_ctl.installation", "SELECT")]
-    if role in {"demo", "source"}:
-        for item in TABLES.values():
-            name = item["schema"] + "." + item["table"]
-            required += [
-                (name, operation)
-                for operation in (
-                    ("SELECT", "INSERT", "UPDATE", "DELETE")
-                    if role == "demo"
-                    else ("SELECT",)
-                )
-            ]
-    if role == "demo":
-        required += [
-            ("lh_demo_ctl.demo_runs", operation)
-            for operation in ("SELECT", "INSERT", "UPDATE")
-        ]
+    if role == "source":
+        required.extend(
+            (item["schema"] + "." + item["table"], "SELECT")
+            for item in TABLES.values()
+        )
     if role == "control":
         required += [
             ("lh_demo_ctl.batch_watermarks", operation)
@@ -926,19 +618,10 @@ def permissions_safe(
     return side_effects_safe(cursor, role)
 
 
-def writer_permissions_safe(cursor, values):
-    """Do not accept the server's optional policy over unverified TLS."""
-    return permissions_safe(
-        cursor,
-        trusted_policy_transport=values.get(
-            "DEMO_SQLSERVER_TRUST_SERVER_CERTIFICATE", "false"
-        )
-        == "false",
-    )
-
-
-def diagnose(values):
-    """Return only allowlisted state, never connection names or driver text."""
+def diagnose(values, *, role="source"):
+    """SOURCE資格情報のみで固定6表の読み取り状態を返す。"""
+    if role != "source":
+        raise SqlServerError("Invalid SQL source diagnostic role.")
     result = {
         "connected": False,
         "ownership": False,
@@ -956,18 +639,20 @@ def diagnose(values):
         },
     }
     try:
-        selected = validate_settings(values)
-        with connection(selected) as handle:
+        selected = validate_settings(values, role=role)
+        with connection(selected, role=role) as handle:
             result["connected"] = True
             cursor = handle.cursor()
             try:
-                result["schema_version"] = ownership(cursor, selected)
+                result["schema_version"] = ownership(
+                    cursor, selected, role=role
+                )
                 result["ownership"] = True
             except SqlServerError:
                 return result
-            result["permissions_safe"] = writer_permissions_safe(
-                cursor, selected
-            )
+            result["permissions_safe"] = permissions_safe(cursor, role=role)
+            if not result["permissions_safe"]:
+                return result
             for name in TABLES:
                 target = table_name(name)
                 cursor.execute("SELECT OBJECT_ID(%s, N'U')", (target,))
@@ -992,7 +677,7 @@ def diagnose(values):
                 result["tables"][name]["cdc_enabled"] = bool(
                     cursor.fetchone()[0]
                 )
-                # Capture metadata may be unavailable to the narrow writer.
+                # Capture metadata may be unavailable to the narrow reader.
                 try:
                     cursor.execute(
                         "SELECT capture_instance FROM cdc.change_tables WHERE "
@@ -1010,397 +695,3 @@ def diagnose(values):
         # Unknown diagnostic fields stay false/None; never invent success.
         return result
     return result
-
-
-def timestamp(value):
-    """Preserve seven fractional digits while normalizing ISO text to UTC."""
-    if not isinstance(value, str):
-        raise ValueError("Timestamp must be an ISO string.")
-    matched = re.fullmatch(
-        "(\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d)(?:\\.(\\d{1,"
-        "7}))?(Z|[+-]\\d\\d:\\d\\d)",
-        value,
-    )
-    if not matched:
-        raise ValueError("Timestamp needs an explicit UTC offset.")
-    base, fraction, offset = matched.groups()
-    parsed = datetime.fromisoformat(
-        base + ("+00:00" if offset == "Z" else offset)
-    )
-    utc = parsed.astimezone(timezone.utc)
-    return (
-        utc.strftime("%Y-%m-%dT%H:%M:%S")
-        + "."
-        + (fraction or "").ljust(7, "0")
-    )
-
-
-def normalized_value(column, value):
-    """Return one SQL-compatible scalar; keep the original separately."""
-    if value is None:
-        return None
-    try:
-        if column in INTEGER_COLUMNS:
-            if isinstance(value, bool) or not re.fullmatch(
-                r"[+-]?\d+", str(value)
-            ):
-                return None
-            number = int(value)
-            return number if -(2**63) <= number < 2**63 else None
-        if column in DECIMAL_COLUMNS:
-            if isinstance(value, bool):
-                return None
-            precision, scale = DECIMAL_COLUMNS[column]
-            number = Decimal(str(value))
-            if not number.is_finite() or abs(number) >= Decimal(10) ** (
-                precision - scale
-            ):
-                return None
-            quantum = Decimal(1).scaleb(-scale)
-            quantized = number.quantize(quantum)
-            return quantized if quantized == number else None
-        if column in DATE_COLUMNS:
-            return date.fromisoformat(value).isoformat()
-        if column in TIME_COLUMNS:
-            return timestamp(value)
-        text = str(value)
-        limit = TEXT_LENGTHS.get(column, 160)
-        # SQL nvarchar lengths count UTF-16 code units, not Python codepoints.
-        return text if len(text.encode("utf-16-le")) // 2 <= limit else None
-    except (ValueError, TypeError, InvalidOperation, OverflowError):
-        return None
-
-
-def original_json(row):
-    """Serialize originals deterministically, preserving NULL and decimals."""
-
-    def scalar(value):
-        if isinstance(value, Decimal):
-            return format(value, "f")
-        if isinstance(value, (datetime, date)):
-            return value.isoformat()
-        if isinstance(value, float) and not math.isfinite(value):
-            raise SqlServerError(
-                "Non-finite fixed SQL source values are rejected."
-            )
-        if value is not None and not isinstance(
-            value, (str, int, float, bool)
-        ):
-            raise SqlServerError("Unsupported fixed SQL source scalar.")
-        return value
-
-    return json.dumps(
-        {key: scalar(value) for key, value in row.items()},
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    )
-
-
-def prepare_data(data):
-    """Validate six contracts and collapse PK revisions deterministically."""
-    if not isinstance(data, dict) or set(data) != set(TABLES):
-        raise SqlServerError(
-            "Supply all six fixed source contracts exactly once."
-        )
-    prepared = {}
-    duplicates = normalized = 0
-    for name, item in TABLES.items():
-        rows = data[name]
-        if not isinstance(rows, list) or len(rows) > 100000:
-            raise SqlServerError("Fixed source rows must be a bounded list.")
-        latest = {}
-        for row in rows:
-            if not isinstance(row, dict) or set(row) != set(item["columns"]):
-                raise SqlServerError(
-                    "Fixed source columns did not match their contract."
-                )
-            key = row[item["pk"]]
-            if (
-                not isinstance(key, str)
-                or not key
-                or normalized_value(item["pk"], key) is None
-            ):
-                raise SqlServerError(
-                    "Fixed source needs a nonempty stable primary key."
-                )
-            payload = original_json(row)
-            try:
-                revision = timestamp(row["updated_at"])
-            except (ValueError, TypeError):
-                revision = ""
-            candidate = (revision, payload, row)
-            if key not in latest or candidate[:2] > latest[key][:2]:
-                latest[key] = candidate
-        duplicates += len(rows) - len(latest)
-        output = []
-        for key in sorted(latest):
-            _, payload, original = latest[key]
-            columns = [
-                column for column in item["columns"] if column != "updated_at"
-            ]
-            typed = {
-                column: normalized_value(column, original[column])
-                for column in columns
-            }
-            normalized += sum(
-                original[column] is not None and typed[column] is None
-                for column in columns
-            )
-            output.append((key, typed, payload))
-        prepared[name] = output
-    return prepared, duplicates, normalized
-
-
-def check_writer(cursor, values):
-    """Check ownership and narrow effective permissions before any DML."""
-    ownership(cursor, values)
-    if not writer_permissions_safe(cursor, values):
-        raise SqlServerError(
-            "Fixed demo writer permissions exceed the allowed boundary "
-            "or are incomplete."
-        )
-    cursor.execute("SET XACT_ABORT ON")
-
-
-def record_run(cursor, run_id, seed, scenario, days, count, target):
-    """Record completion inside the same transaction as the source writes."""
-    cursor.execute(
-        "IF NOT EXISTS (SELECT 1 FROM [lh_demo_ctl].[demo_runs] "
-        "WITH (UPDLOCK, HOLDLOCK) WHERE run_id=%s) INSERT INTO "
-        "[lh_demo_ctl].[demo_runs] (run_id, seed, quality_mode, "
-        "record_count, period_days, target_mode, status) VALUES (%s,"
-        "%s,%s,%s,%s,%s,N'succeeded'); ELSE UPDATE "
-        "[lh_demo_ctl].[demo_runs] SET record_count=%s, "
-        "completed_at=SYSUTCDATETIME(), status=N'succeeded', "
-        "target_mode=%s WHERE run_id=%s",
-        (
-            run_id,
-            run_id,
-            seed,
-            scenario,
-            count,
-            days,
-            target,
-            count,
-            target,
-            run_id,
-        ),
-    )
-
-
-def write_data(
-    data, values, *, run_id, seed=42, scenario="clean", days=7, consent=False
-):
-    """Commit owned synthetic rows and skip identical replayed records."""
-    if consent is not True:
-        raise SqlServerError(
-            "Explicit GUI/API consent is required for fixed SQL writes."
-        )
-    if not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id):
-        raise SqlServerError(
-            "Fixed demo run ID must contain 12 lowercase hex digits."
-        )
-    if (
-        type(seed) is not int
-        or not 0 <= seed <= 2147483647
-        or scenario not in {"clean", "edge"}
-        or type(days) is not int
-        or not 1 <= days <= 366
-    ):
-        raise SqlServerError("Invalid fixed demo generation options.")
-    selected = validate_settings(values, consent=consent)
-    prepared, duplicates, normalized = prepare_data(data)
-    result = {
-        "run_id": run_id,
-        "source_only": True,
-        "counts": {name: len(rows) for name, rows in prepared.items()},
-        "inserted": 0,
-        "updated": 0,
-        "skipped": 0,
-        "pk_deduplicated": duplicates,
-        "normalized_values": normalized,
-    }
-    with connection(selected) as handle:
-        cursor = handle.cursor()
-        check_writer(cursor, selected)
-        for name, rows in prepared.items():
-            item = TABLES[name]
-            target = table_name(name)
-            primary = "[" + item["pk"] + "]"
-            for key, typed, payload in rows:
-                cursor.execute(
-                    "SELECT "
-                    + primary
-                    + ", run_id, original_values FROM "
-                    + target
-                    + " WITH (UPDLOCK,HOLDLOCK) WHERE "
-                    + primary
-                    + "=%s",
-                    (key,),
-                )
-                prior = cursor.fetchone()
-                # SQL collations may compare case, accents or trailing spaces
-                # as equal. Never update an equivalent-but-different physical
-                # PK while recording another key in original_values.
-                if prior and prior[0] != key:
-                    raise SqlServerError(
-                        "A SQL-collation key collision was refused; existing "
-                        "data was preserved."
-                    )
-                if prior and prior[1] != run_id:
-                    raise SqlServerError(
-                        "A fixed source key belongs to another run; existing "
-                        "data was preserved."
-                    )
-                if prior and prior[2] == payload:
-                    result["skipped"] += 1
-                    continue
-                if prior:
-                    changed = {
-                        column: value
-                        for column, value in typed.items()
-                        if column != item["pk"]
-                    }
-                    cursor.execute(
-                        "UPDATE "
-                        + target
-                        + " SET "
-                        + ",".join("[" + column + "]=%s" for column in changed)
-                        + ",original_values=%s,updated_at=SYSUTCDATETIME() "
-                        "WHERE " + primary + "=%s AND run_id=%s",
-                        (*changed.values(), payload, key, run_id),
-                    )
-                    result["updated"] += 1
-                else:
-                    columns = [*typed, "run_id", "original_values"]
-                    cursor.execute(
-                        "INSERT INTO "
-                        + target
-                        + " ("
-                        + ",".join("[" + column + "]" for column in columns)
-                        + ") VALUES ("
-                        + ",".join("%s" for _ in columns)
-                        + ")",
-                        (*typed.values(), run_id, payload),
-                    )
-                    result["inserted"] += 1
-        record_run(
-            cursor,
-            run_id,
-            seed,
-            scenario,
-            days,
-            sum(result["counts"].values()),
-            "fixed-sqlserver",
-        )
-        handle.commit()
-    return result
-
-
-def mutate(values, action, *, run_id, consent=False):
-    """Apply I/U/D only to the run's deterministic CDC test product."""
-    if (
-        consent is not True
-        or not isinstance(action, str)
-        or action not in {"insert", "update", "delete"}
-    ):
-        raise SqlServerError(
-            "A fixed CDC action and explicit consent are required."
-        )
-    if not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id):
-        raise SqlServerError(
-            "Fixed CDC run ID must contain 12 lowercase hex digits."
-        )
-    selected = validate_settings(values, consent=consent)
-    key = "CDC-" + run_id
-    target = table_name("erp_products")
-    with connection(selected) as handle:
-        cursor = handle.cursor()
-        check_writer(cursor, selected)
-        cursor.execute(
-            "SELECT product_id, run_id, original_values FROM "
-            + target
-            + " WITH (UPDLOCK,HOLDLOCK) WHERE product_id=%s",
-            (key,),
-        )
-        previous = cursor.fetchone()
-        if previous and previous[0] != key:
-            raise SqlServerError(
-                "A SQL-collation CDC key collision was refused; existing "
-                "data was preserved."
-            )
-        if previous and previous[1] != run_id:
-            raise SqlServerError(
-                "The CDC test product is not owned by this run."
-            )
-        changed = 0
-        if action == "delete":
-            if previous:
-                cursor.execute(
-                    "DELETE FROM "
-                    + target
-                    + " WHERE product_id=%s AND run_id=%s",
-                    (key, run_id),
-                )
-                changed = 1
-        else:
-            if action == "update" and not previous:
-                raise SqlServerError(
-                    "Insert the owned CDC test product before updating it."
-                )
-            if action == "insert" and previous:
-                return {
-                    "action": action,
-                    "changed_rows": 0,
-                    "run_id": run_id,
-                    "source_only": True,
-                }
-            row = {
-                "product_id": key,
-                "product_name": "合成CDC"
-                + ("更新" if action == "update" else "投入"),
-                "product_family": "SYNTHETIC",
-                "unit": "piece",
-                "standard_cycle_seconds": "30.000",
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }
-            payload = original_json(row)
-            if previous:
-                cursor.execute(
-                    "UPDATE "
-                    + target
-                    + " SET product_name=%s, original_values=%s, "
-                    "updated_at=SYSUTCDATETIME() WHERE product_id=%s AND "
-                    "run_id=%s",
-                    (row["product_name"], payload, key, run_id),
-                )
-            else:
-                cursor.execute(
-                    "INSERT INTO "
-                    + target
-                    + " (product_id,product_name,product_family,unit,"
-                    "standard_cycle_seconds,run_id,original_values) VALUES "
-                    "(%s,%s,%s,%s,%s,%s,%s)",
-                    (
-                        key,
-                        row["product_name"],
-                        row["product_family"],
-                        row["unit"],
-                        Decimal("30.000"),
-                        run_id,
-                        payload,
-                    ),
-                )
-            changed = 1
-        record_run(
-            cursor, run_id, 0, "clean", 1, changed, "fixed-cdc-" + action
-        )
-        handle.commit()
-    return {
-        "action": action,
-        "changed_rows": changed,
-        "run_id": run_id,
-        "source_only": True,
-    }

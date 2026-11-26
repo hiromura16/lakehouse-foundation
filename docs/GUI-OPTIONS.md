@@ -44,7 +44,7 @@ GUIで「実行順序やタイミングを組む」ことと、「列の型・�
 - 取り込みを試してBIまで見る: `demo,bi`。workerがメダリオンを処理し、SupersetでGoldを読む。
 - Notebookから分散加工する: `notebooks,compute`。Jupyter driverとSpark Workerの同一Python依存、event logを使用する。
 - 運用の自動化と可視化: `automation,monitoring`。同梱n8nフローは手動実行から始める。
-- CDCを確認する: `cdc,demo`。専用疑似DBの固定DMLと別のcdcメダリオンを使い、通常のsnapshot取込と区別する。
+- CDCを確認する: `cdc,demo`。所有権を確認した隔離ラボの専用DBと別のcdcメダリオンを使い、通常のsnapshot取込と区別する。
 
 GUIを追加しても列契約は自動変更されない。Datasetの編集、Notebookの任意コード、設定保存、workerの登録済みジョブは、それぞれ別の操作権限を必要とする。
 

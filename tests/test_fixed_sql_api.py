@@ -65,7 +65,7 @@ class FixedSqlApiTests(unittest.TestCase):
         self.headers = {"Authorization": "Bearer fixed-sql-unit-api"}
         self.adapter = mock.Mock()
         patch = mock.patch.object(
-            SQL_API, "fixed_sql_module", return_value=self.adapter
+            SQL_API, "source_diagnostic_module", return_value=self.adapter
         )
         patch.start()
         self.addCleanup(patch.stop)
@@ -86,29 +86,30 @@ class FixedSqlApiTests(unittest.TestCase):
             time.sleep(0.01)
         self.fail("Synthetic job did not finish.")
 
-    def test_fixed_generation_requires_two_consents_and_rejects_unknown_sql(
-        self,
-    ):
-        base = {"destination": "fixed-sqlserver", "allow_sql_write": True}
-        for extra in (
-            {},
-            {"confirm_shared_source_database": 1},
-            {"confirm_shared_source_database": True, "schema": "dbo"},
+    def test_removed_destinations_and_writer_consent_are_rejected(self):
+        """Former fixed writes fail before enqueue, even with consent."""
+        for payload in (
+            {"destination": "fixed-sqlserver", "allow_sql_write": True},
+            {
+                "destination": "landing-fixed-sqlserver",
+                "allow_sql_write": True,
+            },
+            {"destination": "landing", "confirm_shared_source_database": True},
         ):
-            with self.subTest(extra=extra):
-                reply = self.request("POST", "/jobs", json={**base, **extra})
+            with self.subTest(payload=payload):
+                reply = self.request("POST", "/jobs", json=payload)
                 self.assertEqual(reply.status_code, 422)
         self.generator.assert_not_called()
 
-    def test_run_id_and_fixed_consent_reach_source_only_generator(self):
+    def test_generic_sql_run_id_reaches_source_only_generator(self):
+        """Dedicated generic SQL jobs still carry the same approved options."""
         run_id = "012345abcdef"
         reply = self.request(
             "POST",
             "/jobs",
             json={
-                "destination": "fixed-sqlserver",
+                "destination": "sqlserver",
                 "allow_sql_write": True,
-                "confirm_shared_source_database": True,
                 "run_id": run_id,
                 "scenario": "clean",
             },
@@ -118,8 +119,9 @@ class FixedSqlApiTests(unittest.TestCase):
         self.assertEqual(result["status"], "succeeded")
         arguments = self.generator.call_args.kwargs
         self.assertEqual(arguments["run_id"], run_id)
-        self.assertTrue(arguments["confirm_shared_source_database"])
-        self.assertEqual(arguments["destination"], "fixed-sqlserver")
+        self.assertTrue(arguments["allow_sql_write"])
+        self.assertEqual(arguments["destination"], "sqlserver")
+        self.assertNotIn("confirm_shared_source_database", arguments)
 
     def test_diagnostics_filter_private_details_and_share_operation_lock(self):
         self.adapter.diagnose.return_value = {
@@ -144,6 +146,13 @@ class FixedSqlApiTests(unittest.TestCase):
         reply = self.request("GET", "/sql-source/status")
         self.assertEqual(reply.status_code, 200)
         self.assertNotIn("synthetic-private", reply.text)
+        settings = self.adapter.diagnose.call_args.args[0]
+        self.assertEqual(
+            self.adapter.diagnose.call_args.kwargs, {"role": "source"}
+        )
+        self.assertIn("SOURCE_SQLSERVER_PASSWORD", settings)
+        self.assertNotIn("SOURCE_SQLSERVER_CONTROL_PASSWORD", settings)
+        self.assertNotIn("DEMO_SQLSERVER_PASSWORD", settings)
 
     def test_checkpoint_diagnostic_is_authenticated_and_filters_secrets(self):
         """Use the control-only observer without enqueuing a write job."""
@@ -191,67 +200,25 @@ class FixedSqlApiTests(unittest.TestCase):
         self.assertNotIn("synthetic-private", reply.text)
         self.assertFalse(self.app.state.jobs.operation.locked())
 
-    def test_dml_is_fixed_authenticated_and_requires_strict_boolean(self):
-        endpoint = "/sql-source/demo/insert"
-        for body in (
-            {"confirm": 1, "run_id": "012345abcdef"},
-            {"confirm": False, "run_id": "012345abcdef"},
-            {
-                "confirm": True,
-                "run_id": "012345abcdef",
-                "sql": "synthetic-private-sql",
-            },
-        ):
-            reply = self.request("POST", endpoint, json=body)
-            self.assertEqual(reply.status_code, 422)
-            self.assertNotIn("synthetic-private", reply.text)
-        self.adapter.mutate.assert_not_called()
-        self.assertEqual(
-            self.request(
+    def test_fixed_dml_routes_are_absent(self):
+        """The old CRUD URLs must not dispatch or appear in OpenAPI."""
+        for action in ("insert", "update", "delete"):
+            reply = self.request(
                 "POST",
-                "/sql-source/demo/drop",
-                json={
-                    "confirm": True,
-                    "run_id": "012345abcdef",
-                },
-            ).status_code,
-            422,
+                "/sql-source/demo/" + action,
+                json={"confirm": True, "run_id": "012345abcdef"},
+            )
+            self.assertEqual(reply.status_code, 404)
+        self.assertNotIn(
+            "/sql-source/demo/{action}", self.app.openapi()["paths"]
         )
-        self.adapter.mutate.return_value = {
-            "changed_rows": 1,
-            "password": "synthetic-private-detail",
-        }
-        reply = self.request(
-            "POST",
-            endpoint,
-            json={
-                "confirm": True,
-                "run_id": "012345abcdef",
-            },
-        )
-        self.assertEqual(reply.status_code, 202)
-        result = self.wait(reply.json()["id"])
-        self.assertEqual(result["status"], "succeeded")
-        self.assertNotIn("synthetic-private", str(result))
-        self.assertTrue(self.adapter.mutate.call_args.kwargs["consent"])
+        self.adapter.mutate.assert_not_called()
 
-    def test_driver_failure_is_redacted_from_status_and_job(self):
+    def test_driver_failure_is_redacted_from_read_status(self):
         self.adapter.diagnose.side_effect = ValueError("synthetic-private-url")
         reply = self.request("GET", "/sql-source/status")
         self.assertEqual(reply.status_code, 422)
         self.assertNotIn("synthetic-private", reply.text)
-        self.adapter.mutate.side_effect = ValueError("synthetic-private-url")
-        reply = self.request(
-            "POST",
-            "/sql-source/demo/delete",
-            json={
-                "confirm": True,
-                "run_id": "012345abcdef",
-            },
-        )
-        result = self.wait(reply.json()["id"])
-        self.assertEqual(result["status"], "failed")
-        self.assertNotIn("synthetic-private", str(result))
         self.assertFalse(self.app.state.jobs.operation.locked())
 
     def test_snapshot_separates_reader_and_checkpoint_auth_from_worker(self):
@@ -303,7 +270,7 @@ class FixedSqlApiTests(unittest.TestCase):
             reader["SOURCE_SQLSERVER_CONTROL_PASSWORD"],
             "synthetic-control-private",
         )
-        self.assertIn("DEMO_SQLSERVER_USER", reader)
+        self.assertNotIn("DEMO_SQLSERVER_USER", reader)
         self.assertEqual(arguments[1], self.app.state.jobs.output)
 
     def test_snapshot_failure_redacts_driver_and_releases_job(self):

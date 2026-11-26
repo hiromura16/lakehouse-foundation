@@ -104,6 +104,11 @@ class PortalApiTests(unittest.TestCase):
         self.assertEqual(
             next(x["access"] for x in items if x["id"] == "catalog"), "read"
         )
+        paths = {item["path"] for item in items}
+        self.assertIn("/sql-source/status", paths)
+        self.assertIn("/sql-source/checkpoints", paths)
+        self.assertIn("/sql-source/cdc/rebuild", paths)
+        self.assertNotIn("/sql-source/demo/{action}", paths)
         datasets = catalog.json()["datasets"]
         self.assertEqual(len(datasets), 8)
         production = next(

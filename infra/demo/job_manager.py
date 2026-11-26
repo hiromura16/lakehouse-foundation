@@ -202,14 +202,6 @@ class JobManager:
                     break
                 if time.monotonic() >= deadline:
                     raise TimeoutError("Source job deadline exceeded.")
-                extra = {}
-                if options["destination"] in {
-                    "fixed-sqlserver",
-                    "landing-fixed-sqlserver",
-                }:
-                    extra["confirm_shared_source_database"] = options.get(
-                        "confirm_shared_source_database", False
-                    )
                 result = self.generator(
                     self.output,
                     run_id=options.get("run_id") or identifier,
@@ -225,7 +217,6 @@ class JobManager:
                     images=options["images"],
                     allow_sql_write=options["allow_sql_write"],
                     settings=settings,
-                    **extra,
                 )
                 with self.lock:
                     self.jobs[identifier]["results"].append(result)

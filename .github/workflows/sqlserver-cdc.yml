@@ -116,11 +116,8 @@ jobs:
         exit 1
     - name: Exercise scoped reader runtime on synthetic SQL objects
       run: python tests/integration/sqlserver_collation/scoped_reader.py
-    - name: Exercise fixed writer DML on synthetic SQL objects
-      if: >-
-        github.event_name != 'pull_request' ||
-        github.event.pull_request.head.repo.full_name == github.repository
-      run: python tests/integration/sqlserver_collation/scoped_writer.py
+    - name: Prove virgin and existing reader/control provisioning
+      run: python tests/integration/sqlserver_collation/retained_provisioning.py
     - name: Observe unwrapped transactions and scoped guard candidate
       run: python tests/integration/sqlserver_collation/transaction_probe.py
     - name: Approved conditional initialization acceptance (explicit pending risk)

@@ -157,7 +157,7 @@ class FixtureConsentTests(unittest.TestCase):
             with self.assertRaises(FIXTURE.FixtureError):
                 FIXTURE.variables(database, nonce, version)
         for changes in (
-            {"DemoWriterUser": "other_user"},
+            {"SourceReaderUser": "other_user"},
             {"TargetDatabase": "master"},
             {"ConfirmDisableCdc": "1"},
         ):
@@ -243,7 +243,7 @@ class FaultInjectionContractTests(unittest.TestCase):
     def test_checker_fault_precedes_identity_validation_after_creation(self):
         injected = FIXTURE.inject(FIXTURE.render("003", selected()), "checker")
         self.assertLess(
-            injected.index("EXEC sys.sp_executesql @SafetyDefinition"),
+            injected.index("EXEC sys.sp_executesql @ControlSafetyDefinition"),
             injected.index("THROW 51990"),
         )
         self.assertLess(
@@ -351,6 +351,30 @@ class FaultInjectionContractTests(unittest.TestCase):
         for index, body in enumerate(samples):
             with self.subTest(index=index):
                 self.assertEqual(linter.parse_string(body).violations, [])
+
+    def test_dormant_v2_fixture_checks_the_refusal_and_continued_reads(self):
+        fixture_runner = FIXTURE.Runner(
+            "tcp:127.0.0.1,1433", "sqlcmd", "synthetic", NONCE, VERSION
+        )
+        with mock.patch.object(fixture_runner, "execute") as execute:
+            fixture_runner.dormant_v2_residue(DATABASE, selected())
+        self.assertEqual(execute.call_count, 4)
+        setup, tables, permissions, retained = [
+            call.args[1] for call in execute.call_args_list
+        ]
+        self.assertIn(
+            "CREATE TABLE lh_demo_ctl.writer_legacy_policy_v2", setup
+        )
+        for number, sql in (("002", tables), ("003", permissions)):
+            self.assertIn("IF ERROR_NUMBER()<>51005 THROW", sql)
+            self.assertIn("dormant_v2_initializer_" + number + "_refused", sql)
+        self.assertIn("fixture_control", retained)
+        self.assertIn("fixture_reader", retained)
+        self.assertIn("fixture_marker=1", retained)
+        self.assertNotIn("EXEC [lh_demo_ctl].[check_writer_legacy", retained)
+        self.assertEqual(
+            Linter(dialect="tsql").parse_string(retained).violations, []
+        )
 
     def test_initialization_matrix_is_explicit_and_never_edits_system_rows(
         self,

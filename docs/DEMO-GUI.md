@@ -228,8 +228,8 @@ Streamlit **1.67.0** の [fragment](https://github.com/streamlit/streamlit/blob/
 
 SQLの本番接続を試すボタンや、Docker socket、任意shell、既存秘密値の読み戻しをこの画面へ追加する構成にはしていません。必要な新機能は、目的・対象・権限・失敗時の扱いを決めて [カスタマイズ](CUSTOMIZATION.md) へ進みます。
 
-## 固定疑似ERP/MESをSQL Serverへ投入する
+## 固定疑似ERP/MESの取込状態を確認する
 
-投入先に固定SQLとLanding併用の2方式を追加しました。従来のランダムschema方式と分け、DBAが固定DDLを適用した後に所有権・限定権限を診断します。書込み許可と共有sourceへの追加同意を両方必要とします。入力・型・run ID・有限microbatch・I/U/Dの手順は [固定SQL source](SQLSERVER-FIXED-DEMO.md) を参照してください。
+内蔵の固定SQL writerは廃止しました。「素材の投入」の「固定SQL sourceの読取診断」からSOURCE readerの診断ができます。合成の試験変更を供給する場合は [固定SQL source](SQLSERVER-FIXED-DEMO.md) に沿って、別途承認した外部ランタイムを使います。Landing・別専用DBへの素材生成は引き続き利用できます。
 
-固定SQLの投入後は「処理・検証」でsnapshot/増分を明示実行し、「接続状態」の固定SQL観測欄でbatch、実watermark、CDCを照会します。CDC rebuildは同意後のqueue受付と、同じrequest IDの処理完了を区別して表示します。batch/CDC別のGold previewは件数上限付きで、全件検証の代わりではありません。[画面ごとの受入条件](SQLSERVER-FIXED-DEMO.md#8-current-statereplaygui監視)
+試験データの用意を別途確認した後は「処理・検証」でsnapshot/増分を明示実行し、「接続状態」の固定SQL観測欄でbatch、実watermark、CDCを照会します。CDC rebuildは同意後のqueue受付と、同じrequest IDの処理完了を区別して表示します。batch/CDC別のGold previewは件数上限付きで、全件検証の代わりではありません。[画面ごとの受入条件](SQLSERVER-FIXED-DEMO.md#8-current-statereplaygui監視)

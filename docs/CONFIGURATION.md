@@ -204,10 +204,10 @@ Sail用の新しい接続体系・資格情報キーは追加しません。既�
 
 | 項目 | 生成時の既定 | 意味と変更時の影響 | 秘密 |
 | --- | --- | --- | --- |
-| `DEMO_SQLSERVER_HOST` | 空 | 合成データの投入先。ランダム方式はSOURCEと別DB。固定方式は所有権付き専用schema | 社内 |
+| `DEMO_SQLSERVER_HOST` | 空 | 汎用合成データの投入先。SOURCEと別の専用DB | 社内 |
 | `DEMO_SQLSERVER_PORT` | `1433` | テストDBのTCP port | 社内 |
-| `DEMO_SQLSERVER_DATABASE` | 空 | 作成済みの非system DB。SOURCE同名は既定拒否。固定方式だけ別記の厳格なshared許可条件を適用 | 社内 |
-| `DEMO_SQLSERVER_USER` | 空 | 固定方式は固定6表と必要制御表だけのDML principal。従来ランダム方式のDDL権限を固定APIへ流用しない | 社内 |
+| `DEMO_SQLSERVER_DATABASE` | 空 | 作成済みの非system DB。SOURCE同名への汎用生成は拒否 | 社内 |
+| `DEMO_SQLSERVER_USER` | 空 | 汎用のランダムschema生成用principal。SOURCE readerやcontrolに転用しない | 社内 |
 | `DEMO_SQLSERVER_PASSWORD` | 空 | そのテスト用ログインのパスワード | はい |
 | `DEMO_SQLSERVER_CA_FILE` | 空（実行時は `system`） | テストDBのTLS検証に使うホスト側PEMまたはsystem trust | 社内 |
 | `DEMO_SQLSERVER_HOSTNAME_IN_CERTIFICATE` | 空 | 接続先alias/IPと証明書名が異なる場合に、CAで検証した証明書へ照合する明示名。英数字・`_`・`.`・`-` の1〜253文字。空なら接続hostを照合し、TLS検証は維持する | 社内 |
@@ -451,11 +451,11 @@ Docker 29／Buildx Bake／社内proxyで判明した互換性修正の取り込�
 
 ## 固定SQL sourceの追加設定
 
-固定schema・shared source許可・installation ID・ownership token・暗号化とPoC証明書検証の既定を [固定SQL source設定表](SQLSERVER-FIXED-DEMO.md#1-private設定を生成upgradeする) にまとめています。生成/upgradeは既存値を保持します。固定schemaを任意名へ変更したり、SOURCE認証をwriterへ転用したりしません。
+固定schema・installation ID・ownership token・暗号化とPoC証明書検証の既定を [固定SQL source設定表](SQLSERVER-FIXED-DEMO.md#1-private設定を生成upgradeする) にまとめています。生成/upgradeは既存値を保持します。固定schemaを任意名へ変更したり、SOURCE認証をwriterへ転用したりしません。
 
 ### SQLバッチの制御principalと窓
 
-`SOURCE_SQLSERVER_CONTROL_USER/PASSWORD` は空が既定で、SOURCE readerやDEMO writerとは異なる既存principalを指定します。接続先とTLSはSOURCEの設定を使います。重なり窓 `SOURCE_SQLSERVER_BATCH_OVERLAP_SECONDS=300`（1〜86400）、安全遅延 `SOURCE_SQLSERVER_BATCH_SAFETY_LAG_SECONDS=5`（0〜3600）はprivate設定・GUIで保存し、再配置後に反映します。単に窓を広げても完全CDCやDELETE検出にはなりません。[baseline・checkpoint・復旧](SQLSERVER-FIXED-DEMO.md#6-watermark増分バッチ)
+`SOURCE_SQLSERVER_CONTROL_USER/PASSWORD` は空が既定で、SOURCE readerとは異なる既存principalを指定します。接続先とTLSはSOURCEの設定を使います。重なり窓 `SOURCE_SQLSERVER_BATCH_OVERLAP_SECONDS=300`（1〜86400）、安全遅延 `SOURCE_SQLSERVER_BATCH_SAFETY_LAG_SECONDS=5`（0〜3600）はprivate設定・GUIで保存し、再配置後に反映します。単に窓を広げても完全CDCやDELETE検出にはなりません。[baseline・checkpoint・復旧](SQLSERVER-FIXED-DEMO.md#6-watermark増分バッチ)
 
 固定CDCのCA、専用topic、DBA適用・無効化の詳細は [固定SQL sourceのCDC](SQLSERVER-FIXED-DEMO.md#7-固定6表のcdc準備とraw履歴) にまとめています。fixed-demoではOS標準CAはSOURCEのCA欄を空にします。genericが従来使わないSOURCEの `system` sentinelを勝手にhost mountしません。PEMとJava truststoreは別に管理します。
 

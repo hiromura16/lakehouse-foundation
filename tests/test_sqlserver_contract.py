@@ -136,7 +136,6 @@ class FixedSqlContractTests(unittest.TestCase):
             for item in DEMO.TABLES.values()
         } | {
             "lh_demo_ctl.installation",
-            "lh_demo_ctl.demo_runs",
             "lh_demo_ctl.batch_watermarks",
         }
         self.assertEqual(set(blocks), expected)
@@ -196,27 +195,21 @@ class FixedSqlContractTests(unittest.TestCase):
         ):
             self.assertIn("[" + name + "]", watermark)
         self.assertIn("[last_watermark] datetime2(7) NULL", watermark)
-        runs = blocks["lh_demo_ctl.demo_runs"]
-        for name in (
-            "run_id",
-            "seed",
-            "quality_mode",
-            "record_count",
-            "period_days",
-            "target_mode",
-            "started_at",
-            "completed_at",
-            "status",
-            "error_summary",
-        ):
-            self.assertIn("[" + name + "]", runs)
+        self.assertNotIn("lh_demo_ctl.demo_runs", blocks)
+        self.assertIn(
+            "AND t.name COLLATE Latin1_General_100_BIN2=N'demo_runs'",
+            source("002_demo_tables.sql"),
+        )
+        self.assertNotIn(
+            "FROM [lh_demo_ctl].[demo_runs]", source("006_demo_validation.sql")
+        )
 
     def test_permission_grants_are_object_only_and_principals_are_separate(
         self,
     ):
         sql = source("003_demo_permissions.sql")
         grants = re.findall(r"GRANT (.*?) ON (.*?) TO \[([a-z_]+)\];", sql)
-        self.assertEqual(len(grants), 27)
+        self.assertEqual(len(grants), 11)
         for permissions, target, role in grants:
             self.assertTrue(target.startswith("OBJECT::[lh_demo_"))
             self.assertTrue(
@@ -246,8 +239,8 @@ class FixedSqlContractTests(unittest.TestCase):
         self.assertNotRegex(
             sql, r"(?i)\bGRANT\s+(CONTROL|ALTER|CREATE)\b|\bdb_datawriter\b"
         )
-        self.assertIn("three distinct existing database users", sql)
-        self.assertIn("QUOTENAME(@Writer)", sql)
+        self.assertIn("two distinct existing database users", sql)
+        self.assertIn("QUOTENAME(@Control)", sql)
         self.assertIn("An existing role has unexpected permissions", sql)
 
     def test_privileged_checker_is_fixed_read_only_and_exactly_pinned(self):
@@ -267,6 +260,21 @@ class FixedSqlContractTests(unittest.TestCase):
         self.assertIn("fk.referenced_object_id", checker)
         self.assertIn("tr.is_disabled=0", checker)
         self.assertIn("))=9", checker)
+        self.assertNotIn(
+            "N'lh_demo_ctl.demo_runs'", DEMO.CONTROL_SAFETY_DEFINITION
+        )
+        self.assertIn("))=8", DEMO.CONTROL_SAFETY_DEFINITION)
+        self.assertIn("EXEC sys.sp_executesql @ControlSafetyDefinition", sql)
+        self.assertNotIn("lh_demo_writer", sql)
+        self.assertEqual(
+            {
+                row[2]
+                for row in re.findall(
+                    r"GRANT (.*?) ON (.*?) TO \[([a-z_]+)\];", sql
+                )
+            },
+            {"lh_demo_reader", "lh_demo_control_writer"},
+        )
         self.assertNotRegex(
             checker,
             r"(?i)\b(INSERT|UPDATE|DELETE|MERGE|ALTER|DROP|GRANT|REVOKE)\b",

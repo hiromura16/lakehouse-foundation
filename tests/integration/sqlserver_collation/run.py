@@ -82,6 +82,10 @@ FIXED_STAGES = (
         "disable_idempotent",
         "own_checker_reused",
         "own_checker_reused_again",
+        "dormant_v2_test_objects_created",
+        "dormant_v2_initializer_002_refused",
+        "dormant_v2_initializer_003_refused",
+        "dormant_v2_reader_control_preserved",
         "untrusted_checker_preserved",
         "corrupt_capture_preflight_refused",
         "corrupt_capture_preserved",
@@ -229,7 +233,6 @@ def variables(database, nonce, version):
         "InstallationId": nonce,
         "OwnershipHash": hashlib.sha256((nonce * 2).encode()).hexdigest(),
         "RepositoryVersion": version,
-        "DemoWriterUser": "fixture_writer",
         "SourceReaderUser": "fixture_reader",
         "ControlWriterUser": "fixture_control",
         "ConfirmDisableCdc": "0",
@@ -264,8 +267,8 @@ def inject(source, stage):
             51990,
         ),
         "grant": (
-            r"(?m)^GRANT SELECT, INSERT, UPDATE, DELETE ON OBJECT::"
-            r"\[lh_demo_erp\]\.\[products\] TO \[lh_demo_writer\];$",
+            r"(?m)^GRANT SELECT ON OBJECT::"
+            r"\[lh_demo_erp\]\.\[products\] TO \[lh_demo_reader\];$",
             51994,
         ),
         "enable": (r"(?m)^\s*@captured_column_list=@CapturedColumns;", 51991),
@@ -332,7 +335,7 @@ def create_database(database, nonce, collation):
         "EXEC sys.sp_addextendedproperty "
         "@name=N'LakehouseCollationFixtureOwner',@value="
         + literal(nonce)
-        + "; CREATE USER [fixture_writer] WITHOUT LOGIN;"
+        + ";"
         " CREATE USER [fixture_reader] WITHOUT LOGIN;"
         " CREATE USER [fixture_control] WITHOUT LOGIN;"
         " CREATE USER [fixture_legacy_user] WITHOUT LOGIN;"
@@ -370,11 +373,11 @@ SELECT N'{label}' AS stage, N'observed' AS status,
     CONVERT(bit,CASE WHEN OBJECT_ID(N'{CHECKER}',N'P') IS NULL
         THEN 0 ELSE 1 END) AS checker_present,
     (SELECT COUNT_BIG(*) FROM sys.database_principals WHERE name IN (
-        N'lh_demo_writer',N'lh_demo_reader',N'lh_demo_control_writer'))
+        N'lh_demo_reader',N'lh_demo_control_writer'))
         AS fixed_role_count,
     (SELECT COUNT_BIG(*) FROM sys.database_permissions p
         JOIN sys.database_principals r ON p.grantee_principal_id=r.principal_id
-        WHERE r.name IN (N'lh_demo_writer',N'lh_demo_reader',
+        WHERE r.name IN (N'lh_demo_reader',
                          N'lh_demo_control_writer')) AS fixed_permission_count
 FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);
 PRINT N'{PREFIX}'+@Snapshot_{label};
@@ -385,6 +388,7 @@ def expect_failure(source, number, stage, *, inspect_residual=False):
     """Catch only the intended test failure at a lower compilation level."""
     if number not in {
         51003,
+        51005,
         51018,
         51019,
         51110,
@@ -585,26 +589,72 @@ def assert_fixed_captures(count):
     )
 
 
-def successful_permissions():
-    """Check three narrow memberships and reject broad roles."""
+def successful_permissions(*, legacy=False):
+    """Verify the real control checker and least-privilege memberships."""
     return """IF (SELECT COUNT_BIG(*) FROM sys.database_role_members m
 JOIN sys.database_principals r ON m.role_principal_id=r.principal_id
 JOIN sys.database_principals u ON m.member_principal_id=u.principal_id
-WHERE (r.name COLLATE Latin1_General_100_BIN2=N'lh_demo_writer'
-       AND u.name COLLATE Latin1_General_100_BIN2=N'fixture_writer')
-   OR (r.name COLLATE Latin1_General_100_BIN2=N'lh_demo_reader'
+WHERE (r.name COLLATE Latin1_General_100_BIN2=N'lh_demo_reader'
        AND u.name COLLATE Latin1_General_100_BIN2=N'fixture_reader')
    OR (r.name COLLATE Latin1_General_100_BIN2=N'lh_demo_control_writer'
-       AND u.name COLLATE Latin1_General_100_BIN2=N'fixture_control'))<>3
-    THROW 51975, 'Expected three narrow role memberships.', 1;
+       AND u.name COLLATE Latin1_General_100_BIN2=N'fixture_control'))<>2
+    THROW 51975, 'Expected two narrow role memberships.', 1;
 IF EXISTS (SELECT 1 FROM sys.database_role_members m
 JOIN sys.database_principals r ON m.role_principal_id=r.principal_id
-WHERE m.member_principal_id IN (USER_ID(N'fixture_writer'),
-    USER_ID(N'fixture_reader'),USER_ID(N'fixture_control'))
+WHERE m.member_principal_id IN (USER_ID(N'fixture_reader'),
+    USER_ID(N'fixture_control'))
   AND r.name IN (N'db_owner',N'db_datawriter',N'db_ddladmin',
-                      N'db_securityadmin'))
-    THROW 51976, 'A synthetic runtime user gained a broad role.', 1;
+                      N'db_securityadmin',N'lh_demo_writer'))
+    THROW 51976, 'A synthetic runtime user gained a broad or legacy role.', 1;
+DECLARE @ControlProof TABLE(safe bit);
+INSERT @ControlProof EXEC sys.sp_executesql N'
+    EXECUTE AS USER=N''fixture_control'';
+    EXEC [lh_demo_ctl].[check_write_safety_v1];
+    REVERT;';
+IF (SELECT COUNT(*) FROM @ControlProof)<>1
+    OR NOT EXISTS (SELECT 1 FROM @ControlProof WHERE safe=1)
+    THROW 51976, 'Control checker must attest the installed table set.', 1;
+""" + (
+        ""
+        if legacy
+        else """IF OBJECT_ID(N'lh_demo_ctl.demo_runs') IS NOT NULL
+    OR DATABASE_PRINCIPAL_ID(N'lh_demo_writer') IS NOT NULL
+    THROW 51976, 'Virgin install has unexpected legacy writer artifacts.', 1;
 """
+    )
+
+
+def preserve_legacy_writer():
+    """Assert exact historical checker plus the old row, role and grant."""
+    old = (ROOT / "scripts/sqlserver_safety.sql").read_text().rstrip("\n")
+    return (
+        "DECLARE @LegacyDefinition nvarchar(max)="
+        + literal(old)
+        + ";\n"
+        + """IF NOT EXISTS (SELECT 1 FROM lh_demo_ctl.demo_runs
+                   WHERE marker=1)
+    OR (SELECT COUNT(*) FROM lh_demo_ctl.demo_runs)<>1
+    OR DATABASE_PRINCIPAL_ID(N'lh_demo_writer') IS NULL
+    OR NOT EXISTS (SELECT 1 FROM sys.database_role_members m
+                   WHERE m.role_principal_id
+                         =DATABASE_PRINCIPAL_ID(N'lh_demo_writer')
+                     AND m.member_principal_id
+                         =USER_ID(N'fixture_legacy_writer'))
+    OR (SELECT COUNT(*) FROM sys.database_permissions
+        WHERE grantee_principal_id=DATABASE_PRINCIPAL_ID(N'lh_demo_writer'))<>1
+    OR NOT EXISTS (SELECT 1 FROM sys.database_permissions
+        WHERE grantee_principal_id=DATABASE_PRINCIPAL_ID(N'lh_demo_writer')
+          AND major_id=OBJECT_ID(N'lh_demo_ctl.demo_runs') AND minor_id=0
+          AND permission_name=N'SELECT' AND state=N'G')
+    OR NOT EXISTS (
+        SELECT 1 FROM sys.sql_modules
+        WHERE object_id=OBJECT_ID(N'lh_demo_ctl.check_write_safety_v1')
+          AND DATALENGTH([definition])=DATALENGTH(@LegacyDefinition)
+          AND [definition] COLLATE Latin1_General_100_BIN2
+            = @LegacyDefinition COLLATE Latin1_General_100_BIN2)
+    THROW 51976, 'Legacy artifacts must remain unchanged.', 1;
+"""
+    )
 
 
 def prepare_legacy_cdc():
@@ -808,10 +858,9 @@ def replacement(selected):
     nonce = selected["InstallationId"]
     return prepare.replacement_script(
         {
-            "DEMO_SQLSERVER_DATABASE": selected["TargetDatabase"],
+            "SOURCE_SQLSERVER_DATABASE": selected["TargetDatabase"],
             "DEMO_SQLSERVER_INSTALLATION_ID": nonce,
             "DEMO_SQLSERVER_OWNERSHIP_TOKEN": nonce * 2,
-            "DEMO_SQLSERVER_USER": "fixture_writer",
             "SOURCE_SQLSERVER_USER": "fixture_reader",
             "SOURCE_SQLSERVER_CONTROL_USER": "fixture_control",
         },
@@ -1824,6 +1873,54 @@ PRINT @Evidence;
                 ),
             )
 
+    def dormant_v2_residue(self, database, selected):
+        """休止済みV2の同名オブジェクトを所有済み教材DBだけに置く。
+
+        旧V2の実装は一切起動しない。対象はメタデータの残置と、
+        初期化の拒否、現行reader/controlの継続である。
+        """
+        self.execute(
+            database,
+            """CREATE TABLE lh_demo_ctl.writer_legacy_policy_v2
+    (fixture_marker int NOT NULL PRIMARY KEY);
+INSERT lh_demo_ctl.writer_legacy_policy_v2 VALUES (1);
+EXEC sys.sp_executesql N'CREATE PROCEDURE
+    [lh_demo_ctl].[check_writer_legacy_delegation_v2] AS SELECT 0 AS inert;';
+"""
+            + record("dormant_v2_test_objects_created"),
+        )
+        for number in ("002", "003"):
+            self.execute(
+                database,
+                expect_failure(
+                    render(number, selected),
+                    51005,
+                    "dormant_v2_initializer_" + number + "_refused",
+                ),
+            )
+        self.execute(
+            database,
+            successful_permissions(legacy=True)
+            + preserve_legacy_writer()
+            + """DECLARE @ReaderProof TABLE(rows_read bigint);
+INSERT @ReaderProof EXEC sys.sp_executesql N'
+    EXECUTE AS USER=N''fixture_reader'';
+    SELECT COUNT_BIG(*) FROM [lh_demo_erp].[products];
+    REVERT;';
+IF (SELECT COUNT(*) FROM @ReaderProof)<>1
+    OR NOT EXISTS (SELECT 1 FROM @ReaderProof WHERE rows_read=0)
+    OR NOT EXISTS (SELECT 1 FROM lh_demo_ctl.writer_legacy_policy_v2
+                   WHERE fixture_marker=1)
+    OR NOT EXISTS (SELECT 1 FROM sys.sql_modules
+        WHERE object_id=OBJECT_ID(
+            N'lh_demo_ctl.check_writer_legacy_delegation_v2')
+          AND [definition] COLLATE Latin1_General_100_BIN2
+              LIKE N'%SELECT 0 AS inert;%')
+    THROW 51976, 'Dormant metadata must not block the retained roles.', 1;
+"""
+            + record("dormant_v2_reader_control_preserved"),
+        )
+
     def checker_identity(self, case):
         database, selected = self.fresh(
             "checker_" + case, "Latin1_General_CI_AS"
@@ -1833,6 +1930,14 @@ PRINT @Evidence;
         code = 51019
         if case == "own_exact":
             definition = canonical
+            setup += """
+CREATE TABLE lh_demo_ctl.demo_runs(marker int NOT NULL PRIMARY KEY);
+INSERT lh_demo_ctl.demo_runs VALUES (1);
+CREATE ROLE lh_demo_writer AUTHORIZATION dbo;
+CREATE USER fixture_legacy_writer WITHOUT LOGIN;
+ALTER ROLE lh_demo_writer ADD MEMBER fixture_legacy_writer;
+GRANT SELECT ON lh_demo_ctl.demo_runs TO lh_demo_writer;
+"""
         elif case == "unrelated":
             definition = canonical.replace("THEN 1 ELSE 0", "THEN 0 ELSE 0")
         elif case == "execution":
@@ -1877,15 +1982,20 @@ PRINT @Evidence;
             )
         self.execute(database, setup + record("checker_" + case + "_prepared"))
         if case == "own_exact":
+            self.execute(database, render("002", selected))
             self.execute(
                 database,
                 render("003", selected)
-                + successful_permissions()
+                + successful_permissions(legacy=True)
+                + preserve_legacy_writer()
                 + record("own_checker_reused"),
             )
             self.execute(
                 database,
-                render("003", selected) + record("own_checker_reused_again"),
+                render("003", selected)
+                + successful_permissions(legacy=True)
+                + preserve_legacy_writer()
+                + record("own_checker_reused_again"),
             )
         else:
             # Record a definition hash before the rejected attempt; do not
@@ -1906,6 +2016,7 @@ PRINT @Evidence;
             self.execute(
                 database, body + record("untrusted_checker_preserved")
             )
+        return database, selected
 
 
 def pending_drop_coverage(records):

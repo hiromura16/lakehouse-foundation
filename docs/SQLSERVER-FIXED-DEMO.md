@@ -1,11 +1,11 @@
 # 固定SQL sourceで疑似ERP・MESを検証する
 
 <!-- doc-purpose:start -->
-> **役割:** 所有権付き固定SQL表への合成データ投入と、読取専用バッチ・CDCの段階的な受入を行う。
+> **役割:** 所有権付き固定SQL表を読取り、バッチ・CDCの段階的な受入を行う。
 >
 > **対象読者:** 基盤構築担当 / データ利用担当 / 開発・設計担当
 >
-> **読むタイミング:** 同じ開発DBの固定6表で投入・snapshot・増分・CDCを比較するとき。
+> **読むタイミング:** 承認済み合成環境の固定6表でsnapshot・増分・CDCを観測するとき。
 >
 > **前提となる資料:** [GUIからダミーデータを投入する](<DEMO-GUI.md>) / [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>)
 >
@@ -14,16 +14,17 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
-既存の開発用SQL Serverに専用の合成データ領域を設け、同じ6表をsnapshot・増分・CDCで比較するための手順です。Landing投入とランダム検証schema方式も引き続き使えます。既存の業務表、過去PoCの表・capture instance・ログインは操作対象にしません。
+この手順は、承認済みの開発用SQL Serverにある所有権付きの固定6表を、snapshot・増分・CDCで観測するためのものです。内蔵の固定SQL writerとGUI/CLIからの固定表への書込みは廃止しました。固定6表に変更を発生させる検証は、専用の外部ランタイムを別途用意し、管理者立会いの合成環境でのみ行います。このリポジトリでは外部ランタイムの配置・認証・運用を行いません。Landingの素材生成、別専用DBへのランダムschema投入、隔離されたCDCラボは維持します。
 
-**検証の区別:** Pythonの単体テストは模擬driver、SQLは静的契約検査です。これらの成功だけでは、会社SQL Serverとの実接続やCDCの往復が成功したとは判断できません。導入先の承認済み開発DBで段階ごとに受け入れます。
+**検証の区別:** 単体・静的契約の成功は、実SQL ServerからKafka・Iceberg・BIまでの受入ではありません。実接続、CDCの到達、デプロイは今回のwriter廃止では実施していません。
 
 ## データと権限の境界
 
 ```mermaid
 flowchart LR
     GUI[Streamlit / Swagger] --> API[認証付き固定API]
-    API -->|DEMO限定writer・明示同意| SQL[固定6表 + 原値JSON]
+    External[別途承認した合成ソース] --> SQL[固定6表 + 原値JSON]
+    API -->|SOURCE reader・読取のみ| SQL
     DBA[DBAの手動SQL] -->|所有権・DDL・限定権限| SQL
     SQL -->|SOURCE SELECTのみ| Batch[明示バッチ取込]
     Batch --> Worker[DB資格情報を持たないworker]
@@ -41,13 +42,9 @@ flowchart LR
 | `mes_events` | `lh_demo_mes.events` | `event_id` |
 | `mes_downtime` | `lh_demo_mes.downtime` | `downtime_id` |
 
-`lh_demo_ctl.installation` はinstallation ID・所有権tokenのSHA-256・schema versionを保持します。`demo_runs` は投入履歴、`batch_watermarks` は別の狭いcontrol writerが更新するcheckpointです。DB owner資格情報はアプリへ渡しません。所有権hashを知っているだけでも書込みを許可しません。
+`lh_demo_ctl.installation` はinstallation ID・所有権tokenのSHA-256・schema versionを保持します。`batch_watermarks` は別の狭いcontrol writerが扱うcheckpointです。旧環境の `demo_runs` は残っていても参照・更新しません。DB owner資格情報はアプリへ渡しません。
 
-### 同一DBの許可条件
-
-既定は拒否です。privateの `DEMO_SQLSERVER_ALLOW_SHARED_SOURCE_DATABASE=true`、DEMO/SOURCEのhost・port・database完全一致、固定3schema、installation ID・所有権hash・version・実接続先DBの一致、限定権限、要求ごとの明示同意を必要とします。固定方式だけの例外であり、既存のランダムschema方式へ許可を広げません。
-
-任意schema・table・SQLをHTTP入力にせず、`dbo`、DROP DATABASE、既存schema削除を提供しません。過去PoCの権限を持つwriterがそのまま合格するとは限りません。対象外の書込み権限、DB/serverの広い権限、installationを書き換えられる制御schema権限は拒否します。既存ロールは自動REVOKEしません。DBAが影響を評価し、用途を分けた既存principalを選ぶか、既存権限を明示的に狭めます。
+固定6表やschema、capture、topic、SQL Server Agent、既存のDB roleやGRANTは、writer廃止の際に削除・変更しません。アプリは任意schema・table・SQLを受け付けず、旧writerの構成を別機能に転用しません。
 
 ## 1. private設定を生成・upgradeする
 
@@ -65,7 +62,6 @@ chmod 600 "$ENV_FILE"
 
 | キー | 生成時の既定 | 方針 |
 | --- | --- | --- |
-| `DEMO_SQLSERVER_ALLOW_SHARED_SOURCE_DATABASE` | `false` | shared sourceを既定拒否 |
 | `DEMO_SQLSERVER_ERP_SCHEMA` / `MES_SCHEMA` / `CONTROL_SCHEMA` | 固定3schema | 任意schemaへの変更を拒否 |
 | `DEMO_SQLSERVER_INSTALLATION_ID` | 32桁hexを生成 | 導入後は保持 |
 | `DEMO_SQLSERVER_OWNERSHIP_TOKEN` | 64桁hexを生成 | 秘密値。DBへSHA-256だけ登録 |
@@ -74,13 +70,15 @@ chmod 600 "$ENV_FILE"
 
 証明書検証を省略しても通信暗号化は維持します。ただしCA chainと接続先名の検証は省略されます。実データ・本番利用へ進む前に `false` と正式CAへ戻し、なりすまし対策を受け入れます。PoC設定を会社全体のTLS方針として流用しません。
 
-## 2. DBAがDDLを手動で適用する
+## 2. 合成用の新規環境をDBAが準備する
+
+以下は承認済みの新規合成環境向けです。既存サイトを移行・初期化する手順ではありません。
 
 `infra/sqlserver` のSQLはSQLCMD変数と実接続DBの一致を検査します。変数の実値はGit外のprivate SQLCMD入力で管理します。SSMSはSQLCMD Mode、CLIは承認されたsqlcmdとDBA認証を使い、パスワードを引数へ書きません。
 
 適用順は [001_demo_schemas.sql](../infra/sqlserver/001_demo_schemas.sql) → [002_demo_tables.sql](../infra/sqlserver/002_demo_tables.sql) → [003_demo_permissions.sql](../infra/sqlserver/003_demo_permissions.sql) → [006_demo_validation.sql](../infra/sqlserver/006_demo_validation.sql) です。各SQLの冒頭に必要な変数と前後の検査があります。CDCは後段の別手順です。
 
-必要なSQLCMD変数は `TargetDatabase`、`InstallationId`、`OwnershipHash`、`RepositoryVersion`、`DemoWriterUser`、`SourceReaderUser`、`ControlWriterUser` です。最後の3名は異なる既存DBユーザーとします。control writerの認証はSOURCE readerとは別の `SOURCE_SQLSERVER_CONTROL_USER/PASSWORD` に保存し、空欄のままreaderを昇格させません。
+必要なSQLCMD変数は `TargetDatabase`、`InstallationId`、`OwnershipHash`、`RepositoryVersion`、`SourceReaderUser`、`ControlWriterUser` です。最後の2名は異なる既存DBユーザーとします。control writerの認証はSOURCE readerとは別の `SOURCE_SQLSERVER_CONTROL_USER/PASSWORD` に保存し、空欄のままreaderを昇格させません。
 
 代入文字列のSQL注入を避けるため、private設定を編集した後に変数ファイルを生成します。このコマンドはDBに接続せず、識別子を検査してtokenのSHA-256だけを0600ファイルへ保存します。
 
@@ -94,96 +92,38 @@ python3 scripts/prepare-sqlserver.py \
 
 DBAはSSMSで承認済み開発DBへ接続し、Query → SQLCMD Modeを有効にします。生成したprivate変数ファイルを先頭へ読み込み、その後に上の4ファイルの内容を順に開いて実行します。各実行で同じ変数が有効であることと、接続先DBを確認します。エラーなら次のSQLへ進みません。ファイルや変数の内容を公開Issue/PR/スクリーンショットへ添付しません。アプリ側からこのSQLを実行するAPIはありません。
 
-初回ownership設定は空状態・既存オブジェクト・versionを確認してから行います。既存データを消して作り直す初期化はありません。別用途の同名オブジェクトがあれば停止し、強制上書きしません。新しいログインやパスワードを作らず、既存DB principalへ業務6表と必要な制御表だけの権限を付与します。`db_owner`、`db_datawriter`、schema全体のCONTROLをruntimeへ渡しません。
+初回ownership設定は空状態・既存オブジェクト・versionを確認してから行います。既存データを消して作り直す初期化はありません。別用途の同名オブジェクトがあれば停止し、強制上書きしません。新しいログインやパスワードを作らず、SOURCE readerには固定表の読取り、control writerにはcheckpointの限定権限だけを付与します。`db_owner`、`db_datawriter`、schema全体のCONTROLをruntimeへ渡しません。
 
-### Runtime metadata safety checker
+**既存環境のアプリ更新では、001〜006のDBA用SQLは再実行しません。** 旧V2の承認表・手続きが既にあれば、そのまま残し、現行のreader/controlから読み込み・実行・権限変更をしません。002/003の既存オブジェクト境界はV2を初期化資産とは扱わず、これらが残るDBへ手動で再適用すると停止し得ます。再適用の互換は保証しません。停止時は資産を維持してDBAに確認し、通すためのDROP、REVOKE、書き換えは行いません。
 
-The DBA permission script installs the fixed, no-argument
-`lh_demo_ctl.check_write_safety_v1` procedure with `EXECUTE AS 'dbo'`.
-It reads metadata only and returns one safety bit. The dbo context can see
-legacy child tables and inbound cascading foreign keys that a restricted
-writer cannot see. Runtime writers receive EXECUTE and VIEW DEFINITION only
-on this checker, not database-wide metadata privileges or new data access.
-The SOURCE reader receives neither permission.
+### checkpoint更新の副作用を検査する
 
-The [canonical checker definition](../scripts/sqlserver_safety.sql) is pinned
-by both the installation script and runtime. A missing or changed definition,
-wrong owner/execution identity, hidden definition, unsafe result, or execution
-failure blocks mutations. Existing same-name procedures are never overwritten.
-The DBA must apply the updated permission script before writes resume; there
-is no fallback to incomplete caller-visible metadata.
+引数なしの `lh_demo_ctl.check_write_safety_v1` は `EXECUTE AS 'dbo'` でmetadataを検査し、固定の安全判定を返します。限定controlの可視範囲外にあるtriggerや外部キーも確認するためのもので、業務表への書込みやDB全体の閲覧権限は付与しません。SOURCE readerにはこの手続きの実行権限を与えません。
 
-Effective column SELECT/UPDATE permissions are also checked, including grants
-inherited through roles and column grants overriding object DENYs.
-Installation ownership columns remain read-only. Legacy column access outside
-the role's allowlist is refused; the SOURCE reader may retain SELECT only.
+新規環境では必須8表を対象とする同名v1の厳密な定義を使います。既存環境では、旧 `demo_runs` を含む9表版の正規定義も認識し、書き換えません。定義、所有者、実行主体の不一致、不可視、失敗は安全扱いしません。checkpoint更新前に検査しますが、検査後の並行DDLまで防ぐものではありません。
 
-The metadata check runs within the same connection and transaction as the
-mutation. This does not fully prevent concurrent DDL after the check. Stop
-runtime writers during DBA schema, trigger, FK, or permission changes, then
-rerun diagnostics before resuming. Do not modify the checker to bypass a
-failed diagnostic.
+## 3. GUIで読取り診断を行う
 
-These regressions are mock-driver and static SQL checks, not live SQL Server
-acceptance. In an approved disposable database, verify an inherited column
-UPDATE on installation.ownership_hash, legacy column SELECT/UPDATE, a hidden
-legacy child with ON DELETE CASCADE, and a missing/altered checker. Each unsafe
-writer must be refused before DML.
-
-### 既存PoCの別テーブルに限定DMLを併有する場合（任意）
-
-任意の[DBA専用V2準備SQL](../infra/sqlserver/optional/007_writer_legacy_policy_v2.sql)
-は、承認台帳と読取り専用の厳格なメタデータcheckerを追加します。
-標準001–006や起動時には実行せず、既存権限を自動で許可しません。
-対象DB・installation一致とDBA専用権限を別途確認した場合だけ、DBAが
-別PoCの個別テーブルと1操作ずつを台帳へ登録します。dbo自身が
-`sys.tables`、`sys.schemas`、`sys.database_principals` と既存の
-installationから、現在のobject/schema ID、厳密な名前、作成時刻、
-限定writerのSID/DB principal IDを照合してください。同名の再作成、
-ログイン変更やDB移行は承認を引き継ぎません。
-
-許可は通常テーブルの実効object-level `SELECT` / `INSERT` / `UPDATE` /
-`DELETE` のうち、DBAが個別に承認した操作だけです。このV2を利用するには
-SQL Serverの証明書を検証する既存TLS設定が必要です。証明書を未検証のまま
-信頼する設定ではV2を使わず、従来の厳格判定に戻ります。別object、
-列単位の個別GRANT、委任可能な権限、
-未確認の役割、DDL、管理権限はこの例外に含めません。オプションの
-表・checkerの所有者や定義・権限境界を確認できない場合はfail closedと
-します。固定DMLの対象は従来と同じ固定6表と管理表で、別PoC表へ書き込む
-経路を追加しません。reader、control、全体監査、V1の副作用checkerは
-変えません。台帳はDBAだけが管理し、定義・権限・役割を変える間は
-writerを停止してください。
-
-[使い捨てSQL2022のwriter受入](../tests/integration/sqlserver_collation/scoped_writer.py)
-は、別ロール経由の限定DMLを合成DBで再現し、行の実commit/読戻しと、
-対象外書込み・委任・必須権限不足の拒否を別接続で検査します。
-実サイトの権限・CDC・デプロイは対象外です。
-
-## 3. GUIで診断して素材を投入する
-
-1. private設定とDokploy側を整合させ、承認済み手順でアプリへ反映します。GUIのSaveだけでは稼働設定は変わりません。
-2. **素材の投入 → 固定SQL sourceの初期化・状態・CDC用DML → 固定schema・所有権・限定権限を診断** で、所有権・version・6表を確認します。診断は読取りだけです。
-3. 投入先を **固定疑似ERP/MES SQL Server** または **ランディング + 固定SQL source** とし、最初はclean、seed 42、20件、7日、1batchにします。
-4. 書込み許可と固定領域への追加同意を両方選びます。run IDは空欄で自動生成、または12桁の小文字hexを指定します。
-5. jobの完了を照会します。202受付や素材成功をLakehouse取込成功と取り違えません。
-
-有限マイクロバッチは指定した回数と間隔で終了し、batchごとに業務キーを分けます。外部ERPの無限streamを再現する機能ではありません。
+「素材の投入」の「固定SQL sourceの読取診断」で診断します。`GET /sql-source/status` はSOURCE readerで接続先・所有権・限定権限・6表を観測します。接続情報や所有権hashは返しません。診断は固定6表への書込みやCDCの往復成功を示しません。
 
 ### SQLの型と原値を分ける
 
-業務列は `nvarchar`、`bigint`、`decimal(18,3)`／`decimal(18,2)`、`date`、`datetime2(7)` です。SQLの`created_at`と`updated_at`はserver UTCで、後者を増分位置に使います。生成元の歴史的な`updated_at`は `original_values` JSONに保持します。
+業務列は `nvarchar`、`bigint`、`decimal(18,3)`／`decimal(18,2)`、`date`、`datetime2(7)` です。SQLの `created_at` と `updated_at` はserver UTCで、後者を増分位置に使います。原値は `original_values` JSONで保持し、NULLと空文字も区別します。外部の合成ソースは型・業務キー・原値JSONの契約を揃える必要があります。
 
-SQL型へ入らない異常は、型付き列をNULLとし、JSONに元の値を残します。NULLと空文字も区別します。後段のメダリオンは原値JSONを使って異常を隔離します。主キー欠落・長さ超過など安定キーを作れない入力は拒否します。同じPKの重複・改訂は最新版を決定的に選ぶため、Landing原始行数と固定SQL件数は一致するとは限りません。
+## 4. CDCの受入に用いる合成データ
 
-## 4. CDC用の試験レコードを操作する
+実データを使わず、別途承認済みの外部ランタイムで固定6表に生じた試験変更について、原本のI/U/Dと各層の到達を照合します。DELETE本体とKafka tombstoneは区別し、再送・再起動時に欠落や重複がないか確認します。権限の承認、監督付きの操作、実SQL ServerからKafka・Raw・Current State・Trino・BIへの受入は別工程です。本変更でそれらを実行済みとは扱いません。
 
-同じexpanderで試験run ID・同意を選び、INSERT → UPDATE → DELETEを順に実行します。対象はそのrunに属する固定productだけで、任意キーの既存行を操作できません。操作・run IDを後段のrawイベント・現在値へ追跡します。DELETE本体とKafka tombstoneは別イベントです。DML成功だけではCDC到着を保証しません。
+既存DB・構成・履歴はそのまま保全します。旧役割、表、所有権情報、capture、watermarkの削除・リセット・再初期化はこの変更に含まれません。
 
-## 切り戻しと受入
+証拠は次の3段階を混同しません。
 
-旧アプリへ戻してもSQL表・installation・CDC・watermarkを自動削除しません。所有権tokenを再生成して戻そうとせず、private設定とデータを保持します。CDC停止やDDL変更はDBAが別途評価します。
+| 証拠 | 証明する範囲 |
+|---|---|
+| 使い捨てSQL Server 2022 CI | 独立した合成principalが書いた製品1件のI/U/Dを、SOURCE readerが実captureで照合。before/after、固定キー、原値JSONの一致を確認します。簡略な合成表を使い、productionの6表DDL／captureの検査は同CIの別試験です。 |
+| 既存の合成CDCテスト | Debezium形式の試験データでRaw・Current State・replay等の契約を検査。実Kafka接続や実サービスの到達を意味しません。 |
+| 外部ランタイムおよび全体の受入 | 別立ての隔離環境で、外部アプリ → SQL Server → Debezium/Kafka → Raw／Bronze → Current State／Silver／Gold → Trino／Supersetの同一変更を照合します。外部アプリの権限・実際の投入、実トピック・offset・再送・BI読取はこのPRのCI対象外です。 |
 
-cleanで件数、日本語、decimal、NULL/空文字、UTCと第7小数桁を確認し、その後edge、増分再実行、部分失敗、DELETE、再起動・raw replayへ進みます。単体・静的契約・実DB統合のどれを実施したか、報告書で区別します。
 
 ## 5. フルスナップショットを取り込む
 
@@ -191,7 +131,7 @@ cleanで件数、日本語、decimal、NULL/空文字、UTCと第7小数桁を�
 
 SOURCE readerは所有権と読取り専用権限を検査し、SERIALIZABLE transactionと6表への共有lockで小規模PoCの一貫した読取りを行います。lock待ちは5秒、各SQLのtimeoutも設定します。アプリからDBのisolation設定を変更することはありません。業務writerを待たせ得るため、大規模な本番source用の抽出方式とは分けます。
 
-原値JSONを正本とし、SQLの実PKと一致を確認します。型付き列だけを手動UPDATEしてJSONを同期しない操作は、この固定sourceの契約外です。合成データ・I/U/Dは固定APIを使います。実ERPの通常の型付き表を読む場合は、別の汎用extract/mapping設計を使います。
+原値JSONを正本とし、SQLの実PKと一致を確認します。型付き列だけを手動UPDATEしてJSONを同期しない操作は、この固定sourceの契約外です。合成データ・I/U/Dを供給する外部ランタイムは、本リポジトリの管理外です。実ERPの通常の型付き表を読む場合は、別の汎用extract/mapping設計を使います。
 
 単一原値は128 KiB、各表10万行、全JSONは16 MiBに制限します。日本語・decimal文字列・NULL・空文字・UTCの7桁時刻を保持します。生成されたASCIIの安定PKを対象にし、任意のUnicodeキーを正規化して同じキーへ丸めません。大きすぎる入力は公開前に拒否します。
 
@@ -217,7 +157,7 @@ runtimeは有効なobject権限、広いrole、固定対象のmetadata・trigger
 
 ## 6. watermark増分バッチ
 
-private設定の `SOURCE_SQLSERVER_CONTROL_USER/PASSWORD` に、DBAが用意した別の限定principalを指定します。接続先・TLSはSOURCE設定を共有しますが、SOURCE readerの認証を流用しません。DEMO writerの名前も比較用に必要です。3つのidentityは異なるものとし、DEMOのパスワードをバッチへ渡しません。
+private設定の `SOURCE_SQLSERVER_CONTROL_USER/PASSWORD` に、DBAが用意した別の限定principalを指定します。接続先・TLSはSOURCE設定を共有しますが、SOURCE readerの認証を流用しません。readerとcontrolは異なる既存principalを使います。合成データを作る外部ランタイムの認証は、バッチへ渡しません。
 
 | 設定 | 既定 | 制限・用途 |
 | --- | --- | --- |
@@ -227,7 +167,7 @@ private設定の `SOURCE_SQLSERVER_CONTROL_USER/PASSWORD` に、DBAが用意し�
 
 最初にcontrol設定を反映した状態でフルsnapshotを実行し、結果の **checkpointed=true** を確認します。control両項目が空でもsnapshot自体は使えますが、checkpointed=falseで増分のbaselineを作りません。片方だけの設定やreader/adminの流用は拒否します。
 
-その後、素材の投入で有限microbatchを選び、例えば3回・5秒間隔で投入します。最後の投入から安全遅延の時間を置き、処理・検証の **Watermark増分バッチ** を選んで同意します。Swaggerは `POST /sql-source/batches/incremental` に `{"confirm": true}` を送ります。任意table・SQL・watermark値をAPIから指定しません。
+その後、承認済みの外部ランタイムによる合成データの変更を別途確認し、安全遅延の時間を置いてから、処理・検証の **Watermark増分バッチ** を選んで同意します。Swaggerは `POST /sql-source/batches/incremental` に `{"confirm": true}` を送ります。任意table・SQL・watermark値をAPIから指定しません。
 
 ### 読取りと確定の順番
 
@@ -251,7 +191,7 @@ private設定の `SOURCE_SQLSERVER_CONTROL_USER/PASSWORD` に、DBAが用意し�
 
 ## 7. 固定6表のCDC準備とRaw履歴
 
-このモードは `CDC_SOURCE_MODE=fixed-demo` です。既定の `generic` は従来の外部mappingを使い、変更しません。fixed-demoは `SOURCE_SQLSERVER_*` のread-only接続を再利用し、DEMO writerやcontrol writerの資格情報をDebeziumへ渡しません。runtime readerに管理者権限を付けません。
+このモードは `CDC_SOURCE_MODE=fixed-demo` です。既定の `generic` は従来の外部mappingを使い、変更しません。fixed-demoは `SOURCE_SQLSERVER_*` のread-only接続を再利用し、外部ランタイムやcontrol writerの資格情報をDebeziumへ渡しません。runtime readerに管理者権限を付けません。
 
 | 設定 | 既定 | fixed-demoでの意味 |
 | --- | --- | --- |
@@ -364,7 +304,7 @@ consumerの単一実行threadがKafka読取りを止め、RawのIceberg snapshot
 
 catalogと対象DB/table variableでcollationが異なる場合、003/004/005の異種文字列比較を両辺`Latin1_General_100_BIN2`へ揃えます。DB/server collation変更や安全gateの解除はしません。006は読取り専用のままcapture healthと共有jobを表示し、固定名の照合も明示BIN2にします。canonical checkerは維持します。
 
-003の失敗を全変更rollback済みとは扱いません。新しい専用DBA sessionで[読取り専用preflight](../infra/sqlserver/diagnostics/003_permissions_preflight.sql)を実行し、installation・checkerの完全定義/owner/EXECUTE AS/ANSI flagsと限定role/permissionを確認します。51019でも自動DROP/ALTERや空白削除による照合緩和はしません。既に003と3用途のrole割当を確認できた場合は006から進み、不要な003再実行を避けます。004は承認済み修正版だけを使い、その後006で確認します。005は通常導入では実行しません。
+003の失敗を全変更rollback済みとは扱いません。新しい専用DBA sessionで[読取り専用preflight](../infra/sqlserver/diagnostics/003_permissions_preflight.sql)を実行し、installation・checkerの完全定義/owner/EXECUTE AS/ANSI flagsと限定role/permissionを確認します。51019でも自動DROP/ALTERや空白削除による照合緩和はしません。既にreader/controlのrole割当を確認できた場合は006から進み、不要な003再実行を避けます。004は承認済み修正版だけを使い、その後006で確認します。005は通常導入では実行しません。
 
 VS Code MSSQLからSQL loginでDBA作業も可能です。DBA passwordはruntime/site.env/Dokployへ保存しません。Windows Go/ODBC sqlcmdの版、空白入りpath、`:r`とPowerShellの引用の違い、残存objectの保全条件は[DDL診断・回復手順](SQLSERVER-DDL-RECOVERY.md)を参照してください。実SQL Server/Windowsでの受入はsourceテストと別です。
 
@@ -385,7 +325,7 @@ TAKE OWNERSHIP、固定6表とinstallationのDML/DDL権限は拒否します。
 列単位の実効UPDATE権限も対象です。無関係なDB objectは列挙しません。
 無関係objectの `fn_my_permissions` が空でも登録拒否にはしません。
 これはDB全体の最小権限を証明するものではなく、DBAが管理する境界です。
-writer/controlは従来の厳格な全体監査を維持します。
+controlは従来の厳格な全体監査を維持します。
 
 従来の保守的な全DB監査は、承認されたSOURCE環境変数を設定した
 非公開の作業セッションで `python scripts/audit_sqlserver_source_permissions.py`

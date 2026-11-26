@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 from job_manager import JobConflict, JobManager, OperationFailure
 from poc_api import portal_router
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from service import generate_batch, scenario_destination
+from service import generate_batch
 from sqlsource_api import sqlsource_router
 from sqlsource_observer import observation_router
 
@@ -109,16 +109,9 @@ class SourceJob(BaseModel):
     anomalies: list[str] = Field(default_factory=list, max_length=32)
     anomaly_rate: int = Field(default=10, ge=1, le=100)
     allow_file_faults: bool = False
-    destination: Literal[
-        "landing",
-        "sqlserver",
-        "both",
-        "fixed-sqlserver",
-        "landing-fixed-sqlserver",
-    ] = "landing"
+    destination: Literal["landing", "sqlserver", "both"] = "landing"
     images: bool = False
     allow_sql_write: bool = False
-    confirm_shared_source_database: bool = False
     run_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{12}$")
 
     @model_validator(mode="after")
@@ -134,18 +127,12 @@ class SourceJob(BaseModel):
             raise ValueError("Scheduled waiting exceeds ten minutes.")
         if self.destination != "landing" and not self.allow_sql_write:
             raise ValueError("SQL destination requires explicit consent.")
-        if self.destination in {"fixed-sqlserver", "landing-fixed-sqlserver"}:
-            if not self.confirm_shared_source_database:
-                raise ValueError("Fixed source requires additional consent.")
-        if (
-            self.destination in {"sqlserver", "fixed-sqlserver"}
-            and self.images
-        ):
+        if self.destination == "sqlserver" and self.images:
             raise ValueError("Images require a landing destination.")
         self.anomalies = list(
             source_scenario_engine().validate_selection(
                 anomalies=self.anomalies,
-                destination=scenario_destination(self.destination),
+                destination=self.destination,
                 images=self.images,
                 allow_file_faults=self.allow_file_faults,
                 anomaly_rate=self.anomaly_rate,

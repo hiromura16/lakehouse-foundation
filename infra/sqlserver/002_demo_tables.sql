@@ -107,21 +107,7 @@ CREATE TABLE [lh_demo_ctl].[installation] (
     CONSTRAINT [UQ_lh_demo_ctl_installation_identity] UNIQUE (installation_id)
 );
 
-IF OBJECT_ID(N'lh_demo_ctl.demo_runs', N'U') IS NULL
-CREATE TABLE [lh_demo_ctl].[demo_runs] (
-    [run_id] char(12) NOT NULL,
-    [seed] int NOT NULL,
-    [quality_mode] nvarchar(16) NOT NULL,
-    [record_count] int NOT NULL,
-    [period_days] int NOT NULL,
-    [target_mode] nvarchar(32) NOT NULL,
-    [started_at] datetime2(7) NOT NULL DEFAULT SYSUTCDATETIME(),
-    [completed_at] datetime2(7) NULL DEFAULT SYSUTCDATETIME(),
-    [status] nvarchar(16) NOT NULL,
-    [error_summary] nvarchar(512) NULL,
-    CONSTRAINT [PK_lh_demo_ctl_demo_runs] PRIMARY KEY ([run_id])
-);
-
+-- Existing demo_runs is inert legacy data; fresh installs do not create it.
 IF OBJECT_ID(N'lh_demo_ctl.batch_watermarks', N'U') IS NULL
 CREATE TABLE [lh_demo_ctl].[batch_watermarks] (
     [source_table] nvarchar(64) NOT NULL,
@@ -238,16 +224,6 @@ INSERT INTO @Expected VALUES
     (N'lh_demo_ctl',N'installation',N'installed_at',N'datetime2',8,27,7,0,0),
     (N'lh_demo_ctl',N'installation',N'installed_by',N'nvarchar',256,0,0,0,0),
     (N'lh_demo_ctl',N'installation',N'repository_version',N'nvarchar',256,0,0,0,0),
-    (N'lh_demo_ctl',N'demo_runs',N'run_id',N'char',12,0,0,0,1),
-    (N'lh_demo_ctl',N'demo_runs',N'seed',N'int',4,10,0,0,0),
-    (N'lh_demo_ctl',N'demo_runs',N'quality_mode',N'nvarchar',32,0,0,0,0),
-    (N'lh_demo_ctl',N'demo_runs',N'record_count',N'int',4,10,0,0,0),
-    (N'lh_demo_ctl',N'demo_runs',N'period_days',N'int',4,10,0,0,0),
-    (N'lh_demo_ctl',N'demo_runs',N'target_mode',N'nvarchar',64,0,0,0,0),
-    (N'lh_demo_ctl',N'demo_runs',N'started_at',N'datetime2',8,27,7,0,0),
-    (N'lh_demo_ctl',N'demo_runs',N'completed_at',N'datetime2',8,27,7,1,0),
-    (N'lh_demo_ctl',N'demo_runs',N'status',N'nvarchar',32,0,0,0,0),
-    (N'lh_demo_ctl',N'demo_runs',N'error_summary',N'nvarchar',1024,0,0,1,0),
     (N'lh_demo_ctl',N'batch_watermarks',N'source_table',N'nvarchar',128,0,0,0,1),
     (N'lh_demo_ctl',N'batch_watermarks',N'last_watermark',N'datetime2',8,27,7,1,0),
     (N'lh_demo_ctl',N'batch_watermarks',N'last_primary_key',N'nvarchar',320,0,0,1,0),
@@ -326,7 +302,9 @@ LEFT JOIN (
       ON ic.object_id=i.object_id AND ic.index_id=i.index_id
     WHERE i.is_primary_key=1
 ) pk ON pk.object_id=t.object_id AND pk.column_id=c.column_id
-WHERE s.name IN (N'lh_demo_erp',N'lh_demo_mes',N'lh_demo_ctl');
+WHERE s.name IN (N'lh_demo_erp',N'lh_demo_mes',N'lh_demo_ctl')
+    AND NOT (s.name COLLATE Latin1_General_100_BIN2=N'lh_demo_ctl'
+             AND t.name COLLATE Latin1_General_100_BIN2=N'demo_runs');
 -- EXCEPT in both directions detects absent, additional and changed columns,
 -- including type/size/precision/scale/nullability/primary-key membership.
 IF EXISTS (SELECT * FROM @Expected EXCEPT SELECT * FROM @Actual)

@@ -145,16 +145,12 @@ def render_source_form():
             "ランディング",
             "専用の検証SQL Server",
             "両方",
-            "固定疑似ERP/MES SQL Server",
-            "ランディング + 固定SQL source",
         ],
     )
     destination = {
         "ランディング": "landing",
         "専用の検証SQL Server": "sqlserver",
         "両方": "both",
-        "固定疑似ERP/MES SQL Server": "fixed-sqlserver",
-        "ランディング + 固定SQL source": "landing-fixed-sqlserver",
     }[destination_label]
     catalog = call_api("/scenarios")
     if catalog is None:
@@ -164,15 +160,11 @@ def render_source_form():
     selection, items = render_scenario_selection(catalog)
     images = st.checkbox(
         "合成の検査画像PNGも作る",
-        disabled=destination in {"sqlserver", "fixed-sqlserver"},
+        disabled=destination == "sqlserver",
     )
     incompatibilities = []
     for item in items:
-        policy_destination = {
-            "fixed-sqlserver": "sqlserver",
-            "landing-fixed-sqlserver": "both",
-        }.get(destination, destination)
-        if policy_destination not in item["supported_destinations"]:
+        if destination not in item["supported_destinations"]:
             incompatibilities.append(
                 item["label"] + "は現在の投入先では使えません。"
             )
@@ -206,28 +198,11 @@ def render_source_form():
                 "指定回数で終了します。Kafkaへの直接送信ではありません。"
             )
         consent = False
-        fixed_consent = False
         run_id = st.text_input("run ID（空欄なら自動生成、12桁hex）", value="")
         if destination != "landing":
-            fixed = destination in {
-                "fixed-sqlserver",
-                "landing-fixed-sqlserver",
-            }
-            st.info(
-                "固定6表へ投入します。型に入らない原値はJSON列に保持します。"
-                if fixed
-                else "専用の既存DEMO DBへ新しいschemaを作成します。"
-            )
+            st.info("専用の既存DEMO DBへ新しいschemaを作成します。")
             consent = st.checkbox("検証DBへの書き込みを明示的に許可する")
-            if fixed:
-                fixed_consent = st.checkbox(
-                    "固定3schema・所有権を確認し、"
-                    "共有source DBへの書込みに同意する"
-                )
-            else:
-                st.caption(
-                    "会社の参照元DB・システムDBへの投入は拒否されます。"
-                )
+            st.caption("会社の参照元DB・システムDBへの投入は拒否されます。")
         submitted = st.form_submit_button(
             "素材の投入を開始",
             type="primary",
@@ -252,14 +227,8 @@ def render_source_form():
                 "days": int(days),
                 **selection,
                 "destination": destination,
-                "images": images
-                and destination
-                not in {
-                    "sqlserver",
-                    "fixed-sqlserver",
-                },
+                "images": images and destination != "sqlserver",
                 "allow_sql_write": consent,
-                "confirm_shared_source_database": fixed_consent,
                 "run_id": run_id or None,
             },
         )
@@ -511,7 +480,6 @@ def render_settings():
         "DEMO_SQLSERVER_HOST": "ダミー投入用SQL Server",
         "DEMO_SQLSERVER_DATABASE": "ダミー投入専用DB名",
         "DEMO_SQLSERVER_USER": "ダミー投入用ユーザー",
-        "DEMO_SQLSERVER_ALLOW_SHARED_SOURCE_DATABASE": "共有source DB許可",
         "DEMO_SQLSERVER_INSTALLATION_ID": "導入ID（既存環境では保持）",
         "DEMO_SQLSERVER_OWNERSHIP_TOKEN": "所有権鍵（既存環境では保持）",
         "DEMO_SQLSERVER_ERP_SCHEMA": "固定ERP schema（変更不可）",

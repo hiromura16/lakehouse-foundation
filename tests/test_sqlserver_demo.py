@@ -5,15 +5,12 @@ separate from the DDL's static contract tests. A mock result is not evidence
 that SQL Server accepted a statement or that CDC delivered a real event.
 """
 
-import copy
+import contextlib
 import importlib.util
 import json
 import os
-import re
 import sys
 import unittest
-from contextlib import contextmanager
-from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -32,8 +29,6 @@ def load(name, relative):
 
 
 DEMO = load("fixed_sql_unit", "scripts/sqlserver_demo.py")
-GENERATOR = load("fixed_sql_generator", "scripts/generate-demo.py")
-RUN = "0123456789ab"
 VALUES = {
     "DEMO_SQLSERVER_HOST": "demo-db.example.invalid",
     "DEMO_SQLSERVER_PORT": "1433",
@@ -47,79 +42,17 @@ VALUES = {
     "SOURCE_SQLSERVER_PASSWORD": "synthetic-reader-secret",
     "SOURCE_SQLSERVER_CONTROL_USER": "synthetic_control",
     "SOURCE_SQLSERVER_CONTROL_PASSWORD": "synthetic-control-secret",
-    "DEMO_SQLSERVER_ALLOW_SHARED_SOURCE_DATABASE": "true",
     "DEMO_SQLSERVER_INSTALLATION_ID": "a" * 32,
     "DEMO_SQLSERVER_OWNERSHIP_TOKEN": "b" * 64,
 }
-
-
-class Cursor:
-    """Record parameterized DML and maintain only synthetic in-memory rows."""
-
-    def __init__(self):
-        self.calls = []
-        self.rows = {}
-        self.next = None
-        self.fail_insert = None
-
-    def execute(self, statement, arguments=()):
-        """Interpret the tested DML subset; never delegate to a SQL driver."""
-        self.calls.append((statement, arguments))
-        self.next = None
-        table = re.search(r"\[lh_demo_(?:erp|mes)\]\.\[[a-z_]+\]", statement)
-        if (
-            statement.startswith("SELECT ")
-            and ", run_id, original_values FROM " in statement
-        ):
-            # Model a case-insensitive SQL collation with space padding, while
-            # keeping the actual stored PK visible in the returned row.
-            requested = arguments[0].casefold().rstrip(" ")
-            for (origin, key), values in self.rows.items():
-                if (
-                    origin == table[0]
-                    and key.casefold().rstrip(" ") == requested
-                ):
-                    self.next = (key, *values)
-                    break
-        elif statement.startswith("INSERT INTO ") and table:
-            if self.fail_insert == table[0]:
-                raise RuntimeError("synthetic-driver-private-information")
-            columns = re.search(r"\(([^)]+)\) VALUES", statement)[1]
-            names = [part.strip("[] ") for part in columns.split(",")]
-            row = dict(zip(names, arguments, strict=True))
-            self.rows[(table[0], arguments[0])] = (
-                row["run_id"],
-                row["original_values"],
-            )
-        elif statement.startswith("UPDATE ") and table:
-            self.rows[(table[0], arguments[-2])] = (
-                arguments[-1],
-                arguments[-3],
-            )
-        elif statement.startswith("DELETE FROM ") and table:
-            self.rows.pop((table[0], arguments[0]), None)
-
-    def fetchone(self):
-        """Return the prepared synthetic response to the previous statement."""
-        return self.next
 
 
 class Handle:
     """Track commit/rollback separately from the cursor's staged row state."""
 
     def __init__(self):
-        self.reader = Cursor()
-        self.commits = 0
         self.rollbacks = 0
         self.closes = 0
-
-    def cursor(self):
-        """Return the synthetic cursor owned by this isolated test handle."""
-        return self.reader
-
-    def commit(self):
-        """Observe successful completion without committing a real database."""
-        self.commits += 1
 
     def rollback(self):
         """Observe transaction failure without contacting a real database."""
@@ -130,48 +63,15 @@ class Handle:
         self.closes += 1
 
 
-@contextmanager
-def injected_connection(handle):
-    """Model rollback so staged fake rows expose partial failures."""
-    before = copy.deepcopy(handle.reader.rows)
-    try:
-        yield handle
-    except Exception:
-        handle.reader.rows = before
-        handle.rollback()
-        raise
-
-
 class BoundaryTests(unittest.TestCase):
-    """Reject dangerous inputs before any driver or filesystem operation."""
+    """旧writerの接続役割を拒否し、source/controlを分離する。"""
 
-    def test_shared_database_is_default_deny(self):
-        values = dict(VALUES)
-        values.pop("DEMO_SQLSERVER_ALLOW_SHARED_SOURCE_DATABASE")
-        with self.assertRaisesRegex(DEMO.SqlServerError, "Shared source"):
-            DEMO.validate_settings(values)
-
-    def test_explicit_shared_flag_requires_exact_host_port_database(self):
-        self.assertEqual(
-            DEMO.validate_settings(VALUES)[
-                "DEMO_SQLSERVER_ALLOW_SHARED_SOURCE_DATABASE"
-            ],
-            "true",
-        )
-        for key, value in (
-            ("SOURCE_SQLSERVER_HOST", "another.example.invalid"),
-            ("SOURCE_SQLSERVER_PORT", "1444"),
-            ("SOURCE_SQLSERVER_HOST", VALUES["SOURCE_SQLSERVER_HOST"].upper()),
-            (
-                "SOURCE_SQLSERVER_DATABASE",
-                VALUES["SOURCE_SQLSERVER_DATABASE"].upper(),
-            ),
-        ):
-            with self.subTest(setting=key):
-                with self.assertRaisesRegex(
-                    DEMO.SqlServerError, "Shared source"
-                ):
-                    DEMO.validate_settings({**VALUES, key: value})
+    def test_old_demo_role_and_write_entrypoints_are_no_longer_exposed(self):
+        for name in ("write_data", "mutate", "writer_permissions_safe"):
+            self.assertFalse(hasattr(DEMO, name))
+        with self.assertRaisesRegex(DEMO.SqlServerError, "role"):
+            DEMO.validate_settings(VALUES, role="demo")
+        self.assertFalse(DEMO.permissions_safe(mock.Mock(), role="demo"))
 
     def test_dbo_arbitrary_schema_and_unknown_table_are_rejected(self):
         for value in ("dbo", "arbitrary_schema", "lh_demo_erp;DELETE"):
@@ -183,18 +83,6 @@ class BoundaryTests(unittest.TestCase):
         with self.assertRaises(DEMO.SqlServerError):
             DEMO.table_name("dbo.legacy_table")
 
-    def test_write_and_mutate_require_strict_consent_before_connection(self):
-        with mock.patch.object(DEMO, "connection") as driver:
-            for value in (False, "true", 1):
-                with self.subTest(consent=value):
-                    with self.assertRaises(DEMO.SqlServerError):
-                        DEMO.write_data({}, VALUES, run_id=RUN, consent=value)
-                    with self.assertRaises(DEMO.SqlServerError):
-                        DEMO.mutate(
-                            VALUES, "insert", run_id=RUN, consent=value
-                        )
-        driver.assert_not_called()
-
     def test_mismatching_marker_fails_before_permission_or_business_queries(
         self,
     ):
@@ -205,7 +93,7 @@ class BoundaryTests(unittest.TestCase):
             (1, "a" * 32, "incorrect-hash"),
         ]
         with self.assertRaisesRegex(DEMO.SqlServerError, "ownership"):
-            DEMO.check_writer(cursor, VALUES)
+            DEMO.ownership(cursor, VALUES)
         self.assertFalse(
             any(
                 "INSERT INTO" in call.args[0] or "UPDATE " in call.args[0]
@@ -217,7 +105,7 @@ class BoundaryTests(unittest.TestCase):
         """Match the DBA SQL's literal database identity on every server."""
         cursor = mock.Mock()
         cursor.fetchone.return_value = (
-            VALUES["DEMO_SQLSERVER_DATABASE"].upper(),
+            VALUES["SOURCE_SQLSERVER_DATABASE"].upper(),
         )
         with self.assertRaisesRegex(DEMO.SqlServerError, "database"):
             DEMO.ownership(cursor, VALUES)
@@ -234,8 +122,8 @@ class BoundaryTests(unittest.TestCase):
                 with self.assertRaises(DEMO.SqlServerError):
                     DEMO.validate_settings(values, role="control")
 
-    def test_control_principal_cannot_reuse_source_or_demo_identity(self):
-        for reused in ("SOURCE_SQLSERVER_USER", "DEMO_SQLSERVER_USER"):
+    def test_control_principal_cannot_reuse_source_identity(self):
+        for reused in ("SOURCE_SQLSERVER_USER",):
             with self.subTest(reused=reused):
                 settings = {
                     **VALUES,
@@ -246,22 +134,22 @@ class BoundaryTests(unittest.TestCase):
                     sys.modules, {"pymssql": SimpleNamespace(connect=driver)}
                 ):
                     with self.assertRaisesRegex(
-                        DEMO.SqlServerError, "must differ"
+                        DEMO.SqlServerError, "distinct"
                     ):
                         with DEMO.connection(settings, role="control"):
                             self.fail("A reused control principal connected")
                 driver.assert_not_called()
 
     def test_control_missing_comparison_identity_is_not_assumed_safe(self):
-        for missing in ("SOURCE_SQLSERVER_USER", "DEMO_SQLSERVER_USER"):
+        for missing in ("SOURCE_SQLSERVER_USER",):
             values = dict(VALUES)
             values.pop(missing)
             with self.subTest(missing=missing):
                 with self.assertRaisesRegex(DEMO.SqlServerError, "identities"):
                     DEMO.validate_settings(values, role="control")
 
-    def test_missing_writer_is_reported_without_echoing_secrets(self):
-        values = {**VALUES, "DEMO_SQLSERVER_USER": ""}
+    def test_missing_reader_is_reported_without_echoing_secrets(self):
+        values = {**VALUES, "SOURCE_SQLSERVER_USER": ""}
         result = DEMO.diagnose(values)
         self.assertFalse(result["connected"])
         rendered = json.dumps(result)
@@ -278,7 +166,7 @@ class DiagnosticTests(unittest.TestCase):
     """Test safe diagnostics through injected metadata responses."""
 
     def test_success_shape_contains_no_endpoint_user_or_ownership_token(self):
-        handle = Handle()
+        handle = mock.Mock()
         cursor = mock.Mock()
         cursor.fetchone.side_effect = [
             value
@@ -292,7 +180,7 @@ class DiagnosticTests(unittest.TestCase):
         handle.cursor = lambda: cursor
         with (
             mock.patch.object(
-                DEMO, "connection", return_value=injected_connection(handle)
+                DEMO, "connection", return_value=contextlib.nullcontext(handle)
             ),
             mock.patch.object(DEMO, "ownership", return_value=1),
             mock.patch.object(DEMO, "permissions_safe", return_value=True),
@@ -353,7 +241,6 @@ class TransportTests(unittest.TestCase):
         for role, user, readonly in (
             ("source", "synthetic_reader", True),
             ("control", "synthetic_control", False),
-            ("demo", "synthetic_writer", False),
         ):
             with self.subTest(role=role):
                 handle = Handle()
@@ -396,7 +283,7 @@ class TransportTests(unittest.TestCase):
         ):
             previous = dict(os.environ)
             with DEMO.connection(
-                {**VALUES, "DEMO_SQLSERVER_TRUST_SERVER_CERTIFICATE": "true"}
+                {**VALUES, "SOURCE_SQLSERVER_TRUST_SERVER_CERTIFICATE": "true"}
             ):
                 config = Path(os.environ["FREETDSCONF"]).read_text()
                 self.assertIn("encryption = require", config)
@@ -404,7 +291,7 @@ class TransportTests(unittest.TestCase):
             self.assertEqual(dict(os.environ), previous)
         with self.assertRaisesRegex(DEMO.SqlServerError, "require encryption"):
             DEMO.validate_settings(
-                {**VALUES, "DEMO_SQLSERVER_ENCRYPT": "false"}
+                {**VALUES, "SOURCE_SQLSERVER_ENCRYPT": "false"}
             )
 
     def test_driver_failure_rolls_back_and_returns_no_vendor_text(self):
@@ -425,239 +312,6 @@ class TransportTests(unittest.TestCase):
         self.assertNotIn("synthetic-secret", str(error.exception))
 
 
-class TypedSourceTests(unittest.TestCase):
-    """Preserve original values independently of SQL-compatible projections."""
-
-    def test_exact_decimal_null_empty_and_japanese_survive_originals(self):
-        data = GENERATOR.build_data(42, 1, 7, "clean")
-        data["erp_products"][0].update(
-            product_name="日本語の合成部品",
-            product_family=None,
-            unit="",
-            standard_cycle_seconds="25.123",
-        )
-        prepared, _, _ = DEMO.prepare_data(data)
-        _, typed, payload = prepared["erp_products"][0]
-        self.assertEqual(typed["standard_cycle_seconds"], Decimal("25.123"))
-        self.assertIsNone(typed["product_family"])
-        self.assertEqual(typed["unit"], "")
-        self.assertEqual(
-            json.loads(payload)["product_name"], "日本語の合成部品"
-        )
-        self.assertIsNone(json.loads(payload)["product_family"])
-        self.assertEqual(json.loads(payload)["unit"], "")
-
-    def test_invalid_typed_values_become_null_but_raw_is_unchanged(self):
-        data = GENERATOR.build_data(42, 1, 7, "clean")
-        data["erp_products"][0]["standard_cycle_seconds"] = "invalid-number"
-        data["erp_work_orders"][0]["planned_date"] = "2026-99-99"
-        prepared, _, normalized = DEMO.prepare_data(data)
-        _, typed, payload = prepared["erp_products"][0]
-        self.assertIsNone(typed["standard_cycle_seconds"])
-        self.assertEqual(
-            json.loads(payload)["standard_cycle_seconds"], "invalid-number"
-        )
-        self.assertGreaterEqual(normalized, 2)
-
-    def test_datetime2_fraction_is_not_rounded_to_python_microseconds(self):
-        self.assertEqual(
-            DEMO.timestamp("2026-02-01T12:34:56.1234567+09:00"),
-            "2026-02-01T03:34:56.1234567",
-        )
-        self.assertEqual(
-            DEMO.timestamp("2026-02-01T00:00:00Z"),
-            "2026-02-01T00:00:00.0000000",
-        )
-
-    def test_latest_revision_and_exact_duplicate_collapse_deterministically(
-        self,
-    ):
-        data = GENERATOR.build_data(42, 1, 7, "edge")
-        prepared, duplicates, _ = DEMO.prepare_data(data)
-        reversed_data = {
-            key: list(reversed(rows)) for key, rows in data.items()
-        }
-        reversed_prepared, reversed_duplicates, _ = DEMO.prepare_data(
-            reversed_data
-        )
-        self.assertEqual(prepared, reversed_prepared)
-        self.assertEqual(duplicates, reversed_duplicates)
-        self.assertEqual(duplicates, 2)
-        first = [
-            row for row in prepared["mes_events"] if row[0] == "EV00001-1"
-        ][0]
-        self.assertEqual(
-            json.loads(first[2])["updated_at"], "2026-01-14T10:00:00Z"
-        )
-
-    def test_missing_key_and_extra_contract_cannot_be_written(self):
-        data = GENERATOR.build_data(42, 1, 7, "clean")
-        data["erp_products"][0]["product_id"] = ""
-        with self.assertRaisesRegex(DEMO.SqlServerError, "primary key"):
-            DEMO.prepare_data(data)
-        with self.assertRaises(DEMO.SqlServerError):
-            DEMO.prepare_data({**data, "arbitrary": []})
-
-
-class WriteTests(unittest.TestCase):
-    """Test replay, ownership collisions and transaction failures."""
-
-    def setUp(self):
-        self.handle = Handle()
-        self.guard = mock.patch.object(DEMO, "check_writer")
-        self.guard.start()
-        self.addCleanup(self.guard.stop)
-        self.patch = mock.patch.object(
-            DEMO,
-            "connection",
-            side_effect=lambda *args, **kwargs: injected_connection(
-                self.handle
-            ),
-        )
-        self.patch.start()
-        self.addCleanup(self.patch.stop)
-
-    def test_replay_skips_without_changing_source_watermark(self):
-        data = GENERATOR.build_data(42, 1, 7, "clean")
-        first = DEMO.write_data(data, VALUES, run_id=RUN, consent=True)
-        count = len(self.handle.reader.calls)
-        replay = DEMO.write_data(data, VALUES, run_id=RUN, consent=True)
-        self.assertGreater(first["inserted"], 0)
-        self.assertEqual(replay["inserted"], 0)
-        self.assertEqual(replay["updated"], 0)
-        self.assertEqual(replay["skipped"], first["inserted"])
-        self.assertFalse(
-            any(
-                statement.startswith("UPDATE [lh_demo_erp]")
-                for statement, _ in self.handle.reader.calls[count:]
-            )
-        )
-        self.assertEqual(self.handle.commits, 2)
-
-    def test_case_or_space_equivalent_source_key_does_not_update_any_row(self):
-        for physical in ("p001", "P001 "):
-            with self.subTest(physical=physical):
-                self.handle = Handle()
-                self.handle.reader.rows[
-                    ("[lh_demo_erp].[products]", physical)
-                ] = (RUN, "existing-original")
-                before = copy.deepcopy(self.handle.reader.rows)
-                with self.assertRaisesRegex(DEMO.SqlServerError, "collation"):
-                    DEMO.write_data(
-                        GENERATOR.build_data(42, 1, 7, "clean"),
-                        VALUES,
-                        run_id=RUN,
-                        consent=True,
-                    )
-                self.assertEqual(self.handle.reader.rows, before)
-                self.assertEqual(self.handle.commits, 0)
-                self.assertEqual(self.handle.rollbacks, 1)
-                self.assertFalse(
-                    any(
-                        statement.startswith(("INSERT ", "UPDATE ", "DELETE "))
-                        for statement, _ in self.handle.reader.calls
-                    )
-                )
-
-    def test_case_or_space_equivalent_cdc_key_rejects_each_mutation(self):
-        key = "CDC-" + RUN
-        for physical in (key.lower(), key + " "):
-            for action in ("insert", "update", "delete"):
-                with self.subTest(physical=physical, action=action):
-                    self.handle = Handle()
-                    self.handle.reader.rows[
-                        ("[lh_demo_erp].[products]", physical)
-                    ] = (RUN, "existing-original")
-                    before = copy.deepcopy(self.handle.reader.rows)
-                    with self.assertRaisesRegex(
-                        DEMO.SqlServerError, "collation"
-                    ):
-                        DEMO.mutate(VALUES, action, run_id=RUN, consent=True)
-                    self.assertEqual(self.handle.reader.rows, before)
-                    self.assertEqual(self.handle.commits, 0)
-                    self.assertEqual(self.handle.rollbacks, 1)
-                    self.assertFalse(
-                        any(
-                            statement.startswith(
-                                ("INSERT ", "UPDATE ", "DELETE ")
-                            )
-                            for statement, _ in self.handle.reader.calls
-                        )
-                    )
-
-    def test_source_updated_at_is_server_owned_not_generator_history(self):
-        data = GENERATOR.build_data(42, 1, 7, "clean")
-        DEMO.write_data(data, VALUES, run_id=RUN, consent=True)
-        inserts = [
-            (statement, values)
-            for statement, values in self.handle.reader.calls
-            if statement.startswith("INSERT INTO [lh_demo_")
-        ]
-        self.assertTrue(inserts)
-        for statement, values in inserts:
-            columns = re.search(r"\(([^)]+)\) VALUES", statement)[1]
-            self.assertNotIn("[updated_at]", columns)
-            self.assertIn("[original_values]", columns)
-            self.assertIn("updated_at", json.loads(values[-1]))
-
-    def test_partial_failure_does_not_commit_any_synthetic_rows(self):
-        self.handle.reader.fail_insert = "[lh_demo_mes].[events]"
-        with self.assertRaises(RuntimeError):
-            DEMO.write_data(
-                GENERATOR.build_data(42, 1, 7, "clean"),
-                VALUES,
-                run_id=RUN,
-                consent=True,
-            )
-        self.assertEqual(self.handle.commits, 0)
-        self.assertEqual(self.handle.rollbacks, 1)
-        self.assertEqual(self.handle.reader.rows, {})
-
-    def test_other_run_key_is_preserved(self):
-        self.handle.reader.rows[("[lh_demo_erp].[products]", "P001")] = (
-            "fedcba987654",
-            "existing-original",
-        )
-        before = copy.deepcopy(self.handle.reader.rows)
-        with self.assertRaisesRegex(DEMO.SqlServerError, "another run"):
-            DEMO.write_data(
-                GENERATOR.build_data(42, 1, 7, "clean"),
-                VALUES,
-                run_id=RUN,
-                consent=True,
-            )
-        self.assertEqual(self.handle.reader.rows, before)
-        self.assertEqual(self.handle.commits, 0)
-
-    def test_fixed_cdc_insert_update_delete_and_no_arbitrary_target(self):
-        for action in ("insert", "update", "delete"):
-            with self.subTest(action=action):
-                result = DEMO.mutate(VALUES, action, run_id=RUN, consent=True)
-                self.assertEqual(
-                    result,
-                    {
-                        "action": action,
-                        "changed_rows": 1,
-                        "run_id": RUN,
-                        "source_only": True,
-                    },
-                )
-        self.assertEqual(self.handle.reader.rows, {})
-        mutations = [
-            statement
-            for statement, _ in self.handle.reader.calls
-            if statement.startswith(("INSERT INTO", "UPDATE ", "DELETE FROM"))
-        ]
-        self.assertTrue(
-            all(
-                "[lh_demo_erp].[products]" in statement
-                for statement in mutations
-            )
-        )
-        with self.assertRaises(DEMO.SqlServerError):
-            DEMO.mutate(VALUES, "DROP DATABASE", run_id=RUN, consent=True)
-
-
 class SideEffectTests(unittest.TestCase):
     """Mock protocol checks; live SQL Server acceptance is still required."""
 
@@ -674,8 +328,12 @@ class SideEffectTests(unittest.TestCase):
         return cursor
 
     def test_exact_dbo_checker_is_required(self):
-        cursor = self.cursor()
-        self.assertTrue(DEMO.side_effects_safe(cursor))
+        for definition in (
+            DEMO.SAFETY_DEFINITION,
+            DEMO.CONTROL_SAFETY_DEFINITION,
+        ):
+            cursor = self.cursor(definition=definition)
+            self.assertTrue(DEMO.side_effects_safe(cursor))
         self.assertEqual(
             cursor.execute.call_args_list[-1].args,
             ("EXEC [lh_demo_ctl].[check_write_safety_v1]", ()),
@@ -697,7 +355,7 @@ class SideEffectTests(unittest.TestCase):
     def test_hidden_legacy_cascade_or_active_trigger_is_refused(self):
         # The caller need not see the legacy child. The dbo checker reports
         # unsafe with complete metadata, regardless of caller visibility.
-        for role in ("demo", "control"):
+        for role in ("control",):
             with self.subTest(role=role):
                 self.assertFalse(
                     DEMO.side_effects_safe(self.cursor(safe=0), role)
@@ -731,7 +389,7 @@ class PermissionTests(unittest.TestCase):
         unknown=False,
         denied_object=None,
         column_permission=None,
-        role="demo",
+        role="control",
         object_type="U",
         unknown_object=False,
         unknown_permission=False,
@@ -814,186 +472,20 @@ class PermissionTests(unittest.TestCase):
         cursor.statements = statements
         return cursor
 
-    def test_opt_in_only_accepts_exact_effective_object_and_operation(self):
-        approved = (71, 72, ((999, "UPDATE"),))
-        for role, options, expected in (
-            ("demo", {}, True),
-            ("demo", {"full_audit": True}, False),
-            ("control", {}, False),
-        ):
-            with self.subTest(role=role, options=options):
-                cursor = self.cursor(denied_object=("UPDATE", "test.other"))
-                with mock.patch.object(
-                    DEMO, "approved_legacy_dml", return_value=approved
-                ) as optional:
-                    self.assertEqual(
-                        DEMO.permissions_safe(
-                            cursor,
-                            role=role,
-                            trusted_policy_transport=True,
-                            **options,
-                        ),
-                        expected,
-                    )
-                self.assertEqual(optional.call_count, int(expected))
-        for options in (
-            {"denied_object": ("INSERT", "test.other")},
-            {"denied_object": ("SELECT", "test.other")},
-            {"denied_object": ("EXECUTE", "test.other")},
-            {
-                "denied_object": ("UPDATE", "test.other"),
-                "denied_object_id": 998,
-            },
-            {"unknown_permission": True},
-        ):
-            with (
-                self.subTest(options=options),
-                mock.patch.object(
-                    DEMO, "approved_legacy_dml", return_value=approved
-                ),
-            ):
-                self.assertFalse(
-                    DEMO.permissions_safe(
-                        self.cursor(**options), trusted_policy_transport=True
-                    )
-                )
-
-    def test_unverified_tls_never_reads_optional_policy(self):
-        cursor = self.cursor(denied_object=("UPDATE", "test.other"))
-        with mock.patch.object(DEMO, "approved_legacy_dml") as loader:
-            self.assertFalse(
-                DEMO.writer_permissions_safe(
-                    cursor, {"DEMO_SQLSERVER_TRUST_SERVER_CERTIFICATE": "true"}
-                )
-            )
-        loader.assert_not_called()
-
-    def test_policy_rows_require_exact_identity_and_full_effective_object_dml(
-        self,
-    ):
-        cursor = mock.Mock()
-        cursor.fetchall.side_effect = [
-            [(71, 1)],
-            [
-                (col, *shape, 0, 0, 0)
-                for col, shape in DEMO.LEGACY_POLICY_COLUMNS.items()
-            ],
-            [(999, "INSERT", 999, 1), (999, "UPDATE", 999, 0)],
-        ]
-        cursor.fetchone.side_effect = [(1,), None, None, (1, 0, 0, 0, 0, 0, 0)]
-        with mock.patch.object(DEMO, "legacy_checker_safe", return_value=72):
-            self.assertEqual(
-                DEMO.approved_legacy_dml(cursor),
-                (71, 72, ((999, "INSERT"),)),
-            )
-        for rows in (
-            [(999, "UPDATE", None, 1)],
-            [(999, "EXECUTE", 999, 1)],
-            [(999, "UPDATE", 999, None)],
-            [(999, "UPDATE", 999, 1), (999, "UPDATE", 999, 1)],
-        ):
-            cursor = mock.Mock()
-            cursor.fetchall.side_effect = [
-                [(71, 1)],
-                [
-                    (col, *shape, 0, 0, 0)
-                    for col, shape in DEMO.LEGACY_POLICY_COLUMNS.items()
-                ],
-                rows,
-            ]
-            cursor.fetchone.side_effect = [
-                (1,),
-                None,
-                None,
-                (1, 0, 0, 0, 0, 0, 0),
-            ]
-            with (
-                mock.patch.object(
-                    DEMO, "legacy_checker_safe", return_value=72
-                ),
-                self.assertRaises(DEMO.SqlServerError),
-            ):
-                DEMO.approved_legacy_dml(cursor)
-
-    def test_policy_cannot_be_used_if_unowned_column_writable_or_unknown(self):
-        for objects, columns in (
-            ([(71, 0)], []),
-            (
-                [(71, 1)],
-                [
-                    (col, *shape, 0, 0, 1)
-                    for col, shape in DEMO.LEGACY_POLICY_COLUMNS.items()
-                ],
-            ),
-            (
-                [(71, 1)],
-                [
-                    (col, *shape, 0, 0, None)
-                    for col, shape in DEMO.LEGACY_POLICY_COLUMNS.items()
-                ],
-            ),
-        ):
-            cursor = mock.Mock()
-            cursor.fetchall.side_effect = [objects, columns]
-            cursor.fetchone.side_effect = [
-                (1,),
-                None,
-                None,
-                (1, 0, 0, 0, 0, 0, 0),
-            ]
-            with (
-                mock.patch.object(DEMO, "legacy_checker_safe") as checker,
-                self.assertRaises(DEMO.SqlServerError),
-            ):
-                DEMO.approved_legacy_dml(cursor)
-            checker.assert_not_called()
-
-    def test_legacy_checker_must_be_exact_dbo_and_return_single_pass_bit(self):
-        definition = (ROOT / "scripts" / DEMO.LEGACY_CHECKER_ASSET).read_text()
-        for rows, expected in (
-            (
-                [
-                    (72, definition.rstrip("\n"), 1),
-                    (1, 0, 0, 0, 0, 0, 0),
-                    (1,),
-                    None,
-                ],
-                True,
-            ),
-            ([(72, definition + "--alternate", 1)], False),
-            ([(72, definition.rstrip("\n"), None)], False),
-            (
-                [
-                    (72, definition.rstrip("\n"), 1),
-                    (1, 0, 0, 0, 0, 0, 0),
-                    (0,),
-                    None,
-                ],
-                False,
-            ),
-        ):
-            cursor = mock.Mock()
-            cursor.fetchone.side_effect = rows
-            if expected:
-                self.assertEqual(DEMO.legacy_checker_safe(cursor), 72)
-            else:
-                with self.assertRaises(DEMO.SqlServerError):
-                    DEMO.legacy_checker_safe(cursor)
-
     def test_clr_synonym_external_sequence_and_queue_grants_are_refused(self):
         cases = (
             ("PC", "EXECUTE", "source"),
             ("FN", "EXECUTE", "source"),
             ("FS", "EXECUTE", "source"),
             ("AF", "EXECUTE", "source"),
-            ("IF", "SELECT", "demo"),
-            ("TF", "SELECT", "demo"),
-            ("FT", "SELECT", "demo"),
-            ("SN", "INSERT", "demo"),
+            ("IF", "SELECT", "control"),
+            ("TF", "SELECT", "control"),
+            ("FT", "SELECT", "control"),
+            ("SN", "INSERT", "control"),
             ("SN", "UPDATE", "source"),
             ("SN", "DELETE", "control"),
             ("SN", "EXECUTE", "source"),
-            ("ET", "SELECT", "demo"),
+            ("ET", "SELECT", "control"),
             ("SO", "UPDATE", "source"),
             ("SQ", "RECEIVE", "source"),
         )
@@ -1014,14 +506,18 @@ class PermissionTests(unittest.TestCase):
             {"unknown_permission": True},
         ):
             with self.subTest(options=options):
-                self.assertFalse(DEMO.permissions_safe(self.cursor(**options)))
+                self.assertFalse(
+                    DEMO.permissions_safe(
+                        self.cursor(**options), role="control"
+                    )
+                )
 
     def test_query_contract_uses_applicable_permissions_not_guessed_pairs(
         self,
     ):
         """Inspect SQL contracts; this is not a SQL Server execution test."""
         cursor = self.cursor()
-        self.assertTrue(DEMO.permissions_safe(cursor))
+        self.assertTrue(DEMO.permissions_safe(cursor, role="control"))
         object_queries = [
             statement
             for statement, _ in cursor.statements
@@ -1063,7 +559,11 @@ class PermissionTests(unittest.TestCase):
             {"dangerous": True},
         ):
             with self.subTest(options=options):
-                self.assertFalse(DEMO.permissions_safe(self.cursor(**options)))
+                self.assertFalse(
+                    DEMO.permissions_safe(
+                        self.cursor(**options), role="control"
+                    )
+                )
 
     def test_installation_marker_update_and_external_access_are_denied(self):
         for operation, target in (
@@ -1074,16 +574,16 @@ class PermissionTests(unittest.TestCase):
             with self.subTest(operation=operation):
                 self.assertFalse(
                     DEMO.permissions_safe(
-                        self.cursor(denied_object=(operation, target))
+                        self.cursor(denied_object=(operation, target)),
+                        role="control",
                     )
                 )
 
     def test_execute_exception_is_only_the_fixed_checker_for_writers(self):
         for role, target, expected in (
-            ("demo", DEMO.SAFETY_CHECKER, True),
             ("control", DEMO.SAFETY_CHECKER, True),
             ("source", DEMO.SAFETY_CHECKER, False),
-            ("demo", "legacy.any_procedure", False),
+            ("control", "legacy.any_procedure", False),
         ):
             with self.subTest(role=role, target=target):
                 self.assertEqual(
@@ -1107,7 +607,8 @@ class PermissionTests(unittest.TestCase):
                                 column,
                                 1,
                             )
-                        )
+                        ),
+                        role="control",
                     )
                 )
 
@@ -1123,13 +624,14 @@ class PermissionTests(unittest.TestCase):
                                 "amount",
                                 1,
                             )
-                        )
+                        ),
+                        role="control",
                     )
                 )
 
     def test_fixed_column_permissions_follow_roles(self):
         for role, operation, target, expected in (
-            ("demo", "UPDATE", "lh_demo_erp.products", True),
+            ("control", "INSERT", "lh_demo_ctl.batch_watermarks", True),
             ("control", "UPDATE", "lh_demo_ctl.batch_watermarks", True),
             ("source", "SELECT", "legacy.orders", True),
             ("source", "UPDATE", "lh_demo_erp.products", False),
@@ -1157,7 +659,8 @@ class PermissionTests(unittest.TestCase):
                         "name",
                         None,
                     )
-                )
+                ),
+                role="control",
             )
         )
 
@@ -1174,7 +677,7 @@ class PermissionTests(unittest.TestCase):
                         full_audit=True,
                     )
                 )
-        self.assertTrue(DEMO.permissions_safe(self.cursor()))
+        self.assertTrue(DEMO.permissions_safe(self.cursor(), role="control"))
         self.assertTrue(
             DEMO.permissions_safe(
                 self.cursor(), role="source", full_audit=True

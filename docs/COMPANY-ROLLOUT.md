@@ -272,13 +272,13 @@ DB資格情報や暗号鍵、会社の対応表、GUI exportの原本、Notebook
 | --- | --- | --- |
 | 更新前 | Git SHA、private設定backup、各volume、旧capture/role/jobを私有記録へ控える | 未commit編集があれば上書きしない。旧データ・資格情報は公開repoへ戻さない |
 | Dokploy | private設定upgrade→dry-run→承認済み手順で既存serviceへ反映 | 大小6proxy変数とBuildKit設定の有無だけ確認。volume・管理者・Swarmを作り直さない |
-| Phase 1 | DBAの001→002→003→006、GUI診断、clean 20件の固定投入 | 所有権・3つの限定principal・固定6表。旧資産不変。広いwriterを無条件に許可しない |
+| Phase 1 | 承認済み新規合成環境の準備とGUI読取り診断 | 所有権・reader/controlの2用途・固定6表。既存環境の資産や権限は不変 |
 | Phase 2 | SOURCE readerで全snapshot→SQL用メダリオン | 6表のSource/Bronze件数、PK、日本語、decimal、NULL/空、原値と日時を照合。再実行skip |
-| Phase 3 | 別control writerを設定→control付きsnapshot→有限microbatch→増分 | checkpointed=true。成功ACK後だけ6watermarkが進む。replayで増殖なし。窓外遅延と物理削除は全件照合 |
+| Phase 3 | 別control writerを設定→control付きsnapshot→外部合成ソースの変更観測→増分 | checkpointed=true。成功ACK後だけ6watermarkが進む。replayで増殖なし。窓外遅延と物理削除は全件照合 |
 | Phase 4 | DBAの004→CDC設定とprofile反映 | 旧capture/job維持、固定6capture、専用connector RUNNING、Rawにr/c/u/d/tombstone。snapshot中は投入を停止 |
 | Phase 5 | Current/GoldとGUI監視、明示rebuild | DELETE後の現在値除去、Raw履歴保持、offset/lag、同一Raw snapshotから再構築。失敗を受付成功と混同しない |
 
-増分のcontrol writerはSOURCE readerやDEMO writerと別の既存DB principalです。指定された3アカウントだけで狭いcontrol principalが存在しない場合、DBAの準備が必要です。アプリがreaderの権限を拡大したり、新規loginを自動作成したりすることはありません。
+増分のcontrol writerはSOURCE readerとは別の既存DB principalです。専用control principalの準備はDBAの担当です。アプリがreaderの権限を拡大したり、新規loginを自動作成したりすることはありません。
 
 会社ではまずCDCを追加せず `demo,monitoring,bi` のままPhase 1〜3を確認します。その後 `CDC_SOURCE_MODE=fixed-demo` と `demo,monitoring,bi,cdc` に切り替えます。既存generic connector/history/stateは消さず、必要なら専用 `CDC_STATE_VOLUME_NAME` を指定します。同じLakehouse上で別sourceへ同じSQL分析namespaceを使い回しません。新しい空stateへ差し替えるだけでは既存Rawの処理再開を許可しません。
 

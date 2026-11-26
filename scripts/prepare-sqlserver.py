@@ -20,9 +20,8 @@ def prepared_values(values, version):
     The ownership token itself is never written; only its SHA-256 is used.
     """
     selected = {
-        "TargetDatabase": values.get("DEMO_SQLSERVER_DATABASE", ""),
+        "TargetDatabase": values.get("SOURCE_SQLSERVER_DATABASE", ""),
         "InstallationId": values.get("DEMO_SQLSERVER_INSTALLATION_ID", ""),
-        "DemoWriterUser": values.get("DEMO_SQLSERVER_USER", ""),
         "SourceReaderUser": values.get("SOURCE_SQLSERVER_USER", ""),
         "ControlWriterUser": values.get("SOURCE_SQLSERVER_CONTROL_USER", ""),
     }
@@ -30,26 +29,24 @@ def prepared_values(values, version):
         re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", selected[key])
         for key in (
             "TargetDatabase",
-            "DemoWriterUser",
             "SourceReaderUser",
             "ControlWriterUser",
         )
     ):
-        raise ValueError("Configure approved SQL identifiers and three users.")
+        raise ValueError("Configure approved SQL identifiers and two users.")
     if (
         len(
             {
                 selected[key].casefold()
                 for key in (
-                    "DemoWriterUser",
                     "SourceReaderUser",
                     "ControlWriterUser",
                 )
             }
         )
-        != 3
+        != 2
     ):
-        raise ValueError("Use three distinct existing database principals.")
+        raise ValueError("Use two distinct existing database principals.")
     token = values.get("DEMO_SQLSERVER_OWNERSHIP_TOKEN", "")
     if not re.fullmatch(r"[0-9a-f]{64}", token) or not re.fullmatch(
         r"[0-9a-f]{32}", selected["InstallationId"]
