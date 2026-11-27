@@ -1,0 +1,480 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CDC 宣言 Version 1",
+  "description": "形状を定義します。JSON 重複キー、列同士の参照、decimal の scale と precision の比較、出力全体の排他、Kafka トピックの合成長、主キーの LOB 制限・互換性は stdlib CLI が検査します。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "tables"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "tables": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "$ref": "#/$defs/table"
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}(?![\\s\\S])"
+    },
+    "topicPrefix": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,62}(?![\\s\\S])"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "namespace",
+        "table"
+      ],
+      "properties": {
+        "namespace": {
+          "$ref": "#/$defs/identifier"
+        },
+        "table": {
+          "$ref": "#/$defs/identifier"
+        }
+      }
+    },
+    "raw": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "namespace",
+        "table",
+        "stream"
+      ],
+      "properties": {
+        "namespace": {
+          "$ref": "#/$defs/identifier"
+        },
+        "table": {
+          "$ref": "#/$defs/identifier"
+        },
+        "stream": {
+          "$ref": "#/$defs/identifier"
+        }
+      }
+    },
+    "column": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "type",
+            "nullable",
+            "width"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/identifier"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "nvarchar"
+              ]
+            },
+            "nullable": {
+              "type": "boolean"
+            },
+            "width": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4000
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "max"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "type",
+            "nullable",
+            "width"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/identifier"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "char"
+              ]
+            },
+            "nullable": {
+              "type": "boolean"
+            },
+            "width": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8000
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "type",
+            "nullable",
+            "width"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/identifier"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "varchar"
+              ]
+            },
+            "nullable": {
+              "type": "boolean"
+            },
+            "width": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 8000
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "max"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "type",
+            "nullable",
+            "precision",
+            "scale"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/identifier"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "decimal"
+              ]
+            },
+            "nullable": {
+              "type": "boolean"
+            },
+            "precision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 38
+            },
+            "scale": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 38
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "type",
+            "nullable",
+            "scale"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/identifier"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "datetime2"
+              ]
+            },
+            "nullable": {
+              "type": "boolean"
+            },
+            "scale": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 7
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "type",
+            "nullable"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/identifier"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "bigint"
+              ]
+            },
+            "nullable": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "type",
+            "nullable"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/identifier"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "int"
+              ]
+            },
+            "nullable": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "type",
+            "nullable"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/identifier"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "bit"
+              ]
+            },
+            "nullable": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "type",
+            "nullable"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/identifier"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "date"
+              ]
+            },
+            "nullable": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "enabled",
+        "source",
+        "primary_key",
+        "mode",
+        "destinations",
+        "columns",
+        "delete_policy",
+        "snapshot"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "database",
+            "schema",
+            "table",
+            "topic_prefix"
+          ],
+          "properties": {
+            "database": {
+              "$ref": "#/$defs/identifier",
+              "not": {
+                "enum": [
+                  "master",
+                  "model",
+                  "msdb",
+                  "tempdb"
+                ]
+              }
+            },
+            "schema": {
+              "$ref": "#/$defs/identifier"
+            },
+            "table": {
+              "$ref": "#/$defs/identifier"
+            },
+            "topic_prefix": {
+              "$ref": "#/$defs/topicPrefix"
+            }
+          }
+        },
+        "primary_key": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          },
+          "uniqueItems": true
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "current",
+            "append"
+          ]
+        },
+        "destinations": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "raw",
+            "current",
+            "silver"
+          ],
+          "properties": {
+            "raw": {
+              "$ref": "#/$defs/raw"
+            },
+            "current": {
+              "$ref": "#/$defs/target"
+            },
+            "silver": {
+              "$ref": "#/$defs/target"
+            }
+          }
+        },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/column"
+          }
+        },
+        "delete_policy": {
+          "type": "string",
+          "enum": [
+            "remove",
+            "retain",
+            "record"
+          ]
+        },
+        "snapshot": {
+          "type": "string",
+          "enum": [
+            "initial",
+            "never"
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "current"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "delete_policy": {
+            "type": "string",
+            "enum": [
+              "remove",
+              "retain"
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "delete_policy": {
+            "type": "string",
+            "enum": [
+              "record"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
