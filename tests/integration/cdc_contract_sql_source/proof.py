@@ -322,24 +322,54 @@ class Proof:
 
     def connect_readiness(self, path):
         """初期化中の GET のみ期限内で再試行し、登録 POST は再試行しない。"""
-        require(path in {"/connectors", "/connector-plugins"}, "READY_PATH")
+        require(
+            path in {"/", "/connectors", "/connector-plugins"}, "READY_PATH"
+        )
         deadline = time.monotonic() + CONNECT_START_SECONDS
         reason = "CONNECT_TRANSPORT_NOT_READY"
         while time.monotonic() < deadline:
             try:
                 return self.http(path)
             except HTTPError as error:
-                if error.code not in CONNECT_TRANSIENT:
-                    raise Failure("CONNECT_READY_HTTP_UNEXPECTED") from None
-                # 数値はこの固定集合だけ。応答ヘッダー・本文を表示しない。
-                reason = f"CONNECT_READY_HTTP_{error.code}"
+                code = error.code
+                # Kafka ConnectはJetty起動後にRESTのresourceを設定する。
+                # 初回の固定worker root GETのみ、登録前の404を再試行する。
+                if code not in CONNECT_TRANSIENT and not (
+                    path == "/" and code == 404
+                ):
+                    reason = "CONNECT_READY_HTTP_UNEXPECTED"
+                    if type(code) is int and 100 <= code <= 599:
+                        reason += f"_{code}"
+                    raise Failure(reason) from None
+                reason = f"CONNECT_READY_HTTP_{code}"
             except (URLError, TimeoutError, ConnectionError):
                 reason = "CONNECT_TRANSPORT_NOT_READY"
             time.sleep(1)
         raise Failure(reason)
 
+    def connect_identity(self):
+        """RESTが属するclusterを、所有済み直結brokerと実照合する。"""
+        info = self.connect_readiness("/")
+        metadata = self.admin_client(
+            {"bootstrap.servers": BROKER}
+        ).list_topics(timeout=6)
+        cluster = metadata.cluster_id
+        require(
+            isinstance(info, dict)
+            and isinstance(cluster, str)
+            and re.fullmatch(r"[A-Za-z0-9_-]{22}", cluster) is not None
+            and info.get("kafka_cluster_id") == cluster
+            and isinstance(info.get("version"), str)
+            and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", info["version"])
+            is not None
+            and isinstance(info.get("commit"), str)
+            and re.fullmatch(r"[0-9a-f]{7,40}", info["commit"]) is not None,
+            "CONNECT_WORKER_IDENTITY",
+        )
+
     def register(self):
         """他の connector がない新規workerに正式版の1設定だけを作成。"""
+        self.connect_identity()
         initial = self.connect_readiness("/connectors")
         require(initial == [], "CONNECT_NOT_EMPTY")
         plugins = self.connect_readiness("/connector-plugins")

@@ -211,6 +211,7 @@ class Restart(src.Proof):
     def after(self, prior):
         """worker 再起動後も同じ Kafka 状態から新規 I/U/D が流れる。"""
         self.phase = "RESTART_AFTER_START"
+        self.connect_identity()
         src.require(
             self.durable(startup=True) == prior["position"],
             "SOURCE_OFFSET_CHANGED",

@@ -3,7 +3,8 @@
 import copy
 import json
 import unittest
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 
 from proof import (
@@ -79,6 +80,56 @@ class SourceProofTests(unittest.TestCase):
                 ):
                     proof.connect_readiness("/connector-plugins")
             self.assertEqual(request.call_count, 1)
+
+    def test_only_fixed_worker_root_tolerates_bootstrap_404(self):
+        """Jettyのresourceが未登録な時間帯を、root GETだけで待つ。"""
+        proof = Proof(None, None, None, "", "")
+        boot = HTTPError("", 404, "private response", None, None)
+        with patch.object(proof, "http", side_effect=[boot, {}]) as root:
+            with patch("proof.time.sleep"):
+                self.assertEqual(proof.connect_readiness("/"), {})
+            self.assertEqual(
+                [call.args for call in root.call_args_list], [("/",)] * 2
+            )
+        with patch.object(proof, "http", side_effect=boot) as route:
+            with self.assertRaisesRegex(
+                Failure, "CONNECT_READY_HTTP_UNEXPECTED_404"
+            ):
+                proof.connect_readiness("/connectors")
+            self.assertEqual(route.call_count, 1)
+
+    def test_worker_identity_is_bound_to_the_owned_broker(self):
+        """HTTPが回復しても、曖昧な応答や他brokerでは開始しない。"""
+        broker = "A" * 22
+        broker_client = Mock()
+        broker_client.list_topics.return_value = SimpleNamespace(
+            cluster_id=broker
+        )
+        factory = Mock(return_value=broker_client)
+        proof = Proof(None, None, factory, "", "")
+        exact = {
+            "version": "4.3.1",
+            "commit": "1abcde234567890f",
+            "kafka_cluster_id": broker,
+        }
+        with patch.object(
+            proof, "connect_readiness", return_value=exact
+        ) as root:
+            proof.connect_identity()
+        root.assert_called_once_with("/")
+        factory.assert_called_once_with(
+            {"bootstrap.servers": "fixture-broker:9092"}
+        )
+        for bad in (
+            {},
+            dict(exact, kafka_cluster_id="B" * 22),
+            dict(exact, version=""),
+        ):
+            with patch.object(proof, "connect_readiness", return_value=bad):
+                with self.assertRaisesRegex(
+                    Failure, "CONNECT_WORKER_IDENTITY"
+                ):
+                    proof.connect_identity()
 
     def test_connect_retry_deadline_keeps_last_fixed_status(self):
         """期限内の成功がなければ、最終分類で必ず拒否する。"""
