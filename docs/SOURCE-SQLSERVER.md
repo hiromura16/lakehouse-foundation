@@ -26,7 +26,7 @@ setopt INTERACTIVE_COMMENTS
 ```
 <!-- shell-usage:end -->
 
-`extract-sqlserver.py` は会社の既存DBを読み取り、MES・ERPの6つの入力契約に対応するCSV・JSON Linesを作ります。SQLは列を明示した `SELECT TOP (上限+1)` だけです。DB・表の作成、UPDATE・DELETE・DROP、CDCや権限の設定は行いません。ダミー投入用 `generate-demo.py` とは別のツールです。
+`extract-sqlserver.py` は会社の既存DBを読み取り、MES・ERPの6つの入力契約に対応するCSV・JSON Linesを作ります。SQLは列を明示した `SELECT TOP (上限+1)` だけです。DB・表の作成、UPDATE・DELETE・DROP、CDCや権限の設定は行いません。実ソースのSELECT結果を既定の受信形式へ受け渡す処理で、合成データを作ったりSQL Serverへ書き込んだりしません。
 
 このbridgeは全件スナップショット用です。差分watermark・CDC・ストリーミングは実装していません。SQL認証や読み取りの実行を伴わない `source-check` のTCP到達確認とは用途が異なります。
 

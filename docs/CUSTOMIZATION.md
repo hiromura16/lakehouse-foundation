@@ -78,7 +78,7 @@ Goldを新しい表にする場合、現在のpreview/AI APIは固定2表なの�
 | 順序 | 変更箇所 | 必要な判断 |
 | --- | --- | --- |
 | 契約定義 | `medallion/sources.json` | path、列、主キー、更新時刻、型、文字コード、NULL |
-| 入力生成/抽出 | generate-demo / service / SQL table-map | 合成値、実列対応、読取り権限、完了marker |
+| 外部入力の受信 | read-only抽出 / SQL table-map / Landing | 実列対応、読取り権限、完了印 |
 | 取込 | `scripts/admin.py` のresolve_source/ensure_tables/ingest | 原本判定・Bronze型・hash/再投入・上限・画像分離 |
 | 採用/隔離 | 01_silver.sql / 02_quarantine.sql | 最新候補、妥当性、親参照、不正理由 |
 | 業務集計 | 03_gold.sql | 粒度とJOIN増幅、遅延/訂正/削除 |

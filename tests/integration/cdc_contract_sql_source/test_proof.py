@@ -2,7 +2,10 @@
 
 import copy
 import json
+import subprocess
+import sys
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from urllib.error import HTTPError
@@ -52,6 +55,31 @@ def evidence(offset, op, payload, *, key=None, topic=TOPIC, partition=0):
 
 class SourceProofTests(unittest.TestCase):
     """受入条件の壊れやすい境界を固定する。"""
+
+    def test_fixed_contract_survives_removing_runtime_demo_writer(self):
+        """内蔵writerなしで、既存6表の公開契約とCDC定義を確認する。"""
+        root = Path(__file__).resolve().parents[3]
+        scripts = root / "scripts"
+        self.assertFalse((scripts / "cdc-demo.py").exists())
+        self.assertFalse((scripts / "generate-demo.py").exists())
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                str(scripts / "cdc_contract.py"),
+                "validate",
+                str(root / "contracts/cdc/fixed-demo-v1.json"),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        self.assertEqual(
+            json.loads(result.stdout), {"status": "valid", "table_count": 6}
+        )
+        ddl = root / "infra/sqlserver/004_demo_cdc_enable.sql"
+        self.assertIn("sp_cdc_enable_table", ddl.read_text(encoding="utf-8"))
 
     def test_connect_transient_statuses_retry_read_only(self):
         """起動中の一過性statusは、同じGETだけを再試行する。"""

@@ -1,68 +1,20 @@
-# MES・ERPのダミーデータ投入
+# 外部ファイルのLanding入力契約
 
 <!-- doc-purpose:start -->
-> **役割:** 6種のMES・ERP素材、画像、SQL投入、有限streamの生成仕様とCLIを確認する。
+> **役割:** CSV・JSON Lines・画像の契約と完成印を確認する。
 >
 > **対象読者:** データ利用担当 / 開発・設計担当
 >
-> **読むタイミング:** ダミー生成の入力・出力・書込範囲を決め、素材だけを準備するとき。
+> **読むタイミング:** 外部アプリからLandingへファイルを届けるとき。
 >
 > **前提となる資料:** [初めて構築する人の一本道ガイド](<START-HERE.md>)
 >
-> **次に読む資料:** [GUIからダミーデータを投入する](<DEMO-GUI.md>) / [異常シナリオを選んで素材を作る](<ANOMALY-SCENARIOS.md>) / [MES・ERPデータをBronzeからGoldへ整える](<MEDALLION.md>)
+> **次に読む資料:** [GUIで外部データの処理を確認する](<DEMO-GUI.md>) / [外部入力の受入・隔離を検証する](<ANOMALY-SCENARIOS.md>) / [MES・ERPデータをBronzeからGoldへ整える](<MEDALLION.md>)
 >
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
-<!-- shell-usage:start -->
-**コマンドのシェル:** 「Bash / Zsh共通」は同じ内容を使い、専用例は自分のシェルを選びます。[詳しい使い分け](SHELLS.md)。
-
-Zshの対話端末では、コメント付きの例を貼る前に一度だけ次を実行します。Bashでは不要です。
-
-**Zsh**
-
-```zsh
-setopt INTERACTIVE_COMMENTS
-```
-<!-- shell-usage:end -->
-
-確認日: 2026-11-10（JST）。GUIで始める場合は [初回ガイド](START-HERE.md) → [ダミーGUI](DEMO-GUI.md) の順に進めます。以下はCLIから素材だけを作る手順です。
-
-`generate-demo.py` は工場MES・ERPに似た原データを作り、ランディングディレクトリか、専用のSQL Server検証DBへ投入するだけのツールです。取り込み、メダリオン変換、Trino、Dokployは呼び出しません。会社の実データを参照する必要はありません。
-
-1件の製造指図・改訂実績・分割出荷を追う説明は [MEDALLION.md](MEDALLION.md)、n8n等からの手動実行は [GUI-WALKTHROUGHS.md](GUI-WALKTHROUGHS.md) を参照してください。
-
-## 最初に理解する「素材」と「結果」
-
-この文書の対象は、製品・指図・受注・出荷・実績・停止の**入力側**です。初心者は「受注1件から出荷が複数行できる」「原本の数値も文字列で持つ」の2点を先に押さえます。数値として正しいか、どの版を採用するかは下流のSQLが決めます。[用語](GLOSSARY.md) の原本・主キー・manifestも参照してください。
-
-| 知りたいこと | どこを見るか | そこで分かる範囲 |
-| --- | --- | --- |
-| 何を何行作ったか | 生成先のmanifest | 入力件数、seed、hash。Silver/Goldの成功ではない |
-| 全部コピーできたか | 完成名の素材と隣のready | ファイル単位の完成と内容hash |
-| SQLへ何を作ったか | 新規schema名と6表の件数 | 専用DBへのcommit。ファイルとの一括commitではない |
-| 品質や集計が正しいか | 後続のmedallionと独立照合 | 検証した入力範囲に対する変換結果 |
-
-作業は配置先の通常ユーザーで、リポジトリのルートから行います。ファイル生成だけならDBやcoreの起動は不要です。生成物を取り込むときだけ、検証用環境の `LANDING_DIR` と出力先を合わせます。会社の実データ用環境へ合成素材を混ぜません。
-
-## ランディングへ生成する
-
-Python 3.10以降の標準ライブラリだけで動きます。出力先はGitリポジトリの外に置きます。既存の空ディレクトリも使えます。
-
-**Bash / Zsh共通**
-
-```sh
-python3 scripts/generate-demo.py \
-  --destination landing \
-  --output /srv/demo-input \
-  --seed 42 --orders 20 --days 7 --scenario edge
-```
-
-同じseed・orders・days・scenarioなら、6ソースの内容とSHA-256は毎回同じです。時刻の基準は固定の架空操業日であり、実行日時を使いません。`--orders` は製造指図・受注それぞれの件数、`--days` は操業日数です。2工場・4製品を使い、1指図に2製造イベント、1受注に2出荷を作ります。
-
-既存の生成ファイルと `manifest.json` は通常上書きしません。別の出力先を使うか、意図的に置き換える場合だけ `--force` を指定します。他の名前のファイルは削除しません。ソースごとに一時ファイルから完成名へ切り替え、その後 `<filename>.ready` にSHA-256を記録します。生成器は取り込みサービスを起動しませんが、既にそのディレクトリを監視する取り込みサービスがある場合は、readyの完成後にそのサービスが独立して取り込むことがあります。
-
-`manifest.json` はseed・シナリオ・行数・ハッシュ・SQLへ投入した場合の新規スキーマ名を記録します。検証SQLやlakehouseへの操作指示は含みません。ランディングとSQLの両方へ投入する場合は `--destination both` を使います。ファイル公開とSQLコミットの間には分散トランザクションがなく、片側の成功後にもう片側が失敗する可能性があります。
+外部アプリが原本を配置し、Foundationが取り込みます。[外部データの入口](../README.md#外部データの入口) に各外部アプリを整理しています。
 
 ## 6つの入力契約
 
@@ -79,178 +31,10 @@ python3 scripts/generate-demo.py \
 
 全ソースの `updated_at` は、その業務キーの版の新しさを示します。MESの `event_time` や停止開始・終了時刻は実際の事象時刻です。この区別により遅れて到着した実績を元の操業日に集計できます。原本をBronzeへ取り込む際に、取り込み側が `_source_file`・`_source_hash`・`_ingested_at` を付けます。
 
-`clean` は型不正や参照切れのないデータです。通常の分納・未出荷残・納期後の出荷は含みます。`edge` は次を追加します。
+## 完成印、画像、再処理
 
-- 同じ製造イベントの完全重複と、良品数を3増やした新しい改訂版。
-- 事象時刻は古いままで、更新時刻が後日の遅延到着イベント。
-- 数値として解釈できない良品数・単価、負の良品数・出荷数。
-- 未登録製品、存在しない製造指図・受注への参照。
-- 終了時刻が開始時刻より前の停止履歴。
+原本の書き込みが終わってから、同じ場所へ `原本名.ready` を公開します。内容は原本のSHA-256（小文字64文字と改行）です。書きかけのファイルは処理しません。画像は `images/` に置き、拡張子・デコード・ハッシュを確認します。対応する業務パス・列を持たない任意のファイルは、業務Silverへは自動変換されません。
 
-## SQL Serverの専用検証DBへ投入する
+外部ファイル生成アプリの既定形式も受け付けます。Landing内の配送ルート（既定はrun/job単位）にある `manifests/*.ready.json` は `source.file-manifest.v2` と `artifacts`（その配送ルートからの相対path、bytes、sha256）を宣言します。全原本のサイズとSHA-256、対応する形式（業務CSV/JSONLの列、非圧縮JSON/JSONLの構文、CSVのUTF-8、画像のデコード・拡張子）を検査してから受領対象にします。任意階層や圧縮・その他ファイルは業務列を自動判定せず、認識できない形式はRaw原本として保存します。原本は1件16MiB、manifest自体は2MiB、原本総量は1バッチ64MiB、最大1024件です。宣言と不一致のバッチは受領せず、完了印・原本を移動せず残して他のバッチの処理を続けます。結果に拒否件数と最大20件の安全な識別子・理由を返します。識別子はLandingから見たマーカーパスのSHA-256の先頭16桁です。監視用の論理隔離であり、別ディレクトリへの移動や元ファイルの削除はしません。修正と再配送後に再試行します。正常な完成印でも業務契約を満たさない行は既存のQuarantineルールに従います。Raw原本の受領、業務パス・列の解析、Silver/Gold変換は別々に確認します。既定のrun/job配下のCSV・JSON・画像はRaw（画像は寸法等も記録）に受け入れます。型付きの製品処理では外部アプリの互換モードが置く正規の増分名 `csv/erp_products__<hex12>_<4桁>.csv` と隣接 `.ready` を使い、ファイルのベース名だけで契約を推定しません。
 
-この機能だけ追加ドライバが必要です。
-
-**Bash / Zsh共通**
-
-```sh
-uv venv --python 3.12 "$HOME/.local/share/lakehouse-foundation/demo-venv"
-uv pip sync \
-  --python "$HOME/.local/share/lakehouse-foundation/demo-venv/bin/python" \
-  requirements-demo.txt
-```
-
-管理者が先に専用の検証DBと書き込み用ユーザーを用意します。生成器はDBを作りません。会社の読み取り接続を示す `SOURCE_SQLSERVER_*` を書き込みには使わず、別の非公開envファイルに次を設定します。ファイルはリポジトリ外・0600にします。
-
-```dotenv
-DEMO_SQLSERVER_HOST=demo-sql.example.invalid
-DEMO_SQLSERVER_PORT=1433
-DEMO_SQLSERVER_DATABASE=ManufacturingDemo
-DEMO_SQLSERVER_USER=demo_writer
-DEMO_SQLSERVER_PASSWORD=REPLACE_LOCALLY
-DEMO_SQLSERVER_CA_FILE=system
-DEMO_SQLSERVER_HOSTNAME_IN_CERTIFICATE=
-SOURCE_SQLSERVER_DATABASE=CompanyProduction
-```
-
-`SOURCE_SQLSERVER_DATABASE` は書き込み禁止対象のDB名です。会社用設定と同じファイルを使う場合も、書き込みに使う資格情報は `DEMO_SQLSERVER_*` だけです。`master`・`model`・`msdb`・`tempdb` と、設定済みの会社ソースDB名を拒否します。書き込み先が会社の業務DBと別であることを管理者が確認してください。
-
-**Bash / Zsh共通**
-
-```sh
-"$HOME/.local/share/lakehouse-foundation/demo-venv/bin/python" \
-  scripts/generate-demo.py \
-  --destination sqlserver \
-  --output /srv/demo-run-metadata \
-  --env-file /srv/private/demo.env \
-  --allow-sql-write --seed 42 --orders 20 --days 7 --scenario edge
-```
-
-実行ごとに `lh_demo_<ランダム値>` という新規スキーマを使います。既存スキーマを再利用するオプションはなく、同名が存在した場合は停止します。新規6表の作成とINSERTだけを行い、会社の既存表をUPDATE・DELETE・DROPしません。CDC・ログイン権限も変更しません。SQL側のDDLとINSERTは1トランザクションでコミットし、途中エラーならロールバックします。`--force` でもSQLの既存スキーマは置き換えません。検証後のスキーマ削除は管理者の別作業です。
-
-各SQL表も全列 `nvarchar(max)` の生データ用ステージングです。異常な型の文字列と重複版を検証するための設計であり、本番MES・ERPの型付きスキーマ、制約、インデックス、更新負荷、CDC性能の再現ではありません。型・CDCの試験は実ソース契約に対応した別の試験で行います。
-
-接続は暗号化を必須にし、通常はCAと証明書のホスト名も検証します。`DEMO_SQLSERVER_CA_FILE` はOSの信頼ストアを使う `system`、または社内CAのPEMファイルを指定します。FreeTDSの `require` は暗号化を要求し、証明書検証には `ca file` の指定も必要なので、ツールはプロセス専用設定で両方を指定します。[FreeTDS公式設定](https://www.freetds.org/userguide/freetdsconf.html)、[pymssqlの暗号化引数](https://github.com/pymssql/pymssql/blob/v2.4.6/docs/ref/pymssql.rst)
-
-`DEMO_SQLSERVER_HOSTNAME_IN_CERTIFICATE` は省略可能です。接続alias/IPと証明書名が異なる場合に限り、管理者が確認した証明書の照合名を指定します。英数字・`_`・`.`・`-` の1〜253文字を許可し、改行や設定文の挿入は拒否します。FreeTDSの `certificate hostname` を使ってCA検証と明示名の照合を維持し、空欄なら接続hostを照合します。[FreeTDS公式設定](https://www.freetds.org/userguide/freetdsconf.html)
-
-自己署名証明書のローカル検証DBに限り、`--test-trust-server-certificate` で証明書検証を例外扱いできます。このフラグはloopback接続だけを許可し、暗号化自体は必須のままです。会社接続でこの例外は使いません。
-
-## メダリオン変換と期待値は別の作業
-
-生成器の実行後、取り込み・変換を明示的に実行します。[01_silver.sql](../medallion/01_silver.sql)、[02_quarantine.sql](../medallion/02_quarantine.sql)、[03_gold.sql](../medallion/03_gold.sql) の順です。取り込み前の6表は `iceberg.bronze`、整備済みは `iceberg.silver`、不正レコードは `iceberg.quarantine`、業務集計は `iceberg.gold` に置きます。
-
-Silverは `TRY_CAST` と安全な時刻パースを使い、主キーごとに `updated_at`・原本ハッシュ・取り込み時刻の降順で最新の1版を選びます。同順位では原本の文字列表現で順序を固定します。完全重複と過去版は隔離件数に加えません。最新候補の型・数量・親参照が不正なら、そのレコードを隔離し、過去の正常版へ自動的に戻しません。不正な更新時刻は新旧比較できず、パースできる時刻より後順位になります。隔離表には `raw_record_json` と理由コードを残すので元の不正文字列も確認できます。
-
-Goldの `factory_daily_production` は工場・UTC日ごとの計画数、良品数、不良数、生産数、停止分、歩留まり、計画達成率です。計画・実績・停止をそれぞれ先に集約してから結合し、子明細同士の結合で数量を増幅させません。歩留まりは良品数÷生産数、計画達成率は良品数÷計画数で、分母0ならNULLです。停止時間は開始日の集計で、日跨ぎの按分は行いません。稼働カレンダーと速度基準がないためOEEは算出しません。
-
-`sales_fulfillment` は受注ごとの受注数、出荷数、未出荷残、履行率、納期後出荷数・件数を示します。出荷は受注ごとに先に集約し、納期後の判定はUTC出荷日が約束日を過ぎた場合です。未出荷残は0未満にならず、過剰出荷なら履行率は100%を超えます。
-
-Icebergの置換コミットは表ごとです。全6表・隔離表・Goldをまとめるトランザクションはなく、変換途中に複数表を読むと実行世代が混在し得ます。定期運用では実行単位を固定し、成功後に利用側へ切り替える仕組みを追加してください。
-
-[expected-demo.json](../medallion/expected-demo.json) はseed42・orders20・days7・edge専用の検証fixtureです。生成器のmanifestとは別に管理し、SQLとは独立した整数・Decimal・日付の計算で期待値を用意しました。代表値は次のとおりです。
-
-| 表 | Bronze | Silver | Quarantine |
-| --- | ---: | ---: | ---: |
-| 製品 | 4 | 4 | 0 |
-| 製造指図 | 21 | 20 | 1 |
-| 受注 | 21 | 20 | 1 |
-| 出荷 | 42 | 40 | 2 |
-| 製造実績 | 46 | 41 | 3 |
-| 停止履歴 | 21 | 20 | 1 |
-
-原本155行は、Silverの145行、Quarantineの8行、重複・旧版の2行に分かれます。
-
-工場集計の合計は計画2347、良品2154、不良62、生産2216、停止185分です。受注集計は受注1435、出荷1363、残72、納期後出荷132・4件です。fixtureはこれらの合計に加えて日別・受注別の詳細、最新改訂版、遅延到着日、不正文字列の保持も照合します。別パラメーターの生成結果にこの固定fixtureを当てないでください。
-
-## 最初の確認を小さく進める
-
-素材と処理の役割を分けて確認する例です。coreが起動済みで、例の出力先がprivate envの `LANDING_DIR` と一致することを前提にします。
-
-**Bash / Zsh共通**
-
-```bash
-export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
-python3 scripts/generate-demo.py \
-  --destination landing --output /srv/lakehouse/landing \
-  --seed 42 --orders 20 --days 7 --scenario edge
-./scripts/lakehouse.sh ingest
-./scripts/lakehouse.sh medallion
-```
-
-6つの業務原本だけなら、初回ingestは6件取り込み・0件skip、その後のmedallionでは0件取り込み・6件skipとSQL14文が目安です。すでに同じ素材がある場合や画像等を追加した場合は件数が変わります。固定の期待値確認は、通常の業務namespaceと分ける `./scripts/lakehouse.sh verify` を使います。verify側は別に画像1枚も作るため、初回7件取り込み・再投入7件skipになります。
-
-`manifest.json` だけを共有しても素材は転送されません。各CSV/JSONLと対応する `.ready` が必要です。生成した素材を別のランディングへコピーするときは、原本を先に完成させ、readyを最後に公開します。
-
-## 件数を増やすときの境界
-
-生成器の `--orders` 上限と、workerが受け付けるファイルの上限は別です。1指図あたりMES実績2行、1受注あたり出荷2行を作り、edgeでは異常・改訂等の行も追加します。`--orders 100000` を指定できることは、できた全ファイルを標準workerが一度に取り込めることを意味しません。
-
-標準workerは1原本16MiB以下、契約付きCSV/JSONは100000行以下です。ファイルを大きくする場合は、生成後のbyte数と実際の明細件数を先に確認します。`--force` は上書きの承認だけで、取り込み上限を解除しません。
-
-同じパスを更新すると、そのファイル由来の現在のBronze行を置き換えます。ファイルやreadyを削除しただけでは、既に取り込んだ行は消えません。全件ファイルの置換と、DBのINSERT/UPDATE/DELETEイベントの追跡は別の契約です。詳細は [再投入・更新・削除](MEDALLION.md#8-完了マーカー再投入更新削除) を参照してください。
-
-## 読み取り用と投入用の接続を分ける
-
-pymssql **2.4.6** を [requirements-demo.txt](../requirements-demo.txt) に固定し、TLSは [同版の接続API](https://github.com/pymssql/pymssql/blob/v2.4.6/docs/ref/pymssql.rst) と [FreeTDS設定](https://www.freetds.org/userguide/freetdsconf.html) を照合しています。DB管理者が用意する通常生成用writerの具体的な権限は [SOURCE-SQLSERVER.md](SOURCE-SQLSERVER.md) を参照します。CSV/JSONだけの生成には追加Python依存は不要です。
-
-通常のGUI生成は毎回新しいschemaへINSERTします。既存6行のUPDATE/DELETEを試したい場合は [CDC専用DB準備](CDC.md) の別フローを使います。DB作成・CDC有効化・権限付与はGUI投入から実行しません。製品の版と本基盤固有の入力契約の違いは [REFERENCES.md](REFERENCES.md) に記録しています。
-
-## 再現実験: 同じseedでもGUIとCLIの比較対象は異なる
-
-CLIの固定名の生成では、同じ条件なら素材のhashを比較できます。GUI/APIはrun IDを主キーとファイル名へ付けるため、同じseedでも別runのhashや主キーは同じになりません。これは入力の衝突を避けるためです。件数、分布、異常の影響を比較する場合は、run IDを除いた業務条件と対象範囲も揃えます。
-
-| 比較したいこと | 揃える条件 | 比較してよいもの |
-| --- | --- | --- |
-| CLI生成の再現性 | seed/orders/days/scenario/異常集合/率 | 原本のSHA-256、行集合 |
-| GUIの正常と異常 | 基礎条件と1つの追加異常 | 各runのmanifest、対象キーごとの変化 |
-| SQLとlandingの一致 | 同じ生成操作のboth出力 | schemaの行集合と同じrunのファイル |
-| workerの再取り込み | 同じ相対pathと同じ原本hash | imported/skippedと派生表の値 |
-
-確認例として、通常ユーザーの端末で生成済みmanifestの要点だけを表示できます。`DEMO_OUTPUT` は自分の検証用出力先を入力し、秘密のenvファイルを指定しません。
-
-**Bash**
-
-```bash
-read -r -p '生成済み素材の出力ディレクトリ: ' DEMO_OUTPUT
-python3 - "$DEMO_OUTPUT/manifest.json" <<'PYTHON'
-import json
-import sys
-from pathlib import Path
-
-manifest = json.loads(Path(sys.argv[1]).read_text())
-print("条件:", manifest["seed"], manifest["orders"], manifest["scenario"])
-for source in manifest["sources"]:
-    print(source["table"], source["rows"], source["sha256"])
-PYTHON
-```
-
-**Zsh**
-
-```zsh
-read -r 'DEMO_OUTPUT?生成済み素材の出力ディレクトリ: '
-python3 - "$DEMO_OUTPUT/manifest.json" <<'PYTHON'
-import json
-import sys
-from pathlib import Path
-
-manifest = json.loads(Path(sys.argv[1]).read_text())
-print("条件:", manifest["seed"], manifest["orders"], manifest["scenario"])
-for source in manifest["sources"]:
-    print(source["table"], source["rows"], source["sha256"])
-PYTHON
-```
-
-GUI/APIのmanifestは `manifests/demo__<run_id>_<batch>.json` です。表示された相対pathを選び、CLIの `manifest.json` と取り違えないでください。ここでは素材の行数を見ているだけで、取り込みやSQLを実行しません。
-
-## 独自MES/ERPへ広げるための変更点
-
-| 変更したいこと | 実装で確認する場所 | 必要な回帰確認 |
-| --- | --- | --- |
-| 素材の値や分布 | [build_data](../scripts/generate-demo.py) | 同じseedで再現、6契約と親参照、既存fixtureへの影響 |
-| 列・入力契約 | [sources.json](../medallion/sources.json) とencoded_sources | CSV/JSONの列、SQL staging、抽出map、Bronze型 |
-| 異常を追加 | [source_scenarios.py](../scripts/source_scenarios.py) | 選択検査、競合、影響率、GUI表示、manifest診断 |
-| GUIのrun/stream | [service.py](../infra/demo/service.py) と [job_manager.py](../infra/demo/job_manager.py) | 主キー分離、既存path拒否、取消と途中成功の扱い |
-| 生成した値を業務指標へ使う | Silver/Quarantine/GoldのSQL | 型、最新版、参照、集計粒度と独立期待値 |
-
-上流の素材を変えただけで、Silver/Goldの契約は自動更新されません。列を増やす変更は [カスタマイズ手順](CUSTOMIZATION.md) に従い、生成・抽出・取込・変換・検証を一組で更新します。`--orders 100000` を許可できることと、標準workerの1原本16MiB/100000行へ全明細が収まることは別です。
+[Sambaの受け口とready](DEPLOYMENT.md#8-sambaのランディング共有を追加する) · [変換・再処理・Quarantine](MEDALLION.md) · [固定の契約fixture](../samples/README.md)

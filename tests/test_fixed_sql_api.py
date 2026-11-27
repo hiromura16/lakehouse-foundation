@@ -53,11 +53,9 @@ class FixedSqlApiTests(unittest.TestCase):
             capture_output=True,
             check=True,
         )
-        self.generator = mock.Mock(return_value={"sources": []})
         self.app = API.create_app(
             path,
             token="fixed-sql-unit-api",
-            generator=self.generator,
             landing=self.root / "landing",
         )
         self.client = TestClient(self.app)
@@ -85,43 +83,6 @@ class FixedSqlApiTests(unittest.TestCase):
                 return response
             time.sleep(0.01)
         self.fail("Synthetic job did not finish.")
-
-    def test_removed_destinations_and_writer_consent_are_rejected(self):
-        """Former fixed writes fail before enqueue, even with consent."""
-        for payload in (
-            {"destination": "fixed-sqlserver", "allow_sql_write": True},
-            {
-                "destination": "landing-fixed-sqlserver",
-                "allow_sql_write": True,
-            },
-            {"destination": "landing", "confirm_shared_source_database": True},
-        ):
-            with self.subTest(payload=payload):
-                reply = self.request("POST", "/jobs", json=payload)
-                self.assertEqual(reply.status_code, 422)
-        self.generator.assert_not_called()
-
-    def test_generic_sql_run_id_reaches_source_only_generator(self):
-        """Dedicated generic SQL jobs still carry the same approved options."""
-        run_id = "012345abcdef"
-        reply = self.request(
-            "POST",
-            "/jobs",
-            json={
-                "destination": "sqlserver",
-                "allow_sql_write": True,
-                "run_id": run_id,
-                "scenario": "clean",
-            },
-        )
-        self.assertEqual(reply.status_code, 202)
-        result = self.wait(reply.json()["id"])
-        self.assertEqual(result["status"], "succeeded")
-        arguments = self.generator.call_args.kwargs
-        self.assertEqual(arguments["run_id"], run_id)
-        self.assertTrue(arguments["allow_sql_write"])
-        self.assertEqual(arguments["destination"], "sqlserver")
-        self.assertNotIn("confirm_shared_source_database", arguments)
 
     def test_diagnostics_filter_private_details_and_share_operation_lock(self):
         self.adapter.diagnose.return_value = {

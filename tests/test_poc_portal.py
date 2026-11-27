@@ -99,10 +99,13 @@ class PortalApiTests(unittest.TestCase):
         self.assertEqual(catalog.status_code, 200)
         items = capabilities.json()["capabilities"]
         self.assertEqual(
-            next(x["access"] for x in items if x["id"] == "generate"), "write"
+            next(x["access"] for x in items if x["id"] == "pipeline"), "write"
         )
         self.assertEqual(
             next(x["access"] for x in items if x["id"] == "catalog"), "read"
+        )
+        self.assertFalse(
+            {"generate", "scenarios", "cdc_demo"} & {x["id"] for x in items}
         )
         paths = {item["path"] for item in items}
         self.assertIn("/sql-source/status", paths)

@@ -1,5 +1,6 @@
 """Check the read-only SQL bridge with recorded queries and temporary files."""
 
+import csv
 import importlib.util
 import json
 import re
@@ -18,11 +19,31 @@ SPEC = importlib.util.spec_from_file_location(
 )
 EXTRACTOR = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(EXTRACTOR)
-HELPER = EXTRACTOR.source_io()
-CONTRACTS = HELPER.contracts()
+CONTRACTS = EXTRACTOR.load_contracts()
 EXAMPLE = json.loads(
     (ROOT / "infra/source/sqlserver-tables.example.json").read_text()
 )
+
+
+def fixture_rows():
+    """外部入力契約の固定データを、記録型SQLカーソルへの応答に使う。"""
+    result = {}
+    for source in CONTRACTS:
+        path = ROOT / "samples/landing-contract" / source["path"]
+        with path.open(encoding="utf-8", newline="") as stream:
+            rows = (
+                list(csv.DictReader(stream))
+                if path.suffix == ".csv"
+                else [json.loads(line) for line in stream]
+            )
+        result[source["table"]] = [
+            {
+                key: EXTRACTOR.canonical_value(value, ZoneInfo("UTC"))
+                for key, value in row.items()
+            }
+            for row in rows
+        ]
+    return result
 
 
 class SourceCursor:
@@ -98,7 +119,7 @@ class SourceExtractionTests(unittest.TestCase):
         return settings, mapping
 
     def test_select_only_with_explicit_columns_and_tls(self):
-        data = HELPER.build_data(scenario="clean")
+        data = fixture_rows()
         connection = SourceConnection(data)
         driver = mock.Mock()
         driver.connect.return_value = connection
@@ -152,7 +173,7 @@ class SourceExtractionTests(unittest.TestCase):
             EXTRACTOR.canonical_value(b"unsupported-binary", zone)
 
     def test_row_limit_publishes_nothing(self):
-        connection = SourceConnection(HELPER.build_data())
+        connection = SourceConnection(fixture_rows())
         driver = mock.Mock()
         driver.connect.return_value = connection
         with tempfile.TemporaryDirectory() as directory:
@@ -190,7 +211,7 @@ class SourceExtractionTests(unittest.TestCase):
                 EXTRACTOR.read_mapping(mapping, CONTRACTS)
 
     def test_completed_files_and_overwrite_refusal(self):
-        connection = SourceConnection(HELPER.build_data())
+        connection = SourceConnection(fixture_rows())
         driver = mock.Mock()
         driver.connect.return_value = connection
         with tempfile.TemporaryDirectory() as directory:

@@ -1,13 +1,13 @@
 # GUI操作APIとSwagger
 
 <!-- doc-purpose:start -->
-> **役割:** Swaggerの認証と固定APIを使い、設定保存・素材生成・非同期job・参照を行う。
+> **役割:** Swaggerの認証と固定APIを使い、設定保存・外部入力の後続処理・非同期job・参照を行う。
 >
 > **対象読者:** データ利用担当 / 開発・設計担当
 >
 > **読むタイミング:** GUIと同じ操作をAPIクライアントや自動化から呼び出すとき。
 >
-> **前提となる資料:** [初めて構築する人の一本道ガイド](<START-HERE.md>) / [GUIからダミーデータを投入する](<DEMO-GUI.md>)
+> **前提となる資料:** [初めて構築する人の一本道ガイド](<START-HERE.md>) / [GUIで外部データの処理を確認する](<DEMO-GUI.md>)
 >
 > **次に読む資料:** [AIクライアントからMCPで操作する](<MCP.md>) / [n8n・Airflow・Grafanaを画面から使う](<GUI-WALKTHROUGHS.md>)
 >
@@ -29,7 +29,7 @@ setopt INTERACTIVE_COMMENTS
 確認日: 2026-11-10（JST）。初回配置・作業端末・権限は [START-HERE.md](START-HERE.md) で準備します。以下の `up` はCLI管理の環境だけで使います。Dokploy管理では同じprivate設定とComposeサービスのEnvironmentを揃え、9ファイルを使ってDeployします。[0.31.0の配置手順](DOKPLOY.md)
 
 
-このAPIは、設定の保存、合成素材の投入、明示した後続処理、Goldの参照を担当します。FastAPIのSwagger UIから入力項目と応答形式を確認できます。初めて操作する場合は [DEMO-GUI.md](DEMO-GUI.md)、会社導入は [COMPANY-ROLLOUT.md](COMPANY-ROLLOUT.md) を先に読みます。
+このAPIは、設定の保存、外部データの後続処理、Goldの参照を担当します。FastAPIのSwagger UIから入力項目と応答形式を確認できます。初めて操作する場合は [DEMO-GUI.md](DEMO-GUI.md)、会社導入は [COMPANY-ROLLOUT.md](COMPANY-ROLLOUT.md) を先に読みます。
 
 ## 起動と認証
 
@@ -45,7 +45,7 @@ export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 
 | 入口 | 既定のURL | 用途 |
 | --- | --- | --- |
-| 操作画面 | `http://localhost:8501/` | Streamlitの設定・素材投入・進捗確認 |
+| 操作画面 | `http://localhost:8501/` | Streamlitの設定・受信後の処理・進捗確認 |
 | Swagger UI | `http://localhost:8502/docs` | APIの入力形式を確認して実行 |
 | OpenAPI | `http://localhost:8502/openapi.json` | APIクライアント用の仕様 |
 | readiness | `http://localhost:8502/health` | 設定と認証tokenが読み込めたか |
@@ -58,31 +58,11 @@ SwaggerのJavaScript・CSS・faviconはimage内から配信します。ブラウ
 
 このAPIはDocker socket、sudo権限、Dokployの全体管理鍵を使用しません。host設定の反映やコンテナ再配置は管理者の操作として残します。
 
-## Swaggerで最初の1ジョブを完了する
+## Swaggerで受信後の処理を確認する
 
-1. `/docs` → `Authorize` にCONTROL_API_TOKEN本体を入力します。`GET /capabilities` を開き `Try it out` → `Execute`。200と固定のAPI一覧が成功条件です。
-2. `POST /jobs` を開き、次の本文で `Execute` します。これはランディングへの素材投入だけです。
-
-```json
-{
-  "mode": "batch",
-  "batches": 1,
-  "seed": 42,
-  "orders": 20,
-  "days": 7,
-  "scenario": "clean",
-  "destination": "landing",
-  "images": true,
-  "allow_sql_write": false
-}
-```
-
-3. 202応答の `id` を控え、`GET /jobs/{identifier}` の入力欄に入れて実行します。OpenAPI上の実パラメーター名を使い、`queued` / `running` なら少し待って再度GETします。`succeeded` と結果manifestが成功条件です。POSTの繰り返しは別ジョブを作るので使いません。
-4. 次に `POST /pipeline/{action}` の `action` へ `medallion` を選んで実行し、返された別IDをGETして完了を待ちます。入力素材と派生表の更新は別ジョブです。
-5. `GET /catalog/preview` と `GET /quality` でGoldと品質件数を確認します。verify fixtureの固定155行は、通常GUI/APIで累積した素材件数と比較しません。
-6. 終了時はAuthorizeの `Logout` を押します。認証保持は無効ですが、tokenやレスポンスを社外共有する画面へ残さないでください。
-
-401なら認証、409なら実行中/未準備、422なら入力を下表で確認します。API再起動でジョブ履歴は失われます。SQLの書込み先やpipelineを切り替える前に、対象環境と未反映設定を確認します。
+1. 認証を設定して `GET /capabilities` と `GET /status` を確認します。
+2. 外部入力の配送を確認してから `POST /pipeline/medallion` を一度実行します。
+3. 202のジョブIDを `GET /jobs/{id}` で照会します。202は完了ではありません。
 
 ## 操作の対応
 
@@ -92,11 +72,7 @@ SwaggerのJavaScript・CSS・faviconはimage内から配信します。ブラウ
 | `GET /settings` | 保存済みの非秘密値と秘密設定済みの印を取得 | values、configured_secrets、pendingフラグ |
 | `PATCH /settings` | 許可された項目をprivateファイルへ保存 | `saved: true, applied: false` |
 | `GET /status` | 固定した内部サービスの簡易healthを確認 | services、処理中、反映待ち |
-| `GET /scenarios` | 共有の異常26件・preset7種・競合groupと期待挙動を取得 | version、scenarios、presets、conflicts |
-| `POST /jobs` | 合成素材を1回、または有限回の連続投入 | 202、id、queued |
-| `POST /cdc/demo/{action}` | 準備済み専用CDC検証DBの固定6行を変更 | 202、kind: cdc-source、ジョブID |
-| `GET /jobs/{id}` | 素材投入または後続処理の進捗 | status、completed、results、error |
-| `POST /jobs/{id}/cancel` | 次の素材バッチを取り消す | 現在の状態 |
+| `GET /jobs/{id}` | 外部入力の後続処理の進捗 | status、completed、results、error |
 | `POST /pipeline/ingest` | 原本とBronzeを取り込む | 202、ジョブID |
 | `POST /pipeline/medallion` | 取り込みとSilver/Quarantine/Goldの更新 | 202、ジョブID |
 | `POST /pipeline/verify` | 隔離した合成データで基盤を検証 | 202、ジョブID |
@@ -158,110 +134,9 @@ CLI管理の環境では、確認した同じprivate設定で `plan` と `up` �
 
 企業CAのprivate入力はCORPORATE_CA_FILEだけです。診断では設定dir配下host pathを/privateへ安全に対応付けます。範囲外・不在・symlinkは422 NETWORK_CA_UNAVAILABLEです。runtimeのSSL_CERT_FILE等はimage内の固定bundleを使うため、設定APIから変更しません。[POC-PORTAL.md](POC-PORTAL.md)
 
-## 素材だけを投入する
+## 後続処理の進捗と履歴
 
-```json
-{
-  "mode": "batch",
-  "batches": 1,
-  "seed": 42,
-  "orders": 20,
-  "days": 7,
-  "scenario": "edge",
-  "anomalies": [],
-  "anomaly_rate": 10,
-  "allow_file_faults": false,
-  "destination": "landing",
-  "images": true,
-  "allow_sql_write": false
-}
-```
-
-この操作はCSV/JSON、必要なら画像をランディングへ生成します。素材のmanifest、ready、hashを作ります。取り込み、メダリオン、n8n、Airflowを自動起動しません。後続処理は別の明示操作です。
-
-| 項目 | 指定範囲と判断 |
-| --- | --- |
-| `mode` | `batch` は1回、`stream` は有限のマイクロバッチ |
-| `batches` | 1〜100。batchモードは1のみ |
-| `interval_seconds` | 0〜60秒。待ち時間の合計は600秒以内 |
-| `seed` | 0〜2147483647。同じ条件の再現に使う |
-| `orders` | 1バッチ1〜1000件の基準受注数 |
-| `days` | 1〜366日のデータ範囲 |
-| `scenario` | `clean` または、改訂・不正値・未参照を含む `edge` |
-| `anomalies` | 追加する異常IDの配列。空が既定。最大32、重複・未知・競合は拒否 |
-| `anomaly_rate` | 1〜100の整数、既定10。行の選択率であり、最終隔離率を保証しない |
-| `allow_file_faults` | 高度なファイル異常を意図して作る場合だけtrue。既定false |
-| `destination` | `landing`、専用テストDBの `sqlserver`、両方の `both` |
-| `images` | landing/bothのとき画像素材も生成する |
-| `allow_sql_write` | SQLへ書く場合だけ、利用者が明示的にtrueにする |
-
-SQL投入は `DEMO_SQLSERVER_*` の専用DBへ行い、毎回新しい `lh_demo_...` schemaを作ります。SOURCEと同じDB名やsystem DBは拒否します。APIは新規DBや会社側の権限を用意しません。SQLのみの投入で画像を選ぶと422になります。[DEMO-DATA.md](DEMO-DATA.md)
-
-SQLの企業CAを使う場合、CAファイルを `CONTROL_SETTINGS_DIR` の配下に置き、`DEMO_SQLSERVER_CA_FILE` にそのhost側の絶対pathを設定します。APIは同じ相対位置を `/private` へ変換して読みます。たとえばprivate dirが `/srv/lakehouse/private` なら、CAは `/srv/lakehouse/private/enterprise-ca.pem` に置けます。専用dirの外、symlink、regular file以外は拒否します。hostのCLIも同じenvで元のpathを読めます。空または `system` は実行環境の信頼ストアを使うため、hostとコンテナそれぞれのCA登録を確認します。
-
-## 異常カタログと診断結果
-
-`GET /scenarios` はBearer認証付きで、`version: 1`、`scenarios`、`presets`、`conflicts` を返します。各scenarioはid、label、description、category、targets、supported_destinations、expected_effect、requires_images、requires_file_consentを持ちます。presetはid、label、base_scenario、anomaliesです。conflictsはIDの配列群で、同じgroupから2つ以上を選べません。Swaggerの `ScenarioCatalog` で型を確認できます。
-
-GUI、API、CLIは共有の検査を使います。POST /jobsでは未知・重複・最大32超過・率の範囲外・競合を422で拒否します。ファイル異常はlanding/bothだけ、corrupt_imageはimages=true、file consentが必要です。bothのSQL素材には行異常だけを適用し、ファイル破損をSQLの文字列値に混ぜません。
-
-追加異常を指定した生成結果には `diagnostics` が入り、選択ID/率、`row_changes` の対象表と操作件数、`file_faults` の実ファイル名と期待挙動、`intentional_file_faults` を保持します。これは秘密値や生のDBエラーを含まない素材の診断情報です。意図した不正素材を生成できればジョブはsucceededで、後続処理の拒否等を生成エラーとは扱いません。素材生成からpipelineは起動しません。[ANOMALY-SCENARIOS.md](ANOMALY-SCENARIOS.md)
-
-## CDC用の追加・更新・削除を試す
-
-DB管理者が `scripts/cdc-demo.py create` で専用検証DBを準備し、生成されたprivate情報を対象環境へ反映した後に使う操作です。 Streamlitでは「素材の投入」→「CDCテスト用DBに変更を投入」を開き、明示同意のチェック後に追加・更新・削除を選びます。画面はこの固定APIを呼び、共通ジョブ欄で進捗を表示します。画面からDB作成、CDC有効化、connector変更、任意SQLの実行はできません。
-
-```http
-POST /cdc/demo/insert
-Content-Type: application/json
-```
-
-```json
-{"confirm": true}
-```
-
-パス末尾は `insert`、`update`、`delete` のみです。本文はJSON booleanの `true` を要求し、数値1、文字列のtrue、未同意、TLS例外やSQL等の追加項目を拒否します。管理者が反映済みの `DEMO_SQLSERVER_*` 管理資格情報、`CDC_SQLSERVER_DATABASE`、`CDC_DEMO_OWNERSHIP_TOKEN` を使います。SOURCEのDB名も受け取り、同名DBを拒否します。所有権tokenは設定済みの印だけ表示し、APIから読み戻せません。
-
-専用DB名は `lh_cdc_demo_` に16文字のhexが続く形式で、さらにDB内の所有権markerがprivate tokenと一致する必要があります。名前だけを似せたDBや会社の業務DBを投入対象にできません。CA/証明書名を検証する通常TLSで接続し、CLIの隔離試験用TLS例外はAPIへ公開しません。企業CAは前節のDEMO CAと同じprivate dir内の配置を使います。
-
-通常は追加→更新→削除の順に1回ずつ確認します。対象は6表の固定した連携レコードで、各操作は6行を1 transactionで変更します。追加済み行への再追加や、存在しない行の更新・削除等の前提違反はrollbackします。エラーを見て同じボタンを連打せず、既にどこまでcommitしたかをジョブ結果から確認します。
-
-受付は202、`kind: "cdc-source"` とジョブIDを返します。`GET /jobs/{id}` の `cdc_action` と結果を確認します。
-
-```json
-{
-  "action": "update",
-  "changed_rows": 6,
-  "source_only": true
-}
-```
-
-この成功はソースDBへのcommitを示します。KafkaやIcebergまでの到着を保証する応答ではありません。APIからworkerやpipelineを呼び出さず、稼働中のDebezium/consumerが変更を読む場合は、その設定済みCDC経路を別に確認します。実行中のDMLはtransactionを保つため途中取消できず、取消要求は409です。
-
-Kafbat UIは既定で `http://localhost:8084/` にあり、broker、topic、consumer lag、Kafka Connectの状態・設定を確認する管理用画面です。CDC Composeではloopbackへbindします。アプリ利用者のデータ閲覧画面とは別なので、共有入口には会社標準の認証と接続制限を用意します。固定6行のソース変更→connector→topic→consumer→派生表を分けて照合してください。
-
-## ジョブの進捗と取消
-
-受付は202でジョブIDを返します。ブラウザーで処理完了まで長時間待たず、`GET /jobs/{id}` で確認します。
-
-```json
-{
-  "id": "012345abcdef",
-  "status": "queued",
-  "kind": "source",
-  "pending_restart": false
-}
-```
-
-状態は `queued` → `running` → `succeeded`、`failed`、`cancelled` のいずれかです。`completed` は完了バッチ数、`batches` は予定数です。素材の結果にはmanifestの相対path、表ごとの行数/hash等を含みます。後続処理の結果は固定の件数・成功フラグだけに限定します。
-
-素材生成と後続処理は共通mutexで1件ずつ実行します。重複した受付は409です。有限streamはバッチ間で取消と600秒の実行期限を確認します。実行中の1バッチを強制切断する方式ではなく、SQL transactionやファイル公開を途中で壊さない境界で止めます。既に生成・投入された素材は取消で削除しません。
-
-pipelineは固定workerへ別の明示操作を送る非同期ジョブです。 受付前に固定healthを読み、`busy: true` または `blocked: true` なら409で新しいジョブを作らず拒否します。healthを確認できない場合は503です。事前確認と実行の間に状態が変わる場合も、worker自身の既存ロックが実行を排他します。既に開始したpipelineの取消は409で拒否します。worker側の実行が続いている可能性がある場合は、状態を確認し、同じボタンを繰り返しません。Trinoの取消が確認できずworkerがblockedになった場合は [DEPLOYMENT.md](DEPLOYMENT.md) の復旧手順を使います。
-
-APIからworkerへの応答待ちがタイムアウトすると、ジョブは `failed` / `WORKER_RESULT_UNKNOWN` を返します。これはworkerの処理停止を意味せず、処理が継続している可能性があります。「状態」のworkerの `busy` と実際の結果を確認し、再実行を判断します。APIは自動再試行しません。
-
-素材・CDC素材・pipelineのジョブ履歴は1プロセスのメモリ内に最大20件です。再起動すると履歴・進捗は失われます。複数Uvicorn workerで起動するとmutexと履歴を共有できないため、現構成は1workerで使います。長期監査や復旧の根拠は投入manifest・DB・メダリオン側の実体で確認します。
+外部から届いたデータの取り込み、変換、SQLバッチ、復旧をジョブIDで照会できます。`GET /jobs` の最大20件はAPIプロセス内の履歴です。二重受付は409で拒否し、途中取消APIはありません。応答がタイムアウトしてもworkerは動いている場合があるため、`busy`、`blocked`、実データの状態を確認してから再実行を判断します。
 
 ## AI向けの参照データ
 
@@ -278,21 +153,15 @@ APIからworkerへの応答待ちがタイムアウトすると、ジョブは `
 | 401 `AUTH_REQUIRED` | CONTROL_API_TOKENと、API起動時のtokenが一致するか確認 |
 | 404 `JOB_NOT_FOUND` | IDとAPI再起動の有無を確認。失われた履歴を実行失敗とは即断しない |
 | 409 `OPERATION_RUNNING` | 進捗欄を更新して、現在の処理を待つ |
-| 409 `PIPELINE_RUNNING` | 開始済みpipelineは完了を待つ |
 | 409 `WORKER_NOT_IDLE` | workerが実行中か確認待ち。状態と結果を確認してから再実行 |
-| 409 `CDC_DEMO_RUNNING` | 開始済みの専用DB transactionは完了を待つ |
-| 422 `CDC_DEMO_NOT_PREPARED` | 専用DBの準備結果、所有権token、DEMO管理資格情報、SOURCEとの分離を確認 |
-| 422 `INVALID_REQUEST` | Swaggerの型・範囲・SQL書込同意を確認 |
+| 422 `INVALID_REQUEST` | Swaggerの型・範囲・処理への同意を確認 |
 | 422 `INVALID_SETTINGS` | key、形式、port、0600/0700、固定したprivate設定位置を確認 |
-| 422 `DEMO_CA_UNAVAILABLE` | 専用private dir内のCAとsymlinkの有無を確認 |
 | 503 `WORKER_UNAVAILABLE` | workerのhealth確認に失敗。接続・起動状態を確認し、新しいジョブが受け付けられていないことを確認 |
 | 503 `SETTINGS_UNAVAILABLE` | private mount、設定ファイル名、権限、共通CLI検査を確認 |
-| ジョブ内 `SOURCE_GENERATION_FAILED` | 専用DBの認証/TLS/権限、landing容量と所有者を確認 |
-| ジョブ内 `CDC_DEMO_FAILED` | DB内所有権marker、固定行の現在状態、管理権限、通常TLSを確認 |
 | ジョブ内 `WORKER_RESULT_UNKNOWN` | 応答は不明でもworker処理が継続している可能性。実行中表示と結果を確認してから再実行 |
 | ジョブ内のその他の `WORKER_*` / `PIPELINE_FAILED` | workerのhealthと処理中状態を確認してから再試行を判断 |
 
-APIのOpenAPI生成と単体試験は、認証、秘密値非表示、設定保存、source-only境界、取消、重複拒否、固定接続先、AI参照上限を対象にしています。会社DB・proxy・CA・共有クライアントでの成功は導入先の受入で別途記録します。
+APIのOpenAPI生成と単体試験は、認証、秘密値非表示、設定保存、外部入力専用の境界、重複拒否、固定接続先、AI参照上限を対象にしています。会社DB・proxy・CA・共有クライアントでの成功は導入先の受入で別途記録します。
 
 ## 採用版の根拠
 
@@ -300,13 +169,13 @@ API実装は [api.py](../infra/demo/api.py)、状態・上限は [jobs.py](../in
 
 ## API利用者の実務上の判断: 受付と完了を分ける
 
-APIを初めて使う人は、Swaggerからread操作を試してからsource jobへ進みます。連携プログラムの担当者は、HTTPの受付・jobの終了・データの照合を3つの段階として記録してください。操作用PCでAPIへ到達する経路と、API内部からworkerへ接続する経路も別です。
+APIを初めて使う人は、Swaggerからread操作を試してから後続処理の依頼へ進みます。連携プログラムの担当者は、HTTPの受付・jobの終了・データの照合を3つの段階として記録してください。操作用PCでAPIへ到達する経路と、API内部からworkerへ接続する経路も別です。
 
 | 確認した事実 | 判断できること | まだ判断できないこと |
 | --- | --- | --- |
 | `/health` が200 | APIが起動時設定を読み込めた | worker、Trino、会社DBが正常か |
-| POSTが202とidを返した | jobを受け付けた | 素材の完成や変換の成功 |
-| `status=succeeded` | その種類のjobが完了した | source jobならGoldは未更新。会社数値の妥当性も別 |
+| POSTが202とidを返した | jobを受け付けた | 変換の成功 |
+| `status=succeeded` | その種類のjobが完了した | 実データや会社数値の妥当性 |
 | `pending_restart=false` | API起動時と保存設定が一致する | Dokployや全container設定の一致 |
 | Gold previewが返った | 指定表の固定snapshotを参照できた | 全行・全表を同時点で集計したか |
 
@@ -318,8 +187,6 @@ HTTP timeoutでjob IDを受け取れなかった場合、既に受付/commitさ�
 
 | 種類 | 取消・再試行の考え方 |
 | --- | --- |
-| sourceの有限stream | 次のbatch境界で取消。完了済み素材は残る |
-| 隔離CDCラボのDML | 開始済みtransactionは取消しない。結果と固定行の状態を確認 |
 | pipeline | workerへ依頼済みなら停止を推測しない。busy/blockedと実体を確認 |
 | read API | 表が未作成、認証、接続、上限のどれかを調べる。書込み操作で修復しない |
 
@@ -328,8 +195,7 @@ HTTP timeoutでjob IDを受け取れなかった場合、既に受付/commitさ�
 | 責務 | 実装の場所 | 変更時の確認 |
 | --- | --- | --- |
 | 入力型・認証・受付 | [api.py](../infra/demo/api.py) | 余分なkey、上限、秘密を返さないvalidation |
-| job排他・履歴・取消 | [job_manager.py](../infra/demo/job_manager.py) | 受付競合、途中成功、再起動、結果不明 |
-| 素材の生成 | [service.py](../infra/demo/service.py) | source-only境界、専用SQL、原子的なファイル公開 |
+| job排他・履歴 | [job_manager.py](../infra/demo/job_manager.py) | 受付競合、途中成功、再起動、結果不明 |
 | catalog/状態/ヘルプ | [poc_api.py](../infra/demo/poc_api.py) | 固定allowlist、サイズ上限、symlink拒否、反映前後 |
 | workerの実操作 | [admin.py](../scripts/admin.py) | 対応action、Trino失敗/取消、blocked、再実行 |
 
@@ -337,7 +203,8 @@ API仕様は `openapi.json` をクライアント生成の入力にできます�
 
 ## 固定SQL sourceの操作
 
-`GET /sql-source/status` はSOURCE readerで、固定schema・所有権・読取り権限・6表の状態を観測します。DB接続先・認証・所有権hashは返しません。以前の固定試験行の書込みAPIと、固定表を宛先とする `POST /jobs` の投入モードは廃止しました。Landing・専用別DBへの汎用SQL生成、および所有権付き専用ラボ向けの `/cdc/demo/*` は別経路です。[安全条件・準備](SQLSERVER-FIXED-DEMO.md)
+`GET /sql-source/status` はSOURCEの読取権限と6表の状態を観測します。書き込みは行いません。[安全条件・準備](SQLSERVER-FIXED-DEMO.md)
+
 
 ### SQL snapshotの明示処理
 

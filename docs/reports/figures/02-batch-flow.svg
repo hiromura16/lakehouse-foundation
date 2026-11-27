@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="02-batch-flow-title 02-batch-flow-description" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
 <title id="02-batch-flow-title">ファイル・SQLのバッチ取り込み経路</title>
-<desc id="02-batch-flow-description">SQLのread-only抽出とSamba/GUI素材は同じlanding契約へ合流する。workerが原本とBronzeを保存し、明示したmedallion操作でSilver・隔離・Goldへ進む。 根拠: scripts/extract-sqlserver.py, scripts/generate-demo.py, scripts/admin.py, medallion/sources.json</desc>
+<desc id="02-batch-flow-description">SQLのread-only抽出と外部アプリのファイルは同じlanding契約へ合流する。workerが原本とBronzeを保存し、明示したmedallion操作でSilver・隔離・Goldへ進む。 根拠: scripts/extract-sqlserver.py, scripts/raw_file_input.py, scripts/admin.py, medallion/sources.json</desc>
 <defs>
 <marker id="02-batch-flow-data" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#2469a8"/></marker>
 <marker id="02-batch-flow-control" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#70608e"/></marker>
@@ -22,8 +22,8 @@
 <text x="80" y="262" fill="#152a43" font-size="27" font-weight="700">01｜素材の入口</text>
 <text x="80" y="307" fill="#152a43" font-size="23" font-weight="400">会社SQL：6表のSELECT</text>
 <text x="80" y="339" fill="#152a43" font-size="23" font-weight="400">Samba：CSV / JSON / 画像</text>
-<text x="80" y="371" fill="#152a43" font-size="23" font-weight="400">GUI：合成素材だけを生成</text>
-<text x="80" y="410" fill="#245fa6" font-size="20" font-weight="600">SOURCEとDEMOを分離</text>
+<text x="80" y="371" fill="#152a43" font-size="23" font-weight="400">外部アプリ：原本を供給</text>
+<text x="80" y="410" fill="#245fa6" font-size="20" font-weight="600">生成元と処理を分離</text>
 <rect x="520" y="220" width="400" height="250" rx="16" fill="#edf4ff" stroke="#b8cee8"/>
 <rect x="520" y="238" width="5" height="214" rx="2" fill="#245fa6" stroke="none"/>
 <text x="544" y="262" fill="#152a43" font-size="27" font-weight="700">02｜landing完成</text>

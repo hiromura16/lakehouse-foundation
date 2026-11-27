@@ -32,7 +32,7 @@
 | SSRFの設定と説明 | n8n保護有効・workerだけ内部例外、GUI6設定・専用手順 | 実HTTPノードの拒否と正規workflow成功、誤入力拒否を確認 |
 | Python環境をuvへ | uv固定・hash付きlock・自作venv、Airflow公式venv保持 | 原本Gitからのuv buildとサービス起動成功 |
 | Streamlit・FastAPI・Swagger | 投入/処理/設定/状態/AI、非同期job、ローカルSwagger asset | unit/AppTest、公開Git配置後のSQL/landing/stream/処理/設定成功 |
-| 異常シナリオを拡充 | 26種類・7preset・複数選択・影響率・高度fault同意 | 26生成とGUI試験、配置APIで選択投入・Gold非変更を確認 |
+| 外部入力を検証 | 入力の完成印・ハッシュ・パスとQuarantineを確認 | 内蔵の異常生成・プリセット・投入APIは廃止 |
 | CDC | Debezium/Kafka/consumer/Kafbat、LSN・offset・状態保持 | I/U/D各6、raw168・重複0、Silver/Gold・再起動成功 |
 | AIレディー・LangChain | main snapshot固定context、Document、任意Ollama例 | 34Document生成成功。モデル推論は別途評価 |
 | AIから操作するMCP | 9read tools・2resources、任意の3write tools | 公式SDKのHTTP/Bearer/全readと任意write同意を確認 |

@@ -1,6 +1,5 @@
 """Check CDC ordering, replay recovery, deletion, and source isolation."""
 
-import importlib.util
 import json
 import os
 import sys
@@ -317,24 +316,6 @@ class CdcSafetyTests(unittest.TestCase):
             config.settings(values)["CDC_TEST_TRUST_SERVER_CERTIFICATE"],
             "true",
         )
-
-    def test_fixed_dml_rejects_unowned_or_company_database(self):
-        """Company names and prefixes alone cannot authorize writes."""
-        specification = importlib.util.spec_from_file_location(
-            "cdc_demo", ROOT / "scripts/cdc-demo.py"
-        )
-        demo = importlib.util.module_from_spec(specification)
-        specification.loader.exec_module(demo)
-        with self.assertRaises(ValueError):
-            demo.apply_scenario(
-                {"CDC_SQLSERVER_DATABASE": "company"}, "delete"
-            )
-        with self.assertRaises(ValueError):
-            demo.apply_scenario(
-                {"CDC_SQLSERVER_DATABASE": "lh_cdc_demo_" + "a" * 16}, "insert"
-            )
-        with self.assertRaises(ValueError):
-            demo.apply_scenario({}, "DROP TABLE")
 
 
 if __name__ == "__main__":

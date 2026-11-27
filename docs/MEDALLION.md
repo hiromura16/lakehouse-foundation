@@ -7,7 +7,7 @@
 >
 > **読むタイミング:** 素材から業務値へ変換する意味を理解し、品質や更新結果を照合するとき。
 >
-> **前提となる資料:** [用語を役割と実際の操作へ結び付ける](<GLOSSARY.md>) / [MES・ERPのダミーデータ投入](<DEMO-DATA.md>)
+> **前提となる資料:** [用語を役割と実際の操作へ結び付ける](<GLOSSARY.md>) / [外部ファイルのLanding入力契約](<DEMO-DATA.md>)
 >
 > **次に読む資料:** [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>) / [SQL Server の変更を Iceberg へ反映する](<CDC.md>) / [ソース・指標・API・計算基盤を拡張する](<CUSTOMIZATION.md>)
 >
@@ -313,10 +313,7 @@ coreが起動済みで、private envの指定先と `LANDING_DIR` が合って�
 ```bash
 export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 
-# 素材を作るだけ。workerは起動しない。
-python3 scripts/generate-demo.py \
-  --destination landing --output /srv/lakehouse/landing \
-  --seed 42 --orders 20 --days 7 --scenario edge
+# 外部入力が契約どおりLandingに配送済みであることを確認する。
 
 # 原本とBronzeだけを取り込む。
 ./scripts/lakehouse.sh ingest
@@ -347,7 +344,7 @@ TrinoのHTTP 200だけを成功とは扱わず、workerが最後の結果まで�
 ./scripts/lakehouse.sh verify
 ```
 
-verifyは通常の業務表を初期化する操作ではありません。実行ごとの `verify_<ランダム値>_bronze` 等のnamespaceと専用rawキーで疑似データを処理します。通常は検証後にその範囲を削除します。中止を確認できないクエリがある場合は、使用中のデータを消さずに保持し、管理者の確認を待ちます。
+verifyは通常の業務表を初期化する操作ではありません。実行ごとの `verify_<ランダム値>_bronze` 等のnamespaceと専用rawキーで固定の契約fixtureを処理します。通常は検証後にその範囲を削除します。中止を確認できないクエリがある場合は、使用中のデータを消さずに保持し、管理者の確認を待ちます。
 
 固定fixtureは [expected-demo.json](../medallion/expected-demo.json)、実際に実行する照合SQLは [checks/](../medallion/checks/) です。seed42・orders20・days7・edgeに対応し、別のパラメーターへ同じ期待値を流用しません。
 
