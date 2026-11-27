@@ -478,6 +478,11 @@ def run():
                 with TemporaryDirectory(prefix="wire-iceberg-") as workspace:
                     wire_iceberg.run(worker, Path(workspace), with_source)
                 print(
+                    "SQL_WIRE_NATIVE_EVIDENCE=pass snapshot_lanes=3 "
+                    "typed_final=1 deleted=1 lag=0 mismatches=0",
+                    flush=True,
+                )
+                print(
                     "SQL_WIRE_ICEBERG=pass raw=5 current_generations=5 "
                     "silver_generations=5 broker_next=5"
                 )
