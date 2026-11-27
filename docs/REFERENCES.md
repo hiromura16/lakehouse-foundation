@@ -77,7 +77,7 @@ Docker/Nginx等のホスト・基盤imageはminor/patch表記だけでなく、l
 | [AI-READINESS](AI-READINESS.md)・[MCP](MCP.md)・[CLOUDFLARE](CLOUDFLARE.md) | 根拠snapshot、参照/変更境界、実装済みと選択案の区別 |
 | [OPERATIONS](OPERATIONS.md)・[TROUBLESHOOTING](TROUBLESHOOTING.md) | 9Composeでの補助操作、更新backup、常駐Spark、拒否/未反映の切分け |
 | [IMPLEMENTATION-STATUS](IMPLEMENTATION-STATUS.md)・[VALIDATION](VALIDATION.md) | 現在の文書監査と過去の実機試験、未受入の会社条件を分離 |
-| [図版出典](assets/README.md)・[samples](../samples/README.md) | 公式出典と同梱/offline、合成素材の作成と実データ非同梱 |
+| [図版出典](assets/README.md)・[samples](../samples/README.md) | 公式出典と同梱/offline、固定契約fixtureと実データ非同梱 |
 | このREFERENCES | 版・一次資料・全体の照合範囲。上流変更時は再監査 |
 
 ### 入門・拡張・報告文書の補足資料

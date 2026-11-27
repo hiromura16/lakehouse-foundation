@@ -1,5 +1,6 @@
 """Check query cancellation and bounded markers without runtime services."""
 
+import base64
 import importlib.util
 import io
 import json
@@ -9,6 +10,7 @@ import tempfile
 import threading
 import types
 import unittest
+from hashlib import sha256
 from pathlib import Path
 from unittest import mock
 
@@ -38,11 +40,6 @@ def load_worker():
         "ClientError", (Exception,), {}
     )
     modules["PIL"].Image = mock.Mock()
-    # Verification hashes a saved image before exercising query cleanup.
-    # These protocol tests need a local byte fixture, not the Pillow codec.
-    modules["PIL"].Image.new.return_value.save.side_effect = lambda path: (
-        path.write_bytes(b"synthetic-test-image")
-    )
     modules["pyiceberg.catalog"].load_catalog = mock.Mock()
     modules["pyiceberg.expressions"].EqualTo = mock.Mock()
     specification = importlib.util.spec_from_file_location(
@@ -233,7 +230,9 @@ class QueryProtocolTests(unittest.TestCase):
 
         with (
             mock.patch.object(WORKER, "catalog"),
-            mock.patch.object(WORKER.subprocess, "run"),
+            mock.patch.object(
+                WORKER, "ROOT", Path(__file__).resolve().parents[1]
+            ),
             mock.patch.object(WORKER, "ingest", side_effect=uncertain_import),
             mock.patch.object(WORKER, "cleanup_verification") as cleanup,
         ):
@@ -244,7 +243,9 @@ class QueryProtocolTests(unittest.TestCase):
     def test_known_terminal_failure_still_cleans_verification_data(self):
         with (
             mock.patch.object(WORKER, "catalog"),
-            mock.patch.object(WORKER.subprocess, "run"),
+            mock.patch.object(
+                WORKER, "ROOT", Path(__file__).resolve().parents[1]
+            ),
             mock.patch.object(
                 WORKER, "ingest", side_effect=ValueError("fixture invalid")
             ),
@@ -254,6 +255,98 @@ class QueryProtocolTests(unittest.TestCase):
                 WORKER.verify()
             cleanup.assert_called_once()
             self.assertRegex(cleanup.call_args.args[1], r"^verify_[0-9a-f]+_$")
+
+
+class BatchFormatTests(unittest.TestCase):
+    """実workerでは検査済みバッチの決定的形式エラーを隔離する。"""
+
+    def test_static_verify_image_is_decoded_without_writing_landing(self):
+        directory = ROOT / "samples/landing-contract"
+        image, inputs = WORKER.verification_inputs(directory)
+        self.assertEqual(len(inputs), 7)
+        self.assertEqual(inputs[-1], image)
+        self.assertEqual(image.relative, "images/inspection.png")
+        self.assertEqual(sha256(image.data).hexdigest(), image.digest)
+        self.assertFalse(image.path.exists())
+
+    def test_invalid_image_or_json_never_partially_writes_and_next_runs(self):
+        from PIL import Image
+
+        fixture = ROOT / "samples/landing-contract/images/inspection.png.b64"
+        image = base64.b64decode(fixture.read_bytes())
+        for relative, broken in (
+            ("images/test.png", b"Not an image"),
+            ("json/test.jsonl", b"{incomplete"),
+        ):
+            with (
+                self.subTest(relative=relative),
+                tempfile.TemporaryDirectory() as tmp,
+            ):
+                landing = Path(tmp)
+                for run_name, is_bad in (("a-bad", True), ("b-good", False)):
+                    run = landing / run_name
+                    files = {
+                        "csv/test.csv": b"id\n1\n",
+                        relative: (
+                            broken
+                            if is_bad
+                            else image
+                            if relative.startswith("images")
+                            else b'{"id":1}\n'
+                        ),
+                    }
+                    artifacts = []
+                    for name, data in files.items():
+                        path = run / name
+                        path.parent.mkdir(parents=True)
+                        path.write_bytes(data)
+                        artifacts.append(
+                            {
+                                "path": name,
+                                "bytes": len(data),
+                                "sha256": sha256(data).hexdigest(),
+                            }
+                        )
+                    marker = run / "manifests/delivery.ready.json"
+                    marker.parent.mkdir(parents=True)
+                    marker.write_text(
+                        json.dumps(
+                            {
+                                "schema_version": "source.file-manifest.v2",
+                                "artifacts": artifacts,
+                            }
+                        )
+                    )
+                cat = mock.Mock()
+                table = cat.load_table.return_value
+                arrow = table.scan.return_value.to_arrow.return_value
+                arrow.to_pylist.return_value = []
+                storage = mock.Mock()
+                overwrite = mock.Mock()
+                with (
+                    mock.patch.object(WORKER, "catalog", return_value=cat),
+                    mock.patch.object(WORKER, "ensure_tables"),
+                    mock.patch.object(WORKER, "overwrite", overwrite),
+                    mock.patch.object(WORKER, "S3", storage),
+                    mock.patch.object(WORKER, "Image", Image),
+                    mock.patch.dict(
+                        os.environ, {"S3_BUCKET_RAW": "synthetic"}
+                    ),
+                ):
+                    result = WORKER.ingest(landing)
+                self.assertEqual(result["imported"], 2)
+                self.assertEqual(result["rejected_batches"], 1)
+                self.assertEqual(
+                    result["batch_rejections"][0]["reason"], "artifact_format"
+                )
+                self.assertEqual(storage.put_object.call_count, 2)
+                self.assertTrue(
+                    all(
+                        call.args[-1].startswith("b-good/")
+                        for call in overwrite.call_args_list
+                    )
+                )
+                self.assertTrue((landing / "a-bad" / relative).is_file())
 
 
 class CompletionMarkerTests(unittest.TestCase):

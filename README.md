@@ -59,7 +59,7 @@ setopt INTERACTIVE_COMMENTS
 | **受け取る・蓄積する** | Samba landing、SQL読取、Debezium / Kafka CDC、SeaweedFS S3、Lakekeeper | [SQL抽出](docs/SOURCE-SQLSERVER.md) · [CDC](docs/CDC.md) |
 | **整える・集計する** | Bronze原本、Silver最新版・型検査、Quarantine、Gold生産・出荷指標 | [メダリオン](docs/MEDALLION.md) |
 | **画面から使う** | Streamlit操作ハブ、サービス入口、データカタログ、品質・履歴・ヘルプ | [操作ポータル](docs/POC-PORTAL.md) |
-| **試す・壊れ方を確かめる** | 6ソースの合成データ、有限マイクロバッチ、選択式の26異常シナリオ | [異常シナリオ](docs/ANOMALY-SCENARIOS.md) |
+| **外部データの取込を試す** | Landing入力、指標照合、隔離と冪等な再処理 | [受入検証](docs/ANOMALY-SCENARIOS.md) |
 | **API・AIから参照する** | 認証付きFastAPI / Swagger、main snapshot固定context、LangChain例、MCPアダプター | [API](docs/API.md) · [AI](docs/AI-READINESS.md) · [MCPの設定](docs/MCP.md) |
 | **分析を広げる** | Superset、JupyterLab + Spark、Qdrant、Marquezを独立profileで追加 | [PoCツール](docs/POC-TOOLS.md) |
 | **運用する** | Dokploy、n8n、Airflow、Grafana / Prometheus、uv・hash lock、企業proxy / CA | [運用](docs/OPERATIONS.md) · [会社proxy](docs/COMPANY-PROXY.md) · [SSRF設定](docs/SSRF.md) |
@@ -168,27 +168,24 @@ Docker Composeを直接管理する場合は、共通準備の後に実行しま
 
 サーバー自身のブラウザーから **[操作GUI](http://localhost:8501/)** ／ **[Swagger UI](http://localhost:8502/docs)** を開きます（`demo` profile）。最初はloopbackに限定し、遠隔利用はSSHポート転送等を使います。利用者認証・HTTPS・接続制限、別環境の名前・port・volumeは [会社導入](docs/COMPANY-ROLLOUT.md) と [設定一覧](docs/CONFIGURATION.md) に沿って準備します。
 
-## 素材を投入し、結果を確かめる
+## 外部データの入口
 
-**素材の生成と、取り込み・変換は別の操作です。** GUIでbatch / finite stream、投入先、異常のpreset・個別選択・率を指定できます。型不正と、遅延・不良増等の業務異常を区別し、期待する隔離理由・Goldの変化・ファイル拒否を表示します。
+Foundationはデータを受信・検証し、取り込み、CDC、変換・保存、参照、監視、復旧を担います。疑似データの生成・送出・投入は外部のアプリが担い、FoundationのGUI/API/CLIには生成機能がありません。
 
-**Bash / Zsh共通**
+| 外部アプリ（詳細はリンク先README） | 担当 | Foundationとの境界 |
+| --- | --- | --- |
+| [SQLデータ投入](https://github.com/hiromura16/factory-sql-data-loader) | MES・ERPのSQLデータ | SQL Serverの対象表へ外部から書き込み、FoundationはCDCまたは読取専用バッチで受信 |
+| [ファイル生成](https://github.com/hiromura16/factory-file-generator) | CSV、JSON、画像 | Landing共有へ外部から配置。完成確認、形式とハッシュ照合はFoundation |
+| [ストリーム](https://github.com/hiromura16/factory-stream-simulator) | MQTT等のイベント | 発行は外部。接続方式と取り込み対応は採用する連携構成で確認 |
+| [設備](https://github.com/hiromura16/factory-equipment-simulator) | OPC UA等の設備データ | 設備データの生成・公開は外部 |
+| [業務API](https://github.com/hiromura16/factory-api-simulator) | REST APIデータ | API応答の生成・配信は外部 |
+| [ヒストリアン](https://github.com/hiromura16/factory-historian-simulator) | 時系列履歴 | 運転履歴の生成・公開は外部 |
+| [ログ](https://github.com/hiromura16/factory-log-simulator) | ログイベント | 送信元の生成・配送は外部 |
+| [識別イベント](https://github.com/hiromura16/factory-identification-simulator) | 識別・追跡イベント | 照合元イベントの生成は外部 |
 
-```bash
-# 利用できる26シナリオを確認します。
-python3 scripts/generate-demo.py --list-scenarios
+各アプリの代表ポート、接続方式、設定はリンク先を正本とします。表は責務の一覧であり、全方式がFoundationへ直接接続できるという意味ではありません。現行の受信手順は [Landing契約](docs/DEMO-DATA.md) と [SQL Server CDC](docs/CDC.md) を参照してください。
 
-# 再現可能な素材だけをlandingへ生成します。
-python3 scripts/generate-demo.py --destination landing \
-  --output /srv/lakehouse/landing --seed 42 --orders 20 --days 7 \
-  --scenario clean --anomaly reject_spike --anomaly-rate 20
-
-# ここから先は明示した後続処理です。
-./scripts/lakehouse.sh medallion
-./scripts/lakehouse.sh verify
-```
-
-従来のランダムSQL schema方式は、専用DB・SOURCE/system DB拒否・明示同意の下で新規schemaへINSERTします。隔離されたCDCラボの追加・更新・削除は、さらに専用DBの所有権tokenを照合します。通常のsource生成からworker・n8n・Airflowを起動しません。[素材投入](docs/DEMO-GUI.md) · [異常の期待結果](docs/ANOMALY-SCENARIOS.md)
+外部入力の配送完了後、「処理・検証」で取り込み・変換し、「履歴」と「データ」で結果を確認します。所定の型・パス・列名の契約に合うファイルをSilver/Goldに変換します。未知のファイルまで任意の分析表に変換するわけではありません。
 
 ## 必要なprofileだけを追加する
 
@@ -245,7 +242,7 @@ Dokploy管理ではGUIのStop、CLI管理では `./scripts/lakehouse.sh down` �
 
 | 担当 | 最初の到達点 | 次に進む条件 |
 | --- | --- | --- |
-| 初心者・操作担当 | 合成素材をGUIで投入し、変換後のGoldと品質件数を見る | 素材生成と変換、保存と反映、合成値と実績値の違いを説明できる |
+| 初心者・操作担当 | 外部入力を受け取り、変換後のGoldと品質件数を見る | 素材生成と変換、保存と反映、合成値と実績値の違いを説明できる |
 | 構築・運用担当 | core→必要profileの順に配置し、停止・再開後も同じvolumeを使う | proxyの層、appName、秘密の保管先、設定反映担当を確認済み |
 | 開発・データ担当 | 入力契約→SQL→品質検査→Gold指標→APIの対応を追う | [拡張手順](docs/CUSTOMIZATION.md)に沿って専用環境と回帰条件を用意する |
 | 評価・意思決定担当 | 対象commitと根拠を付けてPoC結果を整理する | 未評価の会社接続・性能・復元・AI精度を別の受入として扱う |

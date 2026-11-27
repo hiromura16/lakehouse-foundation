@@ -257,10 +257,10 @@
       "title": "ファイル・SQLのバッチ取り込み経路",
       "subtitle": "素材投入と後続処理は別操作。コピー完了後のSHA-256 readyを受入境界にする。",
       "audience": "データ連携・業務担当",
-      "caption": "SQLのread-only抽出とSamba/GUI素材は同じlanding契約へ合流する。workerが原本とBronzeを保存し、明示したmedallion操作でSilver・隔離・Goldへ進む。",
+      "caption": "SQLのread-only抽出と外部アプリのファイルは同じlanding契約へ合流する。workerが原本とBronzeを保存し、明示したmedallion操作でSilver・隔離・Goldへ進む。",
       "sources": [
         "scripts/extract-sqlserver.py",
-        "scripts/generate-demo.py",
+        "scripts/raw_file_input.py",
         "scripts/admin.py",
         "medallion/sources.json"
       ],
@@ -275,10 +275,10 @@
           "lines": [
             "会社SQL：6表のSELECT",
             "Samba：CSV / JSON / 画像",
-            "GUI：合成素材だけを生成"
+            "外部アプリ：原本を供給"
           ],
           "tone": "blue",
-          "tag": "SOURCEとDEMOを分離",
+          "tag": "生成元と処理を分離",
           "logo": ""
         },
         {

@@ -19,7 +19,7 @@
 | 画面・箇所 | 何を示すか | 先に確認すること | 画像に出さないもの |
 | --- | --- | --- | --- |
 | Dokploy Containers | core稼働とone-shot正常終了 | 対象Project/Environment、配置commit | 管理URL、実appName、実host、ログの秘密 |
-| Streamlit 素材の投入 | batch/有限stream・異常選択 | 合成検証用の環境、素材だけの操作 | SQL接続先、private path、実在顧客名 |
+| Streamlit 処理・検証 | 受信、処理、履歴 | 隔離検証環境、受信後の操作 | SQL接続先、private path、実在顧客名 |
 | Streamlit 実行結果 | 生成jobの状態とmanifest | job ID・run条件、処理jobとの区別 | 実schema、ソースの実path |
 | Streamlit データ | catalog・品質件数・Gold抜粋 | 粒度・snapshot・各表上限 | 業務明細、製品/受注/工場の実ID |
 | Swagger | 固定APIと202→job poll | Authorize欄を閉じる、確認用GETから開始 | token、curl例のAuthorizationヘッダー |
@@ -47,9 +47,9 @@
 
 ## 初回の撮影例とキャプション
 
-最初は合成素材の生成前後、変換後の品質、Goldの3場面を選びます。各画面に同じ評価IDを添え、jobの成功から業務値の一致まで何を確認したかを説明します。
+最初は外部入力の受信前後、変換後の品質、Goldの3場面を選びます。各画面に同じ評価IDを添え、jobの成功から業務値の一致まで何を確認したかを説明します。
 
-> キャプションの記入例: 合成専用環境で素材生成jobの成功を確認した。対象は指定seedの1runで、6ソースのmanifestを照合した。この画面だけではGoldへの変換や会社SQLへの接続は確認していない。
+> キャプションの記入例: 外部検証環境で配送と受領を確認した。6ソースの完成印と原本ハッシュを照合した。この画面だけではGoldへの変換や会社SQLへの接続は確認していない。
 
 この文は記入方法の例で、実施結果ではありません。実報告では対象commit、実施時刻、条件、証跡IDを社内記録から埋めます。token等の機密を図の注釈へ転記しません。
 

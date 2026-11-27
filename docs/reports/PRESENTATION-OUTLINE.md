@@ -71,7 +71,7 @@ SVGは拡大できる編集用、PNGは貼り付けやすい画像用、PDFは�
 
 | 画面 | 撮ると説明しやすい場面 | 伏せる対象 |
 | --- | --- | --- |
-| Streamlit | 合成素材の選択→進捗→品質/Gold | 私有設定、接続先、実業務値、path |
+| Streamlit | 外部入力の処理→進捗→品質/Gold | 私有設定、接続先、実業務値、path |
 | Dokploy | 対象serviceのrunning/one-shot0 | 実appName、URL、Environment、管理者名 |
 | n8n / Airflow | 同梱の手動実行と成功履歴 | credentials、token、通知先、業務ログ |
 | Grafana | 合成ジョブ前後の指標とGUI保存 | 実接続先、利用者、組織内のラベル |

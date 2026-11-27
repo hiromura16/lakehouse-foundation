@@ -7,7 +7,7 @@
 >
 > **読むタイミング:** 承認済み合成環境の固定6表でsnapshot・増分・CDCを観測するとき。
 >
-> **前提となる資料:** [GUIからダミーデータを投入する](<DEMO-GUI.md>) / [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>)
+> **前提となる資料:** [GUIで外部データの処理を確認する](<DEMO-GUI.md>) / [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>)
 >
 > **次に読む資料:** [SQL Server の変更を Iceberg へ反映する](<CDC.md>) / [症状から確認する](<TROUBLESHOOTING.md>)
 >
@@ -104,7 +104,7 @@ DBAはSSMSで承認済み開発DBへ接続し、Query → SQLCMD Modeを有効�
 
 ## 3. GUIで読取り診断を行う
 
-「素材の投入」の「固定SQL sourceの読取診断」で診断します。`GET /sql-source/status` はSOURCE readerで接続先・所有権・限定権限・6表を観測します。接続情報や所有権hashは返しません。診断は固定6表への書込みやCDCの往復成功を示しません。
+「接続診断」の「固定SQL sourceの読取診断」で診断します。`GET /sql-source/status` はSOURCE readerで接続先・所有権・限定権限・6表を観測します。接続情報や所有権hashは返しません。診断は固定6表への書込みやCDCの往復成功を示しません。
 
 ### SQLの型と原値を分ける
 
@@ -127,7 +127,7 @@ DBAはSSMSで承認済み開発DBへ接続し、Query → SQLCMD Modeを有効�
 
 ## 5. フルスナップショットを取り込む
 
-素材の投入とは別に **処理・検証 → SQL Serverフルスナップショット** を選び、置換への同意を確認して開始します。Swaggerでは `POST /sql-source/batches/snapshot` に `{"confirm": true}` を送ります。任意SQL・接続先・file pathを要求へ入れません。
+外部入力の配置・書込みとは別に **処理・検証 → SQL Serverフルスナップショット** を選び、置換への同意を確認して開始します。Swaggerでは `POST /sql-source/batches/snapshot` に `{"confirm": true}` を送ります。任意SQL・接続先・file pathを要求へ入れません。
 
 SOURCE readerは所有権と読取り専用権限を検査し、SERIALIZABLE transactionと6表への共有lockで小規模PoCの一貫した読取りを行います。lock待ちは5秒、各SQLのtimeoutも設定します。アプリからDBのisolation設定を変更することはありません。業務writerを待たせ得るため、大規模な本番source用の抽出方式とは分けます。
 

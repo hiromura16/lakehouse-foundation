@@ -270,68 +270,19 @@ coreの検証成功が確認するのは、このスタック内のS3・RESTカ�
 | n8n（automation） | `http://localhost:5678/` |
 | Airflow（orchestration） | `http://localhost:8081/` |
 
-## 5. MES・ERP疑似データでメダリオンを動かす
+## 5. 外部データでメダリオンを動かす
 
-製品・製造指図・受注・出荷のCSVと、製造・停止実績のJSON Linesを生成できます。`--output` は `LANDING_DIR` と同じ専用ディレクトリか、別のリポジトリ外の作業場所を指定します。既定のランディング先へ生成する例です。
-
-**Bash / Zsh共通**
-
-```bash
-python3 scripts/generate-demo.py \
-  --destination landing --output /srv/lakehouse/landing \
-  --seed 42 --orders 20 --days 7 --scenario edge
-```
-
-生成器の仕事は素材の生成と投入までです。Iceberg・Trino・メダリオン処理は呼び出しません。`landing` の出力は6ソース、ファイルごとの `.ready` 完了マーカー、件数・ハッシュ等のmanifestです。変換結果の期待値は生成器から独立した `medallion/expected-demo.json` に保持します。詳細な列・型・注入する異常・指標は [DEMO-DATA.md](DEMO-DATA.md) を参照します。
-
-SQLにも素材を投入したい場合は、private envに `DEMO_SQLSERVER_HOST` / `PORT` / `DATABASE` / `USER` / `PASSWORD` を設定します。業務参照用の `SOURCE_SQLSERVER_*` と別の専用DBを指定します。SQL用ドライバー等の前提は [DEMO-DATA.md](DEMO-DATA.md) を参照してください。
+[外部ファイルの入力契約](DEMO-DATA.md) を満たすファイルを外部アプリでLandingに置きます。状態と受入条件を確認した後で次の処理を実行します。Foundationは生成元ではありません。
 
 **Bash / Zsh共通**
 
 ```bash
-UV_PYTHON_DOWNLOADS=never uv venv --python /usr/bin/python3.12 \
-  "$HOME/.venvs/lakehouse-demo"
-uv pip sync --python "$HOME/.venvs/lakehouse-demo/bin/python" \
-  requirements-demo.txt
-"$HOME/.venvs/lakehouse-demo/bin/python" scripts/generate-demo.py \
-  --destination sqlserver --output /absolute/private/demo-source \
-  --env-file /absolute/private/site.env --allow-sql-write \
-  --seed 42 --orders 20 --days 7 --scenario edge
+./scripts/lakehouse.sh ingest
+./scripts/lakehouse.sh medallion
+./scripts/lakehouse.sh verify
 ```
 
-`both` はランディングとSQLへ投入します。SQLモードは `--allow-sql-write` が必要で、システムDBとSOURCEのDBを拒否します。毎回新しい `lh_demo_<random>` schemaを作り、6つのnvarchar staging表へ挿入します。既存schemaを再利用せず、DB作成・DROP・既存業務表の変更は行いません。SQL投入成功は後段のCDC・メダリオン成功を意味しません。
-
-以下の取り込み・メダリオンは **別の操作** として実行します。このファイル経路の確認には `landing` か `both` を使います。SQLからは [読み取り専用extractor](SOURCE-SQLSERVER.md) と [CDC経路](CDC.md) も提供しています。extractorは表・列のmapping、CDCは専用の接続・対象表・有効化が必要で、素材生成だけでは開始しません。会社の実DBでの接続と受入は未検証です。
-
-Bronzeへの取り込みだけを実行する場合:
-
-**Bash / Zsh共通**
-
-```bash
-./scripts/lakehouse.sh --env-file /absolute/private/site.env ingest
-```
-
-Bronze取り込みに続けてSilver・隔離・Goldまで実行する場合:
-
-**Bash / Zsh共通**
-
-```bash
-./scripts/lakehouse.sh --env-file /absolute/private/site.env medallion
-```
-
-Silverは主キーごとの最新候補を選び、その型・値・参照を検証して有効な候補だけを残します。不正な最新版から過去の正常版へは戻しません。無効候補は同名のソース別quarantine表へ理由付きで隔離します。Goldの `factory_daily_production` と `sales_fulfillment` で、製造数量・停止時間・歩留まり・計画達成率と、受注・出荷・残数・履行率を参照できます。OEEは算出しません。
-
-業務変換は `medallion/01_silver.sql`、`02_quarantine.sql`、`03_gold.sql` を編集します。同じデータで再実行しても追記による二重計上をしないよう派生表を置き換えます。ただし複数表をまとめたトランザクションではないため、失敗した場合は処理結果を確認して再実行します。
-
-自分でファイルをコピーした場合は、コピー完了後に完了マーカーを作成します。取り込みは原本のSHA-256と一致するマーカーが必要です。
-
-**Bash / Zsh共通**
-
-```bash
-python3 scripts/mark-ready.py /srv/lakehouse/landing/csv/erp_products.csv
-```
-
-生成器はマーカーも出力するため、生成したままのファイルには追加作業は不要です。ファイルを書き換えた場合はマーカーを再生成します。
+`verify` は本番Landingを変更せず、版管理された固定fixtureを実行ごとに隔離した名前空間で処理して独立期待値と照合します。
 
 ## 6. 任意のプロファイルを追加する
 
@@ -529,7 +480,7 @@ Dokployルートでは、新規のDokploy導入を済ませてからGitサービ
 | 認証 | DB鍵、token、暗号鍵、GUI管理者 | 一つの資格情報を別名で登録するだけ |
 | 到達先 | 空portと必要なSSH転送 | 同じhostportを取り合うprofile設定 |
 
-合成データをGUIで通常namespaceへ取り込んだ環境を、そのまま会社データの受入先にしません。会社側は新しい空の環境を用意し、isolated verify以外のダミー生成を避けます。landingからファイルを消しても既存Bronzeは消えません。
+外部試験データを通常namespaceへ取り込んだ環境を、そのまま会社データの受入先にしません。会社側は新しい空の環境を用意し、isolated verify以外のダミー生成を避けます。landingからファイルを消しても既存Bronzeは消えません。
 
 別のcloneへ移るだけなら、データの移行を伴うとは限りません。一方、別hostへの移動はvolume/bind/秘密値の転送と復元試験が必要です。同じappNameを入力してDeployするだけでは、元hostのデータが新hostへコピーされません。
 

@@ -48,16 +48,16 @@
 
 | 文書 | 何のために読むか | 読むタイミング | 区分 |
 | --- | --- | --- | --- |
-| [異常シナリオを選んで素材を作る](<ANOMALY-SCENARIOS.md>) | 行・業務値とファイル転送の異常を選び、生成診断と下流の期待挙動を比較する。 | 正常素材との差分、隔離、重複、破損・未完成入力を試す計画を立てるとき。 | reference |
+| [外部入力の受入・隔離を検証する](<ANOMALY-SCENARIOS.md>) | 外部入力の受入、拒否、型検証、隔離、再処理を照合する。 | 正常と不正の入力を外部から試し、結果を比較するとき。 | reference |
 | [GUI操作APIとSwagger](<API.md>) | Swaggerの認証と固定APIを使い、設定保存・素材生成・非同期job・参照を行う。 | GUIと同じ操作をAPIクライアントや自動化から呼び出すとき。 | reference |
-| [MES・ERPのダミーデータ投入](<DEMO-DATA.md>) | 6種のMES・ERP素材、画像、SQL投入、有限streamの生成仕様とCLIを確認する。 | ダミー生成の入力・出力・書込範囲を決め、素材だけを準備するとき。 | active |
-| [GUIからダミーデータを投入する](<DEMO-GUI.md>) | Streamlitで素材生成条件を選び、投入jobと生成結果を確認する。 | 配置済みの合成検証環境へ、GUIからダミー素材を投入するとき。 | active |
+| [外部ファイルのLanding入力契約](<DEMO-DATA.md>) | CSV・JSON Lines・画像の契約と完成印を確認する。 | 外部アプリからLandingへファイルを届けるとき。 | active |
+| [GUIで外部データの処理を確認する](<DEMO-GUI.md>) | 外部入力の後続処理、接続診断、状態と履歴を確認する。 | 外部入力を受信後、ポータルから処理を確認するとき。 | active |
 | [GrafanaのGUI編集と保存](<GRAFANA.md>) | GrafanaのGUIでdashboardを編集・保存し、収集対象とPromQLの意味を確認する。 | monitoring起動後に初期dashboardを整え、監視値を解釈・引き継ぐとき。 | active |
 | [n8n・Airflow・Grafanaを画面から使う](<GUI-WALKTHROUGHS.md>) | n8n・Airflow・Grafanaで接続、認証、手動実行、履歴、保存を順に確かめる。 | 対応profileを配置した後、同梱ジョブを画面から1回実行して確認するとき。 | active |
 | [PoC操作ポータル](<POC-PORTAL.md>) | 操作ポータルの各ページから、サービス入口・データ・診断・履歴へ移動する。 | GUIを開いた後、目的の操作と結果確認の画面を探すとき。 | active |
 | [BI・Notebook・ベクトル検索・データ系統を追加する](<POC-TOOLS.md>) | Superset・Jupyter・Qdrant・MarquezのGUIと合成デモを追加して用途別に検証する。 | coreの検証後にBI、Notebook、数値vector、手動lineageを試すとき。 | active |
 | [固定SQL sourceで疑似ERP・MESを検証する](<SQLSERVER-FIXED-DEMO.md>) | 所有権付き固定SQL表を読取り、バッチ・CDCの段階的な受入を行う。 | 承認済み合成環境の固定6表でsnapshot・増分・CDCを観測するとき。 | active |
-| [合成入力を最初に作る](<../samples/README.md>) | 実データを使わずに最初の6契約素材を生成し、出力と後続処理の境界を確認する。 | 空の検証用landingに小さい固定条件の合成入力を初めて用意するとき。 | active |
+| [外部入力の契約fixture](<../samples/README.md>) | 固定のCSV・JSON Lines・画像と完成印の役割を説明する。 | 受入検証に使う固定データの構成を確認するとき。 | active |
 
 ### 04 設計・拡張
 
@@ -134,11 +134,11 @@
 | 文書 | 目的 |
 | --- | --- |
 | [AIへ渡せるデータとLangChain連携](<AI-READINESS.md>) | Goldとsnapshotの根拠をJSON・LangChain Documentへ渡し、推論やRAGとの境界を確認する。 |
-| [異常シナリオを選んで素材を作る](<ANOMALY-SCENARIOS.md>) | 行・業務値とファイル転送の異常を選び、生成診断と下流の期待挙動を比較する。 |
+| [外部入力の受入・隔離を検証する](<ANOMALY-SCENARIOS.md>) | 外部入力の受入、拒否、型検証、隔離、再処理を照合する。 |
 | [GUI操作APIとSwagger](<API.md>) | Swaggerの認証と固定APIを使い、設定保存・素材生成・非同期job・参照を行う。 |
 | [会社への導入・受入ガイド](<COMPANY-ROLLOUT.md>) | 会社側の担当分担、Samba、外部SQL、業務照合と導入受入条件を決める。 |
-| [MES・ERPのダミーデータ投入](<DEMO-DATA.md>) | 6種のMES・ERP素材、画像、SQL投入、有限streamの生成仕様とCLIを確認する。 |
-| [GUIからダミーデータを投入する](<DEMO-GUI.md>) | Streamlitで素材生成条件を選び、投入jobと生成結果を確認する。 |
+| [外部ファイルのLanding入力契約](<DEMO-DATA.md>) | CSV・JSON Lines・画像の契約と完成印を確認する。 |
+| [GUIで外部データの処理を確認する](<DEMO-GUI.md>) | 外部入力の後続処理、接続診断、状態と履歴を確認する。 |
 | [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>) | 公開Markdown全件の固有の目的・読者・読む時点を、目的別と読者別に引く。 |
 | [用語を役割と実際の操作へ結び付ける](<GLOSSARY.md>) | 保存・処理・配置・操作の用語を、同梱実装の役割へ結び付ける。 |
 | [GrafanaのGUI編集と保存](<GRAFANA.md>) | GrafanaのGUIでdashboardを編集・保存し、収集対象とPromQLの意味を確認する。 |
@@ -152,7 +152,7 @@
 | [固定SQL sourceで疑似ERP・MESを検証する](<SQLSERVER-FIXED-DEMO.md>) | 所有権付き固定SQL表を読取り、バッチ・CDCの段階的な受入を行う。 |
 | [症状から確認する](<TROUBLESHOOTING.md>) | 観測した症状から設定・起動・通信・job・データの失敗箇所を絞り込む。 |
 | [PoCの評価計画と受入条件](<reports/EVALUATION-PLAN.md>) | 配置・品質・CDC・AI・復旧の評価範囲と受入条件を、実施前に記入する。 |
-| [合成入力を最初に作る](<../samples/README.md>) | 実データを使わずに最初の6契約素材を生成し、出力と後続処理の境界を確認する。 |
+| [外部入力の契約fixture](<../samples/README.md>) | 固定のCSV・JSON Lines・画像と完成印の役割を説明する。 |
 
 ### 初めて使う人
 
@@ -160,7 +160,7 @@
 | --- | --- |
 | [Lakehouse Foundation](<../README.md>) | MES・ERP向けPoC基盤の機能、構築入口、任意機能と報告素材を見渡す。 |
 | [Lakehouse Foundation アーキテクチャ](<ARCHITECTURE.md>) | 保存・変換・操作の構成とprofileの責務を、データと制御の経路から把握する。 |
-| [GUIからダミーデータを投入する](<DEMO-GUI.md>) | Streamlitで素材生成条件を選び、投入jobと生成結果を確認する。 |
+| [GUIで外部データの処理を確認する](<DEMO-GUI.md>) | 外部入力の後続処理、接続診断、状態と履歴を確認する。 |
 | [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>) | 公開Markdown全件の固有の目的・読者・読む時点を、目的別と読者別に引く。 |
 | [用語を役割と実際の操作へ結び付ける](<GLOSSARY.md>) | 保存・処理・配置・操作の用語を、同梱実装の役割へ結び付ける。 |
 | [Linuxサーバーを最初に準備する](<HOST-SETUP.md>) | 新規Ubuntuで操作端末・権限・Docker・Git・uvの前提を準備する。 |
@@ -168,7 +168,7 @@
 | [PoC操作ポータル](<POC-PORTAL.md>) | 操作ポータルの各ページから、サービス入口・データ・診断・履歴へ移動する。 |
 | [BashとZshの両方で手順を実行する](<SHELLS.md>) | 会社VMのZshとBashでコマンドを使い分け、対話入力・コメント・shebang・引用の違いを確認する。 |
 | [初めて構築する人の一本道ガイド](<START-HERE.md>) | 新規Linux環境の準備からcore配置と合成データ検証までを順に進める。 |
-| [合成入力を最初に作る](<../samples/README.md>) | 実データを使わずに最初の6契約素材を生成し、出力と後続処理の境界を確認する。 |
+| [外部入力の契約fixture](<../samples/README.md>) | 固定のCSV・JSON Lines・画像と完成印の役割を説明する。 |
 
 ### 基盤構築担当
 
@@ -266,7 +266,7 @@
 | --- | --- |
 | [変更する人のための読みやすさと検証規約](<../CONTRIBUTING.md>) | 読みやすいコード・コメント・CLI説明と、専用uv環境での品質検査規約を揃える。 |
 | [AIへ渡せるデータとLangChain連携](<AI-READINESS.md>) | Goldとsnapshotの根拠をJSON・LangChain Documentへ渡し、推論やRAGとの境界を確認する。 |
-| [異常シナリオを選んで素材を作る](<ANOMALY-SCENARIOS.md>) | 行・業務値とファイル転送の異常を選び、生成診断と下流の期待挙動を比較する。 |
+| [外部入力の受入・隔離を検証する](<ANOMALY-SCENARIOS.md>) | 外部入力の受入、拒否、型検証、隔離、再処理を照合する。 |
 | [GUI操作APIとSwagger](<API.md>) | Swaggerの認証と固定APIを使い、設定保存・素材生成・非同期job・参照を行う。 |
 | [Lakehouse Foundation アーキテクチャ](<ARCHITECTURE.md>) | 保存・変換・操作の構成とprofileの責務を、データと制御の経路から把握する。 |
 | [SQL Server の変更を Iceberg へ反映する](<CDC.md>) | SQL ServerのsnapshotとI/U/DをDebezium・Kafka・consumer経由でIcebergへ反映する。 |
@@ -274,7 +274,7 @@
 | [バージョンと連携互換性](<COMPATIBILITY.md>) | 固定image・Python環境・Spark/Iceberg等の組合せと互換性の確認方法を調べる。 |
 | [サイト設定リファレンス](<CONFIGURATION.md>) | 生成器・Compose・CLIが使う設定項目と、保存先・認証・反映先を照合する。 |
 | [ソース・指標・API・計算基盤を拡張する](<CUSTOMIZATION.md>) | Gold指標・入力契約・API・計算環境の変更を、実装箇所と回帰条件へ落とし込む。 |
-| [MES・ERPのダミーデータ投入](<DEMO-DATA.md>) | 6種のMES・ERP素材、画像、SQL投入、有限streamの生成仕様とCLIを確認する。 |
+| [外部ファイルのLanding入力契約](<DEMO-DATA.md>) | CSV・JSON Lines・画像の契約と完成印を確認する。 |
 | [ファイルの場所と変更のしかた](<DIRECTORY-GUIDE.md>) | 目的に対応するファイル、実行経路、公開コードとprivate状態の置き場を探す。 |
 | [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>) | 公開Markdown全件の固有の目的・読者・読む時点を、目的別と読者別に引く。 |
 | [GUIで設定・操作する選択肢](<GUI-OPTIONS.md>) | 操作・オーケストレーション・列変換のGUIを分け、同梱機能と追加候補を比較する。 |

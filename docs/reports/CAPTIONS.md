@@ -50,14 +50,14 @@ captionは図の説明で、会社での実施結果の代筆ではありませ�
 
 **用途:** データ連携・業務担当
 
-**キャプション:** SQLのread-only抽出とSamba/GUI素材は同じlanding契約へ合流する。workerが原本とBronzeを保存し、明示したmedallion操作でSilver・隔離・Goldへ進む。
+**キャプション:** SQLのread-only抽出と外部アプリのファイルは同じlanding契約へ合流する。workerが原本とBronzeを保存し、明示したmedallion操作でSilver・隔離・Goldへ進む。
 
 [SVG](figures/02-batch-flow.svg) / [Mermaid](mermaid/02-batch-flow.mmd)
 
 - ファイルを消すだけでは取り込み済みBronzeを削除しない。会社データは合成試験と別環境で受入。
 - 1原本16MiB以下、契約CSV/JSONは100000行以下。SQL抽出の6表は同一時点transactionではない。
 
-**根拠:** [extract-sqlserver.py](../../scripts/extract-sqlserver.py)、[generate-demo.py](../../scripts/generate-demo.py)、[admin.py](../../scripts/admin.py)、[sources.json](../../medallion/sources.json)
+**根拠:** [extract-sqlserver.py](../../scripts/extract-sqlserver.py)、[raw_file_input.py](../../scripts/raw_file_input.py)、[admin.py](../../scripts/admin.py)、[sources.json](../../medallion/sources.json)
 
 ## 図03 メダリオンの採用・隔離・集計ルール
 

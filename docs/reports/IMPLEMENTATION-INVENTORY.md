@@ -169,7 +169,7 @@ Redisには名前付きvolumeを割り当てていません。JupyterのNotebook
 | host側の設定変数/公開ファイル | container内での役割 | アクセス境界 |
 | --- | --- | --- |
 | LANDING_DIR | workerの /landing | read-only、存在を事前確認。workerは素材を書き換えない |
-| LANDING_DIR | demo-apiの /landing | 合成素材・manifestを生成するためread/write |
+| LANDING_DIR | demo-apiの /landing | 外部SQL受信バッチの専用受渡し領域を使うためread/write |
 | CONTROL_SETTINGS_DIR / CONTROL_SETTINGS_NAME | demo-apiの /private 配下 | 専用0700 dir/0600 fileをread/write。atomic保存用にdir単位mount |
 | NOTEBOOKS_DIR | jupyter /workspace | 実行UID/GIDがread/write。Notebook出力は業務情報を含み得る |
 | CDC_CONFIG_DIR | register/consumer /run/cdc | 実表の対応JSON等をread-only。Git外で保持 |
