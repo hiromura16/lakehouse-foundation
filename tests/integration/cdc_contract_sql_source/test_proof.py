@@ -3,6 +3,9 @@
 import copy
 import json
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+from urllib.error import HTTPError
 
 from proof import (
     DATABASE,
@@ -12,6 +15,7 @@ from proof import (
     TOPIC,
     UPDATED,
     Failure,
+    Proof,
     checkpoint,
     nanos,
 )
@@ -48,6 +52,96 @@ def evidence(offset, op, payload, *, key=None, topic=TOPIC, partition=0):
 
 class SourceProofTests(unittest.TestCase):
     """受入条件の壊れやすい境界を固定する。"""
+
+    def test_connect_transient_statuses_retry_read_only(self):
+        """起動中の一過性statusは、同じGETだけを再試行する。"""
+        proof = Proof(None, None, None, "", "")
+        recovering = [409, 500, 502, 503, 504]
+        soft = [
+            HTTPError("", code, "private response", None, None)
+            for code in recovering
+        ]
+        with patch.object(proof, "http", side_effect=[*soft, []]) as request:
+            with patch("proof.time.sleep"):
+                self.assertEqual(proof.connect_readiness("/connectors"), [])
+        self.assertEqual(
+            [call.args for call in request.call_args_list],
+            [("/connectors",)] * 6,
+        )
+
+    def test_connect_terminal_status_is_not_retried(self):
+        """認証/経路の拒否は伏せ字の固定理由を付けて初回で停止する。"""
+        proof = Proof(None, None, None, "", "")
+        for status in (401, 403, 404):
+            error = HTTPError("", status, "private response", None, None)
+            with patch.object(proof, "http", side_effect=error) as request:
+                with self.assertRaisesRegex(
+                    Failure, "CONNECT_READY_HTTP_UNEXPECTED"
+                ):
+                    proof.connect_readiness("/connector-plugins")
+            self.assertEqual(request.call_count, 1)
+
+    def test_only_fixed_worker_root_tolerates_bootstrap_404(self):
+        """Jettyのresourceが未登録な時間帯を、root GETだけで待つ。"""
+        proof = Proof(None, None, None, "", "")
+        boot = HTTPError("", 404, "private response", None, None)
+        with patch.object(proof, "http", side_effect=[boot, {}]) as root:
+            with patch("proof.time.sleep"):
+                self.assertEqual(proof.connect_readiness("/"), {})
+            self.assertEqual(
+                [call.args for call in root.call_args_list], [("/",)] * 2
+            )
+        with patch.object(proof, "http", side_effect=boot) as route:
+            with self.assertRaisesRegex(
+                Failure, "CONNECT_READY_HTTP_UNEXPECTED_404"
+            ):
+                proof.connect_readiness("/connectors")
+            self.assertEqual(route.call_count, 1)
+
+    def test_worker_identity_is_bound_to_the_owned_broker(self):
+        """HTTPが回復しても、曖昧な応答や他brokerでは開始しない。"""
+        broker = "A" * 22
+        broker_client = Mock()
+        broker_client.list_topics.return_value = SimpleNamespace(
+            cluster_id=broker
+        )
+        factory = Mock(return_value=broker_client)
+        proof = Proof(None, None, factory, "", "")
+        exact = {
+            "version": "4.3.1",
+            "commit": "1abcde234567890f",
+            "kafka_cluster_id": broker,
+        }
+        with patch.object(
+            proof, "connect_readiness", return_value=exact
+        ) as root:
+            proof.connect_identity()
+        root.assert_called_once_with("/")
+        factory.assert_called_once_with(
+            {"bootstrap.servers": "fixture-broker:9092"}
+        )
+        for bad in (
+            {},
+            dict(exact, kafka_cluster_id="B" * 22),
+            dict(exact, version=""),
+        ):
+            with patch.object(proof, "connect_readiness", return_value=bad):
+                with self.assertRaisesRegex(
+                    Failure, "CONNECT_WORKER_IDENTITY"
+                ):
+                    proof.connect_identity()
+
+    def test_connect_retry_deadline_keeps_last_fixed_status(self):
+        """期限内の成功がなければ、最終分類で必ず拒否する。"""
+        proof = Proof(None, None, None, "", "")
+        error = HTTPError("", 503, "private response", None, None)
+        with patch.object(proof, "http", side_effect=error):
+            with (
+                patch("proof.time.sleep"),
+                patch("proof.time.monotonic", side_effect=[0, 0, 181]),
+            ):
+                with self.assertRaisesRegex(Failure, "CONNECT_READY_HTTP_503"):
+                    proof.connect_readiness("/connectors")
 
     def test_snapshot_and_iud_are_not_tombstone(self):
         """snapshot/I/U/D と Kafka null を別々に受理する。"""

@@ -29,6 +29,8 @@ STAMP0 = "2026-01-02T03:04:05.1234567"
 STAMP1 = "2026-01-02T03:04:06.2345678"
 STAMP2 = "2026-01-02T03:04:07.3456789"
 KEY_FIELDS = ("site_id", "record_id")
+CONNECT_START_SECONDS = 180
+CONNECT_TRANSIENT = frozenset({409, 500, 502, 503, 504})
 
 
 class Failure(RuntimeError):
@@ -318,22 +320,59 @@ class Proof:
         with self.opener.open(request, timeout=5) as response:
             return json.load(response)
 
+    def connect_readiness(self, path):
+        """初期化中の GET のみ期限内で再試行し、登録 POST は再試行しない。"""
+        require(
+            path in {"/", "/connectors", "/connector-plugins"}, "READY_PATH"
+        )
+        deadline = time.monotonic() + CONNECT_START_SECONDS
+        reason = "CONNECT_TRANSPORT_NOT_READY"
+        while time.monotonic() < deadline:
+            try:
+                return self.http(path)
+            except HTTPError as error:
+                code = error.code
+                # Kafka ConnectはJetty起動後にRESTのresourceを設定する。
+                # 初回の固定worker root GETのみ、登録前の404を再試行する。
+                if code not in CONNECT_TRANSIENT and not (
+                    path == "/" and code == 404
+                ):
+                    reason = "CONNECT_READY_HTTP_UNEXPECTED"
+                    if type(code) is int and 100 <= code <= 599:
+                        reason += f"_{code}"
+                    raise Failure(reason) from None
+                reason = f"CONNECT_READY_HTTP_{code}"
+            except (URLError, TimeoutError, ConnectionError):
+                reason = "CONNECT_TRANSPORT_NOT_READY"
+            time.sleep(1)
+        raise Failure(reason)
+
+    def connect_identity(self):
+        """RESTが属するclusterを、所有済み直結brokerと実照合する。"""
+        info = self.connect_readiness("/")
+        metadata = self.admin_client(
+            {"bootstrap.servers": BROKER}
+        ).list_topics(timeout=6)
+        cluster = metadata.cluster_id
+        require(
+            isinstance(info, dict)
+            and isinstance(cluster, str)
+            and re.fullmatch(r"[A-Za-z0-9_-]{22}", cluster) is not None
+            and info.get("kafka_cluster_id") == cluster
+            and isinstance(info.get("version"), str)
+            and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", info["version"])
+            is not None
+            and isinstance(info.get("commit"), str)
+            and re.fullmatch(r"[0-9a-f]{7,40}", info["commit"]) is not None,
+            "CONNECT_WORKER_IDENTITY",
+        )
+
     def register(self):
         """他の connector がない新規workerに正式版の1設定だけを作成。"""
-        deadline = time.monotonic() + 90
-        while True:
-            try:
-                initial = self.http("/connectors")
-                break
-            except (URLError, TimeoutError) as error:
-                if (
-                    isinstance(error, HTTPError)
-                    or time.monotonic() >= deadline
-                ):
-                    raise Failure("CONNECT_NOT_READY") from None
-                time.sleep(1)
+        self.connect_identity()
+        initial = self.connect_readiness("/connectors")
         require(initial == [], "CONNECT_NOT_EMPTY")
-        plugins = self.http("/connector-plugins")
+        plugins = self.connect_readiness("/connector-plugins")
         classname = "io.debezium.connector.sqlserver.SqlServerConnector"
         require(
             any(
@@ -420,7 +459,7 @@ class Proof:
                 op,
             )
             self.offset = message.offset()
-            return
+            return message
         raise Failure("KAFKA_DELIVERY_TIMEOUT")
 
     def run(self):
@@ -443,54 +482,92 @@ class Proof:
         try:
             consumer.assign([self.kafka.TopicPartition(TOPIC, 0, 0)])
             self.evidence(consumer, "r")
+            self.changes(consumer)
+            self.verify_final(consumer)
+        finally:
+            consumer.close()
+
+    def changes(self, consumer, *, after_insert=False):
+        """通常はI/U/D、既にIを確定した再起動試験ではU/Dだけを配送する。"""
+        if not after_insert:
             self.phase = "KAFKA_INSERT"
             self.insert(2, "12.340", STAMP1)
             self.evidence(consumer, "c")
-            self.phase = "KAFKA_UPDATE"
+        self.phase = "KAFKA_UPDATE"
+        self.execute(
+            DATABASE,
+            "UPDATE dbo.fixture_orders SET label=N'',"
+            "quantity=-1.234,observed_at=CONVERT(datetime2(7),%s) "
+            "WHERE site_id=N'sample' AND record_id=2",
+            (STAMP2,),
+        )
+        self.evidence(consumer, "u")
+        self.phase = "KAFKA_DELETE_AND_TOMBSTONE"
+        self.execute(
+            DATABASE,
+            "DELETE dbo.fixture_orders "
+            "WHERE site_id=N'sample' AND record_id=2",
+        )
+        deletion = self.evidence(consumer, "d")
+        self.evidence(consumer, "tombstone")
+        return deletion
+
+    def verify_final(self, consumer):
+        """厳密な broker 配送数と生き残る元のSQL行を検査する。"""
+        self.phase = "FINAL_BROKER_AND_SQL"
+        topics = self.admin_client({"bootstrap.servers": BROKER}).list_topics(
+            timeout=5
+        )
+        require(SHORT_ALIAS not in topics.topics, "ALTERNATE_TOPIC_PRESENT")
+        require(
+            set(topics.topics[TOPIC].partitions) == {0}
+            and set(topics.topics[HISTORY].partitions) == {0}
+            and consumer.get_watermark_offsets(
+                self.kafka.TopicPartition(TOPIC, 0), timeout=5
+            )
+            == (0, 5)
+            and self.live_task(),
+            "FINAL_KAFKA_INVENTORY",
+        )
+        require(
             self.execute(
                 DATABASE,
-                "UPDATE dbo.fixture_orders SET label=N'',"
-                "quantity=-1.234,observed_at=CONVERT(datetime2(7),%s) "
-                "WHERE site_id=N'sample' AND record_id=2",
-                (STAMP2,),
+                "SELECT record_id FROM dbo.fixture_orders",
+                reader=True,
             )
-            self.evidence(consumer, "u")
-            self.phase = "KAFKA_DELETE_AND_TOMBSTONE"
-            self.execute(
-                DATABASE,
-                "DELETE dbo.fixture_orders "
-                "WHERE site_id=N'sample' AND record_id=2",
-            )
-            self.evidence(consumer, "d")
-            self.evidence(consumer, "tombstone")
-            self.phase = "FINAL_BROKER_AND_SQL"
-            topics = self.admin_client(
-                {"bootstrap.servers": BROKER}
-            ).list_topics(timeout=5)
-            require(
-                SHORT_ALIAS not in topics.topics, "ALTERNATE_TOPIC_PRESENT"
-            )
-            require(
-                set(topics.topics[TOPIC].partitions) == {0}
-                and set(topics.topics[HISTORY].partitions) == {0}
-                and consumer.get_watermark_offsets(
-                    self.kafka.TopicPartition(TOPIC, 0), timeout=5
-                )
-                == (0, 5)
-                and self.live_task(),
-                "FINAL_KAFKA_INVENTORY",
-            )
-            require(
-                self.execute(
-                    DATABASE,
-                    "SELECT record_id FROM dbo.fixture_orders",
-                    reader=True,
-                )
-                == [(1,)],
-                "FINAL_SQL_STATE",
-            )
-        finally:
-            consumer.close()
+            == [(1,)],
+            "FINAL_SQL_STATE",
+        )
+
+
+def validate_hosted():
+    """既存の正式 host guard を両方のエントリで使う。"""
+    require(
+        os.environ.get("CDC_SQL_SOURCE_HOSTED") == "true"
+        and re.fullmatch(
+            r"normal-cdc-[0-9a-f]{24}",
+            os.environ.get("CDC_SQL_SOURCE_ID", ""),
+        )
+        and os.environ.get("FREETDSCONF") == "/fixture/freetds.conf",
+        "DISPOSABLE_HOSTED_REQUIRED",
+    )
+
+
+def fixture_passwords():
+    """生成した異なる2アカウントの fixture secrets のみ。"""
+    secret, reader = (
+        os.environ.get(key, "")
+        for key in (
+            "FIXTURE_SQL_ADMIN_PASSWORD",
+            "FIXTURE_SQL_READER_PASSWORD",
+        )
+    )
+    require(
+        all(re.fullmatch(r"Aa9![0-9a-f]{48}", v) for v in (secret, reader))
+        and secret != reader,
+        "FIXTURE_PASSWORD_FORMAT",
+    )
+    return secret, reader
 
 
 def main():
@@ -498,27 +575,8 @@ def main():
     phase = "ENTRY"
     proof = None
     try:
-        require(
-            os.environ.get("CDC_SQL_SOURCE_HOSTED") == "true"
-            and re.fullmatch(
-                r"normal-cdc-[0-9a-f]{24}",
-                os.environ.get("CDC_SQL_SOURCE_ID", ""),
-            )
-            and os.environ.get("FREETDSCONF") == "/fixture/freetds.conf",
-            "DISPOSABLE_HOSTED_REQUIRED",
-        )
-        secret, reader = (
-            os.environ.get(key, "")
-            for key in (
-                "FIXTURE_SQL_ADMIN_PASSWORD",
-                "FIXTURE_SQL_READER_PASSWORD",
-            )
-        )
-        require(
-            all(re.fullmatch(r"Aa9![0-9a-f]{48}", v) for v in (secret, reader))
-            and secret != reader,
-            "FIXTURE_PASSWORD_FORMAT",
-        )
+        validate_hosted()
+        secret, reader = fixture_passwords()
         import confluent_kafka
         import pymssql
         from confluent_kafka.admin import AdminClient

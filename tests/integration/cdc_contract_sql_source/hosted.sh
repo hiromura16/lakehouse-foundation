@@ -9,6 +9,8 @@ umask 077
     echo 'FAIL: HOSTED_RUNNER_REQUIRED' >&2
     exit 1
 }
+readonly fixture_mode=${1:-source}
+[[ $# -le 1 && ( $fixture_mode == source || $fixture_mode == restart ) ]] || exit 1
 scratch=$(mktemp -d "$RUNNER_TEMP/normal-cdc-source.XXXXXXXX")
 unset DOCKER_CONTEXT DOCKER_HOST
 export DOCKER_CONFIG="$scratch/docker"
@@ -101,6 +103,20 @@ dt 180s build --iidfile "$scratch/image.id" "$build" >/dev/null 2>&1
 client_image=$(<"$scratch/image.id")
 [[ $client_image =~ ^sha256:[0-9a-f]{64}$ ]]
 git -C "$root" show HEAD:tests/integration/cdc_contract_sql_source/proof.py > "$scratch/proof.py"
+entry=/fixture/proof.py
+restart_mounts=()
+offset_options=()
+if [[ $fixture_mode == restart ]]; then
+    git -C "$root" show HEAD:tests/integration/cdc_contract_sql_source/restart.py > "$scratch/restart.py"
+    mkdir "$scratch/restart-state"
+    chmod 0444 "$scratch/restart.py"
+    restart_mounts=(
+        --mount "type=bind,src=$scratch/restart.py,dst=/fixture/restart.py,readonly"
+        --mount "type=bind,src=$scratch/restart-state,dst=/restart-state"
+    )
+    offset_options=(-e CONNECT_OFFSET_FLUSH_INTERVAL_MS=1000)
+    entry=/fixture/restart.py
+fi
 chmod 0444 "$scratch/proof.py"
 stage=CERTIFICATE
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=Isolated CDC fixture CA' \
@@ -191,17 +207,17 @@ create connect --network-alias fixture-connect --memory 1440m --cpus 2 --init \
     -e ADVERTISED_HOST_NAME=fixture-connect -e CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR=1 \
     -e CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR=1 -e CONNECT_STATUS_STORAGE_REPLICATION_FACTOR=1 \
     -e CONNECT_OFFSET_STORAGE_PARTITIONS=1 -e CONNECT_STATUS_STORAGE_PARTITIONS=1 \
-    -e CONNECT_CONFIG_PROVIDERS=env \
+    "${offset_options[@]}" -e CONNECT_CONFIG_PROVIDERS=env \
     -e CONNECT_CONFIG_PROVIDERS_ENV_CLASS=org.apache.kafka.common.config.provider.EnvVarConfigProvider \
     -e 'HEAP_OPTS=-Xms256m -Xmx512m' \
     --mount "type=bind,src=$scratch/trust.p12,dst=/fixture/trust.p12,readonly" "$connect_image"
 create client --memory 768m --cpus 1 --user "$(id -u):$(id -g)" --cap-drop ALL \
     --security-opt no-new-privileges --read-only --tmpfs /tmp:rw,nosuid,nodev \
-    --env-file "$scratch/client.env" -e CDC_SQL_SOURCE_HOSTED=true -e "CDC_SQL_SOURCE_ID=$id" \
+    "${restart_mounts[@]}" --env-file "$scratch/client.env" -e CDC_SQL_SOURCE_HOSTED=true -e "CDC_SQL_SOURCE_ID=$id" \
     -e FREETDSCONF=/fixture/freetds.conf -e PYTHONDONTWRITEBYTECODE=1 \
     --mount "type=bind,src=$scratch/proof.py,dst=/fixture/proof.py,readonly" \
     --mount "type=bind,src=$scratch/freetds.conf,dst=/fixture/freetds.conf,readonly" \
-    --mount "type=bind,src=$scratch/ca.pem,dst=/fixture/ca.pem,readonly" "$client_image" python -B /fixture/proof.py
+    --mount "type=bind,src=$scratch/ca.pem,dst=/fixture/ca.pem,readonly" "$client_image" python -B "$entry"
 broker=$(<"$scratch/broker.id")
 sql=$(<"$scratch/sql.id")
 connect=$(<"$scratch/connect.id")
@@ -210,8 +226,8 @@ for cid in "$broker" "$sql" "$connect" "$client"; do
     [[ $cid =~ ^[0-9a-f]{64}$ ]]
     [[ $(d container inspect --format "$label" "$cid") == "$id" ]]
     [[ $(d container inspect --format '{{len .HostConfig.PortBindings}} {{.HostConfig.Privileged}}' "$cid") == '0 false' ]]
-    mode=$(d container inspect --format '{{.HostConfig.NetworkMode}}' "$cid")
-    [[ $mode == "$net" || $mode == "$id" ]]
+    network_mode=$(d container inspect --format '{{.HostConfig.NetworkMode}}' "$cid")
+    [[ $network_mode == "$net" || $network_mode == "$id" ]]
     # shellcheck disable=SC2016 # Template variables belong to Docker.
     [[ $(d container inspect --format '{{range $key, $value := .NetworkSettings.Networks}}{{$key}}{{end}}' "$cid") == "$id" ]]
 done
@@ -242,11 +258,56 @@ stage=CONNECT_AND_SOURCE
 d start "$connect" >/dev/null
 [[ $(d container inspect --format '{{range .NetworkSettings.Networks}}{{.NetworkID}}{{end}}' "$connect") == "$net" ]]
 # Python の固定診断コード以外は、コンテナの出力を転送しない。
-if dt 520s start --attach "$client" > "$scratch/proof.log" 2>&1; then
-    [[ $(d container inspect --format '{{.State.ExitCode}}' "$client") == 0 ]]
-    grep -Fx 'SQL_SOURCE_KAFKA=pass snapshot=1 insert=1 update=1 delete=1 tombstone=1' "$scratch/proof.log"
-else
-    grep -Em1 '^FAIL: [A-Z0-9_]+/[A-Z0-9_]+$' "$scratch/proof.log" >&2 || true
-    exit 1
-fi
+run_client() {
+    local marker=$1
+    if dt 520s start --attach "$client" > "$scratch/proof.log" 2>&1; then
+        if [[ $(d container inspect --format '{{.State.ExitCode}}' "$client") != 0 ]]; then
+            printf 'FAIL: HOSTED_CLIENT/EXIT_NOT_ZERO\n' >&2
+            exit 1
+        fi
+        if ! grep -Fx "$marker" "$scratch/proof.log"; then
+            printf 'FAIL: HOSTED_CLIENT/PASS_MARKER_MISSING\n' >&2
+            exit 1
+        fi
+    else
+        local outcome=$?
+        # 固定形の数字/状態だけ。コンテナのlog、環境変数、アドレスは表示しない。
+        if ! grep -Em1 '^FAIL: [A-Z0-9_]+/[A-Z0-9_]+$' "$scratch/proof.log" >&2; then
+            if (( outcome == 124 )); then
+                printf 'FAIL: HOSTED_CLIENT/ATTACH_TIMEOUT\n' >&2
+            else
+                printf 'FAIL: HOSTED_CLIENT/ATTACH_FAILED\n' >&2
+            fi
+        fi
+        if [[ $(d container inspect --format "$label" "$connect") == "$id" ]]; then
+            state=$(d container inspect --format '{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}}' "$connect")
+            if [[ $state =~ ^(created|running|paused|restarting|removing|exited|dead)\ [0-9]+\ (true|false)$ ]]; then
+                printf 'CONNECT_FIXTURE_STATE=%s\n' "$state" >&2
+            fi
+        fi
+        exit 1
+    fi
+}
+run_selected_fixture() {
+    if [[ $fixture_mode == restart ]]; then
+        stage=RESTART_BEFORE
+        [[ ! -e $scratch/restart-state/restart.json ]]
+        run_client 'SQL_SOURCE_RESTART_BEFORE=pass'
+        [[ -f $scratch/restart-state/restart.json && ! -L $scratch/restart-state/restart.json ]]
+        stage=RESTART_CONNECT
+        before=$(d container inspect --format '{{.State.StartedAt}}' "$connect")
+        dt 45s stop -t 30 "$connect" >/dev/null
+        [[ $(d container inspect --format '{{.State.Running}}' "$connect") == false ]]
+        d start "$connect" >/dev/null
+        [[ $(d container inspect --format '{{.State.Running}}' "$connect") == true &&
+           $(d container inspect --format '{{.State.StartedAt}}' "$connect") != "$before" &&
+           $(d container inspect --format "$label" "$connect") == "$id" &&
+           $(d container inspect --format '{{range .NetworkSettings.Networks}}{{.NetworkID}}{{end}}' "$connect") == "$net" ]]
+        stage=RESTART_AFTER
+        run_client 'SQL_SOURCE_RESTART=pass snapshot=1 insert=1 update=1 delete=1 tombstone=1'
+    else
+        run_client 'SQL_SOURCE_KAFKA=pass snapshot=1 insert=1 update=1 delete=1 tombstone=1'
+    fi
+}
+run_selected_fixture
 stage=CLEANUP
