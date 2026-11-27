@@ -35,7 +35,7 @@ setopt INTERACTIVE_COMMENTS
 | 画面自体が開かない | bind・ポート・経路・コンテナhealthを確認。別端末のlocalhostは別端末自身 |
 | 画面は開くがAPIが使えない | demo-api health、token、private設定のmountと権限を確認 |
 | 素材投入が失敗 | ジョブIDとstatusを確認。完了したbatch／manifestを調べ、新規投入を重ねない |
-| 素材はあるがGoldがない | 素材生成と処理は別。「処理・検証」または別の正規実行入口を確認 |
+| 素材はあるがGoldがない | 外部からの受入と後続処理は別。「処理・検証」または別の正規実行入口を確認 |
 | コンテナはhealthyだが件数が違う | source manifest、Bronze、Silver、quarantine、Goldの順に照合 |
 | 更新後に初期画面へ戻った | 空volumeや別prefixへ向いていないか確認。再初期化を進めない |
 

@@ -80,7 +80,7 @@
     {
       "path": "docs/API.md",
       "title": "GUI操作APIとSwagger",
-      "purpose": "Swaggerの認証と固定APIを使い、設定保存・素材生成・非同期job・参照を行う。",
+      "purpose": "Swaggerの認証と固定APIを使い、設定保存・外部入力の後続処理・非同期job・参照を行う。",
       "audience": [
         "データ利用担当",
         "開発・設計担当"
@@ -1267,6 +1267,23 @@
       "status": "active"
     },
     {
+      "path": "docs/refactoring/CDC-CONTRACT-MANAGER-ADR.md",
+      "title": "CDC Contract Managerの境界と段階導入",
+      "purpose": "CDC契約の静的境界、既存互換、段階移行とOSS比較の判定条件を定める。",
+      "audience": [
+        "開発・設計担当"
+      ],
+      "when_to_use": "CDCの契約を追加・変更する前や、外部sinkの隔離比較を設計するとき。",
+      "category": "04 設計・拡張",
+      "prerequisites": [
+        "docs/refactoring/CDC-CONSUMER-ASSESSMENT.md"
+      ],
+      "next": [
+        "docs/refactoring/REFACTORING-ROADMAP.md"
+      ],
+      "status": "active"
+    },
+    {
       "path": "docs/refactoring/CDC-CONSUMER-ASSESSMENT.md",
       "title": "CDC Consumer の責務と置換条件",
       "purpose": "現行 CDC Consumer の整合性条件と、標準 Sink と宣言的変換への移行前に比較する証拠を整理する。",
@@ -1333,6 +1350,24 @@
       ],
       "next": [],
       "status": "reference"
+    },
+    {
+      "path": "tests/integration/cdc_contract_sql_source/README.md",
+      "title": "隔離SQL ServerからKafkaまでの合成受入",
+      "purpose": "SQL Serverの合成1表からDebezium経由でKafkaへ届く配送を検証し、CIで保証する範囲を明確にする。",
+      "audience": [
+        "開発・設計担当",
+        "評価・報告担当"
+      ],
+      "when_to_use": "CDCの入口を変更するときや、隔離CI結果と実環境で未確認の項目を切り分けるとき。",
+      "category": "06 開発・レビュー",
+      "prerequisites": [
+        "docs/CDC.md"
+      ],
+      "next": [
+        "docs/refactoring/CDC-CONTRACT-MANAGER-ADR.md"
+      ],
+      "status": "active"
     }
   ]
 }

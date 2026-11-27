@@ -1,7 +1,7 @@
 # GUI操作APIとSwagger
 
 <!-- doc-purpose:start -->
-> **役割:** Swaggerの認証と固定APIを使い、設定保存・素材生成・非同期job・参照を行う。
+> **役割:** Swaggerの認証と固定APIを使い、設定保存・外部入力の後続処理・非同期job・参照を行う。
 >
 > **対象読者:** データ利用担当 / 開発・設計担当
 >
@@ -45,7 +45,7 @@ export LAKEHOUSE_ENV_FILE="$HOME/.config/lakehouse-foundation/site.env"
 
 | 入口 | 既定のURL | 用途 |
 | --- | --- | --- |
-| 操作画面 | `http://localhost:8501/` | Streamlitの設定・素材投入・進捗確認 |
+| 操作画面 | `http://localhost:8501/` | Streamlitの設定・受信後の処理・進捗確認 |
 | Swagger UI | `http://localhost:8502/docs` | APIの入力形式を確認して実行 |
 | OpenAPI | `http://localhost:8502/openapi.json` | APIクライアント用の仕様 |
 | readiness | `http://localhost:8502/health` | 設定と認証tokenが読み込めたか |

@@ -74,13 +74,19 @@ def materialize(admin, state, *, prefix="cdc_"):
     return admin.medallion(prefix)
 
 
-def process(admin, state, records, mapping, topics, *, values=None):
+def process(
+    admin, state, records, mapping, topics, *, values=None, contract_hook=None
+):
     """1batchをraw→現在値stage→派生表→local完了位置の順に反映する。
 
     完了済みoffsetは再適用せず、state内のLSN判定で改訂・削除の順序を守る。
     派生表が成功した後だけcheckpointを進める。Kafka commitはrunが後で行う。
     Trinoの取消未確定はstateにもblockedを保存し、再起動で見失わない。
     """
+    if contract_hook is not None:
+        return contract_hook(
+            admin, state, records, mapping, topics, values=values
+        )
     # 工程1: 原本を先に確定する。後段の検証失敗でも調査用rawは残り得る。
     fixed = values is not None and values.get("CDC_SOURCE_MODE") == (
         "fixed-demo"
@@ -391,10 +397,49 @@ def main():
         default="/run/cdc/table-map.json",
         help="許可する6表・列の対応JSON。既定: /run/cdc/table-map.json",
     )
+    parser.add_argument(
+        "--contract-preview",
+        type=Path,
+        help="合成実験用の契約JSON。既定の運用consumerとは併用しない",
+    )
+    parser.add_argument(
+        "--records-file",
+        type=Path,
+        help="合成Kafka配送のJSON配列。書込みとネットワーク接続を行わない",
+    )
     args = parser.parse_args()
     # vendor logにsource名や接続情報が出るため、公開出力は自前の件数に絞る。
     logging.disable(logging.CRITICAL)
     try:
+        contract_flag = os.environ.get("CDC_CONTRACT_EXPERIMENT", "false")
+        experimental = any((args.contract_preview, args.records_file))
+        if (
+            contract_flag not in {"false", "true"}
+            or (experimental != (contract_flag == "true"))
+            or (
+                experimental
+                and not all((args.contract_preview, args.records_file))
+            )
+        ):
+            raise ValueError("CONTRACT_PREVIEW_EXPLICIT_OPT_IN_REQUIRED")
+        if experimental:
+            from contract_experiment import ContractBatchError, preview
+
+            try:
+                result = preview(args.contract_preview, args.records_file)
+            except ContractBatchError as error:
+                print(
+                    json.dumps(
+                        {
+                            "synthetic_only": True,
+                            "failed": True,
+                            "code": str(error),
+                        }
+                    )
+                )
+                sys.exit(1)
+            print(json.dumps({"synthetic_only": True, **result}))
+            return
         run(args.state_dir, args.table_map)
     except Exception as error:
         print(json.dumps({"failed": True, "error_type": type(error).__name__}))

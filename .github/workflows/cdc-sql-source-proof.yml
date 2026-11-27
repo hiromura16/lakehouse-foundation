@@ -1,0 +1,74 @@
+name: Synthetic SQL Server CDC source to Kafka
+
+on:  # yamllint disable-line rule:truthy
+  pull_request:
+    paths:
+      - '.github/workflows/cdc-sql-source-proof.yml'
+      - 'infra/cdc/images.lock.json'
+      - 'infra/cdc/requirements.lock'
+      - 'tests/integration/cdc_contract_sql_source/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  disposable-sql-source:
+    if: >-
+      github.repository == 'hiromura16/lakehouse-foundation'
+      && (github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      || github.event_name == 'workflow_dispatch'
+      && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 23
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify offline fixture contracts
+        run: python3 -B -m unittest discover -s tests/integration/cdc_contract_sql_source -p test_proof.py
+      - name: Verify real source-side delivery in a disposable SQL, Connect and Kafka stack
+        shell: bash
+        run: bash tests/integration/cdc_contract_sql_source/hosted.sh
+
+  disposable-sql-source-restart:
+    if: >-
+      github.repository == 'hiromura16/lakehouse-foundation'
+      && (github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      || github.event_name == 'workflow_dispatch'
+      && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 23
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify offline fixture contracts
+        run: python3 -B -m unittest discover -s tests/integration/cdc_contract_sql_source -p 'test_*.py'
+      - name: Verify Connect restart with retained source offsets and schema history
+        shell: bash
+        run: bash tests/integration/cdc_contract_sql_source/hosted.sh restart
+
+  disposable-sql-wire-iceberg:
+    if: >-
+      github.repository == 'hiromura16/lakehouse-foundation'
+      && (github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      || github.event_name == 'workflow_dispatch'
+      && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify offline fixture contracts
+        run: python3 -B -m unittest discover -s tests/integration/cdc_contract_sql_source -p 'test_*.py'
+      - name: Verify actual source records through the contract adapter and local Iceberg
+        shell: bash
+        run: bash tests/integration/cdc_contract_sql_source/hosted.sh chain

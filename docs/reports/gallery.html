@@ -426,7 +426,7 @@
 <path d="M 520,685 L 456,685" fill="none" stroke="#2469a8" stroke-width="3" marker-end="url(#04-cdc-sequence-data)"/>
 <rect x="56" y="915" width="1808" height="1" rx="0" fill="#d7dfe8" stroke="none"/>
 <text x="56" y="950" fill="#536780" font-size="20" font-weight="400">過去の合成試験：初期144＋INSERT6＋UPDATE6＋DELETE6＋tombstone6＝raw168。restart後distinct168。</text>
-<text x="56" y="977" fill="#536780" font-size="20" font-weight="400">GUIの固定I/U/Dは専用DBの所有権tokenを検証する素材操作。会社業務DBのDMLは実行しない。</text>
+<text x="56" y="977" fill="#536780" font-size="20" font-weight="400">外部アプリが変更を発生させる。基盤は受信・観測を担当し、業務DBへDMLしない。</text>
 <text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>
 
@@ -442,7 +442,7 @@
 <article id="05-control-api"><h2>GUI・API・workerの操作責任</h2>
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="05-control-api-title 05-control-api-description" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
 <title id="05-control-api-title">GUI・API・workerの操作責任</title>
-<desc id="05-control-api-description">Streamlit・Swagger・MCP連携は固定FastAPIを使い、source jobとpipeline jobを分ける。同梱n8n/AirflowはWORKER_TOKENでworkerへ直接依頼する。設定保存からDockerやsudoを呼ばない。 根拠: infra/demo/api.py, infra/demo/job_manager.py, infra/demo/control_settings.py, scripts/admin.py</desc>
+<desc id="05-control-api-description">Streamlit・Swagger・MCP連携は固定FastAPIを使い、外部SQLの接続診断とpipeline jobを分ける。同梱n8n/AirflowはWORKER_TOKENでworkerへ直接依頼する。設定保存からDockerやsudoを呼ばない。 根拠: infra/demo/api.py, infra/demo/job_manager.py, infra/demo/control_settings.py, scripts/admin.py</desc>
 <defs>
 <marker id="05-control-api-data" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#2469a8"/></marker>
 <marker id="05-control-api-control" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L0,8 L9,4 Z" fill="#70608e"/></marker>
@@ -458,7 +458,7 @@
 <text x="1537" y="41" fill="#536780" font-size="17" font-weight="400">制御・設定</text>
 <path d="M1680,35 L1730,35" stroke="#78818c" stroke-width="3" stroke-dasharray="3 7"/>
 <text x="1742" y="41" fill="#536780" font-size="17" font-weight="400">任意・計画</text>
-<text x="56" y="148" fill="#536780" font-size="23" font-weight="400">設定保存、素材生成、後続処理を分ける。APIはDockerやsudoを持たない。</text>
+<text x="56" y="148" fill="#536780" font-size="23" font-weight="400">設定保存、接続診断、後続処理を分ける。APIはDockerやsudoを持たない。</text>
 <rect x="56" y="230" width="420" height="250" rx="16" fill="#edf4ff" stroke="#b8cee8"/>
 <rect x="56" y="248" width="5" height="214" rx="2" fill="#245fa6" stroke="none"/>
 <text x="80" y="272" fill="#152a43" font-size="27" font-weight="700">利用者・クライアント</text>
@@ -469,7 +469,7 @@
 <rect x="566" y="230" width="740" height="250" rx="16" fill="#edf4ff" stroke="#b8cee8"/>
 <rect x="566" y="248" width="5" height="214" rx="2" fill="#245fa6" stroke="none"/>
 <text x="590" y="272" fill="#152a43" font-size="27" font-weight="700">FastAPI｜固定の業務操作</text>
-<text x="590" y="317" fill="#152a43" font-size="23" font-weight="400">POST /jobs：batch / 有限streamの素材生成</text>
+<text x="590" y="317" fill="#152a43" font-size="23" font-weight="400">GET /sql-source/status：固定SQLの接続診断</text>
 <text x="590" y="349" fill="#152a43" font-size="23" font-weight="400">POST /pipeline/{action}：ingest / medallion / verify</text>
 <text x="590" y="381" fill="#152a43" font-size="23" font-weight="400">GET /catalog・/quality・/ai/context・/jobs</text>
 <text x="590" y="420" fill="#245fa6" font-size="20" font-weight="600">CONTROL_API_TOKEN</text>
@@ -490,11 +490,11 @@
 <text x="80" y="822" fill="#63449b" font-size="20" font-weight="600">保存だけでは稼働設定は変わらない</text>
 <rect x="708" y="600" width="560" height="280" rx="16" fill="#faf0e7" stroke="#d9baa1"/>
 <rect x="708" y="618" width="5" height="244" rx="2" fill="#85512a" stroke="none"/>
-<text x="732" y="642" fill="#152a43" font-size="27" font-weight="700">素材job</text>
-<text x="732" y="687" fill="#152a43" font-size="23" font-weight="400">landing / 専用DEMO SQL</text>
-<text x="732" y="719" fill="#152a43" font-size="23" font-weight="400">新規schema / 明示書込同意</text>
-<text x="732" y="751" fill="#152a43" font-size="23" font-weight="400">ここからpipelineは呼ばない</text>
-<text x="732" y="790" fill="#85512a" font-size="20" font-weight="600">素材だけを投入</text>
+<text x="732" y="642" fill="#152a43" font-size="27" font-weight="700">外部SQLの取込</text>
+<text x="732" y="687" fill="#152a43" font-size="23" font-weight="400">外部SQLを読み取り専用で接続</text>
+<text x="732" y="719" fill="#152a43" font-size="23" font-weight="400">snapshot / 増分のバッチ処理</text>
+<text x="732" y="751" fill="#152a43" font-size="23" font-weight="400">原本を受信側へ引き渡す</text>
+<text x="732" y="790" fill="#85512a" font-size="20" font-weight="600">外部SQLの業務表は更新しない</text>
 <rect x="1360" y="600" width="504" height="280" rx="16" fill="#fff7dd" stroke="#dfca85"/>
 <rect x="1360" y="618" width="5" height="244" rx="2" fill="#806000" stroke="none"/>
 <text x="1384" y="642" fill="#152a43" font-size="27" font-weight="700">n8n / Airflow</text>
@@ -513,8 +513,8 @@
 <rect x="670.4" y="473.5" width="163.2" height="27" rx="3" fill="#fff" stroke="none"/>
 <g text-anchor="middle"><text x="752" y="492.5" fill="#70608e" font-size="18" font-weight="600">PATCH /settings</text></g>
 <path d="M 1060,480 L 1060,555 L 988,555 L 988,600" fill="none" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5" marker-end="url(#05-control-api-control)"/>
-<rect x="1015.6" y="483.5" width="112.8" height="27" rx="3" fill="#fff" stroke="none"/>
-<g text-anchor="middle"><text x="1072" y="502.5" fill="#70608e" font-size="18" font-weight="600">POST /jobs</text></g>
+<rect x="987.88" y="483.5" width="168.24" height="27" rx="3" fill="#fff" stroke="none"/>
+<g text-anchor="middle"><text x="1072" y="502.5" fill="#70608e" font-size="18" font-weight="600">SQL受信・状態確認</text></g>
 <path d="M 1612,600 L 1612,480" fill="none" stroke="#70608e" stroke-width="3" stroke-dasharray="8 5" marker-end="url(#05-control-api-control)"/>
 <rect x="1557.52" y="506" width="132.96" height="27" rx="3" fill="#fff" stroke="none"/>
 <g text-anchor="middle"><text x="1624" y="525" fill="#70608e" font-size="18" font-weight="600">WORKER_TOKEN</text></g>
@@ -524,7 +524,7 @@
 <text x="56" y="1057" fill="#536780" font-size="17" font-weight="400">公開実装の説明 / 既存検証記録・計画は図内で区別 / 2026-11-11 / 根拠・キャプションは同梱台帳へ</text>
 </svg>
 
-<p class="caption"><strong>図05: </strong>Streamlit・Swagger・MCP連携は固定FastAPIを使い、source jobとpipeline jobを分ける。同梱n8n/AirflowはWORKER_TOKENでworkerへ直接依頼する。設定保存からDockerやsudoを呼ばない。</p>
+<p class="caption"><strong>図05: </strong>Streamlit・Swagger・MCP連携は固定FastAPIを使い、外部SQLの接続診断とpipeline jobを分ける。同梱n8n/AirflowはWORKER_TOKENでworkerへ直接依頼する。設定保存からDockerやsudoを呼ばない。</p>
 <details><summary>用途・根拠・編集元</summary>
 <p class="scope">用途: 利用者導線・API連携 / 照合日: 2026-11-11</p>
 <p><a href="figures/05-control-api.svg">SVG</a> / <a href="mermaid/05-control-api.mmd">Mermaid</a></p><ul>

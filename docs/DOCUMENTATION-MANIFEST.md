@@ -49,7 +49,7 @@
 | 文書 | 何のために読むか | 読むタイミング | 区分 |
 | --- | --- | --- | --- |
 | [外部入力の受入・隔離を検証する](<ANOMALY-SCENARIOS.md>) | 外部入力の受入、拒否、型検証、隔離、再処理を照合する。 | 正常と不正の入力を外部から試し、結果を比較するとき。 | reference |
-| [GUI操作APIとSwagger](<API.md>) | Swaggerの認証と固定APIを使い、設定保存・素材生成・非同期job・参照を行う。 | GUIと同じ操作をAPIクライアントや自動化から呼び出すとき。 | reference |
+| [GUI操作APIとSwagger](<API.md>) | Swaggerの認証と固定APIを使い、設定保存・外部入力の後続処理・非同期job・参照を行う。 | GUIと同じ操作をAPIクライアントや自動化から呼び出すとき。 | reference |
 | [外部ファイルのLanding入力契約](<DEMO-DATA.md>) | CSV・JSON Lines・画像の契約と完成印を確認する。 | 外部アプリからLandingへファイルを届けるとき。 | active |
 | [GUIで外部データの処理を確認する](<DEMO-GUI.md>) | 外部入力の後続処理、接続診断、状態と履歴を確認する。 | 外部入力を受信後、ポータルから処理を確認するとき。 | active |
 | [GrafanaのGUI編集と保存](<GRAFANA.md>) | GrafanaのGUIでdashboardを編集・保存し、収集対象とPromQLの意味を確認する。 | monitoring起動後に初期dashboardを整え、監視値を解釈・引き継ぐとき。 | active |
@@ -75,6 +75,7 @@
 | [SailとSparkを同じ合成データで比較する](<SAIL-LAB.md>) | 任意のSail LabでSparkと合成データの型・結果・再実行を比較し、未検証事項と測定条件を記録する。 | Sparkの既存検証後、独立したnamespaceと有限fixtureで別エンジンの比較を準備するとき。 | active |
 | [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>) | 既存SQL Serverを読取専用SELECTで抽出し、6契約のlanding素材を作成する。 | 実ソースDBの列対応・権限・上限を決め、全件snapshotのbridgeを試すとき。 | active |
 | [CDC Consumer の責務と置換条件](<refactoring/CDC-CONSUMER-ASSESSMENT.md>) | 現行 CDC Consumer の整合性条件と、標準 Sink と宣言的変換への移行前に比較する証拠を整理する。 | CDC 処理の分割、再送、標準 Sink の評価条件を検討するとき。 | reference |
+| [CDC Contract Managerの境界と段階導入](<refactoring/CDC-CONTRACT-MANAGER-ADR.md>) | CDC契約の静的境界、既存互換、段階移行とOSS比較の判定条件を定める。 | CDCの契約を追加・変更する前や、外部sinkの隔離比較を設計するとき。 | active |
 | [現行アーキテクチャの棚卸し](<refactoring/CURRENT-ARCHITECTURE-INVENTORY.md>) | オンプレミス版と Cloudflare 活用版の構成、データ経路、責務と検証範囲を区別して把握する。 | 段階的な改善の着手前に、現行構成と根拠をそろえるとき。 | reference |
 | [業務境界とデータ契約のたたき台](<refactoring/DOMAIN-BOUNDARIES-DRAFT.md>) | サンプルで観測した事実と未確認の業務知識を区別し、境界と合意手順を整理する。 | 業務の用語、例外、正本、データ責任を確認するとき。 | reference |
 | [段階的リファクタリングの実行計画](<refactoring/REFACTORING-ROADMAP.md>) | 独立した変更単位ごとの移行順、受け入れ、停止と復元を整理する。 | 変更候補の優先順位を決め、次の変更に進める条件を確認するとき。 | reference |
@@ -110,6 +111,7 @@
 | [ファイルの場所と変更のしかた](<DIRECTORY-GUIDE.md>) | 目的に対応するファイル、実行経路、公開コードとprivate状態の置き場を探す。 | 実装を読み始めるときや、変更対象と関連する確認箇所を絞るとき。 | reference |
 | [外部レビュー指摘の対応と確認](<REVIEW-FOLLOWUP.md>) | PR #3の外部レビュー指摘と、再現・修正・回帰確認の対応を追跡する。 | 既存の指摘がどう解決されたか確認し、同種の回帰を避けるとき。 | reference |
 | [レビュー指摘を改善へ取り込む](<REVIEW-WORKFLOW.md>) | issue・PR・依頼文書の指摘を対象commitで確認し、安全な回帰と差分へつなげる。 | レビュー指摘を再現して修正し、検証根拠を揃えて返すとき。 | active |
+| [隔離SQL ServerからKafkaまでの合成受入](<../tests/integration/cdc_contract_sql_source/README.md>) | SQL Serverの合成1表からDebezium経由でKafkaへ届く配送を検証し、CIで保証する範囲を明確にする。 | CDCの入口を変更するときや、隔離CI結果と実環境で未確認の項目を切り分けるとき。 | active |
 
 ### 07 報告・図版
 
@@ -135,7 +137,7 @@
 | --- | --- |
 | [AIへ渡せるデータとLangChain連携](<AI-READINESS.md>) | Goldとsnapshotの根拠をJSON・LangChain Documentへ渡し、推論やRAGとの境界を確認する。 |
 | [外部入力の受入・隔離を検証する](<ANOMALY-SCENARIOS.md>) | 外部入力の受入、拒否、型検証、隔離、再処理を照合する。 |
-| [GUI操作APIとSwagger](<API.md>) | Swaggerの認証と固定APIを使い、設定保存・素材生成・非同期job・参照を行う。 |
+| [GUI操作APIとSwagger](<API.md>) | Swaggerの認証と固定APIを使い、設定保存・外部入力の後続処理・非同期job・参照を行う。 |
 | [会社への導入・受入ガイド](<COMPANY-ROLLOUT.md>) | 会社側の担当分担、Samba、外部SQL、業務照合と導入受入条件を決める。 |
 | [外部ファイルのLanding入力契約](<DEMO-DATA.md>) | CSV・JSON Lines・画像の契約と完成印を確認する。 |
 | [GUIで外部データの処理を確認する](<DEMO-GUI.md>) | 外部入力の後続処理、接続診断、状態と履歴を確認する。 |
@@ -233,6 +235,7 @@
 | [PoC説明用のスライド構成](<reports/PRESENTATION-OUTLINE.md>) | 読み手と持ち時間に合わせ、14図の選択・説明順・話す論点を組み立てる。 |
 | [PoC報告書・発表に使う図版と雛形](<reports/README.md>) | 用途別14図・キャプション・雛形を選び、PNG・PDF・PPTXへ書き出す。 |
 | [PoC報告書に載せる画面の撮り方](<reports/SCREENSHOT-GUIDE.md>) | 各GUIで残す画面、先に確認する条件、写さない秘密や実データを決める。 |
+| [隔離SQL ServerからKafkaまでの合成受入](<../tests/integration/cdc_contract_sql_source/README.md>) | SQL Serverの合成1表からDebezium経由でKafkaへ届く配送を検証し、CIで保証する範囲を明確にする。 |
 
 ### 運用担当
 
@@ -267,7 +270,7 @@
 | [変更する人のための読みやすさと検証規約](<../CONTRIBUTING.md>) | 読みやすいコード・コメント・CLI説明と、専用uv環境での品質検査規約を揃える。 |
 | [AIへ渡せるデータとLangChain連携](<AI-READINESS.md>) | Goldとsnapshotの根拠をJSON・LangChain Documentへ渡し、推論やRAGとの境界を確認する。 |
 | [外部入力の受入・隔離を検証する](<ANOMALY-SCENARIOS.md>) | 外部入力の受入、拒否、型検証、隔離、再処理を照合する。 |
-| [GUI操作APIとSwagger](<API.md>) | Swaggerの認証と固定APIを使い、設定保存・素材生成・非同期job・参照を行う。 |
+| [GUI操作APIとSwagger](<API.md>) | Swaggerの認証と固定APIを使い、設定保存・外部入力の後続処理・非同期job・参照を行う。 |
 | [Lakehouse Foundation アーキテクチャ](<ARCHITECTURE.md>) | 保存・変換・操作の構成とprofileの責務を、データと制御の経路から把握する。 |
 | [SQL Server の変更を Iceberg へ反映する](<CDC.md>) | SQL ServerのsnapshotとI/U/DをDebezium・Kafka・consumer経由でIcebergへ反映する。 |
 | [Cloudflareを使う場所と社内に残す場所](<CLOUDFLARE.md>) | Cloudflareの入口保護・外部保存・AI候補を、社内に残す処理と分けて評価する。 |
@@ -298,6 +301,7 @@
 | [Vectorによる対象ログの整形と秘匿化](<VECTOR.md>) | 対象projectの有限capture・VRL重大度・秘匿化・有界配送と未検証項目を確認する。 |
 | [構成図とロゴの出典](<assets/README.md>) | 全体図・AI候補図・公式ロゴの出典と、詳細図素材の配置を確認する。 |
 | [CDC Consumer の責務と置換条件](<refactoring/CDC-CONSUMER-ASSESSMENT.md>) | 現行 CDC Consumer の整合性条件と、標準 Sink と宣言的変換への移行前に比較する証拠を整理する。 |
+| [CDC Contract Managerの境界と段階導入](<refactoring/CDC-CONTRACT-MANAGER-ADR.md>) | CDC契約の静的境界、既存互換、段階移行とOSS比較の判定条件を定める。 |
 | [現行アーキテクチャの棚卸し](<refactoring/CURRENT-ARCHITECTURE-INVENTORY.md>) | オンプレミス版と Cloudflare 活用版の構成、データ経路、責務と検証範囲を区別して把握する。 |
 | [業務境界とデータ契約のたたき台](<refactoring/DOMAIN-BOUNDARIES-DRAFT.md>) | サンプルで観測した事実と未確認の業務知識を区別し、境界と合意手順を整理する。 |
 | [段階的リファクタリングの実行計画](<refactoring/REFACTORING-ROADMAP.md>) | 独立した変更単位ごとの移行順、受け入れ、停止と復元を整理する。 |
@@ -307,6 +311,7 @@
 | [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 41サービス・14profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
 | [PoC報告書・発表に使う図版と雛形](<reports/README.md>) | 用途別14図・キャプション・雛形を選び、PNG・PDF・PPTXへ書き出す。 |
 | [Vectorのログ正規化・転送設定](<../infra/monitoring/vector/README.md>) | 選択版の明示YAML合成、parser期待fixture、権限と配送上限を開発時に照合する。 |
+| [隔離SQL ServerからKafkaまでの合成受入](<../tests/integration/cdc_contract_sql_source/README.md>) | SQL Serverの合成1表からDebezium経由でKafkaへ届く配送を検証し、CIで保証する範囲を明確にする。 |
 
 ## 文書を追加・変更するとき
 

@@ -759,7 +759,7 @@
       ],
       "notes": [
         "過去の合成試験：初期144＋INSERT6＋UPDATE6＋DELETE6＋tombstone6＝raw168。restart後distinct168。",
-        "GUIの固定I/U/Dは専用DBの所有権tokenを検証する素材操作。会社業務DBのDMLは実行しない。"
+        "外部アプリが変更を発生させる。基盤は受信・観測を担当し、業務DBへDMLしない。"
       ],
       "mermaid": "sequenceDiagram\n  participant SQL as SQL Server CDC\n  participant DBZ as Debezium\n  participant K as Kafka\n  participant C as consumer\n  participant I as Iceberg raw/Silver/Gold\n  participant S as SQLite state/checkpoint\n  SQL->>DBZ: commit済みI/U/D\n  DBZ->>K: LSN付きイベント / tombstone\n  K->>C: poll\n  C->>I: raw保存\n  C->>S: 現在値6表の更新\n  C->>I: Silver / Goldの確定\n  C->>S: checkpoint保存\n  C->>K: offset commit\n",
       "width": 1920,
@@ -768,9 +768,9 @@
     {
       "id": "05-control-api",
       "title": "GUI・API・workerの操作責任",
-      "subtitle": "設定保存、素材生成、後続処理を分ける。APIはDockerやsudoを持たない。",
+      "subtitle": "設定保存、接続診断、後続処理を分ける。APIはDockerやsudoを持たない。",
       "audience": "利用者導線・API連携",
-      "caption": "Streamlit・Swagger・MCP連携は固定FastAPIを使い、source jobとpipeline jobを分ける。同梱n8n/AirflowはWORKER_TOKENでworkerへ直接依頼する。設定保存からDockerやsudoを呼ばない。",
+      "caption": "Streamlit・Swagger・MCP連携は固定FastAPIを使い、外部SQLの接続診断とpipeline jobを分ける。同梱n8n/AirflowはWORKER_TOKENでworkerへ直接依頼する。設定保存からDockerやsudoを呼ばない。",
       "sources": [
         "infra/demo/api.py",
         "infra/demo/job_manager.py",
@@ -802,7 +802,7 @@
           "height": 250,
           "title": "FastAPI｜固定の業務操作",
           "lines": [
-            "POST /jobs：batch / 有限streamの素材生成",
+            "GET /sql-source/status：固定SQLの接続診断",
             "POST /pipeline/{action}：ingest / medallion / verify",
             "GET /catalog・/quality・/ai/context・/jobs"
           ],
@@ -849,14 +849,14 @@
           "y": 600,
           "width": 560,
           "height": 280,
-          "title": "素材job",
+          "title": "外部SQLの取込",
           "lines": [
-            "landing / 専用DEMO SQL",
-            "新規schema / 明示書込同意",
-            "ここからpipelineは呼ばない"
+            "外部SQLを読み取り専用で接続",
+            "snapshot / 増分のバッチ処理",
+            "原本を受信側へ引き渡す"
           ],
           "tone": "bronze",
-          "tag": "素材だけを投入",
+          "tag": "外部SQLの業務表は更新しない",
           "logo": ""
         },
         {
@@ -917,7 +917,7 @@
         {
           "source": "api",
           "target": "source",
-          "label": "POST /jobs",
+          "label": "SQL受信・状態確認",
           "kind": "control",
           "points": [
             [
@@ -959,7 +959,7 @@
         "APIは1worker前提。直近20件のjob履歴はメモリ内で、API再起動後は失われる。",
         "タイムアウトは処理停止を意味しない。workerのbusyと実体を見て、二重実行を避ける。"
       ],
-      "mermaid": "flowchart LR\n  Client[\"Streamlit / Swagger / MCP連携\"] -->|Bearer| API[\"FastAPI固定API\"]\n  API -->|PATCH| Saved[\"private設定へ保存 / 未適用\"]\n  API -->|POST jobs| Source[\"素材だけ生成\"]\n  API -->|POST pipeline| Worker[\"worker / busy・blocked\"]\n  Native[\"同梱n8n / Airflow\"] -->|WORKER_TOKENで直接| Worker\n  Saved -.-> Admin[\"配置担当 / env同期→Deploy\"]\n",
+      "mermaid": "flowchart LR\n  Client[\"Streamlit / Swagger / MCP連携\"] -->|Bearer| API[\"FastAPI固定API\"]\n  API -->|PATCH| Saved[\"private設定へ保存 / 未適用\"]\n  API -->|SQL受信・診断| Source[\"外部SQLの読取\"]\n  API -->|POST pipeline| Worker[\"worker / busy・blocked\"]\n  Native[\"同梱n8n / Airflow\"] -->|WORKER_TOKENで直接| Worker\n  Saved -.-> Admin[\"配置担当 / env同期→Deploy\"]\n",
       "width": 1920,
       "height": 1080
     },

@@ -1,0 +1,527 @@
+{
+  "version": 1,
+  "tables": [
+    {
+      "id": "erp_products",
+      "enabled": true,
+      "source": {
+        "database": "fixture_db",
+        "schema": "lh_demo_erp",
+        "table": "products",
+        "topic_prefix": "lakehouse-demo-sqlserver"
+      },
+      "primary_key": [
+        "product_id"
+      ],
+      "mode": "current",
+      "destinations": {
+        "raw": {
+          "namespace": "sqlcdc_events",
+          "table": "events",
+          "stream": "fixed_demo_events"
+        },
+        "current": {
+          "namespace": "sqlcdc_bronze",
+          "table": "erp_products"
+        },
+        "silver": {
+          "namespace": "sqlcdc_silver",
+          "table": "erp_products"
+        }
+      },
+      "columns": [
+        {
+          "name": "product_id",
+          "type": "nvarchar",
+          "nullable": false,
+          "width": 160
+        },
+        {
+          "name": "product_name",
+          "type": "nvarchar",
+          "nullable": true,
+          "width": 256
+        },
+        {
+          "name": "product_family",
+          "type": "nvarchar",
+          "nullable": true,
+          "width": 128
+        },
+        {
+          "name": "unit",
+          "type": "nvarchar",
+          "nullable": true,
+          "width": 32
+        },
+        {
+          "name": "standard_cycle_seconds",
+          "type": "decimal",
+          "nullable": true,
+          "precision": 18,
+          "scale": 3
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime2",
+          "nullable": false,
+          "scale": 7
+        },
+        {
+          "name": "created_at",
+          "type": "datetime2",
+          "nullable": false,
+          "scale": 7
+        },
+        {
+          "name": "run_id",
+          "type": "char",
+          "nullable": false,
+          "width": 12
+        },
+        {
+          "name": "original_values",
+          "type": "nvarchar",
+          "nullable": false,
+          "width": "max"
+        }
+      ],
+      "delete_policy": "remove",
+      "snapshot": "initial"
+    },
+    {
+      "id": "erp_work_orders",
+      "enabled": true,
+      "source": {
+        "database": "fixture_db",
+        "schema": "lh_demo_erp",
+        "table": "work_orders",
+        "topic_prefix": "lakehouse-demo-sqlserver"
+      },
+      "primary_key": [
+        "work_order_id"
+      ],
+      "mode": "current",
+      "destinations": {
+        "raw": {
+          "namespace": "sqlcdc_events",
+          "table": "events",
+          "stream": "fixed_demo_events"
+        },
+        "current": {
+          "namespace": "sqlcdc_bronze",
+          "table": "erp_work_orders"
+        },
+        "silver": {
+          "namespace": "sqlcdc_silver",
+          "table": "erp_work_orders"
+        }
+      },
+      "columns": [
+        {
+          "name": "work_order_id",
+          "type": "nvarchar",
+          "nullable": false,
+          "width": 160
+        },
+        {
+          "name": "factory_id",
+          "type": "nvarchar",
+          "nullable": true,
+          "width": 64
+        },
+        {
+          "name": "product_id",
+          "type": "nvarchar",
+          "nullable": true,
+          "width": 160
+        },
+        {
+          "name": "planned_date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "planned_qty",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime2",
+          "nullable": false,
+          "scale": 7
+        },
+        {
+          "name": "created_at",
+          "type": "datetime2",
+          "nullable": false,
+          "scale": 7
+        },
+        {
+          "name": "run_id",
+          "type": "char",
+          "nullable": false,
+          "width": 12
+        },
+        {
+          "name": "original_values",
+          "type": "nvarchar",
+          "nullable": false,
+          "width": "max"
+        }
+      ],
+      "delete_policy": "remove",
+      "snapshot": "initial"
+    },
+    {
+      "id": "erp_sales_orders",
+      "enabled": true,
+      "source": {
+        "database": "fixture_db",
+        "schema": "lh_demo_erp",
+        "table": "sales_orders",
+        "topic_prefix": "lakehouse-demo-sqlserver"
+      },
+      "primary_key": [
+        "sales_order_id"
+      ],
+      "mode": "current",
+      "destinations": {
+        "raw": {
+          "namespace": "sqlcdc_events",
+          "table": "events",
+          "stream": "fixed_demo_events"
+        },
+        "current": {
+          "namespace": "sqlcdc_bronze",
+          "table": "erp_sales_orders"
+        },
+        "silver": {
+          "namespace": "sqlcdc_silver",
+          "table": "erp_sales_orders"
+        }
+      },
+      "columns": [
+        {
+          "name": "sales_order_id",
+          "type": "nvarchar",
+          "nullable": false,
+          "width": 160
+        },
+        {
+          "name": "factory_id",
+          "type": "nvarchar",
+          "nullable": true,
+          "width": 64
+        },
+        {
+          "name": "product_id",
+          "type": "nvarchar",
+          "nullable": true,
+          "width": 160
+        },
+        {
+          "name": "order_date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "promised_date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "ordered_qty",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "unit_price",
+          "type": "decimal",
+          "nullable": true,
+          "precision": 18,
+          "scale": 2
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime2",
+          "nullable": false,
+          "scale": 7
+        },
+        {
+          "name": "created_at",
+          "type": "datetime2",
+          "nullable": false,
+          "scale": 7
+        },
+        {
+          "name": "run_id",
+          "type": "char",
+          "nullable": false,
+          "width": 12
+        },
+        {
+          "name": "original_values",
+          "type": "nvarchar",
+          "nullable": false,
+          "width": "max"
+        }
+      ],
+      "delete_policy": "remove",
+      "snapshot": "initial"
+    },
+    {
+      "id": "erp_shipments",
+      "enabled": true,
+      "source": {
+        "database": "fixture_db",
+        "schema": "lh_demo_erp",
+        "table": "shipments",
+        "topic_prefix": "lakehouse-demo-sqlserver"
+      },
+      "primary_key": [
+        "shipment_id"
+      ],
+      "mode": "current",
+      "destinations": {
+        "raw": {
+          "namespace": "sqlcdc_events",
+          "table": "events",
+          "stream": "fixed_demo_events"
+        },
+        "current": {
+          "namespace": "sqlcdc_bronze",
+          "table": "erp_shipments"
+        },
+        "silver": {
+          "namespace": "sqlcdc_silver",
+          "table": "erp_shipments"
+        }
+      },
+      "columns": [
+        {
+          "name": "shipment_id",
+          "type": "nvarchar",
+          "nullable": false,
+          "width": 160
+        },
+        {
+          "name": "sales_order_id",
+          "type": "nvarchar",
+          "nullable": true,
+          "width": 160
+        },
+        {
+          "name": "shipped_at",
+          "type": "datetime2",
+          "nullable": true,
+          "scale": 7
+        },
+        {
+          "name": "shipped_qty",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime2",
+          "nullable": false,
+          "scale": 7
+        },
+        {
+          "name": "created_at",
+          "type": "datetime2",
+          "nullable": false,
+          "scale": 7
+        },
+        {
+          "name": "run_id",
+          "type": "char",
+          "nullable": false,
+          "width": 12
+        },
+        {
+          "name": "original_values",
+          "type": "nvarchar",
+          "nullable": false,
+          "width": "max"
+        }
+      ],
+      "delete_policy": "remove",
+      "snapshot": "initial"
+    },
+    {
+      "id": "mes_events",
+      "enabled": true,
+      "source": {
+        "database": "fixture_db",
+        "schema": "lh_demo_mes",
+        "table": "events",
+        "topic_prefix": "lakehouse-demo-sqlserver"
+      },
+      "primary_key": [
+        "event_id"
+      ],
+      "mode": "current",
+      "destinations": {
+        "raw": {
+          "namespace": "sqlcdc_events",
+          "table": "events",
+          "stream": "fixed_demo_events"
+        },
+        "current": {
+          "namespace": "sqlcdc_bronze",
+          "table": "mes_events"
+        },
+        "silver": {
+          "namespace": "sqlcdc_silver",
+          "table": "mes_events"
+        }
+      },
+      "columns": [
+        {
+          "name": "event_id",
+          "type": "nvarchar",
+          "nullable": false,
+          "width": 160
+        },
+        {
+          "name": "work_order_id",
+          "type": "nvarchar",
+          "nullable": true,
+          "width": 160
+        },
+        {
+          "name": "event_time",
+          "type": "datetime2",
+          "nullable": true,
+          "scale": 7
+        },
+        {
+          "name": "good_qty",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "reject_qty",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime2",
+          "nullable": false,
+          "scale": 7
+        },
+        {
+          "name": "created_at",
+          "type": "datetime2",
+          "nullable": false,
+          "scale": 7
+        },
+        {
+          "name": "run_id",
+          "type": "char",
+          "nullable": false,
+          "width": 12
+        },
+        {
+          "name": "original_values",
+          "type": "nvarchar",
+          "nullable": false,
+          "width": "max"
+        }
+      ],
+      "delete_policy": "remove",
+      "snapshot": "initial"
+    },
+    {
+      "id": "mes_downtime",
+      "enabled": true,
+      "source": {
+        "database": "fixture_db",
+        "schema": "lh_demo_mes",
+        "table": "downtime",
+        "topic_prefix": "lakehouse-demo-sqlserver"
+      },
+      "primary_key": [
+        "downtime_id"
+      ],
+      "mode": "current",
+      "destinations": {
+        "raw": {
+          "namespace": "sqlcdc_events",
+          "table": "events",
+          "stream": "fixed_demo_events"
+        },
+        "current": {
+          "namespace": "sqlcdc_bronze",
+          "table": "mes_downtime"
+        },
+        "silver": {
+          "namespace": "sqlcdc_silver",
+          "table": "mes_downtime"
+        }
+      },
+      "columns": [
+        {
+          "name": "downtime_id",
+          "type": "nvarchar",
+          "nullable": false,
+          "width": 160
+        },
+        {
+          "name": "work_order_id",
+          "type": "nvarchar",
+          "nullable": true,
+          "width": 160
+        },
+        {
+          "name": "start_time",
+          "type": "datetime2",
+          "nullable": true,
+          "scale": 7
+        },
+        {
+          "name": "end_time",
+          "type": "datetime2",
+          "nullable": true,
+          "scale": 7
+        },
+        {
+          "name": "reason_code",
+          "type": "nvarchar",
+          "nullable": true,
+          "width": 64
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime2",
+          "nullable": false,
+          "scale": 7
+        },
+        {
+          "name": "created_at",
+          "type": "datetime2",
+          "nullable": false,
+          "scale": 7
+        },
+        {
+          "name": "run_id",
+          "type": "char",
+          "nullable": false,
+          "width": 12
+        },
+        {
+          "name": "original_values",
+          "type": "nvarchar",
+          "nullable": false,
+          "width": "max"
+        }
+      ],
+      "delete_policy": "remove",
+      "snapshot": "initial"
+    }
+  ]
+}
