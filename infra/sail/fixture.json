@@ -2,7 +2,7 @@
   "provenance": {
     "company_data": false,
     "days": 7,
-    "generator": "scripts/generate-demo.py",
+    "source": "static-lab-fixture",
     "kind": "synthetic",
     "orders": 20,
     "scenario": "clean-with-lab-precision-edges",

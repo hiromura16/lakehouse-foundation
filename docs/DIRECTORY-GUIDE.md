@@ -36,7 +36,7 @@
 | `samples/` | 合成入力の作り方 | 実データを持ち込まず最初の素材を作るとき |
 | `infra/dokploy/` | ホスト側のDokploy導入と設定検査 | 管理基盤を新規に設けるとき |
 | `medallion/` | ソース契約、Silver、隔離、Gold、期待値チェック | 業務ルールや品質条件を変更するとき |
-| `scripts/` | 設定生成、起動制御、投入、抽出、公開検査 | 操作やホスト設定の入口を変更するとき |
+| `scripts/` | 設定生成、起動制御、受入、外部SQL抽出、公開検査 | 操作やホスト設定の入口を変更するとき |
 | `tests/` | 入出力境界、誤接続の拒否、再実行、認証等の試験 | 実装を変更し、期待する境界を検証するとき |
 | `.github/workflows/` | 秘密値を使わない公開CI | ソース品質の検査を変更するとき |
 | `docs/` | 設計、操作、検証、図版 | 仕様・操作・検証結果が変わったとき |
@@ -54,7 +54,6 @@
 | `scripts/lakehouse.sh ... verify` | 一時namespaceで期待値を照合 | 専用の検証領域だけを作成・後片付けする |
 | `scripts/lakehouse.sh ... spark-check` | SparkとTrinoの相互参照 | 専用のcompatibility表を置き換える |
 | `scripts/lakehouse.sh ... down` | 通常の停止 | 名前付きvolumeを保持する |
-| `scripts/generate-demo.py` | 合成素材だけを投入 | 取り込み・変換を起動しない |
 | `scripts/extract-sqlserver.py` | 許可した列をSELECTしlandingへ出す | ソースDBへの書き込みを行わない |
 | `scripts/mark-ready.py` | コピー済み素材の完了ハッシュを作成 | 対象ファイルの隣へmarkerを作る |
 | `scripts/grafana_setup.py` | 初期dashboard作成・private export | 既存dashboardを上書きしない |
@@ -76,7 +75,7 @@
 | CLI起動/検証の入口 | [control.py](../scripts/control.py) | 9Compose、private設定の読み方 |
 | 取込・原本・SQL実行 | [admin.py](../scripts/admin.py) | sources.json、Silver/隔離/Gold SQL、worker protocol tests |
 | GUIボタンや非同期進捗 | [app.py](../infra/demo/app.py)、[api.py](../infra/demo/api.py) | client、job_manager、API/UI tests |
-| 異常素材を増やす | [source_scenarios.py](../scripts/source_scenarios.py) | 生成器、GUI catalog、独立した期待値 |
+| 入力受入を変更する | [raw_file_input.py](../scripts/raw_file_input.py) | 完成印、照合、独立した期待値 |
 | CDC再開や追加mapping | [consumer.py](../infra/cdc/consumer.py)、[state.py](../infra/cdc/state.py) | connector/config、CDC state/registration tests |
 | Notebookのremote接続 | [lakehouse_session.py](../infra/poc/lakehouse_session.py) | Spark cluster script、compute/notebookの同じ依存版 |
 | AIクライアントへ公開する操作 | [server.py](../infra/mcp/server.py) | 固定APIのcapabilities、確認同意、MCP tests |

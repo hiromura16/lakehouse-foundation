@@ -1,10 +1,7 @@
-"""設定保存・素材生成・明示pipeline・固定参照を認証付きAPIで提供する。
+"""外部入力の処理・状態・参照とprivate設定を認証付きで提供する。
 
-読む順序は要求/応答型 → create_app → 各route → run_pipeline。
-POSTの202はJobManagerへの受付で、完了はjob IDをGETして確認する。
-素材生成はsource-onlyで、後続処理を自動開始しない。設定の保存も
-privateファイルの更新までとし、container反映やDocker操作は行わない。
-共有token・job履歴・排他はこのAPIプロセス内の構成として扱う。
+202は後続処理の受付であり、完了はジョブIDで確認する。このAPIは
+合成データを生成・投入せず、設定も保存するだけで配置へ反映しない。
 """
 
 import importlib.util
@@ -13,12 +10,11 @@ import os
 import re
 import secrets
 import sys
-from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
 import httpx
-from control_settings import SettingsError, SettingsStore
+from control_settings import SettingsStore
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -27,8 +23,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from job_manager import JobConflict, JobManager, OperationFailure
 from poc_api import portal_router
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-from service import generate_batch
+from pydantic import BaseModel, ConfigDict, Field
 from sqlsource_api import sqlsource_router
 from sqlsource_observer import observation_router
 
@@ -45,114 +40,11 @@ KNOWN_HEALTH_URLS = {
 }
 
 
-@lru_cache(maxsize=1)
-def source_scenario_engine():
-    """CLIと共通の固定異常catalog・入力検査を初回だけ読み込んで返す。"""
-    specification = importlib.util.spec_from_file_location(
-        "api_source_scenarios", ROOT / "scripts/source_scenarios.py"
-    )
-    module = importlib.util.module_from_spec(specification)
-    specification.loader.exec_module(module)
-    return module
-
-
-class ScenarioDefinition(BaseModel):
-    """1つの選択可能な異常と、対象・同意条件・下流で期待する影響を表す。"""
-
-    id: str
-    label: str
-    description: str
-    category: str
-    targets: list[str]
-    supported_destinations: list[Literal["landing", "sqlserver", "both"]]
-    expected_effect: str
-    requires_images: bool = False
-    requires_file_consent: bool = False
-
-
-class ScenarioPreset(BaseModel):
-    """利用者が編集できる初期選択として、base品質と異常ID集合を渡す。"""
-
-    id: str
-    label: str
-    base_scenario: Literal["clean", "edge"]
-    anomalies: list[str] = Field(max_length=32)
-
-
-class ScenarioCatalog(BaseModel):
-    """GUI/API共通の異常・preset・競合条件を、固定version付きで返す。"""
-
-    version: Literal[1]
-    scenarios: list[ScenarioDefinition]
-    presets: list[ScenarioPreset]
-    conflicts: list[list[str]]
-
-
 class SettingsPatch(BaseModel):
     """設定名と単一行値の変更要求。秘密欄が空なら既存値を保持する。"""
 
     model_config = ConfigDict(extra="forbid", strict=True)
     values: dict[str, str] = Field(max_length=128)
-
-
-class SourceJob(BaseModel):
-    """素材生成の有限batch/stream、件数、出力先、同意を表す要求型。"""
-
-    model_config = ConfigDict(extra="forbid", strict=True)
-    mode: Literal["batch", "stream"] = "batch"
-    batches: int = Field(default=1, ge=1, le=100)
-    interval_seconds: float = Field(default=0, ge=0, le=60)
-    seed: int = Field(default=42, ge=0, le=2147483647)
-    orders: int = Field(default=20, ge=1, le=1000)
-    days: int = Field(default=7, ge=1, le=366)
-    scenario: Literal["clean", "edge"] = "edge"
-    anomalies: list[str] = Field(default_factory=list, max_length=32)
-    anomaly_rate: int = Field(default=10, ge=1, le=100)
-    allow_file_faults: bool = False
-    destination: Literal["landing", "sqlserver", "both"] = "landing"
-    images: bool = False
-    allow_sql_write: bool = False
-    run_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{12}$")
-
-    @model_validator(mode="after")
-    def validate_job(self):
-        """型検査後に、回数・待機合計・SQL同意・異常の組合せを検査する。
-
-        streamも有限回で、待機合計は実処理時間を含まない。異常選択はCLIと
-        共通の検査へ委ね、この段階ではfile作成やDB接続を行わない。
-        """
-        if self.mode == "batch" and self.batches != 1:
-            raise ValueError("Batch mode runs once.")
-        if (self.batches - 1) * self.interval_seconds > 600:
-            raise ValueError("Scheduled waiting exceeds ten minutes.")
-        if self.destination != "landing" and not self.allow_sql_write:
-            raise ValueError("SQL destination requires explicit consent.")
-        if self.destination == "sqlserver" and self.images:
-            raise ValueError("Images require a landing destination.")
-        self.anomalies = list(
-            source_scenario_engine().validate_selection(
-                anomalies=self.anomalies,
-                destination=self.destination,
-                images=self.images,
-                allow_file_faults=self.allow_file_faults,
-                anomaly_rate=self.anomaly_rate,
-            )
-        )
-        return self
-
-
-class CdcConfirmation(BaseModel):
-    """任意SQLやTLS回避設定を受け付けず、固定CDC試験DMLへの同意を表す。"""
-
-    model_config = ConfigDict(extra="forbid", strict=True)
-    confirm: bool
-
-    @model_validator(mode="after")
-    def require_confirmation(self):
-        """strictなJSON booleanのtrueだけを同意として受け付ける。"""
-        if not self.confirm:
-            raise ValueError("Explicit confirmation is required.")
-        return self
 
 
 class SettingsView(BaseModel):
@@ -177,7 +69,7 @@ class AcceptedJob(BaseModel):
 
     id: str
     status: Literal["queued"]
-    kind: Literal["source", "pipeline", "cdc-source"] = "source"
+    kind: Literal["pipeline"] = "pipeline"
     pending_restart: bool = False
 
 
@@ -185,9 +77,8 @@ class JobView(BaseModel):
     """有限jobの進捗・最終状態と、許可した結果情報を返す型。履歴は非永続。"""
 
     id: str
-    kind: Literal["source", "pipeline", "cdc-source"]
+    kind: Literal["pipeline"]
     pipeline_action: str | None = None
-    cdc_action: Literal["insert", "update", "delete"] | None = None
     status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
     completed: int
     batches: int
@@ -220,34 +111,17 @@ def export_ai_context(datasets: list[str], limit: int) -> dict:
     )
 
 
-def apply_cdc_demo(values: dict[str, str], action: str) -> dict:
-    """所有確認済み専用DBへの固定DMLを、共通helperへ委ねて返す。
-
-    SQL側のcommitはhelperが担当する。GUIからCA/hostname検証を無効化する
-    選択は渡さず、後続CDCのIceberg到着完了とも区別する。
-    """
-    specification = importlib.util.spec_from_file_location(
-        "api_owned_cdc_demo", ROOT / "scripts/cdc-demo.py"
-    )
-    module = importlib.util.module_from_spec(specification)
-    specification.loader.exec_module(module)
-    # GUI/APIの要求から、CAやhostname検証の回避を指定できないようにする。
-    return module.apply_scenario(values, action, trust_local_test=False)
-
-
 def create_app(
     settings_file: Path | None = None,
     token: str | None = None,
     landing: Path | None = None,
-    generator=generate_batch,
     ai_exporter=export_ai_context,
-    cdc_runner=apply_cdc_demo,
 ) -> FastAPI:
     """private設定・認証・単一JobManagerを持つFastAPIアプリを組み立てる。
 
     settings_file等の引数は配置値や試験用I/Oを注入する入口。起動時設定と
     現在の保存値を分け、routeは型/認証→状態確認→固定操作の順に読む。
-    source/pipeline/CDC受付の排他は共有するが、複数APIプロセスを跨がない。
+    pipeline/CDC受付の排他は共有するが、複数APIプロセスを跨がない。
     Docker socket・sudo・自動Deployの能力は持たせない。
     """
     # 起動時の適用値を保持する。Save後の値をその場で実行設定へ混ぜない。
@@ -259,14 +133,12 @@ def create_app(
         token if token is not None else os.environ.get("CONTROL_API_TOKEN", "")
     )
     jobs = JobManager(
-        landing or Path(os.environ.get("DEMO_LANDING_DIR", "/landing")),
-        generator,
-        store.applied,
+        landing or Path(os.environ.get("SQL_BATCH_EXCHANGE_DIR", "/landing")),
     )
     application = FastAPI(
         title="Lakehouse 操作API",
         description=(
-            "設定の保存と反映を区別します。素材投入は後続処理を起動しません。"
+            "外部入力の処理・監視を提供し、設定の保存と反映を区別します。"
         ),
         version="1.0.0",
         docs_url=None,
@@ -388,22 +260,6 @@ def create_app(
         )
 
     @application.get(
-        "/scenarios",
-        response_model=ScenarioCatalog,
-        dependencies=protected,
-        tags=["素材投入"],
-    )
-    def get_scenarios():
-        """固定の異常選択・追加同意・競合集合を返し、生成処理は開始しない。"""
-        engine = source_scenario_engine()
-        return {
-            "version": 1,
-            "scenarios": engine.catalog(),
-            "presets": engine.presets(),
-            "conflicts": [sorted(group) for group in engine.CONFLICTS],
-        }
-
-    @application.get(
         "/settings",
         response_model=SettingsView,
         dependencies=protected,
@@ -429,10 +285,10 @@ def create_app(
     def patch_settings(patch: SettingsPatch):
         """他jobの実行中を避けて許可項目を保存し、反映待ちを返す。
 
-        JobManagerと同じ排他を使い、投入途中の設定変更を避ける。保存先は
+        JobManagerと同じ排他を使い、処理途中の設定変更を避ける。保存先は
         privateファイルだけで、mount・Docker・起動時tokenは変更しない。
         """
-        # 素材/CDC/pipeline受付と同じlockを使い、実行中の保存を拒否する。
+        # CDC/pipeline受付と同じlockを使い、実行中の保存を拒否する。
         if not jobs.operation.acquire(blocking=False):
             reject(
                 409,
@@ -479,163 +335,22 @@ def create_app(
                     services[name] = {"healthy": False}
         return {
             "services": services,
-            "source_job_running": jobs.operation.locked(),
+            "operation_running": jobs.operation.locked(),
             "pending_restart": store.public()["pending_restart"],
         }
-
-    @application.post(
-        "/jobs",
-        status_code=202,
-        response_model=AcceptedJob,
-        dependencies=protected,
-        tags=["素材投入"],
-    )
-    def create_job(options: SourceJob):
-        """素材生成を非同期受付し、完了照会用のjob IDを202で返す。
-
-        SQL用には適用済みの専用設定を選ぶ。受付後のfile公開/DB commitは
-        JobManager側で進み、ingest・medallion・workflowは自動実行しない。
-        """
-        if not store.applied:
-            reject(
-                503, "SETTINGS_UNAVAILABLE", "非公開設定を確認してください。"
-            )
-        try:
-            values = options.model_dump()
-            values["pending_restart"] = store.public()["pending_restart"]
-            source_values = (
-                store.source_settings()
-                if options.destination != "landing"
-                else None
-            )
-            # ここで返すのは受付IDだけ。完了状態はGETで照会し、再POSTしない。
-            return jobs.submit(values, settings=source_values)
-        except SettingsError:
-            reject(
-                422,
-                "DEMO_CA_UNAVAILABLE",
-                "検証DBのCAを専用private設定ディレクトリ内で確認してください。",
-            )
-        except JobConflict:
-            reject(
-                409,
-                "OPERATION_RUNNING",
-                "別の処理が実行中です。完了を待ってください。",
-            )
-
-    @application.post(
-        "/cdc/demo/{action}",
-        status_code=202,
-        response_model=AcceptedJob,
-        dependencies=protected,
-        tags=["CDC専用素材"],
-    )
-    def cdc_demo(
-        action: Literal["insert", "update", "delete"],
-        confirmation: CdcConfirmation,
-    ):
-        """所有権付き専用DBの固定I/U/Dだけを非同期受付する。
-
-        DB識別子・所有権token・専用DEMO認証を確認し、会社SOURCE DBを除外する。
-        202はDML commitでもCDC到着でもない。実行結果はjob IDで確認する。
-        """
-        del confirmation  # 要求型の検査で、既に明示的なtrueを必須にしている。
-        try:
-            values = store.source_settings()
-            for key in ("CDC_SQLSERVER_DATABASE", "CDC_DEMO_OWNERSHIP_TOKEN"):
-                values[key] = store.applied.get(key, "")
-            database = values["CDC_SQLSERVER_DATABASE"]
-            if (
-                not re.fullmatch(r"lh_cdc_demo_[0-9a-f]{16}", database)
-                or database.casefold()
-                == values.get("SOURCE_SQLSERVER_DATABASE", "").casefold()
-                or not re.fullmatch(
-                    r"[0-9a-f]{64}", values["CDC_DEMO_OWNERSHIP_TOKEN"]
-                )
-                or not all(
-                    values.get("DEMO_SQLSERVER_" + key)
-                    for key in ("HOST", "USER", "PASSWORD")
-                )
-            ):
-                reject(
-                    422,
-                    "CDC_DEMO_NOT_PREPARED",
-                    "専用検証DBの準備・所有権鍵・DEMO認証を確認してください。",
-                )
-            pending = store.public()["pending_restart"]
-
-            def run_cdc(selected: str) -> dict:
-                """実行結果を固定6行・source_onlyへ照合し、接続情報を含まない結果だけ返す。"""
-                # helper結果の内部情報を返さず、固定の結果契約だけを採用する。
-                result = cdc_runner(values, selected)
-                if (
-                    not isinstance(result, dict)
-                    or result.get("action") != selected
-                    or result.get("source_only") is not True
-                    or type(result.get("changed_rows")) is not int
-                    or result["changed_rows"] != 6
-                ):
-                    raise OperationFailure(
-                        "CDC_DEMO_FAILED",
-                        "専用検証DBの結果を確認してください。",
-                    )
-                return {
-                    "action": selected,
-                    "changed_rows": 6,
-                    "source_only": True,
-                }
-
-            return jobs.submit_cdc(action, run_cdc, pending_restart=pending)
-        except SettingsError:
-            reject(
-                422,
-                "DEMO_CA_UNAVAILABLE",
-                "検証DBのCAを専用private設定ディレクトリ内で確認してください。",
-            )
-        except JobConflict:
-            reject(409, "OPERATION_RUNNING", "別の処理が実行中です。")
 
     @application.get(
         "/jobs/{identifier}",
         response_model=JobView,
         dependencies=protected,
-        tags=["素材投入"],
+        tags=["後続処理"],
     )
     def get_job(identifier: str):
         """job IDで進捗・結果を返す。404を未実行の証明にはしない。"""
         try:
             return jobs.get(identifier)
         except KeyError:
-            reject(404, "JOB_NOT_FOUND", "指定した投入処理が見つかりません。")
-
-    @application.post(
-        "/jobs/{identifier}/cancel",
-        response_model=JobView,
-        dependencies=protected,
-        tags=["素材投入"],
-    )
-    def cancel_job(identifier: str):
-        """未開始処理またはsourceのbatch境界で取消を要求し、現在状態を返す。
-
-        完了済み素材は残る。開始済みCDC transactionやpipelineは、このAPIで
-        途中取消・rollbackせず409で待機を案内する。
-        """
-        try:
-            return jobs.cancel(identifier)
-        except KeyError:
-            reject(404, "JOB_NOT_FOUND", "指定した投入処理が見つかりません。")
-        except JobConflict:
-            if jobs.get(identifier)["kind"] == "cdc-source":
-                reject(
-                    409,
-                    "CDC_DEMO_RUNNING",
-                    "開始済みの専用DB変更は完了を待ってください。",
-                )
-            reject(
-                409,
-                "PIPELINE_RUNNING",
-                "開始済みの後続処理は完了を待ってください。",
-            )
+            reject(404, "JOB_NOT_FOUND", "指定した処理が見つかりません。")
 
     def run_pipeline(action: str) -> dict:
         """固定actionをworkerへ依頼し、完了応答の許可した件数だけを返す。
@@ -667,9 +382,33 @@ def create_app(
                 )
             # 下流の新しいfieldや例外本文を、自動でAPI応答へ追加しない。
             result = {}
-            for key in ("imported", "skipped", "sql_statements"):
+            for key in (
+                "imported",
+                "skipped",
+                "sql_statements",
+                "rejected_batches",
+            ):
                 if type(payload.get(key)) is int:
                     result[key] = payload[key]
+            samples = payload.get("batch_rejections")
+            if isinstance(samples, list):
+                result["batch_rejections"] = [
+                    item
+                    for item in samples[:20]
+                    if isinstance(item, dict)
+                    and set(item) == {"id", "reason"}
+                    and isinstance(item["id"], str)
+                    and re.fullmatch(r"[a-f0-9]{16}", item["id"])
+                    and isinstance(item["reason"], str)
+                    and item["reason"]
+                    in {
+                        "manifest_invalid",
+                        "artifact_unavailable",
+                        "artifact_mismatch",
+                        "artifact_format",
+                        "batch_limit",
+                    }
+                ]
             if payload.get("ok") is True:
                 result["ok"] = True
             if isinstance(payload.get("checks"), list):

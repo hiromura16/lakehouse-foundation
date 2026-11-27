@@ -9,7 +9,7 @@
 >
 > **前提となる資料:** [初めて構築する人の一本道ガイド](<START-HERE.md>)
 >
-> **次に読む資料:** [GUIからダミーデータを投入する](<DEMO-GUI.md>) / [GUI操作APIとSwagger](<API.md>) / [AIへ渡せるデータとLangChain連携](<AI-READINESS.md>)
+> **次に読む資料:** [GUIで外部データの処理を確認する](<DEMO-GUI.md>) / [GUI操作APIとSwagger](<API.md>) / [AIへ渡せるデータとLangChain連携](<AI-READINESS.md>)
 >
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
@@ -89,7 +89,7 @@ Silverは業務キーの最新有効行です。無効な最新版から古い�
 
 「品質件数を確認」は、固定6表のBronze、Silver、Quarantine件数を最大6行で表示します。固定SQL、短いHTTP timeout、全体期限、未完了queryの取消を使います。表が未作成なら先にメダリオンを実行します。件数は現在の各表の値で、表間の共通snapshotではありません。改訂・重複排除があるため `Bronze = Silver + Quarantine` を常に期待しません。
 
-素材生成は「素材の投入」、後続処理は「処理・検証」です。プレビューや品質確認はデータを変更せず、メダリオンやworkflowを自動起動しません。26種類の異常素材は [ANOMALY-SCENARIOS.md](ANOMALY-SCENARIOS.md) を使って期待結果と照合します。
+原本の配送は外部アプリ、後続処理は「処理・検証」です。プレビューや品質確認はデータを変更せず、メダリオンやworkflowを自動起動しません。[受入・隔離の検証](ANOMALY-SCENARIOS.md) を参照してください。
 
 ## 接続診断は適用済みか保存済みかを選ぶ
 
@@ -125,7 +125,7 @@ MCP等のクライアントは、まずcapabilities、catalog、status、scenari
 
 ## 初回の確認順と実装の正本
 
-初回は「状態」でworker、「素材の投入」で1batch、「処理・検証」でmedallion、「データ」でGold/品質、「履歴」で同じID、「ヘルプ」で文書・図の順に確認します。サービス入口カードのhealthyだけでは、この往復は検証できません。設定画面の `保存済み・再配置待ち` が出たら対象変更を整理し、配置担当が反映してから次のSQL投入を行います。
+初回は「状態」でworker、外部入力を確認後「処理・検証」でmedallion、「データ」でGold/品質、「履歴」で同じID、「ヘルプ」で文書・図の順に確認します。サービス入口カードのhealthyだけでは、この往復は検証できません。設定画面の `保存済み・再配置待ち` が出たら対象変更を整理し、配置担当が反映してから次の処理を行います。
 
 入口・catalog・helpの公開allowlistは [poc_catalog.py](../infra/demo/poc_catalog.py)、APIは [poc_api.py](../infra/demo/poc_api.py) が正本です。Streamlit **1.67.0** のfragmentとFastAPI **0.162.2** のローカルSwagger配信を使います。[公式版への参照](REFERENCES.md) と [API仕様・試し方](API.md) を併せて確認してください。新しい文書をGitへ追加しても、help allowlistへ加えてimageを再buildするまではポータル内の一覧へ自動追加されません。
 
@@ -135,7 +135,7 @@ MCP等のクライアントは、まずcapabilities、catalog、status、scenari
 
 | やりたいこと | 最初に選ぶ場所 | 成功を確認する場所 |
 | --- | --- | --- |
-| 素材を1回作る | 素材の投入 | 共通job結果とmanifest。Goldの表示ではない |
+| 受け入れたファイルを取り込む | 処理・検証 | Gold更新は変換処理の結果で別に確認 |
 | 最新の業務集計を作る | 処理・検証のmedallion | 別jobの成功→データのGold/品質 |
 | 表の意味を知る | データのcatalog | 粒度、列、主キー、由来。実会社のmapは非公開 |
 | 未起動の機能を追加する | 管理者のprivate設定/Dokploy | profile保存→Deploy→入口カード。カード自体はinstallしない |

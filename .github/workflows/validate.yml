@@ -90,7 +90,7 @@ jobs:
         bash -n infra/dokploy/install.sh
         python -m compileall -q scripts infra medallion
     # unittest discovery also includes all Dokploy environment regressions.
-    - name: Test source-only generation and publication checks
+    - name: Test receiver boundaries and publication checks
       run: |
         python scripts/cdc_images.py
         python -m unittest discover -s tests

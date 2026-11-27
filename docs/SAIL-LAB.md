@@ -46,7 +46,7 @@ client元imageのPython ABIが異なる場合は安全にbuildが失敗します
 
 ## 入力と業務意味
 
-[fixture.json](../infra/sail/fixture.json)は既存Demo generatorのcleanデータに、
+[fixture.json](../infra/sail/fixture.json)は版管理された検証専用データに、
 日本語、NULLと空文字、正確な大きいdecimal、UTC以外のoffset、100 ns、同一イベントの重複を加えた合成素材です。
 [SHA-256](../infra/sail/fixture.sha256)を両エンジンの実行前に照合します。
 fixtureはコードレビュー対象の固定入力です。APIで任意の会社データや任意SQLを指定する機能はありません。

@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """Read mapped SQL Server source tables and publish completed landing files.
 
-Only explicit SELECT statements are issued. This snapshot bridge never creates
+Only explicit SELECT statements are issued. Completed files carry real source
+records, not generated input. This snapshot bridge never creates
 or changes source objects, enables CDC, or starts downstream processing.
 """
 
 import argparse
-import importlib.util
+import csv
+import io
 import json
 import math
 import os
 import re
+import secrets
 import sys
 import tempfile
 from contextlib import contextmanager
@@ -26,14 +29,70 @@ SYSTEM_DATABASES = {"master", "model", "msdb", "tempdb"}
 MAX_ROWS = 100000
 
 
-def source_io():
-    """Load format and atomic-file helpers without running the demo CLI."""
-    specification = importlib.util.spec_from_file_location(
-        "landing_source_io", ROOT / "scripts/generate-demo.py"
-    )
-    module = importlib.util.module_from_spec(specification)
-    specification.loader.exec_module(module)
-    return module
+CONTRACT = ROOT / "medallion/sources.json"
+
+
+def load_contracts():
+    """Load the checked-in six-source column and filename contract."""
+    return json.loads(CONTRACT.read_text())["sources"]
+
+
+def encoded_sources(data):
+    """Serialize CSV and JSON Lines without converting raw string values."""
+    result = {}
+    for source in load_contracts():
+        rows = data[source["table"]]
+        if source["path"].endswith(".csv"):
+            stream = io.StringIO(newline="")
+            writer = csv.DictWriter(
+                stream, fieldnames=source["columns"], lineterminator="\n"
+            )
+            writer.writeheader()
+            writer.writerows(rows)
+            payload = stream.getvalue().encode("utf-8")
+        else:
+            payload = "".join(
+                json.dumps(row, ensure_ascii=False, separators=(",", ":"))
+                + "\n"
+                for row in rows
+            ).encode("utf-8")
+        result[source["path"]] = payload
+    return result
+
+
+def output_directory(path):
+    """Validate an external output location without touching its contents."""
+    path = Path(path).expanduser().absolute()
+    if path.resolve().is_relative_to(ROOT):
+        raise ValueError(
+            "The output directory must be outside the source repository."
+        )
+    if any(part.is_symlink() for part in (path, *path.parents)):
+        raise ValueError("Output paths must not use symlinks.")
+    if path.exists() and not path.is_dir():
+        raise ValueError("Output must be a directory.")
+    for part in ["csv", "json"]:
+        child = path / part
+        if child.is_symlink() or (child.exists() and not child.is_dir()):
+            raise ValueError(
+                "Source subdirectories must be ordinary directories."
+            )
+    return path
+
+
+def publish_file(path, payload, replace=False):
+    """Publish a complete file atomically and refuse accidental replacement."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    staging = path.with_name(path.name + "." + secrets.token_hex(6) + ".part")
+    try:
+        with staging.open("xb") as stream:
+            stream.write(payload)
+        if replace:
+            os.replace(staging, path)
+        else:
+            os.link(staging, path)
+    finally:
+        staging.unlink(missing_ok=True)
 
 
 def private_file(path):
@@ -372,11 +431,10 @@ def main(argv=None):
         ),
     )
     args = parser.parse_args(argv)
-    helper = source_io()
-    contracts = helper.contracts()
+    contracts = load_contracts()
     values = read_settings(args.env_file)
     mapping = read_mapping(args.table_map, contracts)
-    output = helper.output_directory(args.output)
+    output = output_directory(args.output)
     filenames = [source["path"] for source in contracts]
     targets = [output / filename for filename in filenames]
     targets += [output / (filename + ".ready") for filename in filenames]
@@ -395,11 +453,11 @@ def main(argv=None):
         args.max_rows,
         args.test_trust_server_certificate,
     )
-    payloads = helper.encoded_sources(datasets)
+    payloads = encoded_sources(datasets)
     # No file is published until all six queries and value conversions succeed.
     for filename, payload in payloads.items():
-        helper.publish_file(output / filename, payload, args.force)
-        helper.publish_file(
+        publish_file(output / filename, payload, args.force)
+        publish_file(
             output / (filename + ".ready"),
             (sha256(payload).hexdigest() + "\n").encode(),
             args.force,
@@ -418,7 +476,7 @@ def main(argv=None):
             for source in contracts
         ],
     }
-    helper.publish_file(
+    publish_file(
         output / "source-extract.json",
         (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode(),
         args.force,

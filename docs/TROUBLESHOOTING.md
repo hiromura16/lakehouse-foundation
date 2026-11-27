@@ -35,7 +35,7 @@ setopt INTERACTIVE_COMMENTS
 | 画面自体が開かない | bind・ポート・経路・コンテナhealthを確認。別端末のlocalhostは別端末自身 |
 | 画面は開くがAPIが使えない | demo-api health、token、private設定のmountと権限を確認 |
 | 素材投入が失敗 | ジョブIDとstatusを確認。完了したbatch／manifestを調べ、新規投入を重ねない |
-| 素材はあるがGoldがない | 素材生成と処理は別。「処理・検証」または別の正規実行入口を確認 |
+| 素材はあるがGoldがない | 外部からの受入と後続処理は別。「処理・検証」または別の正規実行入口を確認 |
 | コンテナはhealthyだが件数が違う | source manifest、Bronze、Silver、quarantine、Goldの順に照合 |
 | 更新後に初期画面へ戻った | 空volumeや別prefixへ向いていないか確認。再初期化を進めない |
 
@@ -104,18 +104,17 @@ docker pull ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e
 | 症状／HTTP | 観測するもの | 判断・操作 |
 | --- | --- | --- |
 | `401` | CONTROL_API_TOKENの設定有無、UI/APIの配置時env | 同じ環境の同じtokenへ揃えて再配置。既存tokenをブラウザーへ表示させない |
-| `422` | 入力の範囲・型、設定項目、DB書き込み許可 | 指図数1～1000、日数1～366、seed範囲、modeと回数、待機合計600秒以内を確認 |
+| `422` | 入力の範囲・型、設定項目、受信後処理への同意 | Swaggerの操作型とprivate設定を確認 |
 | `409`・workerが実行中／確認待ち | worker healthのbusy／blocked、前回の処理結果 | 新しいジョブは受付前に拒否されている。完了または確認を待つ |
-| `409`・別の操作が実行中 | 現在のsource／pipelineジョブとstatus | 終了を待つ。API内の排他で待たされている状態へ新規要求を重ねない |
+| `409`・別の操作が実行中 | 現在の処理ジョブとstatus | 終了を待つ。API内の排他で待たされている状態へ新規要求を重ねない |
 | `404`・ジョブなし | API再起動の有無、入力したID | ジョブ履歴は永続の監査DBではない。残ったmanifestを確認して判断 |
 | `500` | 固定エラーcode、health、所有者・空き容量 | 生例外を公開せず、管理者が非公開ログで原因を確認。即座に再投入しない |
 | `503`・設定未準備 | 専用dir0700、env0600、ファイル名、APIユーザー | bind元の実ファイルとCONTROL_SETTINGS_DIR/NAMEを確認 |
 | `failed` / `WORKER_RESULT_UNKNOWN` | workerの実行中表示と実際の結果 | APIの応答待ち時間を超えた状態。workerが処理継続中の可能性があるため、自動／即時の再実行をしない |
 | `failed` | 完了回数、最後のmanifest、入力先状態 | 成功済みの素材は残り得る。部分成功を確認してから新しいrunを作る |
-| `cancelled` | 完了回数、停止要求を出した時点 | 完成済みbatchは正常に残る。取消で既存データが削除されることはない |
 | `queued`／`running`が長い | SQL接続のタイムアウト、ジョブ進捗、サービス資源 | 現在batchの完了を待つ。API再起動で強制停止する前にDB側の状態を確認 |
 
-「状態」のworkerにbooleanの `busy` があれば実行中表示として使います。APIのジョブがタイムアウトでfailedになってもworkerの処理が止まったとは限りません。worker自身のhealthで `blocked: true` の場合はTrinoの取消確認待ちであり、残存queryを管理者が確認してから復旧します。新しいpipelineはbusy／blockedの間409で拒否します。pipelineの途中取消は提供していません。[API.md](API.md#ジョブの進捗と取消)
+「状態」のworkerにbooleanの `busy` があれば実行中表示として使います。APIのジョブがタイムアウトでfailedになってもworkerの処理が止まったとは限りません。worker自身のhealthで `blocked: true` の場合はTrinoの取消確認待ちであり、残存queryを管理者が確認してから復旧します。新しいpipelineはbusy／blockedの間409で拒否します。pipelineの途中取消は提供していません。[API.md](API.md#後続処理の進捗と履歴)
 
 「保存しました」なのに反映しない場合は、`pending_restart`／mount変更の表示を確認します。設定保存はファイル更新までです。現在のAPI token、worker、UID、mount等は再配置後に確認します。Dokployのenvとprivateファイルを別の値のままにしません。
 
@@ -130,7 +129,7 @@ docker pull ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e
 | 100000行を超える・列不一致 | ソース列と型の原本契約を確認。上限回避のため検証を無効化しない |
 | CSV／JSONは原本だけ保存され、業務表に入らない | sources.jsonの固定名、またはGUIの正式な増分命名か確認 |
 | Permission denied | LANDING_DIR、所有者・グループ、WORKER_UID/GID、共有ユーザーを確認 |
-| Sambaでは書けるがGUIでは書けない | APIのrw mountと同じUID/GIDを確認。worker側をrw化して解決しない |
+| 外部アプリがファイルを配送できない | 外部アプリの共有権限、パス、宛先を確認。worker側をrw化して解決しない |
 
 手動ファイルの完成後に、例えば次を実行します。
 
@@ -140,13 +139,11 @@ docker pull ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e
 python3 scripts/mark-ready.py /srv/lakehouse/landing/csv/erp_products.csv
 ```
 
-GUIの正式な増分名は `csv/<table>__<hex12>_<4桁>.csv` またはJSON側の対応名です。任意にsuffixを付けるだけで全ファイルが業務表へ認識されるわけではありません。詳細は [DEMO-GUI.md](DEMO-GUI.md) と [MEDALLION.md](MEDALLION.md) を参照します。
+従来の業務増分ファイル名も受け入れます。任意のファイルが業務表になるわけではありません。[Landing入力契約](DEMO-DATA.md) と [変換仕様](MEDALLION.md) を参照してください。
 
-## SQL Serverへダミー投入できない
+## 外部SQLの取り込み・CDCを確認する
 
-専用の既存DEMO DB、必要なCREATE SCHEMA／CREATE TABLE／INSERT権限、TLS証明書・hostname、CAのコンテナ内pathを順に確認します。会社参照元の`SOURCE_SQLSERVER_DATABASE`と同名のDBやシステムDBは拒否されます。GUIの書き込み許可を明示しても、この拒否は解除されません。
-
-SQLだけの投入ではCSV／JSONファイルは生成しません。6つのnvarchar staging表とmanifestを確認します。既存の業務schemaへの投入や、DB自体の作成を期待しないようにします。証明書検証を無効にして接続成功と扱いません。
+SQL Serverの書き込みは外部のアプリで確認します。Foundation側は固定の接続診断、Connector/Consumerの状態、lag、分析表を照合します。TLS検証は正常な受入の前提です。
 
 会社参照元への`source-check`成功はTCPの到達性までです。SQL認証・SELECT・証明書・CDCの成功と区別します。[SOURCE-SQLSERVER.md](SOURCE-SQLSERVER.md)
 

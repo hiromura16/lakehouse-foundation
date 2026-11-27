@@ -32,7 +32,7 @@
 | カタログ | Lakekeeper 0.14.3 / PostgreSQL 18.6 | Iceberg REST catalogとストレージ資格情報を保持 |
 | 処理 | Python worker / PyIceberg 0.12.0 / Trino 484 | 原本取込、Bronze、Silver、隔離、Gold。SQL業務ルールはGitで管理 |
 | 分散計算 | Spark 4.1.4 / Iceberg 1.12.0 | 常駐Master/Worker/History。Jupyterからremote投入も可能 |
-| 操作 | Streamlit 1.67.0 / FastAPI 0.162.2 | 設定保存・合成素材・処理開始・状態・catalog・診断・Swagger |
+| 操作 | Streamlit 1.67.0 / FastAPI 0.162.2 | 設定保存・外部入力の処理開始・状態・catalog・診断・Swagger |
 | 実行の自動化 | n8n 2.46.7、Airflow 3.4.0 | 同梱の手動workflow/DAGからworkerへ依頼。定期担当は一つに決める |
 | 通常監視 | Grafana / Prometheus、Loki / Vector | `monitoring`。curated spoolを使い、host root/PIDは読まない。DashboardはGUI所有 |
 | host監視 | node-exporter / cAdvisor | `monitoring-host` の追加opt-in。`monitoring` 必須、root/PID読取りを事前承認 |
@@ -81,7 +81,7 @@ flowchart LR
   SPARK[Spark / Jupyter] --- G
 ```
 
-ファイルは素材生成→明示取込→明示変換の順です。素材投入ツール自体はworkerを呼びません。CDCは接続済みconsumerが継続処理する別経路です。両経路を同じ表への無計画な二重writerとして使わず、CDC専用namespaceとsource mappingを確認します。[メダリオン](MEDALLION.md)・[CDC](CDC.md)
+ファイルは外部の配送→明示取込→明示変換の順です。素材投入ツール自体はworkerを呼びません。CDCは接続済みconsumerが継続処理する別経路です。両経路を同じ表への無計画な二重writerとして使わず、CDC専用namespaceとsource mappingを確認します。[メダリオン](MEDALLION.md)・[CDC](CDC.md)
 
 Bronzeは文字列と由来、Silverは主キーの最新候補の検証結果、Quarantineは不正最新版と理由、Goldは工場UTC日別の生産と受注別の出荷です。最新が不正でも過去の正常版へ戻しません。原本ハッシュはファイルの内容、snapshot IDは表の版で、役割が異なります。表の置換は1表ごとにatomicで、14SQL全体のtransactionではありません。[Trino 484の置換・snapshot](https://github.com/trinodb/trino/blob/484/docs/src/main/sphinx/connector/iceberg.md#replace-tables)
 

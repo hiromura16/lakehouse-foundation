@@ -78,18 +78,13 @@ def validate_sql_source_policy(values):
     A shared source remains denied by default. Live ownership/permissions and
     explicit request consent are additionally checked by the fixed adapter.
     """
-    for key in (
-        "DEMO_SQLSERVER_TRUST_SERVER_CERTIFICATE",
-        "SOURCE_SQLSERVER_TRUST_SERVER_CERTIFICATE",
-    ):
-        values.setdefault(key, "false")
-        if values[key] not in {"true", "false"}:
-            raise ValueError("Use true or false for " + key)
-    for prefix in ("DEMO", "SOURCE"):
-        key = prefix + "_SQLSERVER_ENCRYPT"
-        values.setdefault(key, "true")
-        if values[key] != "true":
-            raise ValueError("SQL source encryption must remain enabled.")
+    key = "SOURCE_SQLSERVER_TRUST_SERVER_CERTIFICATE"
+    values.setdefault(key, "false")
+    if values[key] not in {"true", "false"}:
+        raise ValueError("Use true or false for " + key)
+    values.setdefault("SOURCE_SQLSERVER_ENCRYPT", "true")
+    if values["SOURCE_SQLSERVER_ENCRYPT"] != "true":
+        raise ValueError("SQL source encryption must remain enabled.")
     for suffix, default, minimum, maximum in (
         ("OVERLAP_SECONDS", "300", 1, 86400),
         ("SAFETY_LAG_SECONDS", "5", 0, 3600),

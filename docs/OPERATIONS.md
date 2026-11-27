@@ -260,7 +260,7 @@ coreのPostgreSQL18.6、n8n2.46.7、Kafka4.4.0／Debezium3.7.1.Final、Dokploy0.
 
 | 担当 | 日常の作業 | 別途確認する境界 |
 | --- | --- | --- |
-| PoC利用者 | 合成素材投入、進捗と品質、読取りSQL、報告素材 | 本番SQLへの書込み許可、定期実行の有効化は自己判断で増やさない |
+| PoC利用者 | 外部入力の受領確認、処理の進捗と品質、読取りSQL、報告素材 | 本番SQLへの書込み許可、定期実行の有効化は自己判断で増やさない |
 | 配置担当 | private設定、同じアプリへの配置、init／health、版の台帳 | Docker操作権はホストへ強い影響を持つ。共有GUIへsocketを渡さない |
 | ホスト管理者 | Docker／Dokploy／Samba、容量、FW、企業CA、backup媒体 | daemon再起動が同居アプリへ与える影響 |
 | DBA | 参照view・権限、CDC capture／cleanup、保持期間 | SOURCE参照とDEMO書込みとCDC操作の資格情報を分ける |

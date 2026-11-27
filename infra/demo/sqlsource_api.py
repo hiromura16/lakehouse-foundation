@@ -6,12 +6,13 @@ are never promoted to a writer; the DBA applies owned DDL separately.
 """
 
 import importlib
+import sys
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from job_manager import JobConflict, OperationFailure
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from service import source_scripts_path
 from sqlsource_client import public_result, send_batch
 
 
@@ -100,6 +101,13 @@ class BatchConsent(BaseModel):
         if self.confirm is not True:
             raise ValueError("Explicit processing consent is required.")
         return self
+
+
+def source_scripts_path():
+    """共通の外部SQL読取アダプターを接続なしで解決する。"""
+    scripts = str(Path(__file__).resolve().parents[2] / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
 
 
 def batch_module():

@@ -146,7 +146,7 @@ mapping JSONは列名の対応です。任意の計算式やWHERE句で抽出範
 
 ## 3. 会社SQL Serverを読み取り専用でつなぐ
 
-**GUIで合成データを試した環境とは別の、空の会社データ用環境を準備します。** 新しいCompose/appName、volume、private設定、landingと空きportを使い、同じ手順でcoreを配置します。会社用環境では通常のダミー生成を行わず、隔離namespaceの `verify` だけを実行します。GUI runのBronzeはファイルの相対path単位で残るため、landingの削除や会社CSVの追加では過去の合成行を消せません。既存DBを初期化して切り替える操作は本手順に含めません。
+**外部の合成データを試した環境とは別の、空の会社データ用環境を準備します。** 新しいCompose/appName、volume、private設定、landingと空きportを使い、同じ手順でcoreを配置します。会社用環境には外部の試験データを配送せず、隔離namespaceの `verify` だけを実行します。GUI runのBronzeはファイルの相対path単位で残るため、landingの削除や会社CSVの追加では過去の合成行を消せません。既存DBを初期化して切り替える操作は本手順に含めません。
 
 ここからはその会社用の `LAKEHOUSE_ENV_FILE` と `LANDING_PATH` を指定して、通常ユーザーで実行します。
 
@@ -190,7 +190,7 @@ fi
 
 抽出はSELECTだけで、DB変更・CDC有効化・後続処理の起動をしません。6表全体の取得・形式検査に成功した後、6ファイル、各ready、`source-extract.json` を公開します。各SELECTの時点は別で、6表を同一時点へ固定するtransactionではありません。厳密な時点整合が必要なら、上流で読み取り用snapshot等を用意します。
 
-初回は既存ファイルを上書きしません。次の全件snapshotを意図的に置き換える場合だけ `--force` を使います。抽出中にn8n/Airflow等から取り込みを同時起動せず、抽出成功→変換の順序にします。件数上限、TLS、NULL、日時の詳細は [SOURCE-SQLSERVER.md](SOURCE-SQLSERVER.md) を参照してください。DEMO設定は別の専用DBへの合成書き込みであり、ここでは使いません。
+初回は既存ファイルを上書きしません。次の全件snapshotを意図的に置き換える場合だけ `--force` を使います。抽出中にn8n/Airflow等から取り込みを同時起動せず、抽出成功→変換の順序にします。件数上限、TLS、NULL、日時の詳細は [SOURCE-SQLSERVER.md](SOURCE-SQLSERVER.md) を参照してください。旧内蔵writerの認証情報は使用しません。
 
 ## 4. 会社データのメダリオンを検証する
 
