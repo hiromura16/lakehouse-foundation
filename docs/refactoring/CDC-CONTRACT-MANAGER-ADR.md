@@ -73,6 +73,16 @@ CDC_CONTRACT_EXPERIMENT=true python3 infra/cdc/consumer.py \
 - Rawを派生より先に保存し、未知topic、不正型、複製位置の異内容、派生失敗では完了位置を進めません。処理失敗は隔離用の固定理由を保存して停止し、自動skip/ACKは行いません。Currentとbasic Silverは検証用SQLiteの同一transactionで公開され、Iceberg上の複数表transactionを意味しません。再生は、派生行・完了位置と同じSQLite transactionで確定した受理順だけを使います。Rawへの保存順とは別なので、失敗後に並び順を変えて再試行しても、分割間・同一表の別名間で勝手に並べ替えません。再生したCurrent/Silver、版、完了位置と受理順を照合し、差があれば成功扱いしません。
 - この段階では稼働環境のoffset移送やrebuildは追加しません。Kafka consumerの正式経路を繋ぐ前に、専用group・catalog・state／単一writerの実証、状態喪失時の拒否、Icebergの部分commit・schema/型の互換、実engineからの不完全なbefore像/未取得LOB、管理者承認の復元経路を同じ隔離fixtureで確認します。結合済みの現行SQLで行うSilver/Goldもこの単純な投影とは別です。
 
+## フェーズ2B: 実カタログへの一表合成試験
+
+[試験](../../tests/integration/cdc_contract_iceberg/proof.py)は新しい単一 partition の Kafka、専用 group、専用ディレクトリの SQLite/PyIceberg SqlCatalog/Parquet だけで、一つの複合キーを持つ snapshot・UPDATE・DELETE・tombstone 各1件を処理します。SQL Server、Debezium、稼働中の broker、REST catalog、Trino は利用しません。専用 Actions runner の一回限りの内部ネットワークに broker と試験プロセスがあり、ホストポートやアプリの認証情報はありません。通常の Consumer/Compose から起動されず、運用設定は変わりません。
+
+Raw → Current → Silver の順に実 Iceberg を commit・readback した後、別 SQLite 接続から完了位置を確認して同期 Kafka ACK を行います。Silver の catalog pointer の実更新だけを一度拒否し、障害中の Raw/Current は残る一方、Silver と完了位置/ACK は旧位置のままか比較します。接続を閉じて同じディレクトリと group を開き直し、再配送後の各世代・型と終端位置を照合します。価格は decimal、datetime2(7) は桁を失わない文字列で保存します。これらは試験専用の追加型と保存世代であり、運用の型やビューの変更ではありません。
+
+Current/Silver は配送位置ごとの**世代レシート**で、障害時には一部の Iceberg 世代が先に観測可能です。複数表間の atomic commit や一般のクエリへの一括公開、実プロセスの強制終了、機器・DBを含む復旧を保証しません。SQLite を開き直すときは必須ファイルの欠落、状態の schema/契約の不一致を拒否します。受理行だけの消失は起動時の検査ではなく、後段の明示 replay で検出します。topic/partition/offset は同じ partition 内の順を表すだけで、複数 partition・別名間の受理順を再構築できません。独立した耐久受理台帳と復旧契約は後続課題です。 この試験の再開は Silver の失敗が local commit より前に起きた場合だけです。local commit 後・broker ACK 前にプロセスが落ちて broker 位置が遅れていれば、再開時に位置の不一致で拒否します。この障害区間の自動再配送・ACK修復は未実装です。
+
+ローカルの明示 `--local-storage-only` は実 Iceberg への読み書きと再開を行いますが、Kafka 配送・ACK だけ代替です。実 Kafka の証拠は専用 CI 実行結果に限ります。5表、実 SQL Server/Debezium、運用 PostgreSQL/REST catalog/Trino、登録・変更の反映、再構築やデプロイの合格を意味しません。
+
 ## OSS評価: 現行のKafkaを残す比較
 
 2026-11-27に公開一次資料で机上確認。依存をインストールせず、接続・負荷・障害テストは未実行です。
