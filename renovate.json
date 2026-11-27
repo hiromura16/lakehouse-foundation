@@ -3,6 +3,14 @@
   "extends": [":dependencyDashboard"],
   "enabledManagers": ["github-actions", "custom.regex"],
   "automerge": false,
+  "automergeType": "pr",
+  "automergeStrategy": "squash",
+  "platformAutomerge": false,
+  "ignoreTests": false,
+  "internalChecksAsSuccess": false,
+  "minimumReleaseAge": "3 days",
+  "minimumReleaseAgeBehaviour": "timestamp-optional",
+  "separateMinorPatch": true,
   "prConcurrentLimit": 3,
   "prHourlyLimit": 2,
   "github-actions": {
@@ -27,6 +35,20 @@
     {
       "matchUpdateTypes": ["major"],
       "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Automerge established patch releases of allowlisted CI actions after CI passes",
+      "matchManagers": ["github-actions"],
+      "matchDepTypes": ["action"],
+      "matchPackageNames": [
+        "actions/checkout",
+        "actions/setup-python",
+        "astral-sh/setup-uv"
+      ],
+      "matchUpdateTypes": ["patch"],
+      "minimumReleaseAgeBehaviour": "timestamp-required",
+      "automerge": true,
+      "rebaseWhen": "behind-base-branch"
     }
   ]
 }

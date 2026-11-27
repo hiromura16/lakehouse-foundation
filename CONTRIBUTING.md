@@ -102,8 +102,13 @@ Pythonのバージョン・ハッシュロックやサービスのイメージ�
 更新候補の確認、Dependency Dashboardの管理、PRの作成は、このリポジトリに
 インストールしたRenovate GitHub Appが行います。
 [設定を検証するCI](.github/workflows/renovate.yml)は、設定や検証ワークフローが
-変わったときに読み取り権限で実行されます。マージはCI結果と差分をレビューして
-手動で行います。
+変わったときに読み取り権限で実行されます。
+
+リリース日時を取得できる更新は、Renovateが取得した日時から3日経過するとPRの
+候補になります。自動マージは `actions/checkout`、`actions/setup-python`、
+`astral-sh/setup-uv` のパッチ更新に適用します。リリース日時を確認でき、
+最新の既定ブランチに追従したPRのCIが成功すると、Renovateがsquash mergeします。
+その他の更新はCI結果と差分をレビューして手動でマージします。
 
 ## YAML・shell・秘密値の追加検査
 
