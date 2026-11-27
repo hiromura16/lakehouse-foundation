@@ -117,29 +117,63 @@ def ordered(rows):
     )
 
 
-def read(catalog, lane, offset=None):
-    """各検査で永続メタデータとParquetから読み直す。"""
+def read(catalog, lane, offset=None, *, snapshot_id=None):
+    """任意の実snapshot IDをpinし、永続メタデータとParquetを再読する。"""
     from pyiceberg.expressions import EqualTo
 
     table = catalog.load_table(("wire", lane))
-    scan = (
-        table.scan()
-        if offset is None
-        else table.scan(row_filter=EqualTo("offset", offset))
+    options = {"snapshot_id": snapshot_id}
+    if offset is not None:
+        options["row_filter"] = EqualTo("offset", offset)
+    return ordered(table.scan(**options).to_arrow().to_pylist())
+
+
+def snapshot_id(catalog, lane, *, empty=False):
+    """データの件数から推測せず、実Iceberg snapshot pointerを読む。"""
+    current = catalog.load_table(("wire", lane)).current_snapshot()
+    if current is None and empty:
+        return None
+    src.require(
+        current is not None
+        and type(current.snapshot_id) is int
+        and current.snapshot_id > 0,
+        "CHAIN_ICEBERG_SNAPSHOT_ID",
     )
-    return ordered(scan.to_arrow().to_pylist())
+    return current.snapshot_id
+
+
+def snapshots(catalog):
+    """異なる3テーブルそれぞれの実IDを戻す。値は公開ログに出さない。"""
+    return {lane: snapshot_id(catalog, lane) for lane in LANES}
 
 
 def ensure(catalog, lane, offset, rows):
-    """世代全体を1 commitで保存し、既存が厳密一致なら二重追加しない。"""
+    """世代全体の実appendとsnapshot lineage、同世代の再読を検証。"""
     import pyarrow as pa
 
-    existing = read(catalog, lane, offset)
+    previous = snapshot_id(catalog, lane, empty=True)
+    existing = read(catalog, lane, offset, snapshot_id=previous)
     if not existing:
         table = catalog.load_table(("wire", lane))
         table.append(pa.Table.from_pylist(rows, schema=schema(lane)))
+        current = snapshot_id(catalog, lane)
+        committed_snapshot = catalog.load_table(
+            ("wire", lane)
+        ).current_snapshot()
+        src.require(
+            current != previous
+            and committed_snapshot.parent_snapshot_id == previous,
+            "CHAIN_ICEBERG_LINEAGE",
+        )
+    else:
+        current = previous
+        src.require(
+            current is not None and snapshot_id(catalog, lane) == current,
+            "CHAIN_ICEBERG_UNEXPECTED_ADVANCE",
+        )
     src.require(
-        read(catalog, lane, offset) == ordered(rows), "ICEBERG_READBACK"
+        read(catalog, lane, offset, snapshot_id=current) == ordered(rows),
+        "ICEBERG_READBACK",
     )
 
 
@@ -245,6 +279,95 @@ def same_wire(message, handoff):
     )
 
 
+def reopened_snapshots(catalog, witnessed, raw):
+    """再openで同じsnapshot IDsとfirst generationの実行が維持されたか。"""
+    src.require(snapshots(catalog) == witnessed, "CHAIN_REOPEN_SNAPSHOT_IDS")
+    check_snapshot_rows(catalog, witnessed, raw)
+
+
+def check_snapshot_rows(catalog, witnessed, raw):
+    """現在のpointerに頼らず、指定したsnapshotの内容を比較する。"""
+    src.require(
+        read(catalog, "raw", snapshot_id=witnessed["raw"]) == raw[:1],
+        "CHAIN_REOPEN_RAW_SNAPSHOT",
+    )
+    for lane in LANES[1:]:
+        src.require(
+            read(catalog, lane, snapshot_id=witnessed[lane]) == expected(0),
+            "CHAIN_REOPEN_DERIVED_SNAPSHOT",
+        )
+
+
+def read_final_sql(source, catalog, ids):
+    """最終時点のSQL保持行全型と削除先キーを実照会し、両派生層と比較。"""
+    rows = source.execute(
+        src.DATABASE,
+        "SELECT site_id,record_id,label,quantity,"
+        "CONVERT(varchar(27),observed_at,126) "
+        "FROM dbo.fixture_orders ORDER BY site_id,record_id",
+        reader=True,
+    )
+    src.require(
+        len(rows) == 1
+        and len(rows[0]) == 5
+        and type(rows[0][0]) is str
+        and type(rows[0][1]) is int
+        and rows[0][2] is None
+        and type(rows[0][3]) is Decimal
+        and rows[0][3].as_tuple().exponent == -3
+        and type(rows[0][4]) is str,
+        "CHAIN_SQL_FINAL_TYPED_SHAPE",
+    )
+    kept = dict(
+        zip(
+            ("site_id", "record_id", "label", "quantity", "observed_at"),
+            rows[0],
+            strict=True,
+        )
+    )
+    kept["offset"] = 4
+    src.require([kept] == expected(4), "CHAIN_SQL_FINAL_EXPECTED")
+    dropped = source.execute(
+        src.DATABASE,
+        "SELECT COUNT_BIG(*) FROM dbo.fixture_orders "
+        "WHERE site_id=N'sample' AND record_id=2",
+        reader=True,
+    )
+    src.require(dropped == [(0,)], "CHAIN_SQL_DELETED_KEY_PRESENT")
+    for lane in LANES[1:]:
+        src.require(
+            read(catalog, lane, 4, snapshot_id=ids[lane]) == [kept],
+            "CHAIN_SQL_ICEBERG_FINAL_MISMATCH",
+        )
+
+
+def local_position(sqlite_url):
+    """別のread-only SQLite接続から正確な完了位置を読む。"""
+    with closing(sqlite3.connect(sqlite_url + "?mode=ro", uri=True)) as reader:
+        rows = reader.execute(
+            "SELECT off FROM checkpoints WHERE topic=? AND part=0",
+            (src.TOPIC,),
+        ).fetchall()
+    src.require(
+        len(rows) == 1 and len(rows[0]) == 1 and type(rows[0][0]) is int,
+        "CHAIN_LOCAL_POSITION_NOT_OBSERVED",
+    )
+    return rows[0][0]
+
+
+def verify_final_lag(source, consumer, coords, sqlite_url, experiment):
+    """latest/high, durable SQLiteとKafka groupを別々に読んで0を確認。"""
+    low, high = source.watermark(consumer, src.TOPIC)
+    local_next = local_position(sqlite_url) + 1
+    src.require(
+        (low, high) == (0, 5)
+        and local_next == high
+        and experiment.offset(src.TOPIC, 0) + 1 == high,
+        "CHAIN_FINAL_LAG_MISMATCH",
+    )
+    committed(consumer, coords, high)
+
+
 def run(source, root, handoff):
     """元のbrokerを読み、snapshot後にconsumer/カタログ/状態を再openする。"""
     from confluent_kafka import OFFSET_INVALID, Consumer, TopicPartition
@@ -255,6 +378,7 @@ def run(source, root, handoff):
     coord = TopicPartition(src.TOPIC, 0)
     doc = {"version": 1, "tables": [TABLE]}
     receipt = []
+    first_ids = None
     for start, end in ((0, 1), (1, 5)):
         catalog = store(root, start != 0)
         consumer = Consumer(
@@ -282,6 +406,8 @@ def run(source, root, handoff):
                     "CHAIN_RESUME_LOCAL",
                 )
                 committed(consumer, coord, start if start else OFFSET_INVALID)
+                if start:
+                    reopened_snapshots(catalog, first_ids, receipt)
                 consumer.assign([TopicPartition(src.TOPIC, 0, start)])
                 for n in range(start, end):
                     operation = ("r", "c", "u", "d", "tombstone")[n]
@@ -298,15 +424,10 @@ def run(source, root, handoff):
                     same_wire(message, handoff[n])
                     record = message_record(message)
                     receipt.append(apply(experiment, catalog, record))
-                    with closing(
-                        sqlite3.connect(sqlite_url + "?mode=ro", uri=True)
-                    ) as readonly:
-                        row = readonly.execute(
-                            "SELECT off FROM checkpoints "
-                            "WHERE topic=? AND part=0",
-                            (src.TOPIC,),
-                        ).fetchall()
-                    src.require(row == [(n,)], "CHAIN_DURABLE_BEFORE_ACK")
+                    src.require(
+                        local_position(sqlite_url) == n,
+                        "CHAIN_DURABLE_BEFORE_ACK",
+                    )
                     result = consumer.commit(
                         offsets=[TopicPartition(src.TOPIC, 0, n + 1)],
                         asynchronous=False,
@@ -338,7 +459,23 @@ def run(source, root, handoff):
                         read(catalog, lane) == expected_all,
                         "CHAIN_GENERATIONS",
                     )
+                if end == 1:
+                    first_ids = snapshots(catalog)
+                    check_snapshot_rows(catalog, first_ids, receipt)
                 if end == 5:
+                    final_ids = snapshots(catalog)
+                    src.require(
+                        all(
+                            final_ids[lane] != first_ids[lane]
+                            for lane in LANES
+                        ),
+                        "CHAIN_FINAL_SNAPSHOT_UNCHANGED",
+                    )
+                    check_snapshot_rows(catalog, first_ids, receipt)
+                    read_final_sql(source, catalog, final_ids)
+                    verify_final_lag(
+                        source, consumer, coord, sqlite_url, experiment
+                    )
                     with closing(experiment.replay().db) as replayed:
                         count = replayed.execute(
                             "SELECT count(*) FROM accepted"

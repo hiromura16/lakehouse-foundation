@@ -93,3 +93,11 @@ Silver の世代も別々に再読出しし、snapshot行が残り、更新で N
 
 このジョブは既存の契約実験用hookを明示使用します。現行の本番Sink、
 オブジェクトストア、Trino/BI、強制終了や5表の受入ではありません。
+
+補足証跡では、Raw／Current／Silver各表の実Iceberg snapshotを照会し、
+append後の親子関係と、カタログを再openした際の同じsnapshot ID・内容を
+検査します。最終SQLは保持行の複合主キー、NULL、decimalと7桁時刻を
+読み、削除キーが存在しないことと、両派生層の保持行に差分がないことを
+確認します。Kafkaの最新位置、実group位置、別のread-only SQLite接続の
+完了位置もそれぞれ読み、lag=0を照合します。ログは件数・差分数だけで、
+実snapshot IDやデータ値を出しません。

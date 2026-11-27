@@ -321,15 +321,17 @@ run_client() {
 run_chain_client() {
     local marker='SQL_WIRE_ICEBERG=pass raw=5 current_generations=5 silver_generations=5 broker_next=5'
     local handoff='SQL_WIRE_SOURCE_HANDOFF=pass records=5'
+    local native='SQL_WIRE_NATIVE_EVIDENCE=pass snapshot_lanes=3 typed_final=1 deleted=1 lag=0 mismatches=0'
     local catchup='SQL_SOURCE_STOPPED_KAFKA_CATCHUP=pass'
     local exact='SQL_SOURCE_STOPPED_EXACT_SEQUENCE=pass records=5'
     # allowlist以外はprivate scratchのみ。source完了を保存層の結果と分離する。
     if dt 520s start --attach "$client" 2>&1 |
-        tee "$scratch/proof.log" | grep --line-buffered -Fxe "$catchup" -e "$exact" -e "$handoff" -e "$marker"; then
+        tee "$scratch/proof.log" | grep --line-buffered -Fxe "$catchup" -e "$exact" -e "$handoff" -e "$native" -e "$marker"; then
         [[ $(d container inspect --format '{{.State.ExitCode}}' "$client") == 0 ]]
         grep -Fxq "$catchup" "$scratch/proof.log"
         grep -Fxq "$exact" "$scratch/proof.log"
         grep -Fxq "$handoff" "$scratch/proof.log"
+        grep -Fxq "$native" "$scratch/proof.log"
         grep -Fxq "$marker" "$scratch/proof.log"
     else
         grep -Em1 '^FAIL: [A-Z0-9_]+/[A-Z0-9_]+$' "$scratch/proof.log" >&2 || true

@@ -4,8 +4,9 @@ import json
 import sqlite3
 import unittest
 from contextlib import closing
+from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import proof as src
 import wire_iceberg as wire
@@ -89,6 +90,91 @@ class ContractWireTests(unittest.TestCase):
             changed = SimpleNamespace(key=lambda: key, value=lambda: value)
             with self.assertRaisesRegex(src.Failure, "CHAIN_WIRE_CHANGED"):
                 wire.same_wire(changed, prior)
+
+    def test_native_snapshot_id_requires_real_positive_integer(self):
+        """行が存在するだけでは実Iceberg snapshotを証明しない。"""
+        catalog = Mock()
+        table = catalog.load_table.return_value
+        for invalid in (
+            None,
+            SimpleNamespace(snapshot_id=0),
+            SimpleNamespace(snapshot_id=True),
+        ):
+            table.current_snapshot.return_value = invalid
+            with self.assertRaisesRegex(
+                src.Failure, "CHAIN_ICEBERG_SNAPSHOT_ID"
+            ):
+                wire.snapshot_id(catalog, "raw")
+        table.current_snapshot.return_value = SimpleNamespace(snapshot_id=7)
+        self.assertEqual(wire.snapshot_id(catalog, "raw"), 7)
+
+    def test_reopen_same_native_ids_and_pins_each_scan(self):
+        """元のsnapshotを比較し、現在データの偶然の一致で代用しない。"""
+        seen = {"raw": 4, "current": 8, "silver": 12}
+        raw = [{"offset": 0, "key_json": "synthetic", "value_json": "{}"}]
+        with (
+            patch.object(wire, "snapshots", return_value=seen),
+            patch.object(
+                wire,
+                "read",
+                side_effect=[raw, wire.expected(0), wire.expected(0)],
+            ) as read,
+        ):
+            wire.reopened_snapshots(None, seen, raw)
+            self.assertEqual(
+                [call.kwargs for call in read.call_args_list],
+                [{"snapshot_id": 4}, {"snapshot_id": 8}, {"snapshot_id": 12}],
+            )
+        with patch.object(wire, "snapshots", return_value=dict(seen, raw=3)):
+            with self.assertRaisesRegex(
+                src.Failure, "CHAIN_REOPEN_SNAPSHOT_IDS"
+            ):
+                wire.reopened_snapshots(None, seen, raw)
+
+    def test_actual_sql_full_typed_row_and_absence_are_separate_gates(self):
+        """保持キーしか見ずに通すことや、decimal丸めを許さない。"""
+        valid = ("sample", 1, None, Decimal("2.500"), src.STAMP0)
+        known = {"current": 3, "silver": 4}
+        source = Mock()
+        source.execute.side_effect = [[valid], [(0,)]]
+        with patch.object(wire, "read", return_value=wire.expected(4)) as read:
+            wire.read_final_sql(source, None, known)
+        self.assertEqual(
+            [c.kwargs["snapshot_id"] for c in read.call_args_list], [3, 4]
+        )
+        wrong = ("sample", 1, None, Decimal("2.50"), src.STAMP0)
+        source.execute.side_effect = [[wrong]]
+        with self.assertRaisesRegex(
+            src.Failure, "CHAIN_SQL_FINAL_TYPED_SHAPE"
+        ):
+            wire.read_final_sql(source, None, known)
+        source.execute.side_effect = [[valid], [(1,)]]
+        with self.assertRaisesRegex(
+            src.Failure, "CHAIN_SQL_DELETED_KEY_PRESENT"
+        ):
+            wire.read_final_sql(source, None, known)
+
+    def test_lag_checks_three_independent_source_positions(self):
+        """broker最新・独立SQLite・Kafka groupのいずれも推定しない。"""
+        source, experiment = Mock(), Mock()
+        source.watermark.return_value = (0, 5)
+        experiment.offset.return_value = 4
+        with (
+            patch.object(wire, "local_position", return_value=4) as local,
+            patch.object(wire, "committed") as check_group,
+        ):
+            wire.verify_final_lag(
+                source, "consumer", "topic", "sqlite", experiment
+            )
+            local.assert_called_once_with("sqlite")
+            check_group.assert_called_once_with("consumer", "topic", 5)
+        with patch.object(wire, "local_position", return_value=3):
+            with self.assertRaisesRegex(
+                src.Failure, "CHAIN_FINAL_LAG_MISMATCH"
+            ):
+                wire.verify_final_lag(
+                    source, "consumer", "topic", "sqlite", experiment
+                )
 
     def test_readback_failure_prevents_local_checkpoint(self):
         """Raw は残るが後段の失敗を Kafka ACK 前に伝える。"""
