@@ -101,3 +101,34 @@ append後の親子関係と、カタログを再openした際の同じsnapshot I
 確認します。Kafkaの最新位置、実group位置、別のread-only SQLite接続の
 完了位置もそれぞれ読み、lag=0を照合します。ログは件数・差分数だけで、
 実snapshot IDやデータ値を出しません。
+
+## 5表への拡張: オフライン照合の基準
+
+`tests/integration/cdc_contract_scale/fixture.py` は、表別の合成型・
+入力順と差分、固定範囲のSQLパラメータ、独立に求めた最終像を検査します。
+source変更件数にはKafkaのtombstone（値がnullの別配送）は含めません。
+
+| 合成表 | snapshot | INSERT | UPDATE | DELETE | Kafka tombstone |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| alpha | 16 | 32 | 64 | 32 | 32 |
+| bravo | 20 | 40 | 80 | 40 | 40 |
+| charlie | 24 | 48 | 96 | 48 | 48 |
+| delta | 24 | 64 | 128 | 64 | 64 |
+| echo | 28 | 72 | 144 | 72 | 72 |
+| 合計 | 112 | 256 | 512 | 256 | 256 |
+
+SQL変更は計1024件、Kafkaで照合する件数はsnapshotとtombstoneを
+含め1392件。各topicのpartition 0で欠落・余分な配送・別表への混入を
+拒否し、2つの派生層の最終像をイベント再生とは別の算出方法で比較します。
+異なるtopic間で共通のoffsetや順序があるとはみなしません。
+
+    python3 -B tests/integration/cdc_contract_scale/fixture.py
+    python3 -B -m unittest discover \
+      -s tests/integration/cdc_contract_scale -p 'test_*.py'
+
+これは合成ワイヤ・契約Consumer・SQLite上での照合です。実SQL、
+Connect/Kafkaや実Icebergの5表実行結果ではありません。次の隔離試験で、
+固定5表のSQL snapshot順をtableごとに `ORDER BY site_id, record_id` で
+明示し、1表版と同じ起動境界で実SQLの件数／Kafka実バイト列／Raw／
+Current・SilverのIceberg readbackを比較します。故障後の再開は、
+最後に確定した表・partitionの位置から同じ最終像へ戻る場合のみ合格。
