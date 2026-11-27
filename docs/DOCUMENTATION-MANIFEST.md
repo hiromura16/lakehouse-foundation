@@ -75,6 +75,7 @@
 | [SailとSparkを同じ合成データで比較する](<SAIL-LAB.md>) | 任意のSail LabでSparkと合成データの型・結果・再実行を比較し、未検証事項と測定条件を記録する。 | Sparkの既存検証後、独立したnamespaceと有限fixtureで別エンジンの比較を準備するとき。 | active |
 | [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>) | 既存SQL Serverを読取専用SELECTで抽出し、6契約のlanding素材を作成する。 | 実ソースDBの列対応・権限・上限を決め、全件snapshotのbridgeを試すとき。 | active |
 | [CDC Consumer の責務と置換条件](<refactoring/CDC-CONSUMER-ASSESSMENT.md>) | 現行 CDC Consumer の整合性条件と、標準 Sink と宣言的変換への移行前に比較する証拠を整理する。 | CDC 処理の分割、再送、標準 Sink の評価条件を検討するとき。 | reference |
+| [CDC Contract Managerの境界と段階導入](<refactoring/CDC-CONTRACT-MANAGER-ADR.md>) | CDC契約の静的境界、既存互換、段階移行とOSS比較の判定条件を定める。 | CDCの契約を追加・変更する前や、外部sinkの隔離比較を設計するとき。 | active |
 | [現行アーキテクチャの棚卸し](<refactoring/CURRENT-ARCHITECTURE-INVENTORY.md>) | オンプレミス版と Cloudflare 活用版の構成、データ経路、責務と検証範囲を区別して把握する。 | 段階的な改善の着手前に、現行構成と根拠をそろえるとき。 | reference |
 | [業務境界とデータ契約のたたき台](<refactoring/DOMAIN-BOUNDARIES-DRAFT.md>) | サンプルで観測した事実と未確認の業務知識を区別し、境界と合意手順を整理する。 | 業務の用語、例外、正本、データ責任を確認するとき。 | reference |
 | [段階的リファクタリングの実行計画](<refactoring/REFACTORING-ROADMAP.md>) | 独立した変更単位ごとの移行順、受け入れ、停止と復元を整理する。 | 変更候補の優先順位を決め、次の変更に進める条件を確認するとき。 | reference |
@@ -298,6 +299,7 @@
 | [Vectorによる対象ログの整形と秘匿化](<VECTOR.md>) | 対象projectの有限capture・VRL重大度・秘匿化・有界配送と未検証項目を確認する。 |
 | [構成図とロゴの出典](<assets/README.md>) | 全体図・AI候補図・公式ロゴの出典と、詳細図素材の配置を確認する。 |
 | [CDC Consumer の責務と置換条件](<refactoring/CDC-CONSUMER-ASSESSMENT.md>) | 現行 CDC Consumer の整合性条件と、標準 Sink と宣言的変換への移行前に比較する証拠を整理する。 |
+| [CDC Contract Managerの境界と段階導入](<refactoring/CDC-CONTRACT-MANAGER-ADR.md>) | CDC契約の静的境界、既存互換、段階移行とOSS比較の判定条件を定める。 |
 | [現行アーキテクチャの棚卸し](<refactoring/CURRENT-ARCHITECTURE-INVENTORY.md>) | オンプレミス版と Cloudflare 活用版の構成、データ経路、責務と検証範囲を区別して把握する。 |
 | [業務境界とデータ契約のたたき台](<refactoring/DOMAIN-BOUNDARIES-DRAFT.md>) | サンプルで観測した事実と未確認の業務知識を区別し、境界と合意手順を整理する。 |
 | [段階的リファクタリングの実行計画](<refactoring/REFACTORING-ROADMAP.md>) | 独立した変更単位ごとの移行順、受け入れ、停止と復元を整理する。 |

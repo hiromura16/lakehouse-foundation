@@ -1267,6 +1267,23 @@
       "status": "active"
     },
     {
+      "path": "docs/refactoring/CDC-CONTRACT-MANAGER-ADR.md",
+      "title": "CDC Contract Managerの境界と段階導入",
+      "purpose": "CDC契約の静的境界、既存互換、段階移行とOSS比較の判定条件を定める。",
+      "audience": [
+        "開発・設計担当"
+      ],
+      "when_to_use": "CDCの契約を追加・変更する前や、外部sinkの隔離比較を設計するとき。",
+      "category": "04 設計・拡張",
+      "prerequisites": [
+        "docs/refactoring/CDC-CONSUMER-ASSESSMENT.md"
+      ],
+      "next": [
+        "docs/refactoring/REFACTORING-ROADMAP.md"
+      ],
+      "status": "active"
+    },
+    {
       "path": "docs/refactoring/CDC-CONSUMER-ASSESSMENT.md",
       "title": "CDC Consumer の責務と置換条件",
       "purpose": "現行 CDC Consumer の整合性条件と、標準 Sink と宣言的変換への移行前に比較する証拠を整理する。",
