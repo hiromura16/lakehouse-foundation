@@ -286,16 +286,19 @@ d start "$connect" >/dev/null
 [[ $(d container inspect --format '{{range .NetworkSettings.Networks}}{{.NetworkID}}{{end}}' "$connect") == "$net" ]]
 # Python の固定診断コード以外は、コンテナの出力を転送しない。
 run_client() {
-    local marker=$1
+    local marker=$1 signal
+    shift
     if dt 520s start --attach "$client" > "$scratch/proof.log" 2>&1; then
         if [[ $(d container inspect --format '{{.State.ExitCode}}' "$client") != 0 ]]; then
             printf 'FAIL: HOSTED_CLIENT/EXIT_NOT_ZERO\n' >&2
             exit 1
         fi
-        if ! grep -Fx "$marker" "$scratch/proof.log"; then
-            printf 'FAIL: HOSTED_CLIENT/PASS_MARKER_MISSING\n' >&2
-            exit 1
-        fi
+        for signal in "$@" "$marker"; do
+            if ! grep -Fx "$signal" "$scratch/proof.log"; then
+                printf 'FAIL: HOSTED_CLIENT/PASS_MARKER_MISSING\n' >&2
+                exit 1
+            fi
+        done
     else
         local outcome=$?
         # 固定形の数字/状態だけ。コンテナのlog、環境変数、アドレスは表示しない。
@@ -318,10 +321,14 @@ run_client() {
 run_chain_client() {
     local marker='SQL_WIRE_ICEBERG=pass raw=5 current_generations=5 silver_generations=5 broker_next=5'
     local handoff='SQL_WIRE_SOURCE_HANDOFF=pass records=5'
+    local catchup='SQL_SOURCE_STOPPED_KAFKA_CATCHUP=pass'
+    local exact='SQL_SOURCE_STOPPED_EXACT_SEQUENCE=pass records=5'
     # allowlist以外はprivate scratchのみ。source完了を保存層の結果と分離する。
     if dt 520s start --attach "$client" 2>&1 |
-        tee "$scratch/proof.log" | grep --line-buffered -Fxe "$handoff" -e "$marker"; then
+        tee "$scratch/proof.log" | grep --line-buffered -Fxe "$catchup" -e "$exact" -e "$handoff" -e "$marker"; then
         [[ $(d container inspect --format '{{.State.ExitCode}}' "$client") == 0 ]]
+        grep -Fxq "$catchup" "$scratch/proof.log"
+        grep -Fxq "$exact" "$scratch/proof.log"
         grep -Fxq "$handoff" "$scratch/proof.log"
         grep -Fxq "$marker" "$scratch/proof.log"
     else
@@ -329,27 +336,42 @@ run_chain_client() {
         exit 1
     fi
 }
+connect_stopped() {
+    local started=$1
+    [[ $(d container inspect --format "$label" "$connect") == "$id" &&
+       $(d container inspect --format '{{.State.Status}} {{.State.Running}} {{.State.OOMKilled}}' "$connect") == 'exited false false' &&
+       $(d container inspect --format '{{.State.StartedAt}}' "$connect") == "$started" ]]
+}
 run_selected_fixture() {
     if [[ $fixture_mode != source ]]; then
         stage=RESTART_BEFORE
-        [[ ! -e $scratch/restart-state/restart.json ]]
+        [[ ! -e $scratch/restart-state/restart.json && ! -e $scratch/restart-state/stopped.json ]]
         run_client 'SQL_SOURCE_RESTART_BEFORE=pass'
         [[ -f $scratch/restart-state/restart.json && ! -L $scratch/restart-state/restart.json ]]
         stage=RESTART_CONNECT
         before=$(d container inspect --format '{{.State.StartedAt}}' "$connect")
         dt 45s stop -t 30 "$connect" >/dev/null
-        [[ $(d container inspect --format '{{.State.Running}}' "$connect") == false ]]
+        connect_stopped "$before"
+        printf 'SQL_SOURCE_CONNECT_STOP_VERIFIED=pass\n'
+        stage=STOPPED_SQL_UPDATE
+        run_client 'SQL_SOURCE_STOPPED_DML=pass kafka_high=2'
+        [[ -f $scratch/restart-state/stopped.json && ! -L $scratch/restart-state/stopped.json ]]
+        connect_stopped "$before"
+        stage=RESTART_CONNECT_RESUME
         d start "$connect" >/dev/null
         [[ $(d container inspect --format '{{.State.Running}}' "$connect") == true &&
            $(d container inspect --format '{{.State.StartedAt}}' "$connect") != "$before" &&
            $(d container inspect --format "$label" "$connect") == "$id" &&
            $(d container inspect --format '{{range .NetworkSettings.Networks}}{{.NetworkID}}{{end}}' "$connect") == "$net" ]]
+        printf 'SQL_SOURCE_CONNECT_RESTART_VERIFIED=pass\n'
         stage=RESTART_AFTER
         if [[ $fixture_mode == chain ]]; then
             stage=ICEBERG_CHAIN
             run_chain_client
         else
-            run_client 'SQL_SOURCE_RESTART=pass snapshot=1 insert=1 update=1 delete=1 tombstone=1'
+            run_client 'SQL_SOURCE_RESTART=pass snapshot=1 insert=1 update=1 delete=1 tombstone=1' \
+                'SQL_SOURCE_STOPPED_KAFKA_CATCHUP=pass' \
+                'SQL_SOURCE_STOPPED_EXACT_SEQUENCE=pass records=5'
         fi
     else
         run_client 'SQL_SOURCE_KAFKA=pass snapshot=1 insert=1 update=1 delete=1 tombstone=1'

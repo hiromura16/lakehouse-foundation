@@ -494,6 +494,12 @@ class Proof:
             self.insert(2, "12.340", STAMP1)
             self.evidence(consumer, "c")
         self.phase = "KAFKA_UPDATE"
+        self.update_target()
+        self.evidence(consumer, "u")
+        return self.delete_target(consumer)
+
+    def update_target(self):
+        """専用 fixture 行に1回だけ新しい値を確定する。"""
         self.execute(
             DATABASE,
             "UPDATE dbo.fixture_orders SET label=N'',"
@@ -501,7 +507,9 @@ class Proof:
             "WHERE site_id=N'sample' AND record_id=2",
             (STAMP2,),
         )
-        self.evidence(consumer, "u")
+
+    def delete_target(self, consumer):
+        """実DELETEと続くKafka nullを独立の配信として観測する。"""
         self.phase = "KAFKA_DELETE_AND_TOMBSTONE"
         self.execute(
             DATABASE,

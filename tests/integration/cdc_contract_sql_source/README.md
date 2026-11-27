@@ -58,12 +58,16 @@ Dockerなしでcheckerだけを確認する場合:
 確認してから別行のINSERTを実行します。Connect の読取専用 REST で
 そのINSERTと一致する保存済み streaming 位置を確認し、Kafka の
 schema history と snapshot・INSERT 両レコードのバイト列を記録します。
-同じ所有済み Connect コンテナだけを停止し、新しい起動を確認します。
-SQL Server と Kafka は再起動しません。再登録・offset上書き・履歴の
-削除は行いません。
+同じ所有済み Connect コンテナだけを停止し、停止状態と同じ起動IDを
+確認した間に、INSERT済みの行をSQLでUPDATEします。SQLの更新後の値と
+CDC変更表の実コミットLSNを確認し、Kafkaは停止期間の前後で
+2件のままであることを検証します。SQL ServerとKafkaは再起動せず、
+再登録・offset上書き・履歴削除を行いません。
 
-再起動後も同じ保存位置、履歴、最初の2レコードを再読してからのみ、
-INSERT済みの行にUPDATEとDELETEを実行します。snapshotを再発行せず、
+再起動後は同じ履歴と最初の2レコードを再読し、停止中にSQLで捕捉した
+コミットLSNと一致するUPDATEがKafkaの3件目として現れることを確認します。
+Connect RESTの起動時の保存位置は元のINSERTまたは検証済みUPDATEだけを
+許し、UPDATEの保存を確かめた後にDELETEを実行します。snapshotを再発行せず、
 Kafkaの0–4番の5配送が1回ずつであること、DELETEのcommit LSNまで
 source位置が保存されたこと、元の履歴が残ることを確認します。
 snapshotだけの直後の再起動や、途中で強制終了した復旧は別の試験です。

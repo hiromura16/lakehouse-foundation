@@ -13,6 +13,7 @@ from urllib.error import HTTPError, URLError
 import proof as src
 
 RECEIPT = Path("/restart-state/restart.json")
+STOPPED = Path("/restart-state/stopped.json")
 LSN = re.compile(r"[0-9a-fA-F]{8}:[0-9a-fA-F]{8}:[0-9a-fA-F]{4}")
 SHA = re.compile(r"[0-9a-f]{64}")
 MAX_HISTORY = 64
@@ -177,7 +178,7 @@ class Restart(src.Proof):
                 )
                 prefix.append(msg)
             src.require(
-                self.watermark(consumer, src.TOPIC) == (0, 2),
+                self.watermark(consumer, src.TOPIC) in {(0, 2), (0, 3)},
                 "UNEXPECTED_DELIVERY_AFTER_RESTART",
             )
             return self.prefix_digest(prefix)
@@ -275,32 +276,116 @@ class Restart(src.Proof):
             "history": self.history(),
         }
 
-    def after(self, prior):
-        """worker再起動後もr/cを再発行せず、同じ行へU/Dを続ける。"""
+    def stopped_update(self):
+        """Connect停止中の1件を、SQL現在値・CDC実捕捉・Kafka不変で証明。"""
+        self.phase = "STOPPED_SQL_UPDATE"
+        consumer = self.consumer()
+        try:
+            src.require(
+                self.watermark(consumer, src.TOPIC) == (0, 2),
+                "STOPPED_KAFKA_PREFIX_BEFORE",
+            )
+            self.verify_order(before=True)
+            self.update_target()
+            self.verify_order()
+            self.phase = "STOPPED_CDC_CAPTURE"
+            update_position = self.update_capture()
+            src.require(
+                self.watermark(consumer, src.TOPIC) == (0, 2),
+                "STOPPED_KAFKA_ADVANCED",
+            )
+            return fingerprint(update_position)
+        finally:
+            consumer.close()
+
+    def verify_order(self, *, before=False):
+        """roundingを避け、SQL内で正確な業務セル値を比較する。"""
+        predicate = "label IS NOT NULL AND DATALENGTH(label)=0"
+        quantity, stamp = "-1.234", src.STAMP2
+        if before:
+            predicate = "label IS NULL"
+            quantity, stamp = "12.340", src.STAMP1
+        result = self.execute(
+            src.DATABASE,
+            "SELECT COUNT_BIG(*) FROM dbo.fixture_orders "
+            "WHERE site_id=N'sample' AND record_id=2 AND "
+            + predicate
+            + " AND quantity=CONVERT(decimal(18,3),%s) "
+            "AND observed_at=CONVERT(datetime2(7),%s)",
+            (quantity, stamp),
+            reader=True,
+        )
+        src.require(result == [(1,)], "STOPPED_SQL_ROW_WRONG")
+
+    def update_capture(self):
+        """実SQL CDC change tableの更新後像からcommit LSNを把握する。"""
+        deadline = time.monotonic() + 55
+        while time.monotonic() < deadline:
+            rows = self.execute(
+                src.DATABASE,
+                "SELECT TOP (2) [__$start_lsn] FROM cdc.dbo_fixture_orders_CT "
+                "WHERE [__$operation]=4 AND site_id=N'sample' AND record_id=2 "
+                "AND label IS NOT NULL AND DATALENGTH(label)=0 "
+                "AND quantity=CONVERT(decimal(18,3),%s) "
+                "AND observed_at=CONVERT(datetime2(7),%s)",
+                ("-1.234", src.STAMP2),
+                reader=True,
+            )
+            if rows:
+                src.require(len(rows) == 1, "STOPPED_CDC_UNEXPECTED_COUNT")
+                binary_lsn = rows[0][0]
+                src.require(
+                    type(binary_lsn) in {bytes, bytearray}
+                    and len(binary_lsn) == 10
+                    and any(binary_lsn),
+                    "STOPPED_CDC_INVALID_LSN",
+                )
+                hex_lsn = binary_lsn.hex()
+                return ":".join((hex_lsn[:8], hex_lsn[8:16], hex_lsn[16:]))
+            time.sleep(1)
+        raise src.Failure("STOPPED_CDC_CAPTURE_NOT_OBSERVED")
+
+    def after(self, prior, stopped_lsn_digest):
+        """停止中に確定したSQL UPDATEと同じものだけをKafkaで受理する。"""
         self.phase = "RESTART_AFTER_START"
         self.connect_identity()
-        src.require(
-            self.durable(startup=True) == prior["position"],
-            "SOURCE_OFFSET_CHANGED",
-        )
+        startup_position = self.durable(startup=True)
         src.require(
             self.history() == prior["history"], "RESUMED_HISTORY_CHANGED"
         )
         src.require(
             self.retained_prefix() == prior["prefix"], "PREFIX_RECORDS_CHANGED"
         )
-        self.phase = "RESTART_POST_CHANGE"
+        self.phase = "RESTART_CATCHUP_KAFKA"
         consumer = self.consumer()
         try:
             consumer.assign([self.kafka.TopicPartition(src.TOPIC, 0, 2)])
             self.offset = 1
-            deletion = self.changes(consumer, after_insert=True)
+            update = self.evidence(consumer, "u")
+            caught = src.decode(update.value())["source"]["commit_lsn"]
+            src.require(
+                fingerprint(caught.lower()) == stopped_lsn_digest,
+                "STOPPED_SQL_KAFKA_LSN_MISMATCH",
+            )
+            stopped_position = self.durable(expected_lsn=caught)
+            src.require(
+                stopped_position != prior["position"]
+                and startup_position in {prior["position"], stopped_position},
+                "UNEXPECTED_RESTART_POSITION",
+            )
+            src.require(
+                self.watermark(consumer, src.TOPIC) == (0, 3),
+                "UNEXPECTED_CATCHUP_DELIVERY_COUNT",
+            )
+            print("SQL_SOURCE_STOPPED_KAFKA_CATCHUP=pass", flush=True)
+            deletion = self.delete_target(consumer)
             self.verify_final(consumer)
             self.phase = "RESTART_FINAL_OFFSET"
             delivered = src.decode(deletion.value())["source"]["commit_lsn"]
             observed = self.durable(expected_lsn=delivered)
             src.require(
-                observed != prior["position"], "FINAL_OFFSET_UNCHANGED"
+                observed not in {prior["position"], stopped_position},
+                "FINAL_OFFSET_UNCHANGED",
             )
             src.require(
                 self.history() == prior["history"], "FINAL_HISTORY_CHANGED"
@@ -335,8 +420,28 @@ class Restart(src.Proof):
             consumer.close()
 
 
+def write_receipt(path, content):
+    """専用scratchの新規証跡だけを排他作成する。"""
+    descriptor = os.open(
+        path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
+    )
+    with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+        json.dump(content, output)
+        output.flush()
+        os.fsync(output.fileno())
+
+
+def read_receipt(path):
+    """証跡を短い固定形式としてだけ読む。"""
+    src.require(
+        path.is_file() and not path.is_symlink(), "UNSAFE_FIXTURE_RECEIPT"
+    )
+    with path.open(encoding="utf-8") as source:
+        return src.decode(source.read(2048).encode())
+
+
 def run():
-    """二プロセス間では所有する専用 bind だけでハッシュを引き継ぐ。"""
+    """三段階のプロセス間で専用bindとハッシュだけを引き継ぐ。"""
     worker = None
     try:
         src.validate_hosted()
@@ -349,15 +454,22 @@ def run():
         secret, reader = src.fixture_passwords()
         api = SimpleNamespace(Consumer=Consumer, TopicPartition=TopicPartition)
         worker = Restart(pymssql, api, AdminClient, secret, reader)
-        if RECEIPT.is_file() and not RECEIPT.is_symlink():
-            with RECEIPT.open(encoding="utf-8") as f:
-                prior = validate_receipt(src.decode(f.read(2048).encode()))
-            worker.after(prior)
+        if STOPPED.exists():
+            prior = validate_receipt(read_receipt(RECEIPT))
+            lsn_digest = read_receipt(STOPPED)
+            src.require(
+                type(lsn_digest) is str and SHA.fullmatch(lsn_digest),
+                "INVALID_STOPPED_RECEIPT",
+            )
+            worker.after(prior, lsn_digest)
             worker.phase = "RESTART_HANDOFF"
             with_source = tuple(
                 (msg.key(), msg.value()) for msg in worker.verified_records()
             )
             src.require(len(with_source) == 5, "HANDOFF_COUNT")
+            print(
+                "SQL_SOURCE_STOPPED_EXACT_SEQUENCE=pass records=5", flush=True
+            )
             if os.environ.get("CDC_SQL_SOURCE_CHAIN") == "true":
                 print("SQL_WIRE_SOURCE_HANDOFF=pass records=5", flush=True)
                 worker.phase = "RESTART_ICEBERG_CHAIN"
@@ -374,17 +486,12 @@ def run():
                     "SQL_SOURCE_RESTART=pass snapshot=1 insert=1 update=1 "
                     "delete=1 tombstone=1"
                 )
+        elif RECEIPT.exists():
+            validate_receipt(read_receipt(RECEIPT))
+            write_receipt(STOPPED, worker.stopped_update())
+            print("SQL_SOURCE_STOPPED_DML=pass kafka_high=2")
         else:
-            prior = worker.before()
-            descriptor = os.open(
-                RECEIPT,
-                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-                0o600,
-            )
-            with os.fdopen(descriptor, "w", encoding="utf-8") as f:
-                json.dump(prior, f)
-                f.flush()
-                os.fsync(f.fileno())
+            write_receipt(RECEIPT, worker.before())
             print("SQL_SOURCE_RESTART_BEFORE=pass")
     except src.Failure as error:
         print(

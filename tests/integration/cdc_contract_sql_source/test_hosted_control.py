@@ -37,7 +37,13 @@ d() {
             printf '%s\n' "$id" ;;
         '{{range .NetworkSettings.Networks}}{{.NetworkID}}{{end}}')
             printf '%s\n' "$net" ;;
-        '{{.State.StartedAt}}') printf '%s\n' "$state" ;;
+        '{{.State.StartedAt}}')
+            if [[ $state == stopped ]]; then printf 'original\n';
+            else printf '%s\n' "$state"; fi ;;
+        '{{.State.Status}} {{.State.Running}} {{.State.OOMKilled}}')
+            if [[ $state == stopped ]]; then printf 'exited false false\n';
+            else printf 'running true false\n'; fi ;;
+
         '{{.State.Running}}')
             if [[ $state == stopped ]]; then printf 'false\n';
             else printf 'true\n'; fi ;;
@@ -55,8 +61,14 @@ run_client() {
     if [[ $1 == SQL_SOURCE_RESTART_BEFORE=pass ]]; then
         [[ $state == original ]]
         printf '{}\n' > "$scratch/restart-state/restart.json"
+    elif [[ $1 == 'SQL_SOURCE_STOPPED_DML=pass kafka_high=2' ]]; then
+        [[ $state == stopped ]]
+        printf '{}\n' > "$scratch/restart-state/stopped.json"
+        if [[ $restart_interference == true ]]; then state=restarted; fi
     elif [[ $1 == SQL_SOURCE_RESTART=pass* ]]; then
         [[ $state == restarted ]]
+        mark "$2"
+        mark "$3"
     elif [[ $1 == SQL_SOURCE_KAFKA=pass* ]]; then
         [[ $state == original ]]
     else
@@ -65,6 +77,8 @@ run_client() {
 }
 run_chain_client() {
     [[ $state == restarted ]]
+    mark 'SQL_SOURCE_STOPPED_KAFKA_CATCHUP=pass'
+    mark 'SQL_SOURCE_STOPPED_EXACT_SEQUENCE=pass records=5'
     mark 'SQL_WIRE_SOURCE_HANDOFF'
     mark 'SQL_WIRE_ICEBERG'
 }
@@ -74,13 +88,13 @@ run_chain_client() {
 class HostedModeTest(unittest.TestCase):
     """実行する小区間だけを抽出し、外部コマンドを無害なstubで置換。"""
 
-    def select(self, mode, *, owned=True):
+    def select(self, mode, *, owned=True, interference=False):
         """既存SSH/Dockerに触れず Bash 本体の制御入力だけを動かす。"""
         shell = SH.read_text(encoding="utf-8")
         begin = shell.index('for cid in "$broker" "$sql" "$connect" "$client"')
         end = shell.index("stage=LOCAL_BROKER_AND_SQL", begin)
         owner_checks = shell[begin:end]
-        begin = shell.index("run_selected_fixture() {")
+        begin = shell.index("connect_stopped() {")
         end = shell.index("stage=CLEANUP", begin)
         selected = shell[begin:end]
         begin = shell.index("readonly fixture_mode=")
@@ -92,6 +106,7 @@ class HostedModeTest(unittest.TestCase):
             script = (
                 'set -euo pipefail\nsandbox=$2\nset -- "$1"\n'
                 + f"fixture_label={fixture_label}\n"
+                + f"restart_interference={str(interference).lower()}\n"
                 + selector
                 + SETUP
                 + owner_checks
@@ -118,9 +133,12 @@ class HostedModeTest(unittest.TestCase):
                 [
                     "SQL_SOURCE_RESTART_BEFORE=pass",
                     "STOP",
+                    "SQL_SOURCE_STOPPED_DML=pass kafka_high=2",
                     "START",
                     "SQL_SOURCE_RESTART=pass snapshot=1 insert=1 update=1 "
                     "delete=1 tombstone=1",
+                    "SQL_SOURCE_STOPPED_KAFKA_CATCHUP=pass",
+                    "SQL_SOURCE_STOPPED_EXACT_SEQUENCE=pass records=5",
                 ],
             ),
         )
@@ -147,12 +165,29 @@ class HostedModeTest(unittest.TestCase):
                 [
                     "SQL_SOURCE_RESTART_BEFORE=pass",
                     "STOP",
+                    "SQL_SOURCE_STOPPED_DML=pass kafka_high=2",
                     "START",
+                    "SQL_SOURCE_STOPPED_KAFKA_CATCHUP=pass",
+                    "SQL_SOURCE_STOPPED_EXACT_SEQUENCE=pass records=5",
                     "SQL_WIRE_SOURCE_HANDOFF",
                     "SQL_WIRE_ICEBERG",
                 ],
             ),
         )
+
+    def test_unexpected_start_during_stopped_dml_blocks_final_phases(self):
+        """開始時刻や停止状態が変わったら、catch-upへ進めない。"""
+        for mode in ("restart", "chain"):
+            code, marks = self.select(mode, interference=True)
+            self.assertNotEqual(code, 0)
+            self.assertEqual(
+                marks,
+                [
+                    "SQL_SOURCE_RESTART_BEFORE=pass",
+                    "STOP",
+                    "SQL_SOURCE_STOPPED_DML=pass kafka_high=2",
+                ],
+            )
 
     def test_nonowned_container_cannot_reach_client_or_stop(self):
         """いずれのmodeでも所有者違いはコンテナ操作を開始しない。"""
