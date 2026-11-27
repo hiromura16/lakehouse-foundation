@@ -14,7 +14,7 @@
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<../DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
-**状態:** フェーズ1の設計判断。契約ファイルと読取りCLIを採用し、接続・設定反映・sink置換は未承認・未実行。既定の固定6表および汎用CDCが引き続き稼働時の正本です。
+**状態:** フェーズ1の契約と読取りCLIに続き、フェーズ2Aで合成再生と同値性を検証します。接続・設定反映・sink置換は未実行です。既定の固定6表および汎用CDCが稼働時の正本です。
 
 ## 決定
 
@@ -55,6 +55,24 @@ exit 0はvalid/compatible、exit 1はinvalidまたはincompatible、exit 2は引
 - 現行固定runtimeは単一の文字列PK（ASCII、最大160）、12桁の小文字hexのrun ID、UTC、LSN/event順序、業務像とRawの分離を守ります。固定の値域・長さと物理型は別です。物理datetime2(7)に相当する文字列表現を使う箇所があっても、全経路の7桁保持は主張しません（Silverの日時関数に注意）。複合PK、append、別形式、任意のDDL/型移行はv1宣言の領域で、既存runtimeが動かせるという意味ではありません。
 - 既存防御は[レコード上限](../../infra/cdc/event_limits.py)の16 MiB、[現在値側](../../infra/cdc/state.py)の10万行/表と64 MiB、および[rebuild Raw](../../infra/cdc/raw_history.py)の10万イベントです。上限引上げや無制限の後追いは行いません。複数コンポーネントをまたぐ単一transactionや、自動的なexactly-once保証もありません。
 
+## フェーズ2A: 既定OFFの合成consumer
+
+`consumer.process` のbatch入口は明示的な契約処理を受けられます。合成実験のCLIだけがこの入口を選び、`consumer.run` の既定のSQL接続、Kafka group、offset、稼働状態volume、Iceberg保存先、既存rebuildには接続しません。フラグ単独でもファイル引数単独でも通常consumerへは進みません。
+
+**Bash / Zsh共通**
+
+```bash
+CDC_CONTRACT_EXPERIMENT=true python3 infra/cdc/consumer.py \
+  --contract-preview "$CONTRACT_FILE" --records-file "$RECORDS_FILE"
+```
+
+両ファイルは合成用のUTF-8 JSONを別途生成します。recordsは `topic, partition, offset, key, value, ingested_at` の配列で、key/valueはDebeziumのJSON文字列またはnullです。値やSQL資格情報は受入結果へ出しません。最大1,000イベント、入力16 MiB。CLIはメモリ内のSQLiteだけを使い、結果件数と固定reasonを返します。運用Composeには選択設定を追加していません。
+
+- 固定6表: 同じ契約から現行mappingを照合後、既存のRaw・Current・Silver処理へ渡すフックを使い、フックなしと同じ入力で結果・削除・Tombstone・完了位置を比較します。運用既定はフックなしのままです。
+- 動的経路: enabled表の両topic名からsourceを選択し、SQL Server型、nullable、精度、複合PKの順を厳密に解釈します。JSONの上で数値化できても、小数は文字列で桁を保存します。日時はDebeziumのadaptive単位と宣言したscaleを照合し、7桁目まで落とさない場合を検査します。SQL Serverのcollation等価性は未検証なので照合時に空白除去や大文字小文字変換を推測しません。
+- Rawを派生より先に保存し、未知topic、不正型、複製位置の異内容、派生失敗では完了位置を進めません。処理失敗は隔離用の固定理由を保存して停止し、自動skip/ACKは行いません。Currentとbasic Silverは検証用SQLiteの同一transactionで公開され、Iceberg上の複数表transactionを意味しません。再生は、派生行・完了位置と同じSQLite transactionで確定した受理順だけを使います。Rawへの保存順とは別なので、失敗後に並び順を変えて再試行しても、分割間・同一表の別名間で勝手に並べ替えません。再生したCurrent/Silver、版、完了位置と受理順を照合し、差があれば成功扱いしません。
+- この段階では稼働環境のoffset移送やrebuildは追加しません。Kafka consumerの正式経路を繋ぐ前に、専用group・catalog・state／単一writerの実証、状態喪失時の拒否、Icebergの部分commit・schema/型の互換、実engineからの不完全なbefore像/未取得LOB、管理者承認の復元経路を同じ隔離fixtureで確認します。結合済みの現行SQLで行うSilver/Goldもこの単純な投影とは別です。
+
 ## OSS評価: 現行のKafkaを残す比較
 
 2026-11-27に公開一次資料で机上確認。依存をインストールせず、接続・負荷・障害テストは未実行です。
@@ -72,7 +90,7 @@ exit 0はvalid/compatible、exit 1はinvalidまたはincompatible、exit 2は引
 
 | 順序 | 実装と受入 | 停止・復元 |
 |---|---|---|
-| 1. 形式・差分・fixture | CLI、静的互換、6表のsource/topic/PK/Raw/Current/Silver照合。このPRのみ。 | 撤回はコード差分だけで完了。live side effectなし。 |
+| 1. 形式・差分・fixture | CLI、静的互換、6表のsource/topic/PK/Raw/Current/Silver照合。この段階は公開契約のみ。 | 撤回はコード差分だけで完了。live side effectなし。 |
 | 2. Consumer読取 | 既定OFFのfeature flag、明示fixtureのみ、従来と同じRaw/Current/Silverと独立した状態の比較。複合PKは順序、部分NULL、同名別表、snapshotより新しいLSN、削除後の遅着を検査。外部SQLの実表/列・CDC catalog・権限は読み取り専用preflightで、観測不能ならfail closed。 | flagを戻し、既存group/offsetのmoveや既存DDLをしない。 |
 | 3. plan/apply/status | planは読み取り、期限付きfingerprintに対象・変更・互換を結び付ける。専用workerのみapply、明示承認、最小権限、排他、状態照合・改変検知、idempotencyと固定reason。未知の状態で再実行しない。 | 途中失敗は停止・記録・再観測。承認された元設定・checkpoint・snapshotを使う。データ消去とresetは通常applyに含めず、所有が証明できる隔離fixtureに限定。 |
 | 4. E2EとOSS比較 | 既存と同じengineで合成5表の112 snapshot行と後続1024観測を実数照合。I/U/DとTombstoneを別勘定、訂正・重複・毒レコード、Quarantine、独立した停止再起動・書込失敗、Raw replay、明示fixture限定reset後の再開を含む。次にOSSで同じ入力・評価を別namespace、別consumer group・state、分離した資格情報/データで再現。 | 生産group・topic・カタログ・volumeを共有せず、停止しても現行パイプラインへ影響させない。既存資産・本番役割にcleanupを波及させない。 |

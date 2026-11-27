@@ -29,6 +29,9 @@ COPY scripts/raw_file_input.py ./scripts/raw_file_input.py
 COPY scripts/sqlserver_demo.py ./scripts/sqlserver_demo.py
 COPY scripts/sqlserver_safety.sql ./scripts/sqlserver_safety.sql
 COPY scripts/sqlserver_batch.py ./scripts/sqlserver_batch.py
+# The experimental contract CLI is read-only and default-off.
+COPY scripts/cdc_contract.py ./scripts/cdc_contract.py
+COPY contracts/cdc/fixed-demo-v1.json ./contracts/cdc/fixed-demo-v1.json
 COPY scripts/sql_batch_worker.py ./scripts/sql_batch_worker.py
 COPY medallion ./medallion
 COPY infra/cdc/*.py ./cdc/
