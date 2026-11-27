@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [":dependencyDashboard"],
-  "enabledManagers": ["github-actions", "custom.regex"],
+  "enabledManagers": ["github-actions", "custom.regex", "pip-compile"],
   "automerge": false,
   "automergeType": "pr",
   "automergeStrategy": "squash",
@@ -15,6 +15,26 @@
   "prHourlyLimit": 2,
   "github-actions": {
     "pinDigests": true
+  },
+  "pip-compile": {
+    "managerFilePatterns": [
+      "requirements-dev.lock",
+      "docs/reports/requirements-export.lock",
+      "examples/ai/requirements.lock",
+      "infra/cdc/requirements.lock",
+      "infra/compute/requirements.lock",
+      "infra/demo/requirements.lock",
+      "infra/lakehouse/requirements.lock",
+      "infra/mcp/requirements.lock",
+      "infra/poc/requirements-notebooks.lock",
+      "infra/poc/requirements-superset.lock"
+    ],
+    "constraints": {
+      "uv": "==0.13.7"
+    },
+    "lockFileMaintenance": {
+      "enabled": false
+    }
   },
   "customManagers": [
     {
@@ -35,6 +55,37 @@
     {
       "matchUpdateTypes": ["major"],
       "dependencyDashboardApproval": true
+    },
+    {
+      "matchManagers": ["pip-compile"],
+      "minimumReleaseAgeBehaviour": "timestamp-required",
+      "automerge": false
+    },
+    {
+      "description": "Update both S3 SDK pins together because they share botocore",
+      "matchManagers": ["pip-compile"],
+      "matchFileNames": ["infra/lakehouse/requirements.txt"],
+      "matchPackageNames": ["aiobotocore", "boto3"],
+      "groupName": "Lakehouse AWS SDK",
+      "minimumGroupSize": 2,
+      "separateMajorMinor": false,
+      "separateMinorPatch": false
+    },
+    {
+      "description": "Update the SQL Server driver with the host and both container locks",
+      "matchManagers": ["pip-compile"],
+      "matchPackageNames": ["pymssql"],
+      "enabled": false
+    },
+    {
+      "description": "Update Spark, Notebook, and Sail client compatibility pins together",
+      "matchManagers": ["pip-compile"],
+      "matchFileNames": [
+        "infra/compute/requirements.txt",
+        "infra/poc/requirements-notebooks.txt"
+      ],
+      "matchPackageNames": ["numpy", "pandas", "pyarrow"],
+      "enabled": false
     },
     {
       "description": "Automerge established patch releases of allowlisted CI actions after CI passes",
