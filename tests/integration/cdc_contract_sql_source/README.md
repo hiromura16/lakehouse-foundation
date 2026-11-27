@@ -54,16 +54,19 @@ Dockerなしでcheckerだけを確認する場合:
 
 ## 再起動を含む別の検証
 
-別の `disposable-sql-source-restart` ジョブは、snapshot 1件を受け取った
-直後に Connect の読取専用 REST で保存済み SQL source 位置を観測し、
-Kafka に残る schema history と snapshot のバイト列を照合します。
+別の `disposable-sql-source-restart` ジョブは、snapshot 1件をKafkaで
+確認してから別行のINSERTを実行します。Connect の読取専用 REST で
+そのINSERTと一致する保存済み streaming 位置を確認し、Kafka の
+schema history と snapshot・INSERT 両レコードのバイト列を記録します。
 同じ所有済み Connect コンテナだけを停止し、新しい起動を確認します。
 SQL Server と Kafka は再起動しません。再登録・offset上書き・履歴の
 削除は行いません。
 
-再起動後も同じ source 位置、履歴、元の snapshot を観測した後にのみ
-別行のI/U/Dを実行します。Kafka の0–4番の5配送が1回ずつであること、
-DELETEのcommit LSNまで source 位置が保存されたこと、元の履歴が残ることを確認します。
+再起動後も同じ保存位置、履歴、最初の2レコードを再読してからのみ、
+INSERT済みの行にUPDATEとDELETEを実行します。snapshotを再発行せず、
+Kafkaの0–4番の5配送が1回ずつであること、DELETEのcommit LSNまで
+source位置が保存されたこと、元の履歴が残ることを確認します。
+snapshotだけの直後の再起動や、途中で強制終了した復旧は別の試験です。
 公開ログには中身・位置・ハッシュを載せません。同じ実配送を読む
 下流検証用の受け渡しはありますが、このジョブは契約consumer、
 Iceberg、Broker group ACK、強制終了後の復旧や本番での厳密な一度きり配送を

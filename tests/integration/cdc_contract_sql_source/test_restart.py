@@ -10,7 +10,7 @@ from restart import (
     Restart,
     fingerprint,
     observed_offset,
-    saved_snapshot,
+    saved_stream_position,
     validate_receipt,
 )
 from test_proof import row
@@ -24,7 +24,7 @@ def offsets(**fields):
                 "partition": {"server": src.PREFIX, "database": src.DATABASE},
                 "offset": {
                     "commit_lsn": "00000001:00000004:0001",
-                    "change_lsn": None,
+                    "change_lsn": "00000001:00000004:0002",
                     "event_serial_no": 1,
                     "command_id": None,
                     **fields,
@@ -57,54 +57,136 @@ class RestartTests(unittest.TestCase):
 
     def test_exact_persisted_position(self):
         """空・未完了・異なるsourceを保存された位置と誤認しない。"""
-        value = offsets(snapshot="initial", snapshot_completed=True)
-        same_position = offsets()
-        self.assertEqual(saved_snapshot(value), saved_snapshot(same_position))
-        self.assertIsNotNone(saved_snapshot(value))
+        value = offsets()
+        self.assertIsNotNone(saved_stream_position(value))
         bad_partition = offsets()
         bad_partition["offsets"][0]["partition"]["database"] = "not-fixture"
         for bad in (
             {"offsets": []},
             {"offsets": [value["offsets"][0]] * 2},
             bad_partition,
-            offsets(snapshot="initial", snapshot_completed=False),
-            offsets(snapshot="incremental", snapshot_completed=True),
             offsets(snapshot_completed=False),
             offsets(commit_lsn="00000000:00000000:0000"),
+            offsets(change_lsn="00000000:00000000:0000"),
             offsets(event_serial_no=True),
             offsets(command_id="1"),
         ):
             with self.subTest(bad_type=type(bad)):
-                self.assertIsNone(saved_snapshot(bad))
+                self.assertIsNone(saved_stream_position(bad))
         self.assertNotEqual(
-            saved_snapshot(value), saved_snapshot(offsets(event_serial_no=2))
+            saved_stream_position(value),
+            saved_stream_position(offsets(event_serial_no=2)),
         )
 
-    def test_direct_mode_snapshot_native_sentinel_is_not_a_missing_offset(
-        self,
-    ):
-        """従来の型検査が Debezium 3.7.1の正規snapshotを拒否しない。"""
-        actual = offsets(change_lsn="NULL", command_id=-1)
-        self.assertIsNotNone(saved_snapshot(actual))
+    def test_snapshot_only_offsets_do_not_attest_a_streaming_insert(self):
+        """snapshot完了らしい印でも実streamingのLSNと混同しない。"""
+        for snapshot in ("initial", "INITIAL", "incremental", True):
+            actual = offsets(snapshot=snapshot, snapshot_completed=True)
+            self.assertEqual(observed_offset(actual), (None, "SNAPSHOT_PHASE"))
         self.assertEqual(
-            saved_snapshot(actual),
-            saved_snapshot(offsets(change_lsn=None, command_id=-1)),
+            observed_offset(offsets(change_lsn="NULL", command_id=-1)),
+            (None, "CHANGE_LSN"),
         )
-        for bad in (
-            offsets(commit_lsn="NULL", change_lsn="NULL", command_id=-1),
-            offsets(change_lsn="NULL", command_id=-2),
-            offsets(change_lsn="00000001:00000004:0002", command_id=-1),
-            offsets(change_lsn="null", command_id=-1),
+        self.assertEqual(observed_offset({"offsets": []}), (None, "EMPTY"))
+
+    def test_initial_insert_fence_after_verified_snapshot(self):
+        """必ず初回rを読んでからIを行い、r/cのbytesとcのLSNを返す。"""
+        worker = Restart(
+            None, SimpleNamespace(TopicPartition=Mock()), None, "", ""
+        )
+        consumer = Mock()
+        recorded = []
+
+        def consume(_consumer, op):
+            recorded.append(op)
+            return self.records()[0 if op == "r" else 1]
+
+        with (
+            patch.object(worker, "consumer", return_value=consumer),
+            patch.object(worker, "watermark", side_effect=[(0, 1), (0, 2)]),
+            patch.object(worker, "evidence", side_effect=consume),
+            patch.object(
+                worker,
+                "insert",
+                side_effect=lambda *_: recorded.append("INSERT"),
+            ),
         ):
-            self.assertIsNone(saved_snapshot(bad))
-        self.assertEqual(
-            observed_offset(actual, expected_lsn="00000001:00000004:0001"),
-            (None, "DELETE_CHANGE_LSN"),
-        )
-        self.assertEqual(
-            observed_offset({"offsets": []}),
-            (None, "EMPTY"),
-        )
+            digest, lsn = worker.before_committed_insert()
+        self.assertEqual(recorded, ["r", "INSERT", "c"])
+        self.assertEqual(digest, worker.prefix_digest(self.records()[:2]))
+        self.assertEqual(lsn, "00000001:00000004:0001")
+        consumer.close.assert_called_once_with()
+
+    def test_post_restart_does_not_insert_second_time(self):
+        """共通sourceは従来のI/U/D、再起動モードだけU/Dから始める。"""
+        worker = Restart(None, None, None, "", "")
+        for resume, expected in (
+            (False, ["c", "u", "d", "tombstone"]),
+            (True, ["u", "d", "tombstone"]),
+        ):
+            with (
+                patch.object(worker, "insert") as insert,
+                patch.object(worker, "execute"),
+                patch.object(worker, "evidence") as called,
+            ):
+                worker.changes(object(), after_insert=resume)
+            self.assertEqual(insert.call_count, 0 if resume else 1)
+            self.assertEqual(
+                [c.args[1] for c in called.call_args_list], expected
+            )
+
+    def test_before_stop_receipt_requires_matching_insert_position(self):
+        """INSERTの確定位置がなければ受入証跡を発行しない。"""
+        worker = Restart(None, None, None, "", "")
+        lsn = "00000001:00000004:0001"
+        with (
+            patch.object(worker, "await_sql"),
+            patch.object(worker, "provision"),
+            patch.object(worker, "captured_seed"),
+            patch.object(worker, "register"),
+            patch.object(
+                worker, "before_committed_insert", return_value=("prefix", lsn)
+            ),
+            patch.object(
+                worker, "durable", return_value="position"
+            ) as durable,
+            patch.object(worker, "history", return_value="schema") as history,
+        ):
+            self.assertEqual(
+                worker.before(),
+                {
+                    "prefix": "prefix",
+                    "position": "position",
+                    "history": "schema",
+                },
+            )
+            durable.assert_called_once_with(expected_lsn=lsn)
+            durable.side_effect = src.Failure("EXPECTED_LSN_NOT_COMMITTED")
+            with self.assertRaisesRegex(
+                src.Failure, "EXPECTED_LSN_NOT_COMMITTED"
+            ):
+                worker.before()
+            self.assertEqual(history.call_count, 1)
+
+    def test_after_restart_changed_first_two_records_blocks_update(self):
+        """再読した元prefixが違えばUPDATEやDELETEへ進まない。"""
+        worker = Restart(None, None, None, "", "")
+        with (
+            patch.object(worker, "connect_identity"),
+            patch.object(worker, "durable", return_value="position"),
+            patch.object(worker, "history", return_value="schema"),
+            patch.object(worker, "retained_prefix", return_value="different"),
+            patch.object(worker, "changes") as changes,
+        ):
+            with self.assertRaisesRegex(src.Failure, "PREFIX_RECORDS_CHANGED"):
+                worker.after(
+                    {
+                        "prefix": "prefix",
+                        "position": "position",
+                        "history": "schema",
+                    }
+                )
+            changes.assert_not_called()
 
     def test_seed_capture_requires_real_positive_single_row(self):
         """SQLの空結果や複数の捕捉を成功にしない。"""
@@ -139,9 +221,9 @@ class RestartTests(unittest.TestCase):
     def test_final_position_can_require_delete_lsn(self):
         """先行 INSERT や UPDATE による進捗で DELETE を証明しない。"""
         lsn = "00000001:00000004:000a"
-        self.assertIsNone(saved_snapshot(offsets(), expected_lsn=lsn))
+        self.assertIsNone(saved_stream_position(offsets(), expected_lsn=lsn))
         self.assertIsNotNone(
-            saved_snapshot(
+            saved_stream_position(
                 offsets(
                     commit_lsn=lsn.upper(),
                     change_lsn="00000001:00000004:000b",
@@ -154,7 +236,7 @@ class RestartTests(unittest.TestCase):
     def test_receipt_requires_each_hash(self):
         """存在だけのファイルや生データは通さない。"""
         value = {
-            k: fingerprint([k]) for k in ("position", "snapshot", "history")
+            k: fingerprint([k]) for k in ("position", "prefix", "history")
         }
         self.assertEqual(validate_receipt(value), value)
         for bad in ({}, dict(value, position="missing"), dict(value, extra=1)):

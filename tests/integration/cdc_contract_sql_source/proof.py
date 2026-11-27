@@ -487,11 +487,12 @@ class Proof:
         finally:
             consumer.close()
 
-    def changes(self, consumer):
-        """初回 snapshot の後だけ、別行に I/U/D を配送する。"""
-        self.phase = "KAFKA_INSERT"
-        self.insert(2, "12.340", STAMP1)
-        self.evidence(consumer, "c")
+    def changes(self, consumer, *, after_insert=False):
+        """通常はI/U/D、既にIを確定した再起動試験ではU/Dだけを配送する。"""
+        if not after_insert:
+            self.phase = "KAFKA_INSERT"
+            self.insert(2, "12.340", STAMP1)
+            self.evidence(consumer, "c")
         self.phase = "KAFKA_UPDATE"
         self.execute(
             DATABASE,
