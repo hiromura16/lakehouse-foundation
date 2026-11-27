@@ -71,3 +71,21 @@ snapshotだけの直後の再起動や、途中で強制終了した復旧は別
 下流検証用の受け渡しはありますが、このジョブは契約consumer、
 Iceberg、Broker group ACK、強制終了後の復旧や本番での厳密な一度きり配送を
 保証しません。
+
+## 同じ配送を契約 Consumer から Iceberg まで通す検証
+
+`disposable-sql-wire-iceberg` は、上の source 再起動と同じ Kafka に残る
+配送を再生成せずに読み、Consumer が受け取ったバイト列とも照合します。
+手渡し成功の印と最終の保存成功の印は別々です。初回 snapshot の保存と ACK の後、Consumer、
+SQLite、Icebergカタログを閉じて再度開き、SQLiteの完了位置とKafkaの
+実group位置が一致する場合だけ続きます。読み取り・ローカル完了・
+Kafka ACK は別々に検査します。
+
+使い捨ての SQLiteカタログ＋ローカルParquet に対し、Raw 5件（Kafka
+tombstoneのnullを含む）を元の配送と比較します。各配信後の Current と
+Silver の世代も別々に再読出しし、snapshot行が残り、更新で NULL と
+空文字が区別され、削除行は戻らず、decimal と7桁時刻が保存されることを
+確認します。7桁時刻の検証用Iceberg列は厳密な文字列です。
+
+このジョブは既存の契約実験用hookを明示使用します。現行の本番Sink、
+オブジェクトストア、Trino/BI、強制終了や5表の受入ではありません。

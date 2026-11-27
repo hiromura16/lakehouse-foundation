@@ -63,6 +63,11 @@ run_client() {
         return 97
     fi
 }
+run_chain_client() {
+    [[ $state == restarted ]]
+    mark 'SQL_WIRE_SOURCE_HANDOFF'
+    mark 'SQL_WIRE_ICEBERG'
+}
 """
 
 
@@ -133,9 +138,25 @@ class HostedModeTest(unittest.TestCase):
             ),
         )
 
+    def test_chain_mode_routes_to_chain_only_after_restart(self):
+        """chainのhandoffと最終マーカーを通常source扱いにしない。"""
+        self.assertEqual(
+            self.select("chain"),
+            (
+                0,
+                [
+                    "SQL_SOURCE_RESTART_BEFORE=pass",
+                    "STOP",
+                    "START",
+                    "SQL_WIRE_SOURCE_HANDOFF",
+                    "SQL_WIRE_ICEBERG",
+                ],
+            ),
+        )
+
     def test_nonowned_container_cannot_reach_client_or_stop(self):
         """いずれのmodeでも所有者違いはコンテナ操作を開始しない。"""
-        for mode in ("source", "restart"):
+        for mode in ("source", "restart", "chain"):
             status, marks = self.select(mode, owned=False)
             self.assertNotEqual(status, 0)
             self.assertEqual(marks, [])

@@ -7,6 +7,7 @@ import re
 import sys
 import time
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from urllib.error import HTTPError, URLError
 
 import proof as src
@@ -353,13 +354,26 @@ def run():
                 prior = validate_receipt(src.decode(f.read(2048).encode()))
             worker.after(prior)
             worker.phase = "RESTART_HANDOFF"
-            src.require(
-                sum(1 for _ in worker.verified_records()) == 5, "HANDOFF_COUNT"
+            with_source = tuple(
+                (msg.key(), msg.value()) for msg in worker.verified_records()
             )
-            print(
-                "SQL_SOURCE_RESTART=pass snapshot=1 insert=1 update=1 "
-                "delete=1 tombstone=1"
-            )
+            src.require(len(with_source) == 5, "HANDOFF_COUNT")
+            if os.environ.get("CDC_SQL_SOURCE_CHAIN") == "true":
+                print("SQL_WIRE_SOURCE_HANDOFF=pass records=5", flush=True)
+                worker.phase = "RESTART_ICEBERG_CHAIN"
+                import wire_iceberg
+
+                with TemporaryDirectory(prefix="wire-iceberg-") as workspace:
+                    wire_iceberg.run(worker, Path(workspace), with_source)
+                print(
+                    "SQL_WIRE_ICEBERG=pass raw=5 current_generations=5 "
+                    "silver_generations=5 broker_next=5"
+                )
+            else:
+                print(
+                    "SQL_SOURCE_RESTART=pass snapshot=1 insert=1 update=1 "
+                    "delete=1 tombstone=1"
+                )
         else:
             prior = worker.before()
             descriptor = os.open(
