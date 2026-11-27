@@ -23,21 +23,22 @@ def fingerprint(value):
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def saved_snapshot(body, *, expected_lsn=None):
-    """Kafka Connect REST が報告する確定済みの一 source partition。"""
-    if not isinstance(body, dict):
-        return None
-    entries = body.get("offsets")
+def observed_offset(body, *, expected_lsn=None):
+    """Kafka Connectの永続位置を、既知のSQL Server形式だけで識別する。"""
+    entries = body.get("offsets") if isinstance(body, dict) else None
+    if entries == []:
+        return None, "EMPTY"
     if not isinstance(entries, list) or len(entries) != 1:
-        return None
+        return None, "COUNT"
     entry = entries[0]
     if not isinstance(entry, dict):
-        return None
-    partition, position = entry.get("partition"), entry.get("offset")
+        return None, "ENTRY"
+    partition = entry.get("partition")
     if partition != {"server": src.PREFIX, "database": src.DATABASE}:
-        return None
+        return None, "PARTITION"
+    position = entry.get("offset")
     if not isinstance(position, dict):
-        return None
+        return None, "POSITION"
     if position.get("snapshot_completed") is False or (
         "snapshot" in position
         and (
@@ -45,31 +46,47 @@ def saved_snapshot(body, *, expected_lsn=None):
             or position.get("snapshot_completed") is not True
         )
     ):
-        return None
+        return None, "SNAPSHOT_PHASE"
     commit_lsn = position.get("commit_lsn")
     if (
         type(commit_lsn) is not str
         or not LSN.fullmatch(commit_lsn)
         or set(commit_lsn) <= {"0", ":"}
-        or expected_lsn is not None
-        and commit_lsn.lower() != expected_lsn.lower()
     ):
-        return None
+        return None, "COMMIT_LSN"
+    if expected_lsn is not None and commit_lsn.lower() != expected_lsn.lower():
+        return None, "DELETE_NOT_COMMITTED"
     change_lsn = position.get("change_lsn")
     serial = position.get("event_serial_no")
     command = position.get("command_id")
-    if (
-        change_lsn is not None
-        and (type(change_lsn) is not str or not LSN.fullmatch(change_lsn))
-        or type(serial) is not int
-        or serial < 0
-        or command is not None
-        and (type(command) is not int or command < 0)
+    # Debezium 3.7.1 direct snapshot: in-tx Lsn.NULL + command_id=-1.
+    # getOffset() can serialize Lsn.NULL as the literal "NULL".
+    unavailable_change = change_lsn is None or change_lsn == "NULL"
+    if unavailable_change:
+        if expected_lsn is not None:
+            return None, "DELETE_CHANGE_LSN"
+        change_lsn = None
+    elif type(change_lsn) is not str or not LSN.fullmatch(change_lsn):
+        return None, "CHANGE_LSN"
+    else:
+        change_lsn = change_lsn.lower()
+    if type(serial) is not int or serial < 0:
+        return None, "SERIAL"
+    if command is not None and (
+        type(command) is not int
+        or command < 0
+        and not (command == -1 and unavailable_change)
     ):
-        return None
-    return fingerprint(
+        return None, "COMMAND"
+    digest = fingerprint(
         [partition, commit_lsn.lower(), change_lsn, serial, command]
     )
+    return digest, "VALID"
+
+
+def saved_snapshot(body, *, expected_lsn=None):
+    """試験で比較する確定位置だけを返す。"""
+    return observed_offset(body, expected_lsn=expected_lsn)[0]
 
 
 def validate_receipt(document):
@@ -170,12 +187,13 @@ class Restart(src.Proof):
     def durable(self, *, startup=False, expected_lsn=None):
         """read-only RESTのoffsetと稼働状態が揃うまで期限内で待つ。"""
         deadline = time.monotonic() + 80
+        reason = "NOT_READY"
         while time.monotonic() < deadline:
             try:
                 if not self.live_task():
                     time.sleep(1)
                     continue
-                pos = saved_snapshot(
+                pos, reason = observed_offset(
                     self.http(f"/connectors/{src.CONNECTOR}/offsets"),
                     expected_lsn=expected_lsn,
                 )
@@ -186,17 +204,37 @@ class Restart(src.Proof):
                     startup and error.code == 404
                 ):
                     raise src.Failure("SOURCE_OFFSET_REST_FAILED") from None
+                reason = f"HTTP_{error.code}"
             except (URLError, TimeoutError, ConnectionError):
-                # 既存位置の証明は期限切れなら失敗。推定で無効にしない。
-                pass
+                reason = "TRANSPORT"
             time.sleep(1)
-        raise src.Failure("SOURCE_OFFSET_NOT_OBSERVED")
+        raise src.Failure(f"SOURCE_OFFSET_NOT_OBSERVED_{reason}")
+
+    def captured_seed(self):
+        """SQL Agentが初期行を実際にCDC捕捉するまでsnapshotを始めない。"""
+        deadline = time.monotonic() + 55
+        while time.monotonic() < deadline:
+            rows = self.execute(
+                src.DATABASE,
+                "SELECT TOP (2) 1 FROM cdc.dbo_fixture_orders_CT "
+                "WHERE [__$operation]=2 AND site_id=N'sample' AND record_id=1 "
+                "AND [__$start_lsn] IS NOT NULL "
+                "AND [__$start_lsn]<>0x00000000000000000000",
+                reader=True,
+            )
+            if rows:
+                src.require(rows == [(1,)], "NON_UNIQUE_CAPTURED_SEED")
+                return
+            time.sleep(1)
+        raise src.Failure("ACTUAL_SEED_CAPTURE_NOT_OBSERVED")
 
     def before(self):
         """初回 SQL fixture の snapshot を検査して停止位置を固める。"""
         self.await_sql()
         self.phase = "RESTART_SQL_PROVISION"
         self.provision()
+        self.phase = "RESTART_WAIT_CAPTURED_SEED"
+        self.captured_seed()
         self.phase = "RESTART_CONNECT_REGISTER"
         self.register()
         self.phase = "RESTART_BEFORE_STOP"

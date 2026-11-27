@@ -6,7 +6,13 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import proof as src
-from restart import Restart, fingerprint, saved_snapshot, validate_receipt
+from restart import (
+    Restart,
+    fingerprint,
+    observed_offset,
+    saved_snapshot,
+    validate_receipt,
+)
 from test_proof import row
 
 
@@ -74,12 +80,75 @@ class RestartTests(unittest.TestCase):
             saved_snapshot(value), saved_snapshot(offsets(event_serial_no=2))
         )
 
+    def test_direct_mode_snapshot_native_sentinel_is_not_a_missing_offset(
+        self,
+    ):
+        """従来の型検査が Debezium 3.7.1の正規snapshotを拒否しない。"""
+        actual = offsets(change_lsn="NULL", command_id=-1)
+        self.assertIsNotNone(saved_snapshot(actual))
+        self.assertEqual(
+            saved_snapshot(actual),
+            saved_snapshot(offsets(change_lsn=None, command_id=-1)),
+        )
+        for bad in (
+            offsets(commit_lsn="NULL", change_lsn="NULL", command_id=-1),
+            offsets(change_lsn="NULL", command_id=-2),
+            offsets(change_lsn="00000001:00000004:0002", command_id=-1),
+            offsets(change_lsn="null", command_id=-1),
+        ):
+            self.assertIsNone(saved_snapshot(bad))
+        self.assertEqual(
+            observed_offset(actual, expected_lsn="00000001:00000004:0001"),
+            (None, "DELETE_CHANGE_LSN"),
+        )
+        self.assertEqual(
+            observed_offset({"offsets": []}),
+            (None, "EMPTY"),
+        )
+
+    def test_seed_capture_requires_real_positive_single_row(self):
+        """SQLの空結果や複数の捕捉を成功にしない。"""
+        worker = Restart(None, None, None, "", "")
+        with patch.object(
+            worker, "execute", side_effect=[[], [(1,)]]
+        ) as query:
+            with patch("restart.time.sleep"):
+                worker.captured_seed()
+            self.assertEqual(query.call_count, 2)
+            self.assertTrue(
+                all(
+                    call.kwargs.get("reader") is True
+                    for call in query.call_args_list
+                )
+            )
+        with patch.object(worker, "execute", return_value=[(1,), (1,)]):
+            with self.assertRaisesRegex(
+                src.Failure, "NON_UNIQUE_CAPTURED_SEED"
+            ):
+                worker.captured_seed()
+        with patch.object(worker, "execute", return_value=[]):
+            with (
+                patch("restart.time.sleep"),
+                patch("restart.time.monotonic", side_effect=[0, 0, 56]),
+            ):
+                with self.assertRaisesRegex(
+                    src.Failure, "ACTUAL_SEED_CAPTURE_NOT_OBSERVED"
+                ):
+                    worker.captured_seed()
+
     def test_final_position_can_require_delete_lsn(self):
         """先行 INSERT や UPDATE による進捗で DELETE を証明しない。"""
         lsn = "00000001:00000004:000a"
         self.assertIsNone(saved_snapshot(offsets(), expected_lsn=lsn))
         self.assertIsNotNone(
-            saved_snapshot(offsets(commit_lsn=lsn.upper()), expected_lsn=lsn)
+            saved_snapshot(
+                offsets(
+                    commit_lsn=lsn.upper(),
+                    change_lsn="00000001:00000004:000b",
+                    command_id=1,
+                ),
+                expected_lsn=lsn,
+            )
         )
 
     def test_receipt_requires_each_hash(self):
