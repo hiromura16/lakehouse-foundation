@@ -93,11 +93,17 @@ MDを追加・改名する場合は [documentation-manifest.json](docs/documenta
 
 ## Renovateでの依存更新
 
-[Renovateの設定](renovate.json)はGitHub Actionsの参照と設定検証用Renovateの
-コンテナを対象にします。更新PRでもSHA固定を維持し、通常のPRと同じCIを通します。
+[Renovateの設定](renovate.json)はGitHub Actionsの参照、設定検証用Renovateの
+コンテナ、`pip-compile` に列挙したPythonロックを対象にします。
+更新PRでもSHA固定を維持し、通常のPRと同じCIを通します。
 同時に開く通常PRは最大3件で、メジャー更新はDependency Dashboardから承認します。
-Pythonのバージョン・ハッシュロックやサービスのイメージロックは、対応する参照や
-互換性をまとめて検証する手順で更新します。
+
+Pythonの更新PRには `requirements*.txt` の依存変更と `uv pip compile` が
+再生成したハッシュ付きロックが入ります。CIは入力の固定版とロックの一致、および
+各ロック項目のSHA-256を検査します。手動更新ではリポジトリルートからロック冒頭の
+生成コマンドを実行し、差分を確認します。
+SQL ServerドライバーとSpark・Notebook・Sail間で共有する互換性の固定版、
+配布物を個別に選定したSail・隔離試験のロックは、影響範囲をまとめて手動で検証します。
 
 更新候補の確認、Dependency Dashboardの管理、PRの作成は、このリポジトリに
 インストールしたRenovate GitHub Appが行います。
@@ -108,7 +114,7 @@ Pythonのバージョン・ハッシュロックやサービスのイメージ�
 候補になります。自動マージは `actions/checkout`、`actions/setup-python`、
 `astral-sh/setup-uv` のパッチ更新に適用します。リリース日時を確認でき、
 最新の既定ブランチに追従したPRのCIが成功すると、Renovateがsquash mergeします。
-その他の更新はCI結果と差分をレビューして手動でマージします。
+Pythonを含むその他の更新はCI結果と差分をレビューして手動でマージします。
 
 ## YAML・shell・秘密値の追加検査
 
