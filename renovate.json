@@ -62,6 +62,16 @@
       "automerge": false
     },
     {
+      "description": "Update both S3 SDK pins together because they share botocore",
+      "matchManagers": ["pip-compile"],
+      "matchFileNames": ["infra/lakehouse/requirements.txt"],
+      "matchPackageNames": ["aiobotocore", "boto3"],
+      "groupName": "Lakehouse AWS SDK",
+      "minimumGroupSize": 2,
+      "separateMajorMinor": false,
+      "separateMinorPatch": false
+    },
+    {
       "description": "Update the SQL Server driver with the host and both container locks",
       "matchManagers": ["pip-compile"],
       "matchPackageNames": ["pymssql"],
