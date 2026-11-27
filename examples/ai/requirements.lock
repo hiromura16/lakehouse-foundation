@@ -241,9 +241,9 @@ jsonpointer==3.10 \
     --hash=sha256:3b08b9e5239f1b683e31c9561c350d75ce3fa8cdd407130ca8491fdb0c9e56f3 \
     --hash=sha256:69349c0e738c93e9efa501397091f49ad302ae686293effd05d7755c06f88ef0
     # via jsonpatch
-langchain-core==1.7.6 \
-    --hash=sha256:0833781e3a8e6fe83073c8412c21180a0545d5ccdf3437889951caf9589ece6c \
-    --hash=sha256:f61908be526fbeb5da8cc1ffd9d24bce3b50cf45b3a2f1737c1a7a2958046ce6
+langchain-core==1.7.7 \
+    --hash=sha256:acc4205b5617f36cc0495ee77af7b3eedf8714941c7c14a40220be52770d4536 \
+    --hash=sha256:d69535f817e9ea949dabc85079dccc28b0cde04a579ec5c2273be2f7b09b859c
     # via
     #   -r examples/ai/requirements.txt
     #   langchain-ollama
