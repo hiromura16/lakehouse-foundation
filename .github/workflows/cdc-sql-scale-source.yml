@@ -1,0 +1,31 @@
+name: Synthetic five-table SQL CDC to Kafka
+
+on:  # yamllint disable-line rule:truthy
+  pull_request:
+    paths:
+      - '.github/workflows/cdc-sql-scale-source.yml'
+      - 'tests/integration/cdc_contract_scale/hosted.sh'
+      - 'tests/integration/cdc_contract_scale/source.py'
+      - 'tests/integration/cdc_contract_scale/fixture.py'
+
+permissions:
+  contents: read
+
+jobs:
+  disposable-native-scale:
+    if: >-
+      github.repository == 'hiromura16/lakehouse-foundation'
+      && github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 29
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify isolated scale fixture before any Docker work
+        run: python3 -B -m unittest discover -s tests/integration/cdc_contract_scale -p 'test_*.py'
+      - name: Verify 112 native snapshots and 1024 native SQL changes
+        shell: bash
+        run: bash tests/integration/cdc_contract_scale/hosted.sh --source-scale
