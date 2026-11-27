@@ -1350,6 +1350,24 @@
       ],
       "next": [],
       "status": "reference"
+    },
+    {
+      "path": "tests/integration/cdc_contract_sql_source/README.md",
+      "title": "隔離SQL ServerからKafkaまでの合成受入",
+      "purpose": "SQL Serverの合成1表からDebezium経由でKafkaへ届く配送を検証し、CIで保証する範囲を明確にする。",
+      "audience": [
+        "開発・設計担当",
+        "評価・報告担当"
+      ],
+      "when_to_use": "CDCの入口を変更するときや、隔離CI結果と実環境で未確認の項目を切り分けるとき。",
+      "category": "06 開発・レビュー",
+      "prerequisites": [
+        "docs/CDC.md"
+      ],
+      "next": [
+        "docs/refactoring/CDC-CONTRACT-MANAGER-ADR.md"
+      ],
+      "status": "active"
     }
   ]
 }

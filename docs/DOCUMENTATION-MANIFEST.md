@@ -111,6 +111,7 @@
 | [ファイルの場所と変更のしかた](<DIRECTORY-GUIDE.md>) | 目的に対応するファイル、実行経路、公開コードとprivate状態の置き場を探す。 | 実装を読み始めるときや、変更対象と関連する確認箇所を絞るとき。 | reference |
 | [外部レビュー指摘の対応と確認](<REVIEW-FOLLOWUP.md>) | PR #3の外部レビュー指摘と、再現・修正・回帰確認の対応を追跡する。 | 既存の指摘がどう解決されたか確認し、同種の回帰を避けるとき。 | reference |
 | [レビュー指摘を改善へ取り込む](<REVIEW-WORKFLOW.md>) | issue・PR・依頼文書の指摘を対象commitで確認し、安全な回帰と差分へつなげる。 | レビュー指摘を再現して修正し、検証根拠を揃えて返すとき。 | active |
+| [隔離SQL ServerからKafkaまでの合成受入](<../tests/integration/cdc_contract_sql_source/README.md>) | SQL Serverの合成1表からDebezium経由でKafkaへ届く配送を検証し、CIで保証する範囲を明確にする。 | CDCの入口を変更するときや、隔離CI結果と実環境で未確認の項目を切り分けるとき。 | active |
 
 ### 07 報告・図版
 
@@ -234,6 +235,7 @@
 | [PoC説明用のスライド構成](<reports/PRESENTATION-OUTLINE.md>) | 読み手と持ち時間に合わせ、14図の選択・説明順・話す論点を組み立てる。 |
 | [PoC報告書・発表に使う図版と雛形](<reports/README.md>) | 用途別14図・キャプション・雛形を選び、PNG・PDF・PPTXへ書き出す。 |
 | [PoC報告書に載せる画面の撮り方](<reports/SCREENSHOT-GUIDE.md>) | 各GUIで残す画面、先に確認する条件、写さない秘密や実データを決める。 |
+| [隔離SQL ServerからKafkaまでの合成受入](<../tests/integration/cdc_contract_sql_source/README.md>) | SQL Serverの合成1表からDebezium経由でKafkaへ届く配送を検証し、CIで保証する範囲を明確にする。 |
 
 ### 運用担当
 
@@ -309,6 +311,7 @@
 | [報告書用の実装構成一覧](<reports/IMPLEMENTATION-INVENTORY.md>) | 41サービス・14profile・port・volume・接続主体を公開定義から技術付録として照合する。 |
 | [PoC報告書・発表に使う図版と雛形](<reports/README.md>) | 用途別14図・キャプション・雛形を選び、PNG・PDF・PPTXへ書き出す。 |
 | [Vectorのログ正規化・転送設定](<../infra/monitoring/vector/README.md>) | 選択版の明示YAML合成、parser期待fixture、権限と配送上限を開発時に照合する。 |
+| [隔離SQL ServerからKafkaまでの合成受入](<../tests/integration/cdc_contract_sql_source/README.md>) | SQL Serverの合成1表からDebezium経由でKafkaへ届く配送を検証し、CIで保証する範囲を明確にする。 |
 
 ## 文書を追加・変更するとき
 
