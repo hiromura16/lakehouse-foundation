@@ -10,6 +10,7 @@ SCRIPT = Path(__file__).with_name("hosted.sh")
 MODEL = r"""
 scratch=$1
 scenario=$2
+readonly fixture_mode=$3
 broker=$(printf '%064d' 1)
 sql=$(printf '%064d' 2)
 connect=$(printf '%064d' 3)
@@ -82,10 +83,18 @@ run_marker() {
             mark PREPARE_TOPICS
             if [[ $scenario == occupied ]]; then return 94; fi ;;
         "$source")
-            expected='SQL_SCALE_NATIVE=pass tables=5 snapshot=112'\
+            if [[ $fixture_mode == --chain-scale ]]; then
+                expected='SQL_SCALE_CHAIN=pass source_records=1392'\
+' local_partitions=5 source_partitions=5 outstanding=0'\
+' raw_rows=1392 current_rows=112 silver_rows=112'
+                [[ $3 == "$expected" && $2 == 900s ]]
+                mark NATIVE_CHAIN
+            else
+                expected='SQL_SCALE_NATIVE=pass tables=5 snapshot=112'\
 ' insert=256 update=512 delete=256 tombstone=256'
-            [[ $3 == "$expected" ]]
-            mark NATIVE_SOURCE ;;
+                [[ $3 == "$expected" && $2 == 650s ]]
+                mark NATIVE_SOURCE
+            fi ;;
         *) return 96 ;;
     esac
 }
@@ -95,7 +104,7 @@ run_marker() {
 class LauncherTest(unittest.TestCase):
     """実Bashの関数を隔離し、所有とphaseの否定例を確認。"""
 
-    def dispatch(self, scenario):
+    def dispatch(self, scenario, mode="--source-scale"):
         """Docker/SQL/Kafka呼出しをstubへ置換した場合の順序を読む。"""
         text = SCRIPT.read_text(encoding="utf-8")
         begin = text.index("require_owned() {")
@@ -113,6 +122,7 @@ class LauncherTest(unittest.TestCase):
                     "model",
                     d,
                     scenario,
+                    mode,
                 ],
                 capture_output=True,
                 check=False,
@@ -142,6 +152,25 @@ class LauncherTest(unittest.TestCase):
             ),
         )
 
+    def test_explicit_chain_attaches_only_to_owned_native_source(self):
+        """storageモード専用の所有順と別終端マーカー。"""
+        self.assertEqual(
+            self.dispatch("valid", "--chain-scale"),
+            (
+                0,
+                [
+                    "BROKER_START",
+                    "OWNED_BROKER_READY",
+                    "PREPARE_TOPICS",
+                    "SQL_AND_CONNECT_START",
+                    "NATIVE_CHAIN",
+                ],
+            ),
+        )
+        code, order = self.dispatch("cluster", "--chain-scale")
+        self.assertNotEqual(code, 0)
+        self.assertEqual(order, ["BROKER_START"])
+
     def test_wrong_owner_and_existing_broker_denied_before_start(self):
         """所有の誤り、既稼働broker、他cluster IDを肯定しない。"""
         for scenario in ("foreign", "existing"):
@@ -166,6 +195,7 @@ class LauncherTest(unittest.TestCase):
             ([], "SCALE_EXPLICIT_MODE_REQUIRED"),
             (["chain"], "SCALE_EXPLICIT_MODE_REQUIRED"),
             (["--source-scale"], "SCALE_HOSTED_RUNNER_REQUIRED"),
+            (["--chain-scale"], "SCALE_HOSTED_RUNNER_REQUIRED"),
         ):
             run = subprocess.run(
                 ["bash", str(SCRIPT), *args],

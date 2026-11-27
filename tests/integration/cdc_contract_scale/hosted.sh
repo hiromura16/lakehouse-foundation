@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 umask 077
 authorize_launcher() {
-    [[ $# == 1 && $1 == --source-scale ]] || {
+    [[ $# == 1 && ( $1 == --source-scale || $1 == --chain-scale ) ]] || {
         echo 'FAIL: SCALE_EXPLICIT_MODE_REQUIRED' >&2
         return 1
     }
@@ -18,6 +18,7 @@ authorize_launcher() {
     }
 }
 authorize_launcher "$@"
+readonly fixture_mode=$1
 scratch=$(mktemp -d "$RUNNER_TEMP/normal-cdc-scale.XXXXXXXX")
 unset DOCKER_CONTEXT DOCKER_HOST BUILDX_BUILDER BUILDX_CONFIG DOCKER_TLS_VERIFY DOCKER_CERT_PATH
 export DOCKER_CONFIG="$scratch/docker"
@@ -107,15 +108,40 @@ COPY cdc.lock /tmp/cdc.lock
 RUN uv --no-cache pip sync --system --require-hashes --only-binary :all: /tmp/cdc.lock
 DOCKERFILE
 
-dt 180s build --iidfile "$scratch/image.id" "$build" >/dev/null 2>&1
+build_timeout=180s
+if [[ $fixture_mode == --chain-scale ]]; then
+    cp "$root/infra/lakehouse/requirements.lock" "$build/lakehouse.lock"
+    cp "$root/tests/integration/cdc_contract_iceberg/requirements.lock" "$build/sqlite.lock"
+    sed -i '$d' "$build/Dockerfile"
+    cat >> "$build/Dockerfile" <<'CHAIN_BUILD'
+COPY lakehouse.lock sqlite.lock /tmp/
+RUN uv --no-cache pip sync --system --require-hashes --only-binary sqlalchemy \
+    --default-index https://pypi.org/simple /tmp/lakehouse.lock /tmp/cdc.lock /tmp/sqlite.lock
+CHAIN_BUILD
+    build_timeout=320s
+fi
+dt "$build_timeout" build --iidfile "$scratch/image.id" "$build" >/dev/null 2>&1
 client_image=$(<"$scratch/image.id")
 [[ $client_image =~ ^sha256:[0-9a-f]{64}$ ]]
 snapshot="$scratch/checkout"
 mkdir -m 0755 "$snapshot"
-git -C "$root" archive --format=tar HEAD infra/cdc scripts/cdc_contract.py medallion/sources.json \
-    tests/integration/cdc_contract_sql_source/proof.py \
-    tests/integration/cdc_contract_scale/fixture.py tests/integration/cdc_contract_scale/source.py |
-    tar -xf - -C "$snapshot"
+sealed=(
+    infra/cdc scripts/cdc_contract.py medallion/sources.json
+    tests/integration/cdc_contract_sql_source/proof.py
+    tests/integration/cdc_contract_scale/fixture.py
+    tests/integration/cdc_contract_scale/source.py
+)
+last_argument=run
+chain_env=()
+if [[ $fixture_mode == --chain-scale ]]; then
+    sealed+=(
+        tests/integration/cdc_contract_scale/chain.py
+        tests/integration/cdc_contract_scale/storage.py
+    )
+    last_argument=run-chain
+    chain_env=(-e CDC_SQL_SCALE_CHAIN=true)
+fi
+git -C "$root" archive --format=tar HEAD "${sealed[@]}" | tar -xf - -C "$snapshot"
 stage=CERTIFICATE
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=Isolated CDC fixture CA' \
     -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign \
@@ -222,10 +248,10 @@ shared_client_flags=(
     --mount "type=bind,src=$snapshot,dst=/checkout,readonly"
 )
 create preparer "${shared_client_flags[@]}" "$client_image" python -B "$entry" prepare-topics
-create source "${shared_client_flags[@]}" --env-file "$scratch/client.env" \
+create source "${shared_client_flags[@]}" "${chain_env[@]}" --env-file "$scratch/client.env" \
     --mount "type=bind,src=$scratch/freetds.conf,dst=/fixture/freetds.conf,readonly" \
     --mount "type=bind,src=$scratch/ca.pem,dst=/fixture/ca.pem,readonly" \
-    "$client_image" python -B "$entry" run
+    "$client_image" python -B "$entry" "$last_argument"
 broker=$(<"$scratch/broker.id")
 sql=$(<"$scratch/sql.id")
 connect=$(<"$scratch/connect.id")
@@ -292,7 +318,12 @@ run_fixture() {
     require_started_network "$sql"
     require_started_network "$connect"
     stage=ACTUAL_SQL_AND_KAFKA
+    if [[ $fixture_mode == --chain-scale ]]; then
+        stage=ACTUAL_SQL_KAFKA_AND_ICEBERG
+        run_marker "$source" 900s 'SQL_SCALE_CHAIN=pass source_records=1392 local_partitions=5 source_partitions=5 outstanding=0 raw_rows=1392 current_rows=112 silver_rows=112'
+    else
     run_marker "$source" 650s 'SQL_SCALE_NATIVE=pass tables=5 snapshot=112 insert=256 update=512 delete=256 tombstone=256'
+    fi
 }
 run_fixture
 stage=CLEANUP

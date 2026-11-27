@@ -5,7 +5,8 @@ prepare-topics を実行する。SQLとConnectを起動した後に run を実�
 Connectの固定Config/Offset/Status名には INTERNAL_TOPICS を設定する。
 同じ合成Kafka cluster ID、固定内部名、reader TLS、rootless client、
 ポート非公開はrunnerの所有検査が別途必須。端末でのdocker作業や
-既存topic/DBの再利用は不可。ここにworkflow、Iceberg、再起動は含まない。
+既存topic/DBの再利用は不可。run はsourceのみ。別のchain laneは同じ
+受信clientで隔離Icebergの保存とACKを照合し、再起動や現場利用は含まない。
 """
 
 import importlib
@@ -14,6 +15,7 @@ import re
 import sys
 import time
 from collections import Counter
+from dataclasses import dataclass
 from decimal import Decimal
 from itertools import islice
 from pathlib import Path
@@ -36,6 +38,8 @@ INTERNAL_TOPICS = (
 CLASS = "io.debezium.connector.sqlserver.SqlServerConnector"
 VERSION = "3.7.1.Final"
 SOURCE_DEADLINE = 150
+SOURCE_GROUP = "fixture-scale-source-only"
+CHAIN_GROUP = "fixture-scale-wire-chain"
 
 
 def create_topic_plan():
@@ -240,6 +244,29 @@ def verify_origin(record, operation, *, position=None, table_size=None):
             and set(candidate) - {"0", ":"},
             "SCALE_STREAMING_LOG_POSITION",
         )
+
+
+@dataclass(frozen=True, slots=True)
+class NativePort:
+    """実際のconsumerに所有Kafkaと選択済みgroupを束縛する。"""
+
+    client: object
+    topic_partition: object
+    connector: object
+    group: str
+
+    def identity(self):
+        """同じrunnerとclusterであることをKafkaへ再確認する。"""
+        return self.connector.metadata().cluster_id, self.group
+
+    def watermarks(self, topics):
+        """受信した全5partitionのlow/highをキャッシュなしで再読。"""
+        return {
+            topic: self.client.get_watermark_offsets(
+                self.topic_partition(topic, 0), timeout=5, cached=False
+            )
+            for topic in sorted(topics)
+        }
 
 
 class Scale(base.Proof):
@@ -545,8 +572,8 @@ class Scale(base.Proof):
                 converted == fixture.final_rows(spec), "SCALE_FINAL_SQL_ROWS"
             )
 
-    def run(self):
-        """実SQL/Kafkaの証拠だけを作る。Icebergへの実保存は次の境界。"""
+    def run(self, *, after_reconciled=None):
+        """native source検証後、明示モードだけ同じconsumerで保存へ渡す。"""
         self.phase = "SCALE_BROKER"
         self.topic_inventory()
         self.connect_identity()
@@ -561,10 +588,11 @@ class Scale(base.Proof):
         self.seed_captured()
         self.phase = "SCALE_CONNECT"
         self.register()
+        group = SOURCE_GROUP if after_reconciled is None else CHAIN_GROUP
         consumer = self.kafka.Consumer(
             {
                 "bootstrap.servers": base.BROKER,
-                "group.id": "fixture-scale-source-only",
+                "group.id": group,
                 "enable.auto.commit": False,
                 "enable.auto.offset.store": False,
                 "allow.auto.create.topics": False,
@@ -599,7 +627,12 @@ class Scale(base.Proof):
             self.phase = "SCALE_SQL_RECONCILE"
             self.final_sql()
             self.phase = "SCALE_CONTRACT_RECONCILE"
-            return fixture.reconcile(native)
+            result = fixture.reconcile(native)
+            if after_reconciled is None:
+                return result
+            self.phase = "SCALE_CHAIN_STORAGE"
+            port = NativePort(consumer, self.kafka.TopicPartition, self, group)
+            return after_reconciled(native, port.watermarks(expected), port)
         finally:
             consumer.close()
 
@@ -622,15 +655,22 @@ def main():
     try:
         cluster = require_hosted()
         base.require(
-            len(sys.argv) == 2 and sys.argv[1] in {"prepare-topics", "run"},
+            len(sys.argv) == 2
+            and sys.argv[1] in {"prepare-topics", "run", "run-chain"},
             "SCALE_PHASE_REQUIRED",
+        )
+        mode = sys.argv[1]
+        base.require(
+            mode != "run-chain"
+            or os.environ.get("CDC_SQL_SCALE_CHAIN") == "true",
+            "SCALE_CHAIN_MODE_REQUIRED",
         )
         import confluent_kafka
         from confluent_kafka.admin import AdminClient, NewTopic
 
         sql = None
         secret, reader = "", ""
-        if sys.argv[1] == "run":
+        if mode in {"run", "run-chain"}:
             secret, reader = base.fixture_passwords()
             sql = importlib.import_module("pymssql")
         driver = Scale(
@@ -642,12 +682,16 @@ def main():
             secret,
             reader,
         )
-        if sys.argv[1] == "prepare-topics":
+        if mode == "prepare-topics":
             driver.phase = "SCALE_BROKER"
             driver.prepare_topics()
             print("SQL_SCALE_TOPICS=pass")
             return 0
-        result = driver.run()
+        if mode == "run-chain":
+            chain = importlib.import_module("chain")
+            result = driver.run(after_reconciled=chain.native)
+        else:
+            result = driver.run()
     except base.Failure as error:
         print(
             f"FAIL: {driver.phase if driver else 'SCALE_ENTRY'}/{error}",
@@ -660,12 +704,16 @@ def main():
             file=sys.stderr,
         )
         return 1
-    print(
-        "SQL_SCALE_NATIVE=pass "
-        + " ".join(f"{k}={v}" for k, v in result.items())
+    mode_marker = (
+        "SQL_SCALE_CHAIN=pass"
+        if mode == "run-chain"
+        else "SQL_SCALE_NATIVE=pass"
     )
+    print(mode_marker + " " + " ".join(f"{k}={v}" for k, v in result.items()))
     return 0
 
 
 if __name__ == "__main__":
+    # chainがimportした時に別の型/Consumerを作らない。
+    sys.modules["source"] = sys.modules[__name__]
     raise SystemExit(main())

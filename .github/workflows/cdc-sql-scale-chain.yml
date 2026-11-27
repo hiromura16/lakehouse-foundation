@@ -1,0 +1,38 @@
+name: Synthetic five-table CDC to Iceberg
+
+on:  # yamllint disable-line rule:truthy
+  pull_request:
+    paths:
+      - '.github/workflows/cdc-sql-scale-chain.yml'
+      - 'infra/cdc/images.lock.json'
+      - 'infra/cdc/requirements.lock'
+      - 'infra/lakehouse/requirements.lock'
+      - 'tests/integration/cdc_contract_iceberg/requirements.lock'
+      - 'tests/integration/cdc_contract_sql_source/proof.py'
+      - 'tests/integration/cdc_contract_scale/hosted.sh'
+      - 'tests/integration/cdc_contract_scale/source.py'
+      - 'tests/integration/cdc_contract_scale/fixture.py'
+      - 'tests/integration/cdc_contract_scale/chain.py'
+      - 'tests/integration/cdc_contract_scale/storage.py'
+
+permissions:
+  contents: read
+
+jobs:
+  disposable-native-scale-iceberg:
+    if: >-
+      github.repository == 'hiromura16/lakehouse-foundation'
+      && github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify scale fixture contracts
+        run: python3 -B -m unittest discover -s tests/integration/cdc_contract_scale -p 'test_*.py'
+      - name: Verify native five-table SQL, Kafka, and local Iceberg
+        shell: bash
+        run: bash tests/integration/cdc_contract_scale/hosted.sh --chain-scale
