@@ -1,5 +1,19 @@
 # 隔離SQL ServerからKafkaまでの合成受入
 
+<!-- doc-purpose:start -->
+> **役割:** SQL Serverの合成1表からDebezium経由でKafkaへ届く配送を検証し、CIで保証する範囲を明確にする。
+>
+> **対象読者:** 開発・設計担当 / 評価・報告担当
+>
+> **読むタイミング:** CDCの入口を変更するときや、隔離CI結果と実環境で未確認の項目を切り分けるとき。
+>
+> **前提となる資料:** [SQL Server の変更を Iceberg へ反映する](<../../../docs/CDC.md>)
+>
+> **次に読む資料:** [CDC Contract Managerの境界と段階導入](<../../../docs/refactoring/CDC-CONTRACT-MANAGER-ADR.md>)
+>
+> **文書一覧:** [目的・読者から探す文書マニフェスト](<../../../docs/DOCUMENTATION-MANIFEST.md>)
+<!-- doc-purpose:end -->
+
 このテストの合格は、専用の1表が SQL Server 2022 → Debezium
 3.7.1.Final → Kafka の順に配信された証拠です。実配信の判定は
 GitHub Actionsの当該コミットのログで確認してください。実運用への
