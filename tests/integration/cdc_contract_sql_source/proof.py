@@ -29,6 +29,8 @@ STAMP0 = "2026-01-02T03:04:05.1234567"
 STAMP1 = "2026-01-02T03:04:06.2345678"
 STAMP2 = "2026-01-02T03:04:07.3456789"
 KEY_FIELDS = ("site_id", "record_id")
+CONNECT_START_SECONDS = 180
+CONNECT_TRANSIENT = frozenset({409, 500, 502, 503, 504})
 
 
 class Failure(RuntimeError):
@@ -318,22 +320,29 @@ class Proof:
         with self.opener.open(request, timeout=5) as response:
             return json.load(response)
 
+    def connect_readiness(self, path):
+        """初期化中の GET のみ期限内で再試行し、登録 POST は再試行しない。"""
+        require(path in {"/connectors", "/connector-plugins"}, "READY_PATH")
+        deadline = time.monotonic() + CONNECT_START_SECONDS
+        reason = "CONNECT_TRANSPORT_NOT_READY"
+        while time.monotonic() < deadline:
+            try:
+                return self.http(path)
+            except HTTPError as error:
+                if error.code not in CONNECT_TRANSIENT:
+                    raise Failure("CONNECT_READY_HTTP_UNEXPECTED") from None
+                # 数値はこの固定集合だけ。応答ヘッダー・本文を表示しない。
+                reason = f"CONNECT_READY_HTTP_{error.code}"
+            except (URLError, TimeoutError, ConnectionError):
+                reason = "CONNECT_TRANSPORT_NOT_READY"
+            time.sleep(1)
+        raise Failure(reason)
+
     def register(self):
         """他の connector がない新規workerに正式版の1設定だけを作成。"""
-        deadline = time.monotonic() + 90
-        while True:
-            try:
-                initial = self.http("/connectors")
-                break
-            except (URLError, TimeoutError) as error:
-                if (
-                    isinstance(error, HTTPError)
-                    or time.monotonic() >= deadline
-                ):
-                    raise Failure("CONNECT_NOT_READY") from None
-                time.sleep(1)
+        initial = self.connect_readiness("/connectors")
         require(initial == [], "CONNECT_NOT_EMPTY")
-        plugins = self.http("/connector-plugins")
+        plugins = self.connect_readiness("/connector-plugins")
         classname = "io.debezium.connector.sqlserver.SqlServerConnector"
         require(
             any(

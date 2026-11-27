@@ -264,7 +264,14 @@ run_client() {
         [[ $(d container inspect --format '{{.State.ExitCode}}' "$client") == 0 ]]
         grep -Fx "$marker" "$scratch/proof.log"
     else
+        # 固定形の数字/状態だけ。コンテナのlog、環境変数、アドレスは表示しない。
         grep -Em1 '^FAIL: [A-Z0-9_]+/[A-Z0-9_]+$' "$scratch/proof.log" >&2 || true
+        if [[ $(d container inspect --format "$label" "$connect") == "$id" ]]; then
+            state=$(d container inspect --format '{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}}' "$connect")
+            if [[ $state =~ ^(created|running|paused|restarting|removing|exited|dead)\ [0-9]+\ (true|false)$ ]]; then
+                printf 'CONNECT_FIXTURE_STATE=%s\n' "$state" >&2
+            fi
+        fi
         exit 1
     fi
 }

@@ -181,12 +181,14 @@ class Restart(src.Proof):
                 )
                 if pos is not None:
                     return pos
-            except (URLError, TimeoutError) as error:
-                status = error.code if isinstance(error, HTTPError) else None
-                if status not in (None, 404, 409, 503):
+            except HTTPError as error:
+                if error.code not in src.CONNECT_TRANSIENT and not (
+                    startup and error.code == 404
+                ):
                     raise src.Failure("SOURCE_OFFSET_REST_FAILED") from None
-                if not startup:
-                    raise src.Failure("SOURCE_OFFSET_READ_FAILED") from None
+            except (URLError, TimeoutError, ConnectionError):
+                # 既存位置の証明は期限切れなら失敗。推定で無効にしない。
+                pass
             time.sleep(1)
         raise src.Failure("SOURCE_OFFSET_NOT_OBSERVED")
 
