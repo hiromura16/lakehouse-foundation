@@ -4,6 +4,9 @@ on:  # yamllint disable-line rule:truthy
   pull_request:
     paths:
       - '.github/workflows/cdc-sql-scale-source.yml'
+      - 'infra/cdc/images.lock.json'
+      - 'infra/cdc/requirements.lock'
+      - 'tests/integration/cdc_contract_sql_source/proof.py'
       - 'tests/integration/cdc_contract_scale/hosted.sh'
       - 'tests/integration/cdc_contract_scale/source.py'
       - 'tests/integration/cdc_contract_scale/fixture.py'
