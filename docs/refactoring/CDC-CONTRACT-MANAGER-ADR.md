@@ -83,6 +83,27 @@ Current/Silver は配送位置ごとの**世代レシート**で、障害時に�
 
 ローカルの明示 `--local-storage-only` は実 Iceberg への読み書きと再開を行いますが、Kafka 配送・ACK だけ代替です。実 Kafka の証拠は専用 CI 実行結果に限ります。5表、実 SQL Server/Debezium、運用 PostgreSQL/REST catalog/Trino、登録・変更の反映、再構築やデプロイの合格を意味しません。
 
+## フェーズ3A: 合成登録の plan/status（読み取り専用）
+
+[登録計画CLI](../../scripts/cdc_registration.py)は、合成scopeを明示し、呼出側が指定した2つの手元の JSON だけを比較します。SQL Server、Kafka、HTTP、既存 Consumer 設定、資格情報へ接続しません。ファイルを生成・更新する機能や apply コマンドはありません。
+
+**Bash / Zsh共通**
+
+```bash
+python3 scripts/cdc_registration.py plan --offline-fixture \
+  --fixture-id "$FIXTURE_ID" --desired "$DESIRED_CONTRACT" --observed "$OBSERVED_FIXTURE"
+python3 scripts/cdc_registration.py status --offline-fixture \
+  --fixture-id "$FIXTURE_ID" --desired "$DESIRED_CONTRACT" --observed "$OBSERVED_FIXTURE"
+```
+
+観測ファイルは `version=1`、`environment="synthetic"`、呼出時と一致する `fixture_id`（`fixture_` と小文字16進32桁）、`state`、`registered_contract`、`observed_spec_sha256` のみです。`present` は既登録の契約と観測した正規仕様の照合値の両方、`absent` と `unknown` は両方 `null` を要求します。入力が手元で記述された合成報告である限り、`absent` は実際の登録不存在、`present` は観測の真偽や鮮度の証明にはなりません。観測値を希望契約から作るとドリフトを検出できないので、別に採取・正規化した仕様を使います。証跡の公開は想定しません。
+
+内部 `compile_spec()` は enabled 表だけを DB/トピックprefixで束ね、既存コネクタ形式の正規表現リテラルによる `table.include.list`、`column.include.list`、DB付きtopicと旧alias、順序付き複合キー・型付き列・出力の対応を作ります。表名と列名の並びは正規化し、複合キー順は変えません。履歴が衝突し得る別DBのprefix共用や同一コネクタのsnapshot方針混在を拒否します。snapshot方針は未変換の宣言であり、実コネクタの設定値ではありません。合成構成の照合で、現行の固定6表の登録方式は変更しません。
+
+- `plan` はscope再検証、読取り専用preflight、追加・許容改訂、書出し先・既存offsetの照合を順に出します。稼働相当のコネクタへ表を追加する計画は、snapshotが再度実行されると仮定せず、backfillとoffsetの別検討を先に含めます。削除、無効化、縮小、キーや出力先の変更は実行候補にしません。
+- `status` は件数、固定診断、照合値のみです。終了コード0は `aligned` または `planned`、1は `blocked`、2は `invalid`。観測未確定、仕様のドリフト、非互換変更で計画を止めます。CLIは元の識別子、パスや入力本文を出力しません。照合値も機密な入力の匿名化に使わず、成果物を公開前に検査します。
+- `approval_candidate_sha256` はscope・希望契約・希望仕様・観測・操作順を結び付ける未署名の照合値で、権限、確認や実行チケットではありません。後続 apply は認証された観測から再計画し、鮮度・有効期限・権限・対象・fingerprintへの明示承認を検証します。専用workerの排他の下で各段階の事前/事後状態を照合し、同じ承認と操作IDの完了記録を再使用します。未知や部分失敗時は再試行で上書きせず停止して再観測します。既存group・offset・領域の削除やresetは通常 apply に含めません。
+
 ## OSS評価: 現行のKafkaを残す比較
 
 2026-11-27に公開一次資料で机上確認。依存をインストールせず、接続・負荷・障害テストは未実行です。
