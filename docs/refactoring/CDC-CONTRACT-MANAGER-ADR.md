@@ -30,6 +30,17 @@
 
 契約は配置資源の作成指示ではなく、**期待する型と境界の宣言**です。宣言が妥当でもSQL側の実表・権限・CDC・snapshot構成、Kafka topicの存在、Iceberg schema/field ID、消費者実行中の互換を確認したことにはなりません。現時点では実際のSQLやネットワークへ接続しません。
 
+### 独立したCDC管理アプリの設計
+
+CDC管理GUIは独立したアプリとして設計します。[旧UI試作 #29](https://github.com/hiromura16/lakehouse-foundation/pull/29)から引き継ぐ範囲と検証条件をここに記録します。[設計メモ #62](https://github.com/hiromura16/lakehouse-foundation/issues/62)
+
+- **観測。** 初期画面は読み取り専用です。読み取り権限だけを持つ利用者で画面を開き、登録・設定変更の要求がサーバー側でも拒否されることを確認します。
+- **計画と確認。** 登録・変更は正規化した入力から計画を生成し、対象、変更前後の差分、影響を表示します。確認前の適用要求は拒否します。
+- **再計画。** 計画を対象、正規化済み入力、観測時点の状態にひも付けます。確認後にいずれかが変わった場合は、適用時にAPIで差異を検出し、再計画と再確認を求めます。
+- **認証と受け入れ。** GUIは境界を検証する認証済みAPIを経由します。運用資格情報はサーバー側に保持し、ブラウザーのストレージへ保存されないことを確認します。隔離試験、配備先ホストの準備、本番認証、実環境への配置はそれぞれの検証結果を記録します。
+
+ここで確定するのは設計と受け入れ条件です。今後のアプリ実装と配備は、それぞれの変更で承認を得ます。
+
 ## フェーズ1: 実装の基準
 
 - [JSON Schema v1](../../contracts/cdc/contract.schema.json)に従う、UTF-8 JSON一形式です。DB、schema、table、topic prefix、enabled、順序付きPK、current/append、Raw/Current/Silverの保存先、物理列の名前・型・NULL可否・幅・精度・スケール、削除とsnapshotの方針を宣言します。識別子は先頭が英小文字のASCII表記で最大63文字（topic prefixのみハイフン可）。SQL Serverのsystem DB・物理sourceの重複・短縮/完全topic名の衝突を拒否し、組み立てた名前も[Kafkaの249文字上限](https://kafka.apache.org/44/operations/basic-kafka-operations/)で検査します。URL、認証、SQL断片、任意の処理コマンドは含めません。
