@@ -105,6 +105,11 @@ Pythonの更新PRには `requirements*.txt` の依存変更と `uv pip compile` 
 SQL ServerドライバーとSpark・Notebook・Sail間で共有する互換性の固定版、
 配布物を個別に選定したSail・隔離試験のロックは、影響範囲をまとめて手動で検証します。
 
+Lakehouseの `aiobotocore` と `boto3` は同じ `botocore` を使います。
+Renovateは両方の更新候補が揃ってから同じPRにまとめ、3日待機を適用します。
+候補が要求する `botocore` の範囲が重ならない場合は、両方を解決できる公開版を
+選び直し、`infra/lakehouse/requirements.lock` を生成してCIで確認します。
+
 更新候補の確認、Dependency Dashboardの管理、PRの作成は、このリポジトリに
 インストールしたRenovate GitHub Appが行います。
 [設定を検証するCI](.github/workflows/renovate.yml)は、設定や検証ワークフローが
