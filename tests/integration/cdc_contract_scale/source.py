@@ -13,6 +13,7 @@ import os
 import re
 import sys
 import time
+from collections import Counter
 from decimal import Decimal
 from itertools import islice
 from pathlib import Path
@@ -133,7 +134,83 @@ def mutations():
         active = retained
 
 
-def verify_origin(record, operation):
+INITIAL_SNAPSHOT_FLAGS = {
+    "first": "FIRST",
+    "first_in_data_collection": "TABLE_FIRST",
+    "true": "INTERIOR",
+    "last_in_data_collection": "TABLE_LAST",
+    "last": "LAST",
+}
+
+
+def marker_class(marker):
+    """固定診断語だけ。任意のフィールド文字列を例外に含めない。"""
+    if marker is None:
+        return "MISSING"
+    if type(marker) is bool:
+        return "BOOLEAN"
+    if type(marker) is str:
+        return {
+            **INITIAL_SNAPSHOT_FLAGS,
+            "false": "STREAM",
+            "incremental": "INCREMENTAL",
+        }.get(marker, "OTHER")
+    return "OTHER"
+
+
+def verify_snapshot_marker(marker, position, table_size):
+    """3.7.1のSnapshotMarkerResolverどおりに表内の端を検査する。"""
+    base.require(
+        type(position) is int
+        and type(table_size) is int
+        and 0 <= position < table_size
+        and table_size > 1,
+        "SCALE_SNAPSHOT_POSITION",
+    )
+    if position == 0:
+        allowed = ("first", "first_in_data_collection")
+    elif position == table_size - 1:
+        allowed = ("last", "last_in_data_collection")
+    else:
+        allowed = ("true",)
+    base.require(
+        type(marker) is str and marker in allowed,
+        "SCALE_SNAPSHOT_FLAG_" + marker_class(marker),
+    )
+
+
+def verify_snapshot_fence(records):
+    """各表の既知の112件を越えて、全体snapshotの両端も実証する。"""
+    specs = {spec.topic: spec for spec in fixture.TABLES}
+    markers = Counter()
+    global_first = []
+    global_last = []
+    for record in records:
+        spec = specs[record["topic"]]
+        marker = base.decode(record["value"])["source"].get("snapshot")
+        verify_snapshot_marker(marker, record["offset"], spec.initial)
+        markers[marker] += 1
+        if marker == "first":
+            global_first.append(spec.topic)
+        elif marker == "last":
+            global_last.append(spec.topic)
+    tables = len(specs)
+    demand_count = sum(t.initial for t in specs.values())
+    base.require(
+        markers
+        == {
+            "first": 1,
+            "first_in_data_collection": tables - 1,
+            "true": demand_count - 2 * tables,
+            "last_in_data_collection": tables - 1,
+            "last": 1,
+        }
+        and global_first != global_last,
+        "SCALE_SNAPSHOT_GLOBAL_FENCE",
+    )
+
+
+def verify_origin(record, operation, *, position=None, table_size=None):
     """合成期待値に加え実ConnectorとSQL log positionを別に検査。"""
     if operation == "tombstone":
         base.require(record["value"] is None, "SCALE_TOMBSTONE_NOT_NULL")
@@ -144,13 +221,14 @@ def verify_origin(record, operation):
         and origin.get("version") == VERSION,
         "SCALE_SOURCE_PLUGIN_IDENTITY",
     )
+    snapshot = origin.get("snapshot")
     if operation == "r":
-        snapshot = origin.get("snapshot")
-        base.require(
-            snapshot is True or snapshot in ("true", "last"),
-            "SCALE_SNAPSHOT_FLAG",
-        )
+        verify_snapshot_marker(snapshot, position, table_size)
         return
+    base.require(
+        snapshot is None or snapshot is False or snapshot == "false",
+        "SCALE_STREAM_SNAPSHOT_FLAG_" + marker_class(snapshot),
+    )
     for field in ("commit_lsn", "change_lsn"):
         candidate = origin.get(field)
         base.require(
@@ -410,7 +488,12 @@ class Scale(base.Proof):
             current = offsets[topic]
             step = expected[topic][current]
             fixture.verify_record(record, specs[topic], current, step)
-            verify_origin(record, step.op)
+            verify_origin(
+                record,
+                step.op,
+                position=current,
+                table_size=specs[topic].initial,
+            )
             observed.append(record)
             offsets[topic] += 1
         base.require(offsets == end, "SCALE_NATIVE_DELIVERY_MISSING")
@@ -498,6 +581,8 @@ class Scale(base.Proof):
                 {spec.topic: spec.initial for spec in fixture.TABLES},
                 expected,
             )
+            self.phase = "SCALE_NATIVE_SNAPSHOT_FENCE"
+            verify_snapshot_fence(native)
             self.phase = "SCALE_SQL_IUD"
             self.write_sql(mutations(), 1024)
             self.phase = "SCALE_NATIVE_CHANGES"

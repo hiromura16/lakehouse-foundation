@@ -1,5 +1,6 @@
 """5表の実source driverのdispatchと拒否境界をnetworkなしで確認。"""
 
+import json
 import os
 import unittest
 from collections import Counter
@@ -91,6 +92,102 @@ class SourceScaleTest(unittest.TestCase):
         ):
             source.verify_origin({"value": fixture.encode(doc)}, "u")
         source.verify_origin({"value": None}, "tombstone")
+
+    @staticmethod
+    def snapshots_by_table():
+        """タグ付けした5表の位置。Kafkaのtopic間poll順は規定しない。"""
+        all_records = []
+        for number, spec in reversed(tuple(enumerate(fixture.TABLES))):
+            for position, step in enumerate(source.plans()[spec.topic]):
+                if step.op != "r":
+                    break
+                marker = "true"
+                if position == 0:
+                    marker = (
+                        "first" if number == 0 else "first_in_data_collection"
+                    )
+                elif position == spec.initial - 1:
+                    marker = (
+                        "last" if number == 4 else "last_in_data_collection"
+                    )
+                output = fixture.modeled(spec, position, step)
+                payload = json.loads(output["value"])
+                payload["source"].update(
+                    connector="sqlserver",
+                    version=source.VERSION,
+                    snapshot=marker,
+                )
+                output["value"] = fixture.encode(payload)
+                all_records.append(output)
+        return all_records
+
+    def test_verified_table_markers_and_global_ends_accept_all_112(self):
+        """table内位置とglobal両端が実タグに合う時だけ通す。"""
+        snap = self.snapshots_by_table()
+        self.assertEqual(len(snap), 112)
+        self.assertIsNone(source.verify_snapshot_fence(snap))
+        table = fixture.TABLES[-1]
+        size = table.initial
+        for record in snap[:size]:
+            source.verify_origin(
+                record,
+                "r",
+                position=record["offset"],
+                table_size=table.initial,
+            )
+
+    def test_snapshot_flag_rejects_incremental_wrong_edge_and_unknown_value(
+        self,
+    ):
+        """変種を無条件に許さず、見知らぬフィールドを出力しない。"""
+        for marker, position, result in (
+            ("first", 2, "FIRST"),
+            ("true", 0, "INTERIOR"),
+            ("last_in_data_collection", 0, "TABLE_LAST"),
+            ("incremental", 1, "INCREMENTAL"),
+            ("false", 1, "STREAM"),
+            (True, 1, "BOOLEAN"),
+            (None, 1, "MISSING"),
+            ("untrusted free text", 1, "OTHER"),
+        ):
+            with self.assertRaisesRegex(
+                source.base.Failure, "^SCALE_SNAPSHOT_FLAG_" + result + "$"
+            ):
+                source.verify_snapshot_marker(marker, position, 5)
+
+    def test_missing_or_repeated_global_snapshot_edge_blocks_iud(self):
+        """各表件数は揃っても全体の開始が不明なら後続DMLを開始しない。"""
+        records = self.snapshots_by_table()
+        selected = next(r for r in records if r["offset"] == 0)
+        payload = json.loads(selected["value"])
+        payload["source"]["snapshot"] = "first"
+        selected["value"] = fixture.encode(payload)
+        with self.assertRaisesRegex(
+            source.base.Failure, "SCALE_SNAPSHOT_GLOBAL_FENCE"
+        ):
+            source.verify_snapshot_fence(records)
+
+        admin = Mock()
+        kafka = SimpleNamespace(Consumer=Mock())
+        worker = source.Scale(
+            None, kafka, Mock(return_value=admin), Mock(), "A" * 22, "", ""
+        )
+        with (
+            patch.object(worker, "topic_inventory"),
+            patch.object(worker, "connect_identity"),
+            patch.object(worker, "connect_readiness", return_value=[]),
+            patch.object(worker, "await_sql"),
+            patch.object(worker, "provision"),
+            patch.object(worker, "seed_captured"),
+            patch.object(worker, "register"),
+            patch.object(worker, "receive", return_value=records),
+            patch.object(worker, "write_sql") as writes,
+        ):
+            with self.assertRaisesRegex(
+                source.base.Failure, "SCALE_SNAPSHOT_GLOBAL_FENCE"
+            ):
+                worker.run()
+        self.assertEqual([c.args[1] for c in writes.call_args_list], [112])
 
     def test_sql_dml_counts_server_result_and_does_not_continue_on_zero(self):
         """実セッションで各DMLのrowcountを発行後に確認する。"""
