@@ -184,9 +184,127 @@ class RestartTests(unittest.TestCase):
                         "prefix": "prefix",
                         "position": "position",
                         "history": "schema",
-                    }
+                    },
+                    "synthetic-lsn-digest",
                 )
             changes.assert_not_called()
+
+    def test_stopped_update_reads_real_cdc_coordinate_and_kafka_stays_two(
+        self,
+    ):
+        """現在値とCDC捕捉位置は実queryから、Kafka範囲は前後で検証。"""
+        worker = Restart(None, None, None, "", "")
+        lsn = "00000001:00000004:0001"
+        raw = bytes.fromhex(lsn.replace(":", ""))
+        consumer = Mock()
+        with (
+            patch.object(worker, "consumer", return_value=consumer),
+            patch.object(worker, "watermark", side_effect=[(0, 2), (0, 2)]),
+            patch.object(
+                worker,
+                "execute",
+                side_effect=[[(1,)], (), [(1,)], [(raw,)]],
+            ) as statements,
+        ):
+            self.assertEqual(worker.stopped_update(), fingerprint(lsn))
+        queries = [args.args[1] for args in statements.call_args_list]
+        self.assertIn("label IS NULL", queries[0])
+        self.assertIn("UPDATE dbo.fixture_orders", queries[1])
+        self.assertIn("DATALENGTH(label)=0", queries[2])
+        self.assertIn("__$operation]=4", queries[3])
+        consumer.close.assert_called_once_with()
+
+    def test_stopped_update_rejects_early_kafka_delivery(self):
+        """停止中に配送が進んでもcatch-up成功条件にしない。"""
+        worker = Restart(None, None, None, "", "")
+        with (
+            patch.object(worker, "consumer", return_value=Mock()),
+            patch.object(worker, "watermark", side_effect=[(0, 2), (0, 3)]),
+            patch.object(worker, "verify_order"),
+            patch.object(worker, "update_target"),
+            patch.object(worker, "update_capture", return_value="proof"),
+        ):
+            with self.assertRaisesRegex(src.Failure, "STOPPED_KAFKA_ADVANCED"):
+                worker.stopped_update()
+
+    def test_catchup_resume_allows_insert_or_exact_update_offset_only(self):
+        """配信後・REST確定前後の競合は許すが、別の保存位置を拒否。"""
+        for startup in ("insert", "update", "unknown"):
+            worker = Restart(
+                None, SimpleNamespace(TopicPartition=Mock()), None, "", ""
+            )
+            update, deletion = self.records()[2:4]
+            after_lsn = "00000001:00000004:0001"
+            require_digest = fingerprint(after_lsn)
+            with (
+                patch.object(worker, "connect_identity"),
+                patch.object(worker, "consumer", return_value=Mock()),
+                patch.object(
+                    worker,
+                    "durable",
+                    side_effect=[startup, "update", "delete"],
+                ) as saved,
+                patch.object(worker, "history", return_value="schema"),
+                patch.object(worker, "retained_prefix", return_value="prefix"),
+                patch.object(worker, "evidence", return_value=update),
+                patch.object(
+                    worker, "watermark", side_effect=[(0, 3), (0, 5)]
+                ),
+                patch.object(worker, "verify_final"),
+                patch.object(
+                    worker, "delete_target", return_value=deletion
+                ) as delete,
+                patch("builtins.print"),
+            ):
+                prior = {
+                    "prefix": "prefix",
+                    "history": "schema",
+                    "position": "insert",
+                }
+                if startup == "unknown":
+                    with self.assertRaisesRegex(
+                        src.Failure, "UNEXPECTED_RESTART_POSITION"
+                    ):
+                        worker.after(prior, require_digest)
+                    delete.assert_not_called()
+                else:
+                    worker.after(prior, require_digest)
+                    self.assertEqual(
+                        saved.call_args_list[0].kwargs, {"startup": True}
+                    )
+                    self.assertEqual(
+                        saved.call_args_list[1].kwargs,
+                        {"expected_lsn": after_lsn},
+                    )
+                    delete.assert_called_once()
+
+    def test_unrelated_update_does_not_advance_to_delete(self):
+        """正しい行の形でも停止中SQLで観測したLSNと別なら拒否。"""
+        worker = Restart(
+            None, SimpleNamespace(TopicPartition=Mock()), None, "", ""
+        )
+        with (
+            patch.object(worker, "connect_identity"),
+            patch.object(worker, "durable", return_value="insert") as saved,
+            patch.object(worker, "history", return_value="schema"),
+            patch.object(worker, "retained_prefix", return_value="prefix"),
+            patch.object(worker, "consumer", return_value=Mock()),
+            patch.object(worker, "evidence", return_value=self.records()[2]),
+            patch.object(worker, "delete_target") as delete,
+        ):
+            with self.assertRaisesRegex(
+                src.Failure, "STOPPED_SQL_KAFKA_LSN_MISMATCH"
+            ):
+                worker.after(
+                    {
+                        "prefix": "prefix",
+                        "history": "schema",
+                        "position": "insert",
+                    },
+                    fingerprint("different"),
+                )
+            saved.assert_called_once_with(startup=True)
+            delete.assert_not_called()
 
     def test_seed_capture_requires_real_positive_single_row(self):
         """SQLの空結果や複数の捕捉を成功にしない。"""

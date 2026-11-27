@@ -10,7 +10,7 @@ umask 077
     exit 1
 }
 readonly fixture_mode=${1:-source}
-[[ $# -le 1 && ( $fixture_mode == source || $fixture_mode == restart ) ]] || exit 1
+[[ $# -le 1 && ( $fixture_mode == source || $fixture_mode == restart || $fixture_mode == chain ) ]] || exit 1
 scratch=$(mktemp -d "$RUNNER_TEMP/normal-cdc-source.XXXXXXXX")
 unset DOCKER_CONTEXT DOCKER_HOST
 export DOCKER_CONFIG="$scratch/docker"
@@ -99,14 +99,28 @@ COPY --from=ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e
 COPY cdc.lock /tmp/cdc.lock
 RUN uv --no-cache pip sync --system --require-hashes --only-binary :all: /tmp/cdc.lock
 DOCKERFILE
-dt 180s build --iidfile "$scratch/image.id" "$build" >/dev/null 2>&1
+build_timeout=180s
+if [[ $fixture_mode == chain ]]; then
+    # #50と同じ公式wheelロックだけを起動前に使う。
+    cp "$root/infra/lakehouse/requirements.lock" "$build/lakehouse.lock"
+    cp "$root/tests/integration/cdc_contract_iceberg/requirements.lock" "$build/sqlite.lock"
+    sed -i '$d' "$build/Dockerfile"
+    cat >> "$build/Dockerfile" <<'CHAIN_BUILD'
+COPY lakehouse.lock sqlite.lock /tmp/
+RUN uv --no-cache pip sync --system --require-hashes --only-binary sqlalchemy \
+    --default-index https://pypi.org/simple /tmp/lakehouse.lock /tmp/cdc.lock /tmp/sqlite.lock
+CHAIN_BUILD
+    build_timeout=320s
+fi
+dt "$build_timeout" build --iidfile "$scratch/image.id" "$build" >/dev/null 2>&1
 client_image=$(<"$scratch/image.id")
 [[ $client_image =~ ^sha256:[0-9a-f]{64}$ ]]
 git -C "$root" show HEAD:tests/integration/cdc_contract_sql_source/proof.py > "$scratch/proof.py"
 entry=/fixture/proof.py
 restart_mounts=()
 offset_options=()
-if [[ $fixture_mode == restart ]]; then
+client_options=()
+if [[ $fixture_mode != source ]]; then
     git -C "$root" show HEAD:tests/integration/cdc_contract_sql_source/restart.py > "$scratch/restart.py"
     mkdir "$scratch/restart-state"
     chmod 0444 "$scratch/restart.py"
@@ -116,6 +130,19 @@ if [[ $fixture_mode == restart ]]; then
     )
     offset_options=(-e CONNECT_OFFSET_FLUSH_INTERVAL_MS=1000)
     entry=/fixture/restart.py
+fi
+if [[ $fixture_mode == chain ]]; then
+    snapshot="$scratch/checkout"
+    mkdir -m 0755 "$snapshot"
+    git -C "$root" archive --format=tar HEAD infra/cdc scripts/cdc_contract.py medallion/sources.json |
+        tar -xf - -C "$snapshot"
+    git -C "$root" show HEAD:tests/integration/cdc_contract_sql_source/wire_iceberg.py > "$scratch/wire_iceberg.py"
+    chmod 0444 "$scratch/wire_iceberg.py"
+    restart_mounts+=(
+        --mount "type=bind,src=$scratch/wire_iceberg.py,dst=/fixture/wire_iceberg.py,readonly"
+        --mount "type=bind,src=$snapshot,dst=/checkout,readonly"
+    )
+    client_options=(-e CDC_SQL_SOURCE_CHAIN=true)
 fi
 chmod 0444 "$scratch/proof.py"
 stage=CERTIFICATE
@@ -213,7 +240,7 @@ create connect --network-alias fixture-connect --memory 1440m --cpus 2 --init \
     --mount "type=bind,src=$scratch/trust.p12,dst=/fixture/trust.p12,readonly" "$connect_image"
 create client --memory 768m --cpus 1 --user "$(id -u):$(id -g)" --cap-drop ALL \
     --security-opt no-new-privileges --read-only --tmpfs /tmp:rw,nosuid,nodev \
-    "${restart_mounts[@]}" --env-file "$scratch/client.env" -e CDC_SQL_SOURCE_HOSTED=true -e "CDC_SQL_SOURCE_ID=$id" \
+    "${restart_mounts[@]}" "${client_options[@]}" --env-file "$scratch/client.env" -e CDC_SQL_SOURCE_HOSTED=true -e "CDC_SQL_SOURCE_ID=$id" \
     -e FREETDSCONF=/fixture/freetds.conf -e PYTHONDONTWRITEBYTECODE=1 \
     --mount "type=bind,src=$scratch/proof.py,dst=/fixture/proof.py,readonly" \
     --mount "type=bind,src=$scratch/freetds.conf,dst=/fixture/freetds.conf,readonly" \
@@ -259,16 +286,19 @@ d start "$connect" >/dev/null
 [[ $(d container inspect --format '{{range .NetworkSettings.Networks}}{{.NetworkID}}{{end}}' "$connect") == "$net" ]]
 # Python の固定診断コード以外は、コンテナの出力を転送しない。
 run_client() {
-    local marker=$1
+    local marker=$1 signal
+    shift
     if dt 520s start --attach "$client" > "$scratch/proof.log" 2>&1; then
         if [[ $(d container inspect --format '{{.State.ExitCode}}' "$client") != 0 ]]; then
             printf 'FAIL: HOSTED_CLIENT/EXIT_NOT_ZERO\n' >&2
             exit 1
         fi
-        if ! grep -Fx "$marker" "$scratch/proof.log"; then
-            printf 'FAIL: HOSTED_CLIENT/PASS_MARKER_MISSING\n' >&2
-            exit 1
-        fi
+        for signal in "$@" "$marker"; do
+            if ! grep -Fx "$signal" "$scratch/proof.log"; then
+                printf 'FAIL: HOSTED_CLIENT/PASS_MARKER_MISSING\n' >&2
+                exit 1
+            fi
+        done
     else
         local outcome=$?
         # 固定形の数字/状態だけ。コンテナのlog、環境変数、アドレスは表示しない。
@@ -288,23 +318,61 @@ run_client() {
         exit 1
     fi
 }
+run_chain_client() {
+    local marker='SQL_WIRE_ICEBERG=pass raw=5 current_generations=5 silver_generations=5 broker_next=5'
+    local handoff='SQL_WIRE_SOURCE_HANDOFF=pass records=5'
+    local catchup='SQL_SOURCE_STOPPED_KAFKA_CATCHUP=pass'
+    local exact='SQL_SOURCE_STOPPED_EXACT_SEQUENCE=pass records=5'
+    # allowlist以外はprivate scratchのみ。source完了を保存層の結果と分離する。
+    if dt 520s start --attach "$client" 2>&1 |
+        tee "$scratch/proof.log" | grep --line-buffered -Fxe "$catchup" -e "$exact" -e "$handoff" -e "$marker"; then
+        [[ $(d container inspect --format '{{.State.ExitCode}}' "$client") == 0 ]]
+        grep -Fxq "$catchup" "$scratch/proof.log"
+        grep -Fxq "$exact" "$scratch/proof.log"
+        grep -Fxq "$handoff" "$scratch/proof.log"
+        grep -Fxq "$marker" "$scratch/proof.log"
+    else
+        grep -Em1 '^FAIL: [A-Z0-9_]+/[A-Z0-9_]+$' "$scratch/proof.log" >&2 || true
+        exit 1
+    fi
+}
+connect_stopped() {
+    local started=$1
+    [[ $(d container inspect --format "$label" "$connect") == "$id" &&
+       $(d container inspect --format '{{.State.Status}} {{.State.Running}} {{.State.OOMKilled}}' "$connect") == 'exited false false' &&
+       $(d container inspect --format '{{.State.StartedAt}}' "$connect") == "$started" ]]
+}
 run_selected_fixture() {
-    if [[ $fixture_mode == restart ]]; then
+    if [[ $fixture_mode != source ]]; then
         stage=RESTART_BEFORE
-        [[ ! -e $scratch/restart-state/restart.json ]]
+        [[ ! -e $scratch/restart-state/restart.json && ! -e $scratch/restart-state/stopped.json ]]
         run_client 'SQL_SOURCE_RESTART_BEFORE=pass'
         [[ -f $scratch/restart-state/restart.json && ! -L $scratch/restart-state/restart.json ]]
         stage=RESTART_CONNECT
         before=$(d container inspect --format '{{.State.StartedAt}}' "$connect")
         dt 45s stop -t 30 "$connect" >/dev/null
-        [[ $(d container inspect --format '{{.State.Running}}' "$connect") == false ]]
+        connect_stopped "$before"
+        printf 'SQL_SOURCE_CONNECT_STOP_VERIFIED=pass\n'
+        stage=STOPPED_SQL_UPDATE
+        run_client 'SQL_SOURCE_STOPPED_DML=pass kafka_high=2'
+        [[ -f $scratch/restart-state/stopped.json && ! -L $scratch/restart-state/stopped.json ]]
+        connect_stopped "$before"
+        stage=RESTART_CONNECT_RESUME
         d start "$connect" >/dev/null
         [[ $(d container inspect --format '{{.State.Running}}' "$connect") == true &&
            $(d container inspect --format '{{.State.StartedAt}}' "$connect") != "$before" &&
            $(d container inspect --format "$label" "$connect") == "$id" &&
            $(d container inspect --format '{{range .NetworkSettings.Networks}}{{.NetworkID}}{{end}}' "$connect") == "$net" ]]
+        printf 'SQL_SOURCE_CONNECT_RESTART_VERIFIED=pass\n'
         stage=RESTART_AFTER
-        run_client 'SQL_SOURCE_RESTART=pass snapshot=1 insert=1 update=1 delete=1 tombstone=1'
+        if [[ $fixture_mode == chain ]]; then
+            stage=ICEBERG_CHAIN
+            run_chain_client
+        else
+            run_client 'SQL_SOURCE_RESTART=pass snapshot=1 insert=1 update=1 delete=1 tombstone=1' \
+                'SQL_SOURCE_STOPPED_KAFKA_CATCHUP=pass' \
+                'SQL_SOURCE_STOPPED_EXACT_SEQUENCE=pass records=5'
+        fi
     else
         run_client 'SQL_SOURCE_KAFKA=pass snapshot=1 insert=1 update=1 delete=1 tombstone=1'
     fi
