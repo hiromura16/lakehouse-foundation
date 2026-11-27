@@ -1,5 +1,5 @@
 # 役割: Streamlit画面と認証付きFastAPI/Swaggerを追加する操作面。
-# coreの後に同じprojectへ結合する。素材生成と後続の取込/変換は別の明示操作。
+# coreの後に同じprojectへ結合する。外部入力の取込/変換と参照を明示操作に分ける。
 # 読む順序: demo-apiの書込境界 → landing/private bind → 画面のAPI接続。
 # demoはAPIと画面、mcpはAPIだけを起動対象にする。GUIはmcpから暗黙起動しない。
 # 公開先はBIND_IPの既定loopback。外部公開の認証/TLSは別に準備する。
@@ -16,7 +16,7 @@ x-demo-logging: &demo_logging
     max-file: '3'
 
 services:
-  # 素材と専用private設定へ書き込む唯一の操作コンテナ。Swaggerもここから提供する。
+  # 受信後処理と専用private設定を管理する操作コンテナ。Swaggerもここから提供する。
   # UI/MCPの認証を検査し、非同期jobと固定された操作を管理する。
   # APIの起動成功はworkerや任意profileの処理成功とは別に確認する。
   demo-api:
@@ -47,7 +47,7 @@ services:
     environment:
       CONTROL_API_TOKEN: ${CONTROL_API_TOKEN:-}
       CONTROL_SETTINGS_FILE: /private/${CONTROL_SETTINGS_NAME:-site.env}
-      DEMO_LANDING_DIR: /landing
+      SQL_BATCH_EXCHANGE_DIR: /landing
       WORKER_URL: http://worker:8000
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}

@@ -1,4 +1,4 @@
-"""Check authenticated settings, source-only jobs, and fixed API boundaries."""
+"""Check settings, external-input processing, and fixed API boundaries."""
 
 import contextlib
 import importlib.util
@@ -61,30 +61,12 @@ class ControlApiTests(unittest.TestCase):
             runpy.run_path(
                 str(ROOT / "scripts/configure.py"), run_name="__main__"
             )
-        self.generator = mock.Mock(
-            side_effect=lambda _, **options: {
-                "run_id": options["run_id"],
-                "batch": options["batch"],
-                "sources": [],
-                "manifest": "manifests/synthetic.json",
-            }
-        )
         self.ai_exporter = mock.Mock(return_value={"datasets": []})
-        self.cdc_runner = mock.Mock(
-            side_effect=lambda _, action: {
-                "action": action,
-                "changed_rows": 6,
-                "source_only": True,
-                "private_detail": "unit-private-helper-detail",
-            }
-        )
         self.app = API.create_app(
             self.private,
             token="unit-api-token",
             landing=self.directory / "landing",
-            generator=self.generator,
             ai_exporter=self.ai_exporter,
-            cdc_runner=self.cdc_runner,
         )
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
@@ -105,19 +87,25 @@ class ControlApiTests(unittest.TestCase):
             time.sleep(0.005)
         self.fail("The local test job did not finish.")
 
-    def prepare_cdc(self):
-        """Configure synthetic ownership without touching a real database."""
-        store = self.app.state.store
-        store.save(
-            {
-                "DEMO_SQLSERVER_HOST": "demo-db.example.invalid",
-                "DEMO_SQLSERVER_USER": "unit-demo-admin",
-                "DEMO_SQLSERVER_PASSWORD": "unit-demo-password",
-                "CDC_SQLSERVER_DATABASE": "lh_cdc_demo_0123456789abcdef",
-                "CDC_DEMO_OWNERSHIP_TOKEN": "a" * 64,
-            }
+    def test_removed_writer_routes_and_preserved_processing(self):
+        """投入スキーマを廃止し後続処理の照会と受付を残す。"""
+        paths = self.client.get("/openapi.json").json()["paths"]
+        for path in (
+            "/scenarios",
+            "/cdc/demo/{action}",
+            "/jobs/{identifier}/cancel",
+        ):
+            self.assertNotIn(path, paths)
+        self.assertEqual(set(paths["/jobs"]), {"get"})
+        self.assertEqual(
+            self.request("POST", "/jobs", json={}).status_code, 405
         )
-        store.applied = store.read()
+        self.assertEqual(
+            self.request("POST", "/cdc/demo/insert").status_code, 404
+        )
+        self.assertEqual(self.request("GET", "/jobs").json()["jobs"], [])
+        self.assertIn("/pipeline/{action}", paths)
+        self.assertIn("/sql-source/batches/{mode}", paths)
 
     def test_swagger_assets_do_not_require_a_browser_cdn(self):
         response = self.client.get("/docs")
@@ -129,153 +117,6 @@ class ControlApiTests(unittest.TestCase):
         self.assertIn('"validatorUrl": null', response.text)
         self.assertIn('"persistAuthorization": false', response.text)
 
-    def test_cdc_dml_requires_auth_confirmation_and_prepared_ownership(self):
-        self.assertEqual(
-            self.client.post(
-                "/cdc/demo/insert", json={"confirm": True}
-            ).status_code,
-            401,
-        )
-        for payload in (
-            {},
-            {"confirm": False},
-            {"confirm": 1},
-            {"confirm": "true"},
-            {"confirm": True, "trust_local_test": True},
-            {"confirm": True, "sql": "private-sentinel"},
-        ):
-            with self.subTest(payload=payload):
-                response = self.request(
-                    "POST", "/cdc/demo/insert", json=payload
-                )
-                self.assertEqual(response.status_code, 422)
-                self.assertNotIn("private-sentinel", response.text)
-        response = self.request(
-            "POST", "/cdc/demo/insert", json={"confirm": True}
-        )
-        self.assertEqual(response.status_code, 422)
-        self.assertEqual(response.json()["code"], "CDC_DEMO_NOT_PREPARED")
-        self.prepare_cdc()
-        self.app.state.store.applied["SOURCE_SQLSERVER_DATABASE"] = (
-            "lh_cdc_demo_0123456789abcdef"
-        )
-        self.assertEqual(
-            self.request(
-                "POST", "/cdc/demo/insert", json={"confirm": True}
-            ).status_code,
-            422,
-        )
-        self.assertEqual(
-            self.request(
-                "POST", "/cdc/demo/drop", json={"confirm": True}
-            ).status_code,
-            422,
-        )
-        self.cdc_runner.assert_not_called()
-
-    def test_cdc_dml_is_source_only_and_returns_filtered_job_metadata(self):
-        self.prepare_cdc()
-        with mock.patch.object(API.httpx, "Client") as outbound:
-            for action in ("insert", "update", "delete"):
-                accepted = self.request(
-                    "POST", "/cdc/demo/" + action, json={"confirm": True}
-                )
-                self.assertEqual(accepted.status_code, 202)
-                self.assertEqual(accepted.json()["kind"], "cdc-source")
-                result = self.wait_job(accepted.json()["id"])
-                self.assertEqual(result["status"], "succeeded")
-                self.assertEqual(result["cdc_action"], action)
-                self.assertEqual(result["completed"], 1)
-                self.assertEqual(
-                    result["results"],
-                    [
-                        {
-                            "action": action,
-                            "changed_rows": 6,
-                            "source_only": True,
-                        }
-                    ],
-                )
-                self.assertNotIn("unit-private-helper-detail", str(result))
-            outbound.assert_not_called()
-        self.generator.assert_not_called()
-        values = self.cdc_runner.call_args.args[0]
-        self.assertIn("CDC_DEMO_OWNERSHIP_TOKEN", values)
-        self.assertIn("SOURCE_SQLSERVER_DATABASE", values)
-        self.assertNotIn("WORKER_TOKEN", values)
-        self.assertNotIn("S3_SECRET_KEY", values)
-        self.assertNotIn("CDC_TEST_TRUST_SERVER_CERTIFICATE", values)
-        public = self.request("GET", "/settings")
-        self.assertNotIn('"' + "a" * 64 + '"', public.text)
-        self.assertIn(
-            "CDC_DEMO_OWNERSHIP_TOKEN", public.json()["configured_secrets"]
-        )
-
-    def test_cdc_dml_serializes_with_other_operations_and_cannot_cut_sql(self):
-        self.prepare_cdc()
-        started = threading.Event()
-        release = threading.Event()
-        self.addCleanup(release.set)
-
-        def delayed_source(_, action):
-            started.set()
-            release.wait(2)
-            return {"action": action, "changed_rows": 6, "source_only": True}
-
-        self.cdc_runner.side_effect = delayed_source
-        accepted = self.request(
-            "POST", "/cdc/demo/insert", json={"confirm": True}
-        ).json()
-        self.assertTrue(started.wait(1))
-        for path, payload in (
-            ("/cdc/demo/update", {"confirm": True}),
-            ("/jobs", {}),
-            ("/pipeline/medallion", None),
-        ):
-            self.assertEqual(
-                self.request("POST", path, json=payload).status_code, 409
-            )
-        self.assertEqual(
-            self.request(
-                "PATCH", "/settings", json={"values": {}}
-            ).status_code,
-            409,
-        )
-        cancelled = self.request("POST", "/jobs/" + accepted["id"] + "/cancel")
-        self.assertEqual(cancelled.status_code, 409)
-        self.assertEqual(cancelled.json()["code"], "CDC_DEMO_RUNNING")
-        release.set()
-        self.assertEqual(self.wait_job(accepted["id"])["status"], "succeeded")
-
-    def test_cdc_dml_failures_do_not_return_driver_details(self):
-        self.prepare_cdc()
-        self.cdc_runner.side_effect = ValueError("unit-private-db-password")
-        accepted = self.request(
-            "POST", "/cdc/demo/update", json={"confirm": True}
-        ).json()
-        result = self.wait_job(accepted["id"])
-        self.assertEqual(result["status"], "failed")
-        self.assertEqual(result["error"]["code"], "CDC_DEMO_FAILED")
-        self.assertNotIn("unit-private-db-password", json.dumps(result))
-
-    def test_cdc_bridge_forces_normal_tls(self):
-        module = mock.Mock()
-        specification = mock.Mock()
-        with (
-            mock.patch.object(
-                API.importlib.util,
-                "spec_from_file_location",
-                return_value=specification,
-            ),
-            mock.patch.object(
-                API.importlib.util, "module_from_spec", return_value=module
-            ),
-        ):
-            API.apply_cdc_demo({"synthetic": "settings"}, "insert")
-        module.apply_scenario.assert_called_once_with(
-            {"synthetic": "settings"}, "insert", trust_local_test=False
-        )
-
     def test_auth_is_required_and_swagger_describes_bearer(self):
         self.assertEqual(self.client.get("/health").status_code, 200)
         self.assertEqual(self.client.get("/settings").status_code, 401)
@@ -285,148 +126,8 @@ class ControlApiTests(unittest.TestCase):
         self.assertEqual(response.json()["code"], "AUTH_REQUIRED")
         schema = self.client.get("/openapi.json").json()
         self.assertIn("HTTPBearer", schema["components"]["securitySchemes"])
-        self.assertIn("SourceJob", schema["components"]["schemas"])
-
-    def test_scenario_catalog_is_authenticated_and_matches_shared_metadata(
-        self,
-    ):
-        self.assertEqual(self.client.get("/scenarios").status_code, 401)
-        with mock.patch.object(API.httpx, "Client") as outbound:
-            response = self.request("GET", "/scenarios")
-            outbound.assert_not_called()
-        self.assertEqual(response.status_code, 200)
-        catalog = response.json()
-        engine = API.source_scenario_engine()
-        self.assertEqual(catalog["version"], 1)
-        self.assertEqual(catalog["scenarios"], engine.catalog())
-        self.assertEqual(catalog["presets"], engine.presets())
-        self.assertEqual(
-            catalog["conflicts"], [sorted(group) for group in engine.CONFLICTS]
-        )
-        schema = self.client.get("/openapi.json").json()
-        self.assertIn("ScenarioCatalog", schema["components"]["schemas"])
-        self.assertIn(
-            "anomalies",
-            schema["components"]["schemas"]["SourceJob"]["properties"],
-        )
-
-    def test_selected_anomalies_and_rate_reach_source_only_generator(self):
-        with mock.patch.object(API.httpx, "Client") as outbound:
-            accepted = self.request(
-                "POST",
-                "/jobs",
-                json={
-                    "scenario": "clean",
-                    "anomalies": ["missing_required", "duplicate_row"],
-                    "anomaly_rate": 35,
-                },
-            )
-            self.assertEqual(accepted.status_code, 202)
-            result = self.wait_job(accepted.json()["id"])
-            outbound.assert_not_called()
-        self.assertEqual(result["status"], "succeeded")
-        options = self.generator.call_args.kwargs
-        self.assertEqual(
-            options["anomalies"], ["duplicate_row", "missing_required"]
-        )
-        self.assertEqual(options["anomaly_rate"], 35)
-        self.assertFalse(options["allow_file_faults"])
-        self.assertEqual(options["scenario"], "clean")
-        self.assertNotIn("WORKER_TOKEN", options["settings"])
-
-    def test_invalid_or_incompatible_anomalies_never_start_source_generation(
-        self,
-    ):
-        requests = [
-            {"anomalies": ["missing_required", "missing_required"]},
-            {"anomalies": ["private-sentinel-unknown"]},
-            {"anomalies": "missing_required"},
-            {"anomalies": ["missing_required"] * 33},
-            {"anomaly_rate": 0},
-            {"anomaly_rate": 101},
-            {"anomaly_rate": True},
-            {"allow_file_faults": "true"},
-            {"anomalies": ["wrong_checksum"]},
-            {
-                "anomalies": ["wrong_checksum"],
-                "allow_file_faults": True,
-                "destination": "sqlserver",
-                "allow_sql_write": True,
-            },
-            {"anomalies": ["corrupt_image"], "allow_file_faults": True},
-            {"anomalies": ["invalid_number", "negative_quantity"]},
-            {
-                "anomalies": ["extra_column", "missing_column"],
-                "allow_file_faults": True,
-            },
-        ]
-        for body in requests:
-            with self.subTest(body=body):
-                response = self.request("POST", "/jobs", json=body)
-                self.assertEqual(response.status_code, 422)
-                self.assertEqual(response.json()["code"], "INVALID_REQUEST")
-                self.assertNotIn("private-sentinel-unknown", response.text)
-        self.generator.assert_not_called()
-        self.assertEqual(self.app.state.jobs.jobs, {})
-
-    def test_explicit_file_fault_consent_reaches_the_generator(self):
-        accepted = self.request(
-            "POST",
-            "/jobs",
-            json={
-                "anomalies": ["corrupt_image"],
-                "allow_file_faults": True,
-                "images": True,
-            },
-        )
-        self.assertEqual(accepted.status_code, 202)
-        result = self.wait_job(accepted.json()["id"])
-        self.assertEqual(result["status"], "succeeded")
-        options = self.generator.call_args.kwargs
-        self.assertEqual(options["anomalies"], ["corrupt_image"])
-        self.assertTrue(options["allow_file_faults"])
-        self.assertTrue(options["images"])
-
-    def test_intentional_file_fault_generation_succeeds_with_real_sources(
-        self,
-    ):
-        self.app = API.create_app(
-            self.private,
-            token="unit-api-token",
-            landing=self.directory / "real-landing",
-        )
-        self.client = TestClient(self.app)
-        self.addCleanup(self.client.close)
-        with mock.patch.object(API.httpx, "Client") as outbound:
-            response = self.request(
-                "POST",
-                "/jobs",
-                json={
-                    "scenario": "clean",
-                    "anomalies": ["wrong_checksum"],
-                    "allow_file_faults": True,
-                },
-            )
-            self.assertEqual(response.status_code, 202)
-            result = self.wait_job(response.json()["id"])
-            outbound.assert_not_called()
-        self.assertEqual(result["status"], "succeeded")
-        generated = result["results"][0]
-        diagnostics = generated["diagnostics"]
-        self.assertEqual(diagnostics["anomalies"], ["wrong_checksum"])
-        self.assertTrue(diagnostics["intentional_file_faults"])
-        fault = diagnostics["file_faults"][0]
-        source = self.directory / "real-landing" / fault["path"]
-        marker = source.with_name(source.name + ".ready")
-        self.assertTrue(source.is_file())
-        self.assertNotEqual(
-            marker.read_text().strip(),
-            next(
-                item["sha256"]
-                for item in generated["sources"]
-                if item["path"] == fault["path"]
-            ),
-        )
+        self.assertIn("JobView", schema["components"]["schemas"])
+        self.assertNotIn("SourceJob", schema["components"]["schemas"])
 
     def test_settings_never_return_secrets_or_authentication_values(self):
         values = self.app.state.store.read()
@@ -507,122 +208,6 @@ class ControlApiTests(unittest.TestCase):
         self.assertTrue(response.json()["pending_mount_change"])
         self.assertEqual(self.app.state.jobs.output, current_output)
 
-    def test_source_job_calls_only_the_generator_with_minimal_settings(self):
-        with mock.patch.object(API.httpx, "Client") as outbound:
-            accepted = self.request("POST", "/jobs", json={}).json()
-            result = self.wait_job(accepted["id"])
-            outbound.assert_not_called()
-        self.assertEqual(result["status"], "succeeded")
-        self.assertEqual(result["completed"], 1)
-        kwargs = self.generator.call_args.kwargs
-        self.assertEqual(kwargs["destination"], "landing")
-        self.assertFalse(kwargs["allow_sql_write"])
-        self.assertNotIn("S3_SECRET_KEY", kwargs["settings"])
-        self.assertNotIn("WORKER_TOKEN", kwargs["settings"])
-
-    def test_sql_consent_and_stream_limits_are_validated(self):
-        for payload in [
-            {"destination": "sqlserver"},
-            {"batches": 2},
-            {"mode": "stream", "batches": 101},
-            {"mode": "stream", "batches": 60, "interval_seconds": 60},
-            {"orders": 1001},
-            {"mode": "stream", "interval_seconds": 61},
-            {"extra": "sentinel-private-input"},
-        ]:
-            with self.subTest(keys=list(payload)):
-                response = self.request("POST", "/jobs", json=payload)
-                self.assertEqual(response.status_code, 422)
-                self.assertNotIn("sentinel-private-input", response.text)
-        self.generator.assert_not_called()
-
-    def test_demo_ca_maps_only_from_the_private_directory(self):
-        store = self.app.state.store
-        certificate = store.path.parent / "enterprise-ca.pem"
-        certificate.write_text("synthetic certificate placeholder")
-        store.applied["CONTROL_SETTINGS_DIR"] = "/srv/company/private"
-        store.applied["DEMO_SQLSERVER_CA_FILE"] = (
-            "/srv/company/private/enterprise-ca.pem"
-        )
-        mapped = store.source_settings()
-        self.assertEqual(mapped["DEMO_SQLSERVER_CA_FILE"], str(certificate))
-        self.assertIn("SOURCE_SQLSERVER_DATABASE", mapped)
-        self.assertNotIn("S3_SECRET_KEY", mapped)
-        store.applied["DEMO_SQLSERVER_CA_FILE"] = "/srv/outside-ca.pem"
-        with self.assertRaises(ValueError):
-            store.source_settings()
-        linked = store.path.parent / "linked-ca.pem"
-        linked.symlink_to(certificate)
-        store.applied["DEMO_SQLSERVER_CA_FILE"] = (
-            "/srv/company/private/linked-ca.pem"
-        )
-        with self.assertRaises(ValueError):
-            store.source_settings()
-
-    def test_job_reports_that_saved_settings_are_not_active(self):
-        self.request(
-            "PATCH",
-            "/settings",
-            json={"values": {"TRINO_PORT": "8090"}},
-        )
-        accepted = self.request("POST", "/jobs", json={}).json()
-        self.assertTrue(accepted["pending_restart"])
-        result = self.wait_job(accepted["id"])
-        self.assertTrue(result["pending_restart"])
-
-    def test_source_failure_is_redacted(self):
-        self.generator.side_effect = RuntimeError(
-            "sentinel-private-db-password"
-        )
-        accepted = self.request("POST", "/jobs", json={}).json()
-        result = self.wait_job(accepted["id"])
-        self.assertEqual(result["status"], "failed")
-        self.assertEqual(result["error"]["code"], "SOURCE_GENERATION_FAILED")
-        self.assertNotIn("sentinel-private-db-password", json.dumps(result))
-
-    def test_finite_stream_can_be_cancelled_between_batches(self):
-        accepted = self.request(
-            "POST",
-            "/jobs",
-            json={"mode": "stream", "batches": 3, "interval_seconds": 1},
-        ).json()
-        deadline = time.monotonic() + 1
-        while self.app.state.jobs.get(accepted["id"])["completed"] < 1:
-            self.assertLess(time.monotonic(), deadline)
-            time.sleep(0.005)
-        self.request("POST", "/jobs/" + accepted["id"] + "/cancel")
-        result = self.wait_job(accepted["id"])
-        self.assertEqual(result["status"], "cancelled")
-        self.assertEqual(result["completed"], 1)
-
-    def test_mutex_rejects_overlapping_jobs_settings_and_pipeline(self):
-        release = threading.Event()
-        started = threading.Event()
-        self.addCleanup(release.set)
-
-        def blocked_generator(*_, **options):
-            started.set()
-            release.wait(2)
-            return {"batch": options["batch"], "sources": []}
-
-        self.generator.side_effect = blocked_generator
-        accepted = self.request("POST", "/jobs", json={}).json()
-        self.assertTrue(started.wait(1))
-        self.assertEqual(
-            self.request("POST", "/jobs", json={}).status_code, 409
-        )
-        self.assertEqual(
-            self.request("POST", "/pipeline/verify").status_code, 409
-        )
-        self.assertEqual(
-            self.request(
-                "PATCH", "/settings", json={"values": {}}
-            ).status_code,
-            409,
-        )
-        release.set()
-        self.assertEqual(self.wait_job(accepted["id"])["status"], "succeeded")
-
     def test_pipeline_returns_job_id_without_waiting_and_filters_worker_data(
         self,
     ):
@@ -662,13 +247,12 @@ class ControlApiTests(unittest.TestCase):
                 self.request(
                     "POST", "/jobs/" + identifier + "/cancel"
                 ).status_code,
-                409,
+                404,
             )
             release.set()
             result = self.wait_job(identifier)
         self.assertEqual(result["status"], "succeeded")
         self.assertNotIn("sentinel-private-worker-detail", json.dumps(result))
-        self.generator.assert_not_called()
         self.assertEqual(
             driver.post.call_args.args[0], "http://worker:8000/run"
         )

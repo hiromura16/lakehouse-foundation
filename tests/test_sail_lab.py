@@ -90,7 +90,7 @@ class FixtureTests(unittest.TestCase):
     def test_immutable_six_source_fixture(self):
         self.assertEqual(
             self.checksum,
-            "34507de1fc2622c82a31591602c01c728f47eb3704252fd99f3d09846166f824",
+            "5ad91dbf7126c34df019592a96b6b8ce9f515973fe2f47452b93b5eb69c63203",
         )
         self.assertEqual(set(self.fixture["sources"]), set(contract.SOURCES))
         self.assertEqual(sum(map(len, self.fixture["sources"].values())), 145)

@@ -200,19 +200,9 @@ Sail用の新しい接続体系・資格情報キーは追加しません。既�
 
 `source-check` はTCP到達確認だけです。実際のSQL認証・SELECT・TLS・6表の列対応は `extract-sqlserver.py` で確認します。`SOURCE_SQLSERVER_*` を設定してcoreを起動しただけでは、業務データの抽出やCDCは開始しません。[SOURCE-SQLSERVER.md](SOURCE-SQLSERVER.md)
 
-## 合成データを専用SQLへ書くDEMO設定
+## 旧書込み設定と読取識別子
 
-| 項目 | 生成時の既定 | 意味と変更時の影響 | 秘密 |
-| --- | --- | --- | --- |
-| `DEMO_SQLSERVER_HOST` | 空 | 汎用合成データの投入先。SOURCEと別の専用DB | 社内 |
-| `DEMO_SQLSERVER_PORT` | `1433` | テストDBのTCP port | 社内 |
-| `DEMO_SQLSERVER_DATABASE` | 空 | 作成済みの非system DB。SOURCE同名への汎用生成は拒否 | 社内 |
-| `DEMO_SQLSERVER_USER` | 空 | 汎用のランダムschema生成用principal。SOURCE readerやcontrolに転用しない | 社内 |
-| `DEMO_SQLSERVER_PASSWORD` | 空 | そのテスト用ログインのパスワード | はい |
-| `DEMO_SQLSERVER_CA_FILE` | 空（実行時は `system`） | テストDBのTLS検証に使うホスト側PEMまたはsystem trust | 社内 |
-| `DEMO_SQLSERVER_HOSTNAME_IN_CERTIFICATE` | 空 | 接続先alias/IPと証明書名が異なる場合に、CAで検証した証明書へ照合する明示名。英数字・`_`・`.`・`-` の1〜253文字。空なら接続hostを照合し、TLS検証は維持する | 社内 |
-
-SOURCEは**読み取り**、DEMOは明示的に許可した**書き込み**です。DEMOへの投入は `generate-demo.py --destination sqlserver` 等に加え、`--env-file` と `--allow-sql-write` を必要とし、毎回新しい `lh_demo_...` スキーマを作ります。通常の会社導入で業務データを読むだけなら、DEMO項目は空のままで構いません。[DEMO-DATA.md](DEMO-DATA.md)
+旧内蔵writer用の設定・資格情報は新規作成されず、操作画面にも表示されません。既存のprivate設定ファイルは移行時に削除・変更しません。固定SQL受信に必要な `DEMO_SQLSERVER_*` の導入ID、所有権鍵および固定schema名は互換のため維持します。
 
 ## GUIと操作APIのprivate設定
 
@@ -226,7 +216,6 @@ SOURCEは**読み取り**、DEMOは明示的に許可した**書き込み**で�
 
 GUIの保存は **saved**、コンテナへの反映は **applied** と区別します。設定APIは保存後も起動時のDEMO接続設定を使い、変更がある間は `pending_restart` を返します。`LANDING_DIR` を保存しても `/landing` mountは移りません。profile/port/UID/volume/秘密鍵の変更は影響を確認し、同じ設定でCLIまたはDokployから再配置します。DokployのEnvironmentとprivateファイルは自動同期しません。[API.md](API.md)
 
-GUIからSQLへ素材を投入する場合は、`DEMO_SQLSERVER_CA_FILE` のCAをこの専用dir配下へ置くと、host側絶対pathをAPIの `/private` 側へ安全に対応付けます。dir外、symlink、regular file以外は拒否します。CLIは元のhost pathを使えます。`SOURCE_SQLSERVER_CA_FILE` やJava用truststoreを同じ仕組みで自動配布する設定ではありません。
 
 ## SQL Serverの変更を読むCDC設定
 
@@ -242,7 +231,6 @@ CDCはSOURCEの全件SELECTと別の選択機能です。DB担当がSQL Server�
 | `CDC_SQLSERVER_DATABASE` | 空 | CDC有効化済みの対象業務DB。変更は別のcapture履歴として設計する | 社内 |
 | `CDC_SQLSERVER_USER` | 空 | DBAが許可したcapture読取用ログイン。通常のSELECT専用ログインと権限を混同しない | 社内 |
 | `CDC_SQLSERVER_PASSWORD` | 空 | capture読取用パスワード。Debeziumへ環境変数providerで渡す | はい |
-| `CDC_DEMO_OWNERSHIP_TOKEN` | 空 | 準備済み専用CDC検証DBの所有権を確認する秘密鍵。DB準備helperが生成した値を保持し、通常の会社DBには使わない | はい |
 | `CDC_SQLSERVER_TRUSTSTORE` | 空 | Javaの既定CAを使うか、`/run/cdc/sqlserver-truststore.p12` のコンテナ側truststore pathを指定。host pathをそのまま書かない | 社内 |
 | `CDC_SQLSERVER_TRUSTSTORE_FILE` | 空 | host側のPKCS12/JKSファイル。公開CA証明書だけを格納し、Connectの `/run/cdc/sqlserver-truststore.p12` へ単一ファイルでread-only mount。変更は再配置が必要 | 社内 |
 | `CDC_SQLSERVER_TRUSTSTORE_PASSWORD` | 空 | 上記truststoreのパスワード | はい |
@@ -257,7 +245,6 @@ CDCはSOURCEの全件SELECTと別の選択機能です。DB担当がSQL Server�
 | `CDC_BATCH_SIZE` | `100` | 1バッチに読む変更イベント数。1〜1000で、メモリ・反映頻度との兼ね合いを見る | いいえ |
 | `CDC_POLL_SECONDS` | `5` | 1バッチの取得待ち秒数。1〜60 | いいえ |
 
-これらは設定画面のallowlistにも含み、所有権tokenも秘密欄として読み戻しません。CDC用のソース変更APIは `CDC_DEMO_OWNERSHIP_TOKEN` と専用DB内markerの一致を要求し、DEMO管理資格情報で固定した追加/更新/削除だけを実行します。[API.md](API.md#cdc用の追加更新削除を試す)
 
 CDC接続・mapping・connector登録の検査はCDCツールが行い、設定保存だけを会社DBへの接続成功とは扱いません。`CDC_CONFIG_DIR` / `CDC_SQLSERVER_TRUSTSTORE_FILE` の保存は `pending_mount_change` になります。topic、group、cluster ID、volumeの変更は単なる表示名の変更ではなく、再読込・重複・履歴分離に関わるため、既存offsetとraw eventを確認してから行います。
 

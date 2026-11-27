@@ -9,14 +9,12 @@ GUI・CLI等の処理依頼は常駐workerの固定HTTP入口へ集約する。
 """
 
 import argparse
+import base64
 import csv
 import json
 import os
 import re
 import secrets
-import subprocess
-import sys
-import tempfile
 import threading
 import time
 import traceback
@@ -37,8 +35,8 @@ from PIL import Image
 from pyiceberg.catalog import load_catalog
 from pyiceberg.expressions import EqualTo
 
+from scripts.raw_file_input import BatchValidationError, RawFile, ready_files
 from scripts.raw_file_input import completion_hash as completion_hash
-from scripts.raw_file_input import ready_files
 
 ROOT = Path("/opt/lakehouse")
 HTTP = requests.Session()
@@ -247,7 +245,7 @@ def overwrite(table, rows, column, value):
 
 
 def resolve_source(relative):
-    """相対pathから、固定6契約または正式なGUI増分名を照合する。
+    """相対pathから、固定6契約または従来の互換増分名を照合する。
 
     一致した契約を返し、未知の名前はNoneを返す。未知ファイルは原本保存の
     対象にはなるが、任意の業務表として自動認識しない。
@@ -267,7 +265,83 @@ def resolve_source(relative):
     return None
 
 
-def ingest(directory=Path("/landing"), prefix=""):
+def source_rows(raw, source):
+    """業務契約に含まれる列だけを外部ファイルから読み取る。"""
+    if raw.path.suffix == ".csv":
+        rows = list(csv.DictReader(StringIO(raw.data.decode("utf-8-sig"))))
+    else:
+        rows = [
+            json.loads(line)
+            for line in raw.data.decode("utf-8-sig").splitlines()
+            if line.strip()
+        ]
+    if len(rows) > 100000 or not all(
+        isinstance(row, dict) and set(row) == set(source["columns"])
+        for row in rows
+    ):
+        raise ValueError(
+            "Input does not match its declared columns/row limit."
+        )
+    return rows
+
+
+IMAGE_FORMATS = {
+    ".png": "PNG",
+    ".jpg": "JPEG",
+    ".jpeg": "JPEG",
+    ".webp": "WEBP",
+}
+
+
+def inspect_image(raw, *, match_extension=False):
+    """元の画像を検証し、寸法とMIMEだけを返す。"""
+    mime = "application/octet-stream"
+    expected = IMAGE_FORMATS.get(raw.path.suffix.lower())
+    if expected is None:
+        return None, mime
+    with Image.open(BytesIO(raw.data)) as decoded:
+        if match_extension and decoded.format != expected:
+            raise ValueError("Image format does not match its extension.")
+        decoded.verify()
+    # verify後のdecoderは再利用できない。
+    with Image.open(BytesIO(raw.data)) as decoded:
+        return (decoded.width, decoded.height), Image.MIME.get(
+            decoded.format, mime
+        )
+
+
+def validate_v2_payload(raw):
+    """永続化前にv2原本の決定的な形式エラーを検出する。"""
+    source = resolve_source(raw.relative)
+    suffix = raw.path.suffix.lower()
+    try:
+        if source:
+            source_rows(raw, source)
+        elif suffix == ".csv":
+            # 汎用CSVの区切りは生成元設定。Raw経路で列を推測しない。
+            raw.data.decode("utf-8-sig")
+        elif suffix == ".json":
+            json.loads(raw.data.decode("utf-8-sig"))
+        elif suffix == ".jsonl":
+            for line in raw.data.decode("utf-8-sig").splitlines():
+                if line.strip():
+                    json.loads(line)
+        elif suffix in IMAGE_FORMATS:
+            inspect_image(raw, match_extension=True)
+    except (
+        ValueError,
+        csv.Error,
+        OSError,
+        SyntaxError,
+        RecursionError,
+        Image.DecompressionBombError,
+    ) as error:
+        raise BatchValidationError(
+            "artifact_format", "Completed batch artifact format is invalid."
+        ) from error
+
+
+def ingest(directory=Path("/landing"), prefix="", input_files=None):
     """ready付き原本を照合し、原本・業務文字列・完了台帳を保存する。
 
     directoryは読取元、prefixは通常または隔離検証のnamespaceを選ぶ。
@@ -279,15 +353,25 @@ def ingest(directory=Path("/landing"), prefix=""):
     ensure_tables(prefix)
     cat = catalog()
     files = cat.load_table(schema(prefix, "bronze") + ".files")
-    imported = skipped = 0
+    imported = skipped = rejected = 0
+    rejection_samples = []
+
+    def record_rejection(marker_id, reason):
+        """拒否した完成印を移動せず、理由だけを上限付きで報告する。"""
+        nonlocal rejected
+        rejected += 1
+        if len(rejection_samples) < 20:
+            rejection_samples.append({"id": marker_id, "reason": reason})
+
     # 工程1: 完了印と原本を照合した RAW 入力だけを永続化へ渡す。
-    for raw in ready_files(directory):
-        path, relative, data, digest = (
-            raw.path,
-            raw.relative,
-            raw.data,
-            raw.digest,
+    if input_files is None:
+        input_files = ready_files(
+            directory,
+            on_rejected_batch=record_rejection,
+            validate_payload=validate_v2_payload,
         )
+    for raw in input_files:
+        relative, data, digest = raw.relative, raw.data, raw.digest
         previous = (
             files.scan(row_filter=EqualTo("path", relative))
             .to_arrow()
@@ -303,22 +387,7 @@ def ingest(directory=Path("/landing"), prefix=""):
         if source:
             # 業務契約へ一致する素材だけを解釈し、型の妥当性はSilverへ委ねる。
             # 未知のCSV等は任意表へせず、下段の原本保存と台帳登録だけを行う。
-            if path.suffix == ".csv":
-                rows = list(csv.DictReader(StringIO(data.decode("utf-8-sig"))))
-            else:
-                rows = [
-                    json.loads(line)
-                    for line in data.decode("utf-8-sig").splitlines()
-                    if line.strip()
-                ]
-            if len(rows) > 100000 or not all(
-                isinstance(row, dict) and set(row) == set(source["columns"])
-                for row in rows
-            ):
-                raise ValueError(
-                    "Input does not match its declared source "
-                    "columns/row limit."
-                )
+            rows = source_rows(raw, source)
             stamp = datetime.now(timezone.utc).isoformat()
             rows = [
                 {
@@ -340,15 +409,7 @@ def ingest(directory=Path("/landing"), prefix=""):
             + sha256(relative.encode()).hexdigest()
         )
         uri = "s3://" + bucket + "/" + key
-        mime = "application/octet-stream"
-        image = None
-        if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
-            # verify後のdecoderは再利用せず、寸法取得は別に開き直す。
-            with Image.open(BytesIO(data)) as decoded:
-                decoded.verify()
-            with Image.open(BytesIO(data)) as decoded:
-                image = (decoded.width, decoded.height)
-                mime = Image.MIME.get(decoded.format, mime)
+        image, mime = inspect_image(raw)
         # 工程3: 内容とpathのhashで原本を識別し、同名fileの旧版もS3へ残す。
         # 以降で失敗しても原本は残り得るが、完了台帳を先に進めない。
         S3.put_object(Bucket=bucket, Key=key, Body=data, ContentType=mime)
@@ -377,7 +438,12 @@ def ingest(directory=Path("/landing"), prefix=""):
         overwrite(files, [meta], "path", relative)
         imported += 1
     STATE["imported_files"] += imported
-    return {"imported": imported, "skipped": skipped}
+    result = {"imported": imported, "skipped": skipped}
+    if rejected:
+        result.update(
+            rejected_batches=rejected, batch_rejections=rejection_samples
+        )
+    return result
 
 
 class WorkerBlockedError(RuntimeError):
@@ -526,8 +592,20 @@ def medallion(prefix=""):
     return {"sql_statements": count}
 
 
+def verification_inputs(directory):
+    """公開用のASCII画像fixtureを戻し、実Landingへ書かずに照合する。"""
+    relative = "images/inspection.png"
+    encoded = (directory / (relative + ".b64")).read_bytes()
+    data = base64.b64decode(b"".join(encoded.split()), validate=True)
+    digest = sha256(data).hexdigest()
+    if digest != completion_hash(directory / (relative + ".ready")):
+        raise ValueError("Verification fixture checksum mismatch.")
+    image = RawFile(directory / relative, relative, data, digest)
+    return image, (*ready_files(directory), image)
+
+
 def verify():
-    """専用namespaceで固定合成素材・画像・再実行の期待値を照合する。
+    """専用namespaceで固定の外部入力fixture・画像・再実行の期待値を照合する。
 
     取込→変換→独立期待値→同一素材の再取込→再変換の順に検査する。
     結果は成功した検査名と取込件数。通常の業務表は変更対象にしない。
@@ -538,90 +616,66 @@ def verify():
     cat = catalog()
     result = {"checks": []}
     try:
-        with tempfile.TemporaryDirectory(
-            prefix="lakehouse-fixtures-"
-        ) as directory:
-            command = [
-                sys.executable,
-                str(ROOT / "scripts" / "generate-demo.py"),
-                "--output",
-                directory,
-                "--seed",
-                "42",
-                "--orders",
-                "20",
-                "--days",
-                "7",
-                "--scenario",
-                "edge",
-            ]
-            subprocess.run(command, check=True)
-            # 業務行の期待値とは別に、画像原本のバイト列保存も検査する。
-            image_path = Path(directory) / "images" / "inspection.png"
-            image_path.parent.mkdir()
-            Image.new("RGB", (4, 4), color="gray").save(image_path)
-            image_hash = sha256(image_path.read_bytes()).hexdigest()
-            image_path.with_name(image_path.name + ".ready").write_text(
-                image_hash + "\n"
+        # 本物のLandingへ書き込まない。外部入力と同じ契約の静的データを読む。
+        directory = ROOT / "samples" / "landing-contract"
+        image, inputs = verification_inputs(directory)
+        image_hash = image.digest
+        first = ingest(directory, prefix, inputs)
+        medallion(prefix)
+        image_table = cat.load_table(schema(prefix, "bronze") + ".images")
+        image_record = image_table.scan().to_arrow().to_pylist()[0]
+        image_uri = urlsplit(image_record["s3_uri"])
+        original = S3.get_object(
+            Bucket=image_uri.netloc,
+            Key=image_uri.path.lstrip("/"),
+        )["Body"].read()
+        if sha256(original).hexdigest() != image_hash:
+            raise AssertionError("Stored image bytes do not match.")
+        result["checks"].append("image original bytes and hash preserved")
+        checks = json.loads(
+            (ROOT / "medallion/expected-demo.json").read_text()
+        )["checks"]
+        for check in checks:
+            # 版管理した検査SQLと独立期待値を使い、生成件数で代用しない。
+            sql = (
+                check.get("sql")
+                or (ROOT / "medallion" / check["sql_file"]).read_text()
             )
-            first = ingest(Path(directory), prefix)
-            medallion(prefix)
-            image_table = cat.load_table(schema(prefix, "bronze") + ".images")
-            image_record = image_table.scan().to_arrow().to_pylist()[0]
-            image_uri = urlsplit(image_record["s3_uri"])
-            original = S3.get_object(
-                Bucket=image_uri.netloc,
-                Key=image_uri.path.lstrip("/"),
-            )["Body"].read()
-            if sha256(original).hexdigest() != image_hash:
-                raise AssertionError("Stored image bytes do not match.")
-            result["checks"].append("image original bytes and hash preserved")
-            checks = json.loads(
-                (ROOT / "medallion/expected-demo.json").read_text()
-            )["checks"]
-            for check in checks:
-                # 版管理した検査SQLと独立期待値を使い、生成件数で代用しない。
-                sql = (
-                    check.get("sql")
-                    or (ROOT / "medallion" / check["sql_file"]).read_text()
+            for layer in ["bronze", "silver", "gold", "quarantine"]:
+                sql = sql.replace(
+                    "iceberg." + layer + ".",
+                    "iceberg." + schema(prefix, layer) + ".",
                 )
-                for layer in ["bronze", "silver", "gold", "quarantine"]:
-                    sql = sql.replace(
-                        "iceberg." + layer + ".",
-                        "iceberg." + schema(prefix, layer) + ".",
-                    )
-                actual = query(sql)
-                if actual != check["expected"]:
-                    raise AssertionError(
-                        "MES/ERP check failed: " + check["name"]
-                    )
-                result["checks"].append(check["name"])
-            second = ingest(Path(directory), prefix)
-            if second["imported"]:
-                raise AssertionError("Unchanged inputs imported twice.")
-            medallion(prefix)
-            for check in checks:
-                # 再実行後にも同じ期待値を照合し、追記二重計上を検出する。
-                sql = (
-                    check.get("sql")
-                    or (ROOT / "medallion" / check["sql_file"]).read_text()
-                )
-                for layer in ["bronze", "silver", "gold", "quarantine"]:
-                    sql = sql.replace(
-                        "iceberg." + layer + ".",
-                        "iceberg." + schema(prefix, layer) + ".",
-                    )
-                if query(sql) != check["expected"]:
-                    raise AssertionError("Medallion replay changed results.")
-            result.update(
-                first_import=first,
-                replay_import=second,
-                isolated_namespaces=True,
-                ok=True,
+            actual = query(sql)
+            if actual != check["expected"]:
+                raise AssertionError("MES/ERP check failed: " + check["name"])
+            result["checks"].append(check["name"])
+        second = ingest(directory, prefix, inputs)
+        if second["imported"]:
+            raise AssertionError("Unchanged inputs imported twice.")
+        medallion(prefix)
+        for check in checks:
+            # 再実行後にも同じ期待値を照合し、追記二重計上を検出する。
+            sql = (
+                check.get("sql")
+                or (ROOT / "medallion" / check["sql_file"]).read_text()
             )
+            for layer in ["bronze", "silver", "gold", "quarantine"]:
+                sql = sql.replace(
+                    "iceberg." + layer + ".",
+                    "iceberg." + schema(prefix, layer) + ".",
+                )
+            if query(sql) != check["expected"]:
+                raise AssertionError("Medallion replay changed results.")
+        result.update(
+            first_import=first,
+            replay_import=second,
+            isolated_namespaces=True,
+            ok=True,
+        )
     finally:
         # 検査失敗でも自分の隔離先だけを掃除し、共有namespaceは消さない。
-        # 取消未確定時はqueryが使用中かもしれないため、隔離先も保全する。
+        # クエリの停止を確認できない場合は、検証先を削除しない。
         if not STATE["blocked"]:
             cleanup_verification(cat, prefix)
     return result

@@ -241,16 +241,20 @@ HELP_DOCUMENTS = {
     ),
     "company": ("会社への導入", "COMPANY-ROLLOUT.md", "導入と受入の順序"),
     "configuration": ("設定一覧", "CONFIGURATION.md", "設定と反映の区別"),
-    "demo": ("素材投入GUI", "DEMO-GUI.md", "素材生成と専用SQLへの投入"),
+    "demo": (
+        "外部入力・処理ポータル",
+        "DEMO-GUI.md",
+        "受信後の処理・参照・監視",
+    ),
     "fixed-sql": (
         "固定SQL source",
         "SQLSERVER-FIXED-DEMO.md",
         "所有権・限定reader権限と固定6表の検証",
     ),
     "anomalies": (
-        "異常シナリオ",
+        "外部入力の受入検証",
         "ANOMALY-SCENARIOS.md",
-        "26ケースの期待挙動",
+        "完成印・隔離・再処理の期待挙動",
     ),
     "medallion": ("メダリオン", "MEDALLION.md", "粒度・改訂・隔離・集計"),
     "proxy": ("会社proxy / CA", "PROXY.md", "接続主体別の設定と診断"),
@@ -475,7 +479,6 @@ def capabilities(values=None) -> dict:
         ),
         ("quality", "GET", "/quality", "read", "固定6表の層ごとの件数"),
         ("status", "GET", "/status", "read", "固定内部サービスの状態"),
-        ("scenarios", "GET", "/scenarios", "read", "合成異常の定義と期待挙動"),
         ("jobs", "GET", "/jobs", "read", "メモリ内の最近の実行履歴"),
         ("job", "GET", "/jobs/{id}", "read", "既知ジョブの進捗と結果"),
         ("help", "GET", "/help", "read", "同梱した公開文書の一覧"),
@@ -497,7 +500,6 @@ def capabilities(values=None) -> dict:
         ),
         ("settings", "GET", "/settings", "read", "非秘密設定と設定済みの印"),
         ("save_settings", "PATCH", "/settings", "write", "private設定の保存"),
-        ("generate", "POST", "/jobs", "write", "合成素材だけを生成"),
         (
             "sql_batch",
             "POST",
@@ -553,20 +555,6 @@ def capabilities(values=None) -> dict:
             "/pipeline/{action}",
             "write",
             "明示した後続処理",
-        ),
-        (
-            "cdc_demo",
-            "POST",
-            "/cdc/demo/{action}",
-            "write",
-            "所有する専用DBの固定DML",
-        ),
-        (
-            "cancel",
-            "POST",
-            "/jobs/{id}/cancel",
-            "write",
-            "次の素材バッチを取消",
         ),
     ]
     return {

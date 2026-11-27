@@ -59,13 +59,13 @@
     },
     {
       "path": "docs/ANOMALY-SCENARIOS.md",
-      "title": "異常シナリオを選んで素材を作る",
-      "purpose": "行・業務値とファイル転送の異常を選び、生成診断と下流の期待挙動を比較する。",
+      "title": "外部入力の受入・隔離を検証する",
+      "purpose": "外部入力の受入、拒否、型検証、隔離、再処理を照合する。",
       "audience": [
         "データ利用担当",
         "開発・設計担当"
       ],
-      "when_to_use": "正常素材との差分、隔離、重複、破損・未完成入力を試す計画を立てるとき。",
+      "when_to_use": "正常と不正の入力を外部から試し、結果を比較するとき。",
       "category": "03 データ・操作",
       "prerequisites": [
         "docs/DEMO-GUI.md",
@@ -80,7 +80,7 @@
     {
       "path": "docs/API.md",
       "title": "GUI操作APIとSwagger",
-      "purpose": "Swaggerの認証と固定APIを使い、設定保存・素材生成・非同期job・参照を行う。",
+      "purpose": "Swaggerの認証と固定APIを使い、設定保存・外部入力の後続処理・非同期job・参照を行う。",
       "audience": [
         "データ利用担当",
         "開発・設計担当"
@@ -282,13 +282,13 @@
     },
     {
       "path": "docs/DEMO-DATA.md",
-      "title": "MES・ERPのダミーデータ投入",
-      "purpose": "6種のMES・ERP素材、画像、SQL投入、有限streamの生成仕様とCLIを確認する。",
+      "title": "外部ファイルのLanding入力契約",
+      "purpose": "CSV・JSON Lines・画像の契約と完成印を確認する。",
       "audience": [
         "データ利用担当",
         "開発・設計担当"
       ],
-      "when_to_use": "ダミー生成の入力・出力・書込範囲を決め、素材だけを準備するとき。",
+      "when_to_use": "外部アプリからLandingへファイルを届けるとき。",
       "category": "03 データ・操作",
       "prerequisites": [
         "docs/START-HERE.md"
@@ -302,13 +302,13 @@
     },
     {
       "path": "docs/DEMO-GUI.md",
-      "title": "GUIからダミーデータを投入する",
-      "purpose": "Streamlitで素材生成条件を選び、投入jobと生成結果を確認する。",
+      "title": "GUIで外部データの処理を確認する",
+      "purpose": "外部入力の後続処理、接続診断、状態と履歴を確認する。",
       "audience": [
         "初めて使う人",
         "データ利用担当"
       ],
-      "when_to_use": "配置済みの合成検証環境へ、GUIからダミー素材を投入するとき。",
+      "when_to_use": "外部入力を受信後、ポータルから処理を確認するとき。",
       "category": "03 データ・操作",
       "prerequisites": [
         "docs/START-HERE.md"
@@ -1068,13 +1068,13 @@
     },
     {
       "path": "samples/README.md",
-      "title": "合成入力を最初に作る",
-      "purpose": "実データを使わずに最初の6契約素材を生成し、出力と後続処理の境界を確認する。",
+      "title": "外部入力の契約fixture",
+      "purpose": "固定のCSV・JSON Lines・画像と完成印の役割を説明する。",
       "audience": [
         "初めて使う人",
         "データ利用担当"
       ],
-      "when_to_use": "空の検証用landingに小さい固定条件の合成入力を初めて用意するとき。",
+      "when_to_use": "受入検証に使う固定データの構成を確認するとき。",
       "category": "03 データ・操作",
       "prerequisites": [
         "docs/START-HERE.md"

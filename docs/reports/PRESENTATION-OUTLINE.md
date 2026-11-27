@@ -31,11 +31,11 @@
 | 順 | 見出し案 | 図・素材 | 話す内容と確認する点 |
 | --- | --- | --- | --- |
 | 01 | 今回何を判断するPoCか | [詳細構成](figures/01-platform-detail.svg) | 対象のMES/ERP、読み手の問い、今回の判断。任意profileと未接続の外部候補を明示 |
-| 02 | 素材投入と変換を分けて試せる | [バッチ経路](figures/02-batch-flow.svg) | ファイル完成→ready→原本→Bronze。素材生成は下流を起動しない。SQLの読取と書込は別接続 |
+| 02 | 素材投入と変換を分けて試せる | [バッチ経路](figures/02-batch-flow.svg) | ファイル完成→ready→原本→Bronze。外部配置は下流を起動しない。SQL抽出は外部DBの読取専用 |
 | 03 | 業務データの契約を先に固定する | [報告書の6契約・指標説明](POC-REPORT-TEMPLATE.md) | 6ソースの粒度、主キー、更新時刻、UTC。会社の実表名は共有版へ入れない |
 | 04 | 最新版・不正値・集計を説明できる | [メダリオン](figures/03-medallion.svg) | 最新候補を検証し不正を隔離。過去の正常版へ戻さない。Goldは工場日/受注別で多重JOINを避ける |
 | 05 | CDCでI/U/Dと再開を確認する | [CDC](figures/04-cdc-sequence.svg) | 初回snapshotと変更、rawと現在値、checkpoint/offset。会社のAgent/権限/保持は別受入 |
-| 06 | 設定・投入・状態をGUI/APIから扱う | [GUI/API](figures/05-control-api.svg) | 保存と反映、非同期jobとpoll、1実行制御、20件メモリ履歴。操作APIへ任意SQLを渡さない |
+| 06 | 設定・処理・状態をGUI/APIから扱う | [GUI/API](figures/05-control-api.svg) | 保存と反映、非同期jobとpoll、1実行制御、20件メモリ履歴。操作APIへ任意SQLを渡さない |
 | 07 | AIへ渡す根拠と実行権限を分ける | [AI context](figures/07-ai-context.svg) | 表ごとのmain snapshot、上限、LangChain Document、MCP既定read-only。推論と精度評価は別段階 |
 | 08 | SparkとSQLを同じIcebergへ接続する | [常駐Spark](figures/06-spark-compute.svg) | Master/Worker/HistoryとJupyter、remote/localの明示、Python/Arrow一致。3行smokeは性能値ではない |
 | 09 | 社内proxyと企業CAを主体ごとに設定する | [proxy/CA](figures/08-proxy-ca.svg) | daemon pull、build、runtime、Java。NO_PROXYは経路、SSRFは接続許可。実会社の通信結果を別記 |
@@ -71,7 +71,7 @@ SVGは拡大できる編集用、PNGは貼り付けやすい画像用、PDFは�
 
 | 画面 | 撮ると説明しやすい場面 | 伏せる対象 |
 | --- | --- | --- |
-| Streamlit | 合成素材の選択→進捗→品質/Gold | 私有設定、接続先、実業務値、path |
+| Streamlit | 外部入力の処理→進捗→品質/Gold | 私有設定、接続先、実業務値、path |
 | Dokploy | 対象serviceのrunning/one-shot0 | 実appName、URL、Environment、管理者名 |
 | n8n / Airflow | 同梱の手動実行と成功履歴 | credentials、token、通知先、業務ログ |
 | Grafana | 合成ジョブ前後の指標とGUI保存 | 実接続先、利用者、組織内のラベル |

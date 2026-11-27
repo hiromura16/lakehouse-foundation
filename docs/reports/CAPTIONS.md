@@ -50,14 +50,14 @@ captionは図の説明で、会社での実施結果の代筆ではありませ�
 
 **用途:** データ連携・業務担当
 
-**キャプション:** SQLのread-only抽出とSamba/GUI素材は同じlanding契約へ合流する。workerが原本とBronzeを保存し、明示したmedallion操作でSilver・隔離・Goldへ進む。
+**キャプション:** SQLのread-only抽出と外部アプリのファイルは同じlanding契約へ合流する。workerが原本とBronzeを保存し、明示したmedallion操作でSilver・隔離・Goldへ進む。
 
 [SVG](figures/02-batch-flow.svg) / [Mermaid](mermaid/02-batch-flow.mmd)
 
 - ファイルを消すだけでは取り込み済みBronzeを削除しない。会社データは合成試験と別環境で受入。
 - 1原本16MiB以下、契約CSV/JSONは100000行以下。SQL抽出の6表は同一時点transactionではない。
 
-**根拠:** [extract-sqlserver.py](../../scripts/extract-sqlserver.py)、[generate-demo.py](../../scripts/generate-demo.py)、[admin.py](../../scripts/admin.py)、[sources.json](../../medallion/sources.json)
+**根拠:** [extract-sqlserver.py](../../scripts/extract-sqlserver.py)、[raw_file_input.py](../../scripts/raw_file_input.py)、[admin.py](../../scripts/admin.py)、[sources.json](../../medallion/sources.json)
 
 ## 図03 メダリオンの採用・隔離・集計ルール
 
@@ -81,7 +81,7 @@ captionは図の説明で、会社での実施結果の代筆ではありませ�
 [SVG](figures/04-cdc-sequence.svg) / [Mermaid](mermaid/04-cdc-sequence.mmd)
 
 - 過去の合成試験：初期144＋INSERT6＋UPDATE6＋DELETE6＋tombstone6＝raw168。restart後distinct168。
-- GUIの固定I/U/Dは専用DBの所有権tokenを検証する素材操作。会社業務DBのDMLは実行しない。
+- 外部アプリが変更を発生させる。基盤は受信・観測を担当し、業務DBへDMLしない。
 
 **根拠:** [consumer.py](../../infra/cdc/consumer.py)、[connector.py](../../infra/cdc/connector.py)、[CDC.md](../../docs/CDC.md)、[verification.json](../../docs/verification.json)
 
@@ -89,7 +89,7 @@ captionは図の説明で、会社での実施結果の代筆ではありませ�
 
 **用途:** 利用者導線・API連携
 
-**キャプション:** Streamlit・Swagger・MCP連携は固定FastAPIを使い、source jobとpipeline jobを分ける。同梱n8n/AirflowはWORKER_TOKENでworkerへ直接依頼する。設定保存からDockerやsudoを呼ばない。
+**キャプション:** Streamlit・Swagger・MCP連携は固定FastAPIを使い、外部SQLの接続診断とpipeline jobを分ける。同梱n8n/AirflowはWORKER_TOKENでworkerへ直接依頼する。設定保存からDockerやsudoを呼ばない。
 
 [SVG](figures/05-control-api.svg) / [Mermaid](mermaid/05-control-api.mmd)
 

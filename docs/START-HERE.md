@@ -9,7 +9,7 @@
 >
 > **前提となる資料:** [Lakehouse Foundation](<../README.md>)
 >
-> **次に読む資料:** [Linuxサーバーを最初に準備する](<HOST-SETUP.md>) / [Dokploy 0.31.0でGitから配置する](<DOKPLOY.md>) / [GUIからダミーデータを投入する](<DEMO-GUI.md>)
+> **次に読む資料:** [Linuxサーバーを最初に準備する](<HOST-SETUP.md>) / [Dokploy 0.31.0でGitから配置する](<DOKPLOY.md>) / [GUIで外部データの処理を確認する](<DEMO-GUI.md>)
 >
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
@@ -240,14 +240,14 @@ ssh -N -L 8501:127.0.0.1:8501 -L 8502:127.0.0.1:8502 \
 
 ### 初回のデータ往復
 
-1. 操作GUIの「素材の投入」で、投入先ランディング、batch、seed42、20件、7日、最初はcleanを選択し、開始します。
-2. 画面下の「実行結果を確認する」欄で「進捗を更新」を押し、成功と6ソースの行数・manifestを確認します。画像を選んだ場合は画像1枚も確認します。
+1. [外部データの入口](../README.md#外部データの入口) を選び、まず契約に合うファイルをLandingへ外部から配置します。
+2. 原本と完成印の配送を確認します。受信後の結果は「履歴」と「状態」から確認します。
 3. 「処理・検証」→「Silver・Goldまで変換」を一度押し、完了を待ちます。
 4. 「データ」でcatalogを読み、「Goldをプレビュー」と「品質件数を確認」を実行します。
 5. 「AIの準備」でsnapshot ID付きのJSONを取得します。これだけではLLMを起動したり、社外へ送信したりしません。
 6. 次に [異常シナリオ](ANOMALY-SCENARIOS.md) の品質・改訂・工場ロスを一つずつ試し、結果の変化を比較します。
 
-通常のGUI runには独立したIDが付き、追加するたびに素材が増えます。GUIで累積した件数を固定のverify fixture155行と比較しません。固定期待値の検証は隔離namespaceを使う「基盤の往復検証」です。
+同じ原本の再処理は受領台帳で二重計上を防ぎます。外部入力の件数を固定のverify fixtureと比較しません。固定期待値の検証は隔離namespaceを使う「基盤の往復検証」です。
 
 APIも試す場合はSwaggerの `Authorize` へprivate設定の `CONTROL_API_TOKEN` 本体を入力し、まず `GET /capabilities`、`GET /catalog`、`GET /jobs` を使います。書込みAPIは操作内容を確認して実行します。[APIの例と結果確認](API.md)
 
@@ -277,7 +277,7 @@ Sparkは常駐クラスタを使います。明示の互換スモークも実行
 ./scripts/lakehouse.sh spark-check
 ```
 
-スモークはlocal[2]で専用compatibility表へ書き、Trinoから参照します。Jupyterからremote workerへ投入する確認とは別です。**会社データは別の空の環境で受け入れます。** このGUI例の合成素材は通常のBronzeへ残り、landingからファイルを消すだけでは削除されません。別のDokploy Environment/Compose（またはCLI project）、新しいvolume・landing・private設定・空いているportを用意し、会社データ側では合成素材を生成しません。隔離namespaceだけを使う `verify` は実行できます。会社データへの接続は [SQL読取り](SOURCE-SQLSERVER.md)・[会社の受入手順](COMPANY-ROLLOUT.md) に進みます。SQL Server本体はこのリポジトリから起動しません。
+スモークはlocal[2]で専用compatibility表へ書き、Trinoから参照します。Jupyterからremote workerへ投入する確認とは別です。**会社データは別の空の環境で受け入れます。** 外部検証データは通常のBronzeへ残り、landingからファイルを消すだけでは削除されません。別のDokploy Environment/Compose（またはCLI project）、新しいvolume・landing・private設定・空いているportを用意し、会社データ側では合成素材を生成しません。隔離namespaceだけを使う `verify` は実行できます。会社データへの接続は [SQL読取り](SOURCE-SQLSERVER.md)・[会社の受入手順](COMPANY-ROLLOUT.md) に進みます。SQL Server本体はこのリポジトリから起動しません。
 
 ## 7. 停止・更新・復旧を決める
 

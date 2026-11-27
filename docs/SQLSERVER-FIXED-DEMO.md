@@ -7,14 +7,14 @@
 >
 > **読むタイミング:** 承認済み合成環境の固定6表でsnapshot・増分・CDCを観測するとき。
 >
-> **前提となる資料:** [GUIからダミーデータを投入する](<DEMO-GUI.md>) / [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>)
+> **前提となる資料:** [GUIで外部データの処理を確認する](<DEMO-GUI.md>) / [既存SQL Serverからランディングへ抽出する](<SOURCE-SQLSERVER.md>)
 >
 > **次に読む資料:** [SQL Server の変更を Iceberg へ反映する](<CDC.md>) / [症状から確認する](<TROUBLESHOOTING.md>)
 >
 > **文書一覧:** [目的・読者から探す文書マニフェスト](<DOCUMENTATION-MANIFEST.md>)
 <!-- doc-purpose:end -->
 
-この手順は、承認済みの開発用SQL Serverにある所有権付きの固定6表を、snapshot・増分・CDCで観測するためのものです。内蔵の固定SQL writerとGUI/CLIからの固定表への書込みは廃止しました。固定6表に変更を発生させる検証は、専用の外部ランタイムを別途用意し、管理者立会いの合成環境でのみ行います。このリポジトリでは外部ランタイムの配置・認証・運用を行いません。Landingの素材生成、別専用DBへのランダムschema投入、隔離されたCDCラボは維持します。
+この手順は、承認済みの開発用SQL Serverにある所有権付きの固定6表を、snapshot・増分・CDCで観測するためのものです。内蔵の固定SQL writerとGUI/CLIからの固定表への書込みは廃止しました。固定6表に変更を発生させる検証は、専用の外部ランタイムを別途用意し、管理者立会いの合成環境でのみ行います。このリポジトリでは外部ランタイムの配置・認証・運用を行いません。外部ファイルのLanding受入と、使い捨て環境に限定したCDC統合試験は維持します。
 
 **検証の区別:** 単体・静的契約の成功は、実SQL ServerからKafka・Iceberg・BIまでの受入ではありません。実接続、CDCの到達、デプロイは今回のwriter廃止では実施していません。
 
@@ -104,7 +104,7 @@ DBAはSSMSで承認済み開発DBへ接続し、Query → SQLCMD Modeを有効�
 
 ## 3. GUIで読取り診断を行う
 
-「素材の投入」の「固定SQL sourceの読取診断」で診断します。`GET /sql-source/status` はSOURCE readerで接続先・所有権・限定権限・6表を観測します。接続情報や所有権hashは返しません。診断は固定6表への書込みやCDCの往復成功を示しません。
+「接続診断」の「固定SQL sourceの読取診断」で診断します。`GET /sql-source/status` はSOURCE readerで接続先・所有権・限定権限・6表を観測します。接続情報や所有権hashは返しません。診断は固定6表への書込みやCDCの往復成功を示しません。
 
 ### SQLの型と原値を分ける
 
@@ -127,7 +127,7 @@ DBAはSSMSで承認済み開発DBへ接続し、Query → SQLCMD Modeを有効�
 
 ## 5. フルスナップショットを取り込む
 
-素材の投入とは別に **処理・検証 → SQL Serverフルスナップショット** を選び、置換への同意を確認して開始します。Swaggerでは `POST /sql-source/batches/snapshot` に `{"confirm": true}` を送ります。任意SQL・接続先・file pathを要求へ入れません。
+外部入力の配置・書込みとは別に **処理・検証 → SQL Serverフルスナップショット** を選び、置換への同意を確認して開始します。Swaggerでは `POST /sql-source/batches/snapshot` に `{"confirm": true}` を送ります。任意SQL・接続先・file pathを要求へ入れません。
 
 SOURCE readerは所有権と読取り専用権限を検査し、SERIALIZABLE transactionと6表への共有lockで小規模PoCの一貫した読取りを行います。lock待ちは5秒、各SQLのtimeoutも設定します。アプリからDBのisolation設定を変更することはありません。業務writerを待たせ得るため、大規模な本番source用の抽出方式とは分けます。
 

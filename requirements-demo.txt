@@ -1,2 +1,2 @@
-# Optional SQL Server destination only. Landing generation uses the standard library.
+# Optional driver for the external SQL Server read-only adapter.
 pymssql==2.4.6

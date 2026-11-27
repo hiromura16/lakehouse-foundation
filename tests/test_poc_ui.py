@@ -232,13 +232,6 @@ class PortalUiTests(unittest.TestCase):
                 if payload["use_saved"]
                 else "applied",
             }
-        if path == "/scenarios":
-            return {
-                "version": 1,
-                "scenarios": [],
-                "presets": [],
-                "conflicts": [],
-            }
         if path == "/settings":
             return {
                 "values": {
@@ -275,6 +268,16 @@ class PortalUiTests(unittest.TestCase):
             "http://localhost:8503/mcp", [item.value for item in app.code]
         )
         self.assertEqual([call for call in self.calls if call[0] != "GET"], [])
+
+    def test_external_input_has_no_writer_tab_or_initial_writer_request(self):
+        """実画面に内蔵writerは出ず、外部入力の処理と履歴を残す。"""
+        app = self.app()
+        tabs = {tab.label for tab in app.tabs}
+        self.assertNotIn("素材の投入", tabs)
+        self.assertTrue({"処理・検証", "履歴", "接続診断"} <= tabs)
+        paths = {path for _, path, _ in self.calls}
+        self.assertNotIn("/scenarios", paths)
+        self.assertFalse(any(path.startswith("/cdc/demo") for path in paths))
 
     def test_settings_opens_only_the_bundled_ssrf_manual(self):
         app = self.app()

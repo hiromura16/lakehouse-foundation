@@ -1,0 +1,5 @@
+product_id,product_name,product_family,unit,standard_cycle_seconds,updated_at
+P001,Demo component 1,Assembly,piece,25,2026-01-04T08:00:00Z
+P002,Demo component 2,Machining,piece,30,2026-01-04T08:00:00Z
+P003,Demo component 3,Assembly,piece,35,2026-01-04T08:00:00Z
+P004,Demo component 4,Machining,piece,40,2026-01-04T08:00:00Z

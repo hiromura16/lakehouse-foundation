@@ -81,7 +81,6 @@ tokenは管理者のローカルエディターでprivate envの該当1項目だ
 | `platform_capabilities` | API一覧・必要profile・操作範囲 |
 | `data_catalog` | 業務表、列、粒度、主キー、由来 |
 | `data_quality` | 固定6ソースのBronze/Silver/Quarantine件数 |
-| `anomaly_scenarios` | 26異常と7preset、想定される影響 |
 | `gold_context` | 現在のmain snapshotに固定したGold参照。各表最大500行 |
 | `job_status` | 受け取ったjob IDの状態 |
 | `recent_jobs` | 最大20件のメモリ内履歴。再起動で消失 |
@@ -101,17 +100,15 @@ MCPサーバーを再起動してもIceberg表は消えません。一方、`rec
 
 ## 書き込みを使う場合
 
-管理者がprivate envで `MCP_ENABLE_MUTATIONS=true` として再配置すると、次の3ツールが追加で登録されます。既定のサーバーには登録されません。各呼出しにも `confirm=true` が必要です。
+管理者がprivate envで `MCP_ENABLE_MUTATIONS=true` として再配置すると、次のツールが追加で登録されます。既定のサーバーには登録されません。各呼出しにも `confirm=true` が必要です。
 
 | 名前 | 操作と追加条件 |
 | --- | --- |
-| `generate_sources` | CSV/JSON/画像・専用SQLへ合成素材を投入。有限batch/stream、26異常選択。SQLは `allow_sql_write`、意図的な壊れたファイルは `allow_file_faults` にも同意 |
 | `run_pipeline` | `ingest` / `medallion` / `verify` の一つを非同期実行 |
-| `change_cdc_demo` | 所有を確認した疑似CDC DBの固定6行へinsert/update/delete |
 
-素材投入は後続処理を自動で起動しません。受け取ったjob IDをpollし、応答が不明なときに同じ書き込みを繰り返しません。一般の会社DBを変更するツールとして利用しません。AI利用者単位の認可・承認記録・永続キューは別途実装が必要です。
+外部からの素材投入と後続処理の開始は別操作です。受け取ったjob IDをpollし、応答が不明なときに同じ書き込みを繰り返しません。一般の会社DBを変更するツールとして利用しません。AI利用者単位の認可・承認記録・永続キューは別途実装が必要です。
 
-書き込みを有効にした環境でも、素材生成の終了、取り込み/medallionの終了は別ジョブです。`confirm=true` は呼出し側から渡すBooleanであり、サーバーが人の承認画面を表示する機能ではありません。人が結果を確認してから次の操作へ進める運用をクライアント側にも用意します。
+書き込みを有効にしても、MCPから素材を生成・送出する機能はありません。`confirm=true` は呼出し側から渡すBooleanであり、サーバーが人の承認画面を表示する機能ではありません。人が結果を確認してから次の操作へ進める運用をクライアント側にも用意します。
 
 ## SDKでの接続例
 
@@ -195,22 +192,11 @@ asyncio.run(main())
 
 この読取りだけで素材やメダリオンを実行しません。`gold_context` の `limit` は各表1〜500で、allなら2表それぞれへ適用します。HTTP接続が成功しても、SDK応答の `is_error` と `structured_content` を確認してください。
 
-## 書込みを有効にしたときの1サイクル
+## 後続処理を有効にしたときの1サイクル
 
-検証用環境で管理者がopt-inした後、クライアント側に「何をどこへ投入するか」の確認を設けます。次は呼出しの流れであり、同意なしに実行するagentの指示ではありません。
-
-```text
-anomaly_scenariosでIDと想定を読む
-  → generate_sources(confirm=true, destination=landing, orders=20)
-  → 返されたjob IDをjob_statusでpollし、素材の成功を確認
-  → 人がmanifestと対象環境を確認
-  → run_pipeline(action=medallion, confirm=true)
-  → 別job IDをpollし、data_quality / gold_contextで照合
-```
-
-`generate_sources` のMCP側 `batches` は1〜10で、内部APIの上限と同じではありません。streamを何回実行するかはtool schemaを読みます。SQL書込みと意図的なfile faultには別の同意が必要です。`confirm=true` はBooleanの入力検査で、認可された人が承認した証拠や永続的な承認台帳を自動生成する仕組みではありません。
-
-結果が不明なら、同じmutationを自動再送しません。`recent_jobs` と既知IDを読み、workerの状態と実際の素材/表を確認します。MCPを再起動しても内部APIのjobが取消されるわけではなく、逆にAPIを再起動すると20件のメモリ履歴は失われます。
+1. 外部アプリによる配送の完了を人が確認します。
+2. 管理者がopt-inしている場合のみ、明示同意のうえ `run_pipeline(action=medallion, confirm=true)` を呼びます。
+3. `job_status` と `data_quality` / `gold_context` で結果を照合します。結果が不明なら同じ操作を自動で再送しません。
 
 ## 新toolを追加する設計の確認点
 

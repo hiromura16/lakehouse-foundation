@@ -43,7 +43,7 @@ class ToolTests(unittest.IsolatedAsyncioTestCase):
         backend = FakeBackend()
         async with Client(SUBJECT.create_server(backend)) as client:
             result = await client.list_tools()
-            self.assertEqual(len(result.tools), 9)
+            self.assertEqual(len(result.tools), 8)
             for tool in result.tools:
                 annotation = tool.annotations.model_dump(by_alias=True)
                 self.assertTrue(annotation["readOnlyHint"])
@@ -101,23 +101,22 @@ class ToolTests(unittest.IsolatedAsyncioTestCase):
         ) as client:
             result = await client.list_tools()
             names = {tool.name for tool in result.tools}
-            self.assertTrue(
-                {"generate_sources", "run_pipeline", "change_cdc_demo"}
-                <= names
+            self.assertTrue("run_pipeline" in names)
+            self.assertFalse(
+                {"generate_sources", "change_cdc_demo", "anomaly_scenarios"}
+                & names
             )
             denied = await client.call_tool(
-                "generate_sources", {"confirm": False}
+                "run_pipeline", {"action": "ingest", "confirm": False}
             )
             self.assertTrue(denied.is_error)
             self.assertEqual(backend.calls, [])
             accepted = await client.call_tool(
-                "generate_sources", {"confirm": True, "orders": 2}
+                "run_pipeline", {"action": "ingest", "confirm": True}
             )
             self.assertFalse(accepted.is_error)
         self.assertEqual(len(backend.calls), 1)
-        self.assertEqual(backend.calls[0][0], "/jobs")
-        self.assertFalse(backend.calls[0][1]["payload"]["allow_sql_write"])
-        self.assertFalse(backend.calls[0][1]["payload"]["allow_file_faults"])
+        self.assertEqual(backend.calls[0][0], "/pipeline/ingest")
 
 
 class GatewayTests(unittest.IsolatedAsyncioTestCase):

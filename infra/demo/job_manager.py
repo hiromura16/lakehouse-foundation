@@ -1,15 +1,14 @@
-"""Run finite source-only jobs without invoking downstream processing."""
+"""外部入力の処理・復旧を排他実行し、短い進捗履歴を保存する。"""
 
 import copy
 import secrets
 import threading
-import time
 from pathlib import Path
 from typing import Callable
 
 
 class JobConflict(RuntimeError):
-    """Reject overlapping source generation and explicit pipeline requests."""
+    """排他実行する受信後処理の重複受付を拒否する。"""
 
 
 class OperationFailure(RuntimeError):
@@ -23,142 +22,55 @@ class OperationFailure(RuntimeError):
 
 
 class JobManager:
-    """Serialize bounded batches and keep a small in-memory job history."""
+    """受信後の処理を直列化し、APIプロセス内で最大20件を保持する。"""
 
-    def __init__(self, output: Path, generator: Callable, settings: dict):
-        """Bind the source writer and retain only its SQL safety settings."""
+    def __init__(self, output: Path):
+        """実SQLバッチ専用の受渡し場所と排他ロックを初期化する。"""
         self.output = output
-        self.generator = generator
-        self.settings = {
-            key: value
-            for key, value in settings.items()
-            if key.startswith("DEMO_SQLSERVER_")
-            or key
-            in {
-                "SOURCE_SQLSERVER_HOST",
-                "SOURCE_SQLSERVER_PORT",
-                "SOURCE_SQLSERVER_DATABASE",
-            }
-        }
         self.operation = threading.Lock()
         self.lock = threading.RLock()
         self.jobs: dict[str, dict] = {}
-        self.cancel_events: dict[str, threading.Event] = {}
-
-    def submit(self, options: dict, settings: dict | None = None) -> dict:
-        """Reserve the source writer before starting one finite thread."""
-        if not self.operation.acquire(blocking=False):
-            raise JobConflict("Another operation is running.")
-        with self.lock:
-            # Bound history without dropping active cancellation handles.
-            for identifier in list(self.jobs):
-                if len(self.jobs) < 20:
-                    break
-                if self.jobs[identifier]["status"] in {
-                    "succeeded",
-                    "failed",
-                    "cancelled",
-                }:
-                    del self.jobs[identifier]
-                    self.cancel_events.pop(identifier, None)
-            identifier = secrets.token_hex(6)
-            self.jobs[identifier] = {
-                "id": identifier,
-                "kind": "source",
-                "status": "queued",
-                "completed": 0,
-                "batches": options["batches"],
-                "pending_restart": options.get("pending_restart", False),
-                "results": [],
-                "error": None,
-            }
-            event = threading.Event()
-            self.cancel_events[identifier] = event
-        threading.Thread(
-            target=self._run,
-            args=(identifier, options, event, dict(settings or self.settings)),
-            daemon=True,
-        ).start()
-        return {
-            "id": identifier,
-            "status": "queued",
-            "pending_restart": options.get("pending_restart", False),
-        }
 
     def submit_pipeline(self, action: str, runner: Callable) -> dict:
-        """Queue an explicit worker action with the common operation lock."""
-        return self._submit_action(action, runner, kind="pipeline")
-
-    def submit_cdc(
-        self,
-        action: str,
-        runner: Callable,
-        *,
-        pending_restart: bool = False,
-    ) -> dict:
-        """Queue one source-only transaction on an owned CDC demo DB."""
-        return self._submit_action(
-            action, runner, kind="cdc-source", pending_restart=pending_restart
-        )
-
-    def _submit_action(
-        self,
-        action: str,
-        runner: Callable,
-        *,
-        kind: str,
-        pending_restart: bool = False,
-    ) -> dict:
-        """Serialize one-shot source DML and explicit worker actions."""
+        """固定の後続処理を一件受け付け、照会IDを直ちに返す。"""
         if not self.operation.acquire(blocking=False):
             raise JobConflict("Another operation is running.")
-        with self.lock:
-            for previous in list(self.jobs):
-                if len(self.jobs) < 20:
-                    break
-                if self.jobs[previous]["status"] in {
-                    "succeeded",
-                    "failed",
-                    "cancelled",
-                }:
-                    del self.jobs[previous]
-                    self.cancel_events.pop(previous, None)
-            identifier = secrets.token_hex(6)
-            action_key = (
-                "cdc_action" if kind == "cdc-source" else "pipeline_action"
-            )
-            self.jobs[identifier] = {
-                "id": identifier,
-                "kind": kind,
-                action_key: action,
-                "status": "queued",
-                "completed": 0,
-                "batches": 1,
-                "pending_restart": pending_restart,
-                "results": [],
-                "error": None,
-            }
-            event = threading.Event()
-            self.cancel_events[identifier] = event
-        threading.Thread(
-            target=self._run_action,
-            args=(identifier, action, runner, event),
-            daemon=True,
-        ).start()
-        return {
-            "id": identifier,
-            "status": "queued",
-            "kind": kind,
-            "pending_restart": pending_restart,
-        }
-
-    def _run_action(self, identifier, action, runner, event):
-        """Avoid mid-transaction cancellation and redact driver failures."""
+        identifier = None
         try:
             with self.lock:
-                if event.is_set():
-                    self.jobs[identifier]["status"] = "cancelled"
-                    return
+                while len(self.jobs) >= 20:
+                    del self.jobs[next(iter(self.jobs))]
+                identifier = secrets.token_hex(6)
+                while identifier in self.jobs:
+                    identifier = secrets.token_hex(6)
+                self.jobs[identifier] = {
+                    "id": identifier,
+                    "kind": "pipeline",
+                    "pipeline_action": action,
+                    "status": "queued",
+                    "completed": 0,
+                    "batches": 1,
+                    "pending_restart": False,
+                    "results": [],
+                    "error": None,
+                }
+            threading.Thread(
+                target=self._run_action,
+                args=(identifier, action, runner),
+                daemon=True,
+            ).start()
+        except Exception:
+            if identifier is not None:
+                with self.lock:
+                    self.jobs.pop(identifier, None)
+            self.operation.release()
+            raise
+        return {"id": identifier, "status": "queued", "kind": "pipeline"}
+
+    def _run_action(self, identifier: str, action: str, runner: Callable):
+        """完了状態を記録し、未分類例外に含まれる接続情報は隠す。"""
+        try:
+            with self.lock:
                 self.jobs[identifier]["status"] = "running"
             result = runner(action)
             with self.lock:
@@ -170,14 +82,6 @@ class JobManager:
                 "code": "PIPELINE_FAILED",
                 "message": "workerの状態と処理結果を確認してください。",
             }
-            if self.jobs[identifier]["kind"] == "cdc-source":
-                public = {
-                    "code": "CDC_DEMO_FAILED",
-                    "message": (
-                        "専用検証DBの所有権・行の状態・認証・TLSを"
-                        "確認してください。"
-                    ),
-                }
             if isinstance(error, OperationFailure):
                 public = {"code": error.code, "message": error.message}
             with self.lock:
@@ -185,81 +89,14 @@ class JobManager:
         finally:
             self.operation.release()
 
-    def _run(
-        self,
-        identifier: str,
-        options: dict,
-        event: threading.Event,
-        settings: dict,
-    ):
-        """Check cancellation between atomic source batches, never mid-SQL."""
-        deadline = time.monotonic() + 600
-        try:
-            with self.lock:
-                self.jobs[identifier]["status"] = "running"
-            for batch in range(1, options["batches"] + 1):
-                if event.is_set():
-                    break
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("Source job deadline exceeded.")
-                result = self.generator(
-                    self.output,
-                    run_id=options.get("run_id") or identifier,
-                    batch=batch,
-                    seed=options["seed"],
-                    orders=options["orders"],
-                    days=options["days"],
-                    scenario=options["scenario"],
-                    anomalies=list(options.get("anomalies", [])),
-                    anomaly_rate=options.get("anomaly_rate", 10),
-                    allow_file_faults=options.get("allow_file_faults", False),
-                    destination=options["destination"],
-                    images=options["images"],
-                    allow_sql_write=options["allow_sql_write"],
-                    settings=settings,
-                )
-                with self.lock:
-                    self.jobs[identifier]["results"].append(result)
-                    self.jobs[identifier]["completed"] += 1
-                if batch < options["batches"] and event.wait(
-                    options["interval_seconds"]
-                ):
-                    break
-            with self.lock:
-                self.jobs[identifier]["status"] = (
-                    "cancelled" if event.is_set() else "succeeded"
-                )
-        except Exception:
-            # Driver exceptions may contain private names and connection data.
-            with self.lock:
-                self.jobs[identifier]["status"] = "failed"
-                self.jobs[identifier]["error"] = {
-                    "code": "SOURCE_GENERATION_FAILED",
-                    "message": "投入設定・権限・TLSを確認してください。",
-                }
-        finally:
-            self.operation.release()
-
     def history(self, limit: int = 20) -> list[dict]:
-        """Return recent process-local jobs without options or credentials."""
+        """秘密設定や内部状態を含まない新着順の複製を返す。"""
         if type(limit) is not int or not 1 <= limit <= 20:
             raise ValueError("History limit must be in 1..20.")
         with self.lock:
             return copy.deepcopy(list(reversed(self.jobs.values()))[:limit])
 
     def get(self, identifier: str) -> dict:
-        """Return metadata without mutable internal cancellation state."""
+        """受信後処理一件の状態を複製して返す。"""
         with self.lock:
             return copy.deepcopy(self.jobs[identifier])
-
-    def cancel(self, identifier: str) -> dict:
-        """Stop the next batch; preserve already published source records."""
-        with self.lock:
-            job = self.jobs[identifier]
-            if job["kind"] != "source" and job["status"] == "running":
-                raise JobConflict(
-                    "A running one-shot action cannot be cancelled here."
-                )
-            if job["status"] in {"queued", "running"}:
-                self.cancel_events[identifier].set()
-            return self.get(identifier)

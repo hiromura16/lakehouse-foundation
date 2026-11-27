@@ -24,7 +24,7 @@ GUIで「実行順序やタイミングを組む」ことと、「列の型・�
 
 | やりたいこと | 今ある画面・採用版 | profile | 手順 |
 | --- | --- | --- | --- |
-| 疑似素材の投入、設定、異常シナリオ | Streamlit / FastAPI Swagger | `demo` | [DEMO-GUI.md](DEMO-GUI.md)、[API.md](API.md) |
+| 取り込み・変換、設定、履歴 | Streamlit / FastAPI Swagger | `demo` | [DEMO-GUI.md](DEMO-GUI.md)、[API.md](API.md) |
 | 入口・データ契約・品質・履歴・ヘルプ | 同じStreamlit内のタブ | `demo` | [POC-PORTAL.md](POC-PORTAL.md) |
 | 処理の手動実行と外部連携 | n8n 2.46.7 | `automation` | [GUI-WALKTHROUGHS.md](GUI-WALKTHROUGHS.md) |
 | DAG run、task logs、接続資格情報 | Airflow 3.4.0 | `orchestration` | [GUI-WALKTHROUGHS.md](GUI-WALKTHROUGHS.md) |

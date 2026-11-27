@@ -297,78 +297,15 @@ Kafka data、Connect internal topics、schema history topic、SQLite、catalog/S
 既定 7 日/1 topic 1 GiB の保持上限は別です。遅延が長いほど先にどちらかを失います。
 schema history と Connect internal topics は通常のデータ topic と別の保持設定です。
 
-## 7. 試験用の専用DBを準備する
+## 7. 外部SQLデータでCDCを検証する
 
-本物の DB で CDC を有効化して試す代わりに、既存の検証用 SQL Server へ新しい DB を
-1 つ作れます。`scripts/cdc-demo.py` は generator と別の、明示操作用 helper です。
-実行には [requirements-demo.txt](../requirements-demo.txt) の optional driver が必要です。
+会社データや既存環境を使わず、管理者が別途用意した検証DBと外部 [SQLデータ投入アプリ](https://github.com/hiromura16/factory-sql-data-loader) で追加・更新・削除を試します。FoundationはDBを生成したり、テスト用の変更を書き込んだりしません。
 
-**Bash / Zsh共通**
-
-```sh
-uv venv --python 3.12 "$HOME/.venvs/lakehouse-demo"
-uv pip sync --python "$HOME/.venvs/lakehouse-demo/bin/python" \
-  requirements-demo.txt
-
-"$HOME/.venvs/lakehouse-demo/bin/python" scripts/cdc-demo.py create \
-  --env-file "$HOME/.config/lakehouse-foundation/demo-admin.env" \
-  --output "$HOME/.config/lakehouse-foundation/cdc/demo.env" \
-  --allow-create-demo-database
-```
-
-管理用 private env の `DEMO_SQLSERVER_HOST/PORT/USER/PASSWORD/CA_FILE` を読みます。
-証明書の名前が接続先と異なる試験環境では、private 設定の
-`DEMO_SQLSERVER_HOSTNAME_IN_CERTIFICATE` で照合対象を明示できます。
-CA 検証と hostname 検証は有効のままです。
-新 DB 名は `lh_cdc_demo_<random>` です。既存 DB は再利用しません。
-6 table の primary key、CDC、専用 capture login、DB 内の参照権限、clean seed42 /20件/
-7日 の 144 行を作ります。server role や instance-wide permission は付与しません。
-出力 env は 0600、同じ directory に private `table-map.json` を作ります。
-接続する前に output directory を 0700 にしてください。失敗時の自動 DROP はなく、
-新 DB の途中状態を DBA が確認できるよう出力情報を残します。
-
-SQL Agent の有効化や SQL Server 自体の設定変更は helper の対象外です。
-既存 generator は今までどおりダミーを投入するだけで、CDC や分析処理を開始しません。
-
-固定シナリオでは、生成した `demo.env` と管理用 DEMO 設定を 1 つの external private
-scenario env にまとめます。所有確認の `CDC_DEMO_OWNERSHIP_TOKEN` を維持してください。
-CLI は DB 名の prefix と DB 内の所有 token の一致を両方確認します。
-
-**Bash / Zsh共通**
-
-```sh
-"$HOME/.venvs/lakehouse-demo/bin/python" scripts/cdc-demo.py insert \
-  --env-file "$HOME/.config/lakehouse-foundation/cdc/scenario.env" \
-  --allow-demo-dml
-
-"$HOME/.venvs/lakehouse-demo/bin/python" scripts/cdc-demo.py update \
-  --env-file "$HOME/.config/lakehouse-foundation/cdc/scenario.env" \
-  --allow-demo-dml
-
-"$HOME/.venvs/lakehouse-demo/bin/python" scripts/cdc-demo.py delete \
-  --env-file "$HOME/.config/lakehouse-foundation/cdc/scenario.env" \
-  --allow-demo-dml
-```
-
-各操作は 6 fixed records を 1 source transaction で変更します。INSERT 前に同じ行が
-あったり UPDATE/DELETE の対象がなければ rollback します。任意 SQL や任意 table を
-指定する引数はありません。`apply_scenario(values, action)` は GUI/API から呼べる
-source-only 関数で、下流処理を起動しません。
-
-| 観測点 | INSERT 完了後 | UPDATE 完了後 | DELETE 完了後 |
-| --- | --- | --- | --- |
-| `cdc_silver.erp_products` の `CDC-P` | 1件 | 名前が改訂 | 0件 |
-| `cdc_gold.factory_daily_production` の `CDC-F` / 2026-02-01 | plan20 / good10 / reject1 / down5分 | plan25 / good14 / reject1 / down5分 | 0行 |
-| `cdc_gold.sales_fulfillment` の `CDC-SO` | ordered10 / shipped3 / open7 / late3 | ordered12 / shipped5 / open7 / late5 | 0行 |
-| `cdc_events.events` | 作成 event が増加 | 更新 event が増加 | 削除 event と tombstone が増加 |
-
-それぞれ source の commit から非同期に反映されます。Kafka に1イベントが見えただけで
-成功とせず、上の Silver/Gold と raw の三種類の `op` を SQL でも照合してください。
-DELETE 後はデモ追加分が消え、初期 clean データが残ります。
+Kafkaのイベントだけで成功とせず、Connector、Consumer、各イベント種別とtombstone、原本、Current、Silver、Goldまで確認します。復旧やポジション管理は従来どおりこの基盤側の責務です。
 
 ## 8. この構成で照合した結果
 
-専用の新 DB と独立した catalog/S3/Trino で、次を照合しました。
+過去の隔離試験では、専用 DB と独立した catalog/S3/Trino で次を照合しました。次の件数は現在の環境の値や外部アプリの既定値ではありません。
 会社の既存 DB や通常の snapshot table で試す手順ではありません。
 
 | 項目 | 確認した結果 |
@@ -573,7 +510,6 @@ SELECT sys.fn_cdc_get_max_lsn() AS newest_captured_lsn;
 | [connector.py](../infra/cdc/connector.py) | 登録候補と厳密な既存比較 | 設定一致no-opと差異拒否、secret非表示 |
 | [state.py](../infra/cdc/state.py) | LSN/DELETE/現在値/checkpoint | 順序逆転、再配送、DELETE後の正当な再INSERT |
 | [consumer.py](../infra/cdc/consumer.py) | raw→state→派生→checkpoint→ack | 各確定点の失敗と再開、取消未確定、保持切れ |
-| [cdc-demo.py](../scripts/cdc-demo.py) | 所有権確認済みの隔離ラボ専用DBでのI/U/D | source-only、誤接続拒否、同意とrollback |
 
 複合キー・schema evolution・並列consumer・増分MERGE等は、設定値を増やすだけでは実装できません。source contract、event identity、state migration、表更新の競合と受入試験を設計し、現在の小さい全表再構築方式と性能・保証の差を記録します。
 
