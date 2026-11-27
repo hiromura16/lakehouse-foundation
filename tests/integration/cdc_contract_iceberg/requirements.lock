@@ -1,0 +1,4 @@
+# Optional SqlCatalog driver, synthetic Ubuntu x86_64 runner only.
+# Upstream PyPI SQLAlchemy 2.1.9 CPython 3.14 manylinux x86_64 wheel.
+sqlalchemy==2.1.9 \
+    --hash=sha256:0b6a25e87f313154e639632fdee02311c9b855ea957dc1a2c9e91ef1bd9b96cd
