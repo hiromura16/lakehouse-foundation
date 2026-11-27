@@ -1,0 +1,54 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [":dependencyDashboard"],
+  "enabledManagers": ["github-actions", "custom.regex"],
+  "automerge": false,
+  "automergeType": "pr",
+  "automergeStrategy": "squash",
+  "platformAutomerge": false,
+  "ignoreTests": false,
+  "internalChecksAsSuccess": false,
+  "minimumReleaseAge": "3 days",
+  "minimumReleaseAgeBehaviour": "timestamp-optional",
+  "separateMinorPatch": true,
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 2,
+  "github-actions": {
+    "pinDigests": true
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github\\/workflows\\/renovate\\.yml$/"],
+      "matchStrings": [
+        "RENOVATE_IMAGE: (?<depName>ghcr\\.io/renovatebot/renovate):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchManagers": ["github-actions"],
+      "matchDepTypes": ["!action", "!workflow"],
+      "enabled": false
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Automerge established patch releases of allowlisted CI actions after CI passes",
+      "matchManagers": ["github-actions"],
+      "matchDepTypes": ["action"],
+      "matchPackageNames": [
+        "actions/checkout",
+        "actions/setup-python",
+        "astral-sh/setup-uv"
+      ],
+      "matchUpdateTypes": ["patch"],
+      "minimumReleaseAgeBehaviour": "timestamp-required",
+      "automerge": true,
+      "rebaseWhen": "behind-base-branch"
+    }
+  ]
+}

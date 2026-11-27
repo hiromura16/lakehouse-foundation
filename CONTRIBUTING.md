@@ -91,6 +91,25 @@ MDを追加・改名する場合は [documentation-manifest.json](docs/documenta
 
 失敗を広い例外処理で隠したり、検査をskipへ変えて通したりせず、再現する境界をテストします。必要な依存が本当に未導入の場合と、導入済み環境の破損は区別します。詳細な拡張例は [CUSTOMIZATION](docs/CUSTOMIZATION.md)、レビューの記録方法は [REVIEW-WORKFLOW](docs/REVIEW-WORKFLOW.md) を参照してください。
 
+## Renovateでの依存更新
+
+[Renovateの設定](renovate.json)はGitHub Actionsの参照と設定検証用Renovateの
+コンテナを対象にします。更新PRでもSHA固定を維持し、通常のPRと同じCIを通します。
+同時に開く通常PRは最大3件で、メジャー更新はDependency Dashboardから承認します。
+Pythonのバージョン・ハッシュロックやサービスのイメージロックは、対応する参照や
+互換性をまとめて検証する手順で更新します。
+
+更新候補の確認、Dependency Dashboardの管理、PRの作成は、このリポジトリに
+インストールしたRenovate GitHub Appが行います。
+[設定を検証するCI](.github/workflows/renovate.yml)は、設定や検証ワークフローが
+変わったときに読み取り権限で実行されます。
+
+リリース日時を取得できる更新は、Renovateが取得した日時から3日経過するとPRの
+候補になります。自動マージは `actions/checkout`、`actions/setup-python`、
+`astral-sh/setup-uv` のパッチ更新に適用します。リリース日時を確認でき、
+最新の既定ブランチに追従したPRのCIが成功すると、Renovateがsquash mergeします。
+その他の更新はCI結果と差分をレビューして手動でマージします。
+
 ## YAML・shell・秘密値の追加検査
 
 `.yamllint.yml` はdefault規則を継承し、既存の書式に合わせて

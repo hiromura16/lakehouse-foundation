@@ -1,0 +1,34 @@
+name: Validate Renovate configuration
+
+on:  # yamllint disable-line rule:truthy
+  pull_request:
+    paths:
+    - 'renovate.json'
+    - '.github/workflows/renovate.yml'
+  push:
+    branches: [main]
+    paths:
+    - 'renovate.json'
+    - '.github/workflows/renovate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RENOVATE_IMAGE: ghcr.io/renovatebot/renovate:45.1.1@sha256:37bbe1af56aa094e6fa5c3b22c5ea28338e99bb99c4729b16aa1f4e8027286dc
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
+    - name: Validate the repository configuration
+      run: |
+        docker run --rm --network none \
+          --volume "${GITHUB_WORKSPACE}/renovate.json:/renovate.json:ro" \
+          --entrypoint renovate-config-validator "$RENOVATE_IMAGE" \
+          --strict --no-global /renovate.json
