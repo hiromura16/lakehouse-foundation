@@ -247,9 +247,9 @@ langchain-core==1.8.4 \
     # via
     #   -r examples/ai/requirements.txt
     #   langchain-ollama
-langchain-ollama==1.1.0 \
-    --hash=sha256:43ac83a6eacb0f43855810739794dd55019e0d9b17bdcf3ecb3b1991ac3b59dd \
-    --hash=sha256:f776f56f6782ae4da7692579b94a6575906118318d1023b455d7207f9d059811
+langchain-ollama==1.2.0 \
+    --hash=sha256:779e1d9c8c74a9bd870f3a464028e14fc29a8b3e54e0cdd14965c6e200009362 \
+    --hash=sha256:c0618c6557dd80aeb3a061433a7cb28bd0f45e2762cb4c9793d9542c127874ea
     # via -r examples/ai/requirements.txt
 langchain-protocol==0.0.22 \
     --hash=sha256:61267bc9f478c9df35ccdafd9fdf556b2698435232d59def54b3809bb02585bb \
